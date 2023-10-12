@@ -1,16 +1,21 @@
 extends Node3D
 
 # Variables
+var gpt = preload("res://GPT.gd").new()
+
 var Food = preload("res://Food.tscn")
 var spawn_interval = 1.0
 
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	pass  # Replace with function body.
+	var start_time = Time.get_ticks_msec()
+	OS.delay_msec(1000)
+	print("Before async call!", " ", Time.get_ticks_msec() - start_time)
+	gpt.call_GPT("Whats 2+2?")
+	print("After async call!", " ", Time.get_ticks_msec() - start_time)
 
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
 	spawn_interval -= delta
 	if spawn_interval <= 0:
