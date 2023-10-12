@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3 uid="uid://bleiy822sqj7t"]
+
+[ext_resource type="Script" path="res://free_look_camera.gd" id="1_6lma0"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_6f2y3"]
+
+[node name="Node3D" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.08755, 3.87293)
+script = ExtResource("1_6lma0")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_6f2y3")
