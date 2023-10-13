@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::gpt::query_openai;
 use crate::vec3::Vec3;
 use anyhow::{Context, Result};
@@ -5,11 +7,9 @@ use godot::{
     engine::{RigidBody3D, RigidBody3DVirtual},
     prelude::*,
 };
-use serde::{Deserialize, Serialize};
 use smol::channel::{unbounded, Receiver};
 
 // The crafts perception, what is fed into the mind each thought cycle
-#[derive(Deserialize, Serialize)]
 struct Perception {
     position: Vec3,
     velocity: Vec3,
@@ -20,14 +20,14 @@ impl Perception {
     fn to_toml(&self) -> String {
         let mut toml_string = String::new();
 
-        toml_string.push_str(&format!("position = {}\n", self.position));
+        toml_string.push_str(&format!("position = {}\n", self.position.to_string()));
 
-        toml_string.push_str(&format!("velocity = {}\n", self.velocity));
+        toml_string.push_str(&format!("velocity = {}\n", self.velocity.to_string()));
 
         let food_positions: Vec<String> = self
             .food_pos
             .iter()
-            .map(|vec3| format!("\"{vec3}\""))
+            .map(|vec3| format!("\"{}\"", vec3.to_string()))
             .collect();
         toml_string.push_str(&format!(
             "food_pos = [{}] # The positions of the food near\n",
@@ -39,7 +39,7 @@ impl Perception {
 }
 
 // The crafts mind, it's goals and it's outputs, things it alters each thought cycle
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Debug)]
 struct Mind {
     goal_thoughts: String,
     goal_long: String,
@@ -63,8 +63,8 @@ impl Mind {
         ));
         toml_string.push_str(&format!("goal_short = \"{}\" # concise\n", self.goal_short));
         toml_string.push_str(&format!(
-            "target_velocity = {} # Velocity for craft to aim for, concise\n",
-            self.target_velocity
+            "target_velocity = {} # Velocity for craft to aim for, normalised\n",
+            self.target_velocity.to_string()
         ));
         toml_string
     }
@@ -102,6 +102,9 @@ impl RigidBody3DVirtual for Craft {
         if let Err(e) = self.brain_process() {
             godot_error!("Error processing brain: {:?}", e);
         }
+
+        let velocity: Vector3 = self.mind.target_velocity.into();
+        self.base.set_linear_velocity(velocity.normalized() * 2.0);
     }
 }
 
@@ -184,12 +187,22 @@ impl Craft {
             let mind_toml = self.mind.to_toml();
             system_message.push_str(&format!("Your mind state as toml data is\n{mind_toml}\n\n"));
 
-            godot_print!("system_message: {}", system_message);
+            // Get mind keys
+            let mut mind_keys = vec![];
+            for line in mind_toml.lines() {
+                let parts: Vec<&str> = line.split(" = ").collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let key = parts[0].trim();
+                mind_keys.push(key);
+            }
+            let mind_keys = mind_keys.join(", ");
 
             // Send data to GPT
             let (tx, rx) = unbounded();
             smol::spawn(async move {
-                let result = query_openai(&format!("s:{system_message}|u:Based on perception and mind state, set your goals, give commands to your body to reach this goals, output should be purely key: values in the exact same format as mind input data"));
+                let result = query_openai(&format!("s:{system_message}|u:Based on perception and mind state, set your goals, give commands to your body to reach this goals, output should be purely key = values in the exact same format as mind input data\nMind keys are{mind_keys}|a:goal_thoughts = "));
                 tx.send(result).await.unwrap();
             })
             .detach();
@@ -206,7 +219,7 @@ impl Craft {
                 .try_recv()
             {
                 let result2 = match result {
-                    Ok(reply) => self.brain_act(reply),
+                    Ok(reply) => self.brain_act(&reply),
                     Err(e) => Err(anyhow::anyhow!("Error: {}", e)),
                 };
                 self.gpt_result_rx = None;
@@ -216,18 +229,35 @@ impl Craft {
         Ok(())
     }
 
-    fn brain_act(&mut self, reply: String) -> Result<()> {
-        // Try to parse reply as toml into mind struct
-        let mind: Mind = match toml::from_str(&reply) {
-            Ok(mind) => mind,
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "Failed to parse GPT reply as toml: {reply}. Error: {:#?}",
-                    e
-                ));
+    fn brain_act(&mut self, reply: &str) -> Result<()> {
+        let reply = format!("goal_thoughts = {reply}");
+        godot_print!("GPT reply: {}", reply);
+        // Parse mind and update from it
+        for line in reply.lines() {
+            let parts: Vec<&str> = line.split(" = ").collect();
+            if parts.len() != 2 {
+                continue;
             }
-        };
-        godot_print!("Parsed mind: {:#?}", mind);
+
+            let key = parts[0].trim();
+            let mut value = parts[1].trim();
+
+            // Strip quotes from string values
+            if value.starts_with('"') && value.ends_with('"') {
+                value = &value[1..value.len() - 1];
+            }
+
+            match key {
+                "goal_thoughts" => self.mind.goal_thoughts = value.to_string(),
+                "goal_long" => self.mind.goal_long = value.to_string(),
+                "goal_medium" => self.mind.goal_medium = value.to_string(),
+                "goal_short" => self.mind.goal_short = value.to_string(),
+                "target_velocity" => self.mind.target_velocity = Vec3::from_str(value)?,
+                _ => continue,
+            }
+        }
+
+        // godot_print!("Parsed mind: {:#?}", self.mind);
         Ok(())
     }
 }

@@ -63,7 +63,7 @@ pub fn query_openai(prompt: &String) -> Result<String> {
     // Construct the request payload.
     let body = RequestBody {
         model: "gpt-3.5-turbo".into(),
-        max_tokens: 1024,
+        max_tokens: 256,
         messages,
     };
 

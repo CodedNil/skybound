@@ -1,9 +1,8 @@
+use anyhow::{anyhow, Error, Result};
 use godot::prelude::*;
-use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use std::str::FromStr;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Vec3 {
     x: f32,
     y: f32,
@@ -20,37 +19,42 @@ impl From<Vector3> for Vec3 {
     }
 }
 
-impl fmt::Display for Vec3 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "x{:.1} y{:.1} z{:.1}", self.x, self.y, self.z)
+impl From<Vec3> for Vector3 {
+    fn from(vec: Vec3) -> Self {
+        Self::new(vec.x, vec.y, vec.z)
     }
 }
 
-impl Serialize for Vec3 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&format!("x{:.1} y{:.1} z{:.1}", self.x, self.y, self.z))
+impl ToString for Vec3 {
+    fn to_string(&self) -> String {
+        format!("x{:.1} y{:.1} z{:.1}", self.x, self.y, self.z)
     }
 }
 
-impl<'de> Deserialize<'de> for Vec3 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
+impl FromStr for Vec3 {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self> {
         let parts: Vec<&str> = s.split_whitespace().collect();
 
-        if parts.len() == 6 {
+        if parts.len() == 3 {
             Ok(Self {
-                x: parts[1].parse().map_err(Error::custom)?,
-                y: parts[3].parse().map_err(Error::custom)?,
-                z: parts[5].parse().map_err(Error::custom)?,
+                x: parse_coordinate(parts[0], 'x')?,
+                y: parse_coordinate(parts[1], 'y')?,
+                z: parse_coordinate(parts[2], 'z')?,
             })
         } else {
-            Err(D::Error::custom("Expected format 'x0.0 y0.0 z0.0'"))
+            Err(anyhow!(
+                "Expected 3 parts in the string representation of Vec3"
+            ))
         }
     }
+}
+
+fn parse_coordinate(coord_str: &str, prefix: char) -> Result<f32> {
+    coord_str
+        .strip_prefix(prefix)
+        .ok_or_else(|| anyhow!("Expected '{}' prefix for coordinate", prefix))?
+        .parse()
+        .map_err(|e| anyhow!("Failed to parse {} coordinate: {}", prefix, e))
 }
