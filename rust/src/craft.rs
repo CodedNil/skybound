@@ -1,3 +1,4 @@
+use crate::gpt::query_openai;
 use godot::{
     engine::{RigidBody3D, RigidBody3DVirtual},
     prelude::*,
@@ -13,6 +14,13 @@ struct Craft {
 #[godot_api]
 impl RigidBody3DVirtual for Craft {
     fn init(base: Base<RigidBody3D>) -> Self {
+        // Query gpt
+        let result = query_openai("What is the meaning of life?".into());
+        match result {
+            Ok(reply) => godot_print!("{}", reply),
+            Err(e) => godot_error!("Error: {}", e),
+        }
+
         let mut instance = Self { base };
         instance.base.add_to_group("Craft".into());
         instance.base.set_contact_monitor(true);
