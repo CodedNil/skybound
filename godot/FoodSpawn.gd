@@ -23,3 +23,4 @@ func spawn_food_box():
 	food_instance.position = Vector3(
 		(randf() - 0.5) * 20, (randf() - 0.5) * 20, (randf() - 0.5) * 20
 	)
+	food_instance.add_to_group("Food", true);

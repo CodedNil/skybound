@@ -1,7 +1,7 @@
 [gd_scene load_steps=5 format=3 uid="uid://bleiy822sqj7t"]
 
 [ext_resource type="Script" path="res://FoodSpawn.gd" id="1_kcadk"]
-[ext_resource type="Script" path="res://FreeLookCamera.gd" id="2_efino"]
+[ext_resource type="Script" path="res://FreeLookCamera.gd" id="2_7c1k2"]
 [ext_resource type="PackedScene" uid="uid://bddfusmtowdlu" path="res://Craft.tscn" id="2_n78ii"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_6f2y3"]
@@ -11,7 +11,7 @@ script = ExtResource("1_kcadk")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.08755, 3.87293)
-script = ExtResource("2_efino")
+script = ExtResource("2_7c1k2")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 mesh = SubResource("PlaneMesh_6f2y3")
@@ -21,6 +21,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.810952, 0, 0.585113, -0.232489, 0.917671, 0.322224, -0.536942, -0.39734, 0.744187, 4.28669, 2.1574, 1.02638)
-
-[node name="Craft2" type="Craft" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.99252, 0)
