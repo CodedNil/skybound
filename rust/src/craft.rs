@@ -1,42 +1,10 @@
-use std::str::FromStr;
-
-use crate::gpt::query_openai;
-use crate::vec3::Vec3;
-use anyhow::{Context, Result};
+use crate::gpt::{query_openai, Func, FuncParam, MessageResponse};
+use anyhow::{anyhow, Context, Result};
 use godot::{
     engine::{RigidBody3D, RigidBody3DVirtual},
     prelude::*,
 };
 use smol::channel::{unbounded, Receiver};
-
-// The crafts perception, what is fed into the mind each thought cycle
-struct Perception {
-    position: Vec3,
-    velocity: Vec3,
-    food_pos: Vec<Vec3>,
-}
-
-impl Perception {
-    fn to_toml(&self) -> String {
-        let mut toml_string = String::new();
-
-        toml_string.push_str(&format!("position = {}\n", self.position.to_string()));
-
-        toml_string.push_str(&format!("velocity = {}\n", self.velocity.to_string()));
-
-        let food_positions: Vec<String> = self
-            .food_pos
-            .iter()
-            .map(|vec3| format!("\"{}\"", vec3.to_string()))
-            .collect();
-        toml_string.push_str(&format!(
-            "food_pos = [{}] # The positions of the food near\n",
-            food_positions.join(", ")
-        ));
-
-        toml_string
-    }
-}
 
 // The crafts mind, it's goals and it's outputs, things it alters each thought cycle
 #[derive(Default, Debug)]
@@ -46,34 +14,13 @@ struct Mind {
     goal_medium: String,
     goal_short: String,
 
-    target_velocity: Vec3,
-}
-
-impl Mind {
-    fn to_toml(&self) -> String {
-        let mut toml_string = String::new();
-        toml_string.push_str(&format!(
-            "goal_thoughts = \"{}\" # Thoughts behind the goals, descriptive\n",
-            self.goal_thoughts
-        ));
-        toml_string.push_str(&format!("goal_long = \"{}\" # concise\n", self.goal_long));
-        toml_string.push_str(&format!(
-            "goal_medium = \"{}\" # concise\n",
-            self.goal_medium
-        ));
-        toml_string.push_str(&format!("goal_short = \"{}\" # concise\n", self.goal_short));
-        toml_string.push_str(&format!(
-            "target_velocity = {} # Velocity for craft to aim for, normalised\n",
-            self.target_velocity.to_string()
-        ));
-        toml_string
-    }
+    target_velocity: Vector3,
 }
 
 #[derive(GodotClass)]
 #[class(base=RigidBody3D)]
 struct Craft {
-    gpt_result_rx: Option<Receiver<Result<String>>>,
+    gpt_result_rx: Option<Receiver<Result<MessageResponse>>>,
     mind: Mind,
 
     #[base]
@@ -167,42 +114,61 @@ impl Craft {
 
             // Get food positions
             let foods = self.get_all_food();
-            let mut food_pos = vec![];
+            let mut food_pos: Vec<String> = vec![];
             for food in &foods {
-                food_pos.push(food.get_global_position().into());
+                food_pos.push(vector3_to_string(food.get_global_position()));
             }
 
             // Add perception to system_message
-            let perception = Perception {
-                position: self.base.get_global_position().into(),
-                velocity: self.base.get_linear_velocity().into(),
-                food_pos,
-            };
-            let perception_toml = perception.to_toml();
-            system_message.push_str(&format!(
-                "Your perception as toml data is\n{perception_toml}\n\n"
-            ));
+            let perception_data = [
+                format!(
+                    "Position: {}",
+                    vector3_to_string(self.base.get_global_position())
+                ),
+                format!(
+                    "Velocity: {}",
+                    vector3_to_string(self.base.get_linear_velocity())
+                ),
+                format!("Food Positions: {}", food_pos.join(", ")),
+            ]
+            .join("\n");
+            system_message.push_str(&format!("Your perception data:\n{perception_data}\n\n",));
 
             // Add mind to system_message
-            let mind_toml = self.mind.to_toml();
-            system_message.push_str(&format!("Your mind state as toml data is\n{mind_toml}\n\n"));
+            let mind_data = [
+                format!("goal_thoughts: {}", self.mind.goal_thoughts),
+                format!("goal_long: {}", self.mind.goal_long),
+                format!("goal_medium: {}", self.mind.goal_medium),
+                format!("goal_short: {}", self.mind.goal_short),
+                format!(
+                    "target_velocity: {}",
+                    vector3_to_string(self.mind.target_velocity)
+                ),
+            ]
+            .join("\n");
+            system_message.push_str(&format!("Your mind state as toml data is\n{mind_data}"));
 
-            // Get mind keys
-            let mut mind_keys = vec![];
-            for line in mind_toml.lines() {
-                let parts: Vec<&str> = line.split(" = ").collect();
-                if parts.len() != 2 {
-                    continue;
-                }
-                let key = parts[0].trim();
-                mind_keys.push(key);
-            }
-            let mind_keys = mind_keys.join(", ");
+            // Create function
+            let function = Func::new(
+                "set_mind_state",
+                "Update the mind state based on perception and current mind state",
+                vec![
+                    FuncParam::new("goal_thoughts", "Thoughts surrounding the crafts situation and information that decides the goals"),
+                    FuncParam::new("goal_long", "Long term goal, what the craft is trying to achieve over the next few hours"),
+                    FuncParam::new("goal_medium", "Medium term goal, what the craft is trying to achieve over the next 30 minutes"),
+                    FuncParam::new("goal_short", "Short term goal, what the craft is trying to achieve in the next few minutes"),
+                    FuncParam::new("target_velocity", "The velocity the craft should be aiming for, normalised so that 1.0 is max speed, in Vec3 format 'x0.0 y0.0 z0.0'"),
+                ],
+            );
 
             // Send data to GPT
             let (tx, rx) = unbounded();
             smol::spawn(async move {
-                let result = query_openai(&format!("s:{system_message}|u:Based on perception and mind state, set your goals, give commands to your body to reach this goals, output should be purely key = values in the exact same format as mind input data\nMind keys are{mind_keys}|a:goal_thoughts = "));
+                let result = query_openai(
+                    &format!("s:{system_message}|u:Based on perception and mind state, run set_mind_state function"),
+                    256,
+                    &Some(vec![function]),
+                );
                 tx.send(result).await.unwrap();
             })
             .detach();
@@ -229,35 +195,63 @@ impl Craft {
         Ok(())
     }
 
-    fn brain_act(&mut self, reply: &str) -> Result<()> {
-        let reply = format!("goal_thoughts = {reply}");
+    fn brain_act(&mut self, reply: &MessageResponse) -> Result<()> {
+        let reply = format!("goal_thoughts = {reply:?}");
         godot_print!("GPT reply: {}", reply);
-        // Parse mind and update from it
-        for line in reply.lines() {
-            let parts: Vec<&str> = line.split(" = ").collect();
-            if parts.len() != 2 {
-                continue;
-            }
+        // // Parse mind and update from it
+        // for line in reply.lines() {
+        //     let parts: Vec<&str> = line.split(" = ").collect();
+        //     if parts.len() != 2 {
+        //         continue;
+        //     }
 
-            let key = parts[0].trim();
-            let mut value = parts[1].trim();
+        //     let key = parts[0].trim();
+        //     let mut value = parts[1].trim();
 
-            // Strip quotes from string values
-            if value.starts_with('"') && value.ends_with('"') {
-                value = &value[1..value.len() - 1];
-            }
+        //     // Strip quotes from string values
+        //     if value.starts_with('"') && value.ends_with('"') {
+        //         value = &value[1..value.len() - 1];
+        //     }
 
-            match key {
-                "goal_thoughts" => self.mind.goal_thoughts = value.to_string(),
-                "goal_long" => self.mind.goal_long = value.to_string(),
-                "goal_medium" => self.mind.goal_medium = value.to_string(),
-                "goal_short" => self.mind.goal_short = value.to_string(),
-                "target_velocity" => self.mind.target_velocity = Vec3::from_str(value)?,
-                _ => continue,
-            }
-        }
+        //     match key {
+        //         "goal_thoughts" => self.mind.goal_thoughts = value.to_string(),
+        //         "goal_long" => self.mind.goal_long = value.to_string(),
+        //         "goal_medium" => self.mind.goal_medium = value.to_string(),
+        //         "goal_short" => self.mind.goal_short = value.to_string(),
+        //         "target_velocity" => self.mind.target_velocity = Vec3::from_str(value)?,
+        //         _ => continue,
+        //     }
+        // }
 
         // godot_print!("Parsed mind: {:#?}", self.mind);
         Ok(())
     }
+}
+
+fn vector3_to_string(vector: Vector3) -> String {
+    format!("x{:.1} y{:.1} z{:.1}", vector.x, vector.y, vector.z)
+}
+
+fn vector3_from_string(string: &str) -> Result<Vector3> {
+    let parts: Vec<&str> = string.split_whitespace().collect();
+
+    if parts.len() == 3 {
+        Ok(Vector3::new(
+            parse_coordinate(parts[0], 'x')?,
+            parse_coordinate(parts[1], 'y')?,
+            parse_coordinate(parts[2], 'z')?,
+        ))
+    } else {
+        Err(anyhow::anyhow!(
+            "Expected 3 parts in the string representation of Vec3"
+        ))
+    }
+}
+
+fn parse_coordinate(coord_str: &str, prefix: char) -> Result<f32> {
+    coord_str
+        .strip_prefix(prefix)
+        .ok_or_else(|| anyhow!("Expected '{}' prefix for coordinate", prefix))?
+        .parse()
+        .map_err(|e| anyhow!("Failed to parse {} coordinate: {}", prefix, e))
 }

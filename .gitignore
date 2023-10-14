@@ -2,3 +2,4 @@
 .godot/
 rust/target/
 gpt_log.txt
+.env
