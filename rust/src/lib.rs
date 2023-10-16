@@ -1,6 +1,7 @@
 use godot::prelude::*;
 
 mod craft;
+mod entity;
 mod gpt;
 
 struct SkyboundExtension;
