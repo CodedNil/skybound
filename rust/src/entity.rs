@@ -1,5 +1,8 @@
 use godot::{
-    engine::{Mesh, MeshInstance3D, RigidBody3D, RigidBody3DVirtual, SphereMesh},
+    engine::{
+        mesh::PrimitiveType, ImmediateMesh, Mesh, MeshInstance3D, RigidBody3D, RigidBody3DVirtual,
+        SphereMesh,
+    },
     prelude::*,
 };
 use rayon::prelude::*;
@@ -64,6 +67,13 @@ impl RigidBody3DVirtual for Entity {
             particles: Vec::new(),
         };
         instance.base.set_gravity_scale(0.0);
+
+        // Add render mesh to it
+        let mut render_mesh = MeshInstance3D::new_alloc();
+        let mut render_geometry = ImmediateMesh::new();
+        render_mesh.set_mesh(render_geometry.upcast::<Mesh>());
+        instance.base.add_child(render_mesh.upcast::<Node>());
+
         instance
     }
 
@@ -132,7 +142,7 @@ impl RigidBody3DVirtual for Entity {
     }
 
     fn process(&mut self, delta: f64) {
-        self.process_physics(delta);
+        // self.process_physics(delta);
         self.render_particles();
     }
 }
@@ -196,6 +206,25 @@ impl Entity {
     }
 
     fn render_particles(&mut self) {
+        if let Some(render_mesh_node) = self.base.get_child(0) {
+            if let Some(render_mesh) = render_mesh_node.try_cast::<MeshInstance3D>() {
+                if let Some(render_geometry) = render_mesh.get_mesh() {
+                    let mut render_geometry = render_geometry.cast::<ImmediateMesh>();
+                    render_geometry.clear_surfaces();
+                    // render_geometry.surface_begin(PrimitiveType::PRIMITIVE_TRIANGLES);
+                    render_geometry.call(
+                        StringName::from("surface_begin"),
+                        &[Variant::from(PrimitiveType::PRIMITIVE_LINES)],
+                    );
+                    render_geometry.surface_add_vertex(Vector3::ZERO);
+                    render_geometry.surface_add_vertex(Vector3::UP);
+                    render_geometry.surface_add_vertex(Vector3::LEFT);
+                    render_geometry.surface_add_vertex(Vector3::UP);
+                    render_geometry.surface_end();
+                }
+            }
+        }
+
         for (i, particle) in self.particles.iter().enumerate() {
             if let Some(sphere) = self.base.get_child(i as i32) {
                 if let Some(mut sphere_mesh) = sphere.try_cast::<MeshInstance3D>() {
