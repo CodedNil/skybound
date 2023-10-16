@@ -1,10 +1,28 @@
-[gd_scene load_steps=3 format=3 uid="uid://bleiy822sqj7t"]
+[gd_scene load_steps=7 format=3 uid="uid://bleiy822sqj7t"]
 
 [ext_resource type="Script" path="res://FreeLookCamera.gd" id="2_7c1k2"]
 
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_62dwn"]
+sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+
+[sub_resource type="Sky" id="Sky_sih0r"]
+sky_material = SubResource("ProceduralSkyMaterial_62dwn")
+
+[sub_resource type="Environment" id="Environment_2h5jb"]
+background_mode = 2
+sky = SubResource("Sky_sih0r")
+tonemap_mode = 2
+glow_enabled = true
+
 [sub_resource type="PlaneMesh" id="PlaneMesh_6f2y3"]
 
+[sub_resource type="BoxMesh" id="BoxMesh_258uk"]
+
 [node name="Node3D" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_2h5jb")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.08755, 3.87293)
@@ -15,5 +33,10 @@ mesh = SubResource("PlaneMesh_6f2y3")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.810952, 0, 0.585113, -0.232489, 0.917671, 0.322224, -0.536942, -0.39734, 0.744187, 4.28669, 2.1574, 1.02638)
+shadow_enabled = true
 
 [node name="Entity" type="Entity" parent="."]
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.25, 0, 0, 0, 0.25, 0, 0, 0, 0.25, 2.5, 0, 0)
+mesh = SubResource("BoxMesh_258uk")

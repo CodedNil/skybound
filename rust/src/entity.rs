@@ -2,34 +2,28 @@ use godot::{
     engine::{Mesh, MeshInstance3D, RigidBody3D, RigidBody3DVirtual, SphereMesh},
     prelude::*,
 };
+use rayon::prelude::*;
 
 const PARTICLE_DISTANCE: f32 = 0.25;
 const PARTICLE_MASS: f32 = PARTICLE_DISTANCE * PARTICLE_DISTANCE * PARTICLE_DISTANCE * 0.5;
 
-const GRAVITY_MULTIPLIER: f32 = 5.0;
+const GRAVITY_MULTIPLIER: f32 = 20.0;
 const SPRING_CONSTANT: f32 = 30.0;
 const REPULSION_STRENGTH: f32 = 40.0;
 const DAMPING: f32 = 0.95;
 
 #[derive(PartialEq, Clone)]
 struct Connection {
-    target: Particle,
+    target_index: usize,
     direction: Vector3,
-    distance: f32,
     active: bool,
 }
 
 impl Connection {
-    fn new(origin_particle: &Particle, target_particle: &Particle) -> Self {
-        let direction = (origin_particle.position - target_particle.position).normalized();
-        let distance = origin_particle
-            .position
-            .distance_to(target_particle.position);
-
+    fn new(origin_particle: &Particle, target_particle: &Particle, target_index: usize) -> Self {
         Self {
-            target: target_particle.clone(),
-            direction,
-            distance,
+            target_index,
+            direction: origin_particle.position - target_particle.position,
             active: true,
         }
     }
@@ -38,7 +32,7 @@ impl Connection {
 #[derive(PartialEq, Clone)]
 struct Particle {
     position: Vector3,
-    velocity: Vector3,
+    old_position: Vector3,
     connections: Vec<Connection>,
     anchored: bool,
 }
@@ -47,7 +41,7 @@ impl Particle {
     const fn new(pos: Vector3) -> Self {
         Self {
             position: pos,
-            velocity: Vector3::new(0.0, 0.0, 0.0),
+            old_position: pos,
             connections: Vec::new(),
             anchored: false,
         }
@@ -65,14 +59,16 @@ struct Entity {
 #[godot_api]
 impl RigidBody3DVirtual for Entity {
     fn init(base: Base<RigidBody3D>) -> Self {
-        Self {
+        let mut instance = Self {
             base,
             particles: Vec::new(),
-        }
+        };
+        instance.base.set_gravity_scale(0.0);
+        instance
     }
 
     fn ready(&mut self) {
-        let grid_size: i32 = 4;
+        let grid_size: i32 = 5;
 
         // Create grid of particles
         for x in -grid_size..=grid_size {
@@ -110,19 +106,24 @@ impl RigidBody3DVirtual for Entity {
         }
 
         // Connect adjacent particles based on distance threshold
-        let mut connections = Vec::new();
-        let len = self.particles.len();
-        for i in 0..len {
-            let p1 = &self.particles[i];
-            for j in i + 1..len {
-                let p2 = &self.particles[j];
-                if p1.position.distance_to(p2.position) <= PARTICLE_DISTANCE * 2.0 {
-                    // Store the connections temporarily
-                    let connection = Connection::new(p1, p2);
-                    connections.push((i, connection));
+        let connections: Vec<_> = self
+            .particles
+            .par_iter()
+            .enumerate()
+            .flat_map(|(idx1, particle1)| {
+                let mut local_connections = Vec::new();
+                for (idx2, particle2) in self.particles.iter().enumerate() {
+                    if idx1 != idx2
+                        && particle1.position.distance_to(particle2.position)
+                            <= PARTICLE_DISTANCE * 1.5
+                    {
+                        // Connect the particles
+                        local_connections.push((idx1, Connection::new(particle1, particle2, idx2)));
+                    }
                 }
-            }
-        }
+                local_connections
+            })
+            .collect();
 
         // Add connections to particles
         for (index, connection) in connections {
@@ -141,58 +142,57 @@ impl Entity {
         let delta = delta as f32;
         let gravity = Vector3::new(0.0, -GRAVITY_MULTIPLIER, 0.0) * PARTICLE_MASS;
 
-        let mut new_velocities = Vec::with_capacity(self.particles.len());
-        let mut new_positions = Vec::with_capacity(self.particles.len());
+        let new_positions: Vec<(usize, Vector3)> = self
+            .particles
+            .par_iter()
+            .enumerate()
+            .map(|(i, particle)| {
+                if particle.anchored {
+                    (i, particle.position)
+                } else {
+                    // Calculate velocity based on the difference of old and current positions
+                    let velocity = (particle.position - particle.old_position) * DAMPING;
 
-        let len = self.particles.len();
-        for i in 0..len {
-            let particle = &self.particles[i];
-            if particle.anchored {
-                continue;
-            }
+                    // Initialize the net force to gravity
+                    let mut net_force = gravity;
 
-            // Initialize the net force to gravity
-            let mut net_force = gravity;
+                    // Connection Forces
+                    for connection in &particle.connections {
+                        if connection.active {
+                            let target = &self.particles[connection.target_index];
+                            let target_position = target.position + connection.direction;
+                            let direction = target_position - particle.position;
+                            let spring_force = direction * SPRING_CONSTANT;
+                            net_force += spring_force;
+                        }
+                    }
 
-            // // Connection Forces
-            // for connection in &particle.connections {
-            //     if connection.active {
-            //         let target_position =
-            //             connection.target.position + connection.direction * connection.distance;
-            //         let direction = target_position - particle.position;
-            //         let spring_force = direction * SPRING_CONSTANT;
-            //         net_force += spring_force;
-            //     }
-            // }
+                    // Repulsion Forces
+                    for j in i + 1..self.particles.len() {
+                        let other = &self.particles[j];
+                        if other.position != particle.position {
+                            let difference = particle.position - other.position;
+                            let distance = difference.length();
+                            if distance < PARTICLE_DISTANCE {
+                                let repulsion_force = difference.normalized()
+                                    * (PARTICLE_DISTANCE - distance)
+                                    * REPULSION_STRENGTH;
+                                net_force += repulsion_force;
+                            }
+                        }
+                    }
 
-            // // Repulsion Forces
-            // for j in i + 1..len {
-            //     let other = &self.particles[j];
-            //     if other.position != particle.position {
-            //         let difference = particle.position - other.position;
-            //         let distance = difference.length();
-            //         if distance < PARTICLE_DISTANCE {
-            //             let repulsion_force = difference.normalized()
-            //                 * (PARTICLE_DISTANCE - distance)
-            //                 * REPULSION_STRENGTH;
-            //             net_force += repulsion_force;
-            //         }
-            //     }
-            // }
+                    // Verlet integration step
+                    (i, particle.position + velocity + net_force * delta * delta)
+                }
+            })
+            .collect();
 
-            // Calculate new velocity and position
-            let new_velocity = particle.velocity + net_force * delta;
-            let new_position = particle.position + new_velocity * delta * DAMPING;
-
-            new_velocities.push(new_velocity);
-            new_positions.push(new_position);
+        // Apply the new positions and store old positions
+        for (i, new_position) in new_positions {
+            self.particles[i].old_position = self.particles[i].position;
+            self.particles[i].position = new_position;
         }
-
-        // Apply the new velocities and positions
-        // for (i, particle) in self.particles.iter_mut().enumerate() {
-        //     particle.velocity = new_velocities[i];
-        //     particle.position = new_positions[i];
-        // }
     }
 
     fn render_particles(&mut self) {
