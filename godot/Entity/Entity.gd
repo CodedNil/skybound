@@ -121,11 +121,6 @@ var SPRING_CONSTANT = 30.0
 var REPULSION_STRENGTH = 40.0
 var DAMPING = 0.95
 
-# Spatial partitioning
-const GRID_SIZE = PARTICLE_DISTANCE
-var grid = {}
-
-
 func update_physics(delta):
 	for p in particles:
 		if not p.anchored:
