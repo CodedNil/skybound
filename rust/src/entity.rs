@@ -114,7 +114,7 @@ impl RigidBody3DVirtual for Entity {
                 for (idx2, particle2) in self.particles.iter().enumerate() {
                     if idx1 != idx2
                         && particle1.position.distance_to(particle2.position)
-                            <= PARTICLE_DISTANCE * 1.0
+                            <= PARTICLE_DISTANCE * 1.8
                     {
                         // Connect the particles
                         let dist = particle1.position.distance_to(particle2.position);
@@ -159,7 +159,7 @@ impl Entity {
         let delta = delta as f32;
 
         let particle_mass = PARTICLE_DISTANCE * PARTICLE_DISTANCE;
-        let gravity = Vector3::new(0.0, -4.0, 0.0) * particle_mass;
+        let gravity = Vector3::new(0.0, -15.0, 0.0) * particle_mass;
 
         let new_positions: Vec<(usize, Vector3)> = self
             .particles
@@ -190,7 +190,7 @@ impl Entity {
                     }
 
                     // Repulsion forces
-                    let target_distance = PARTICLE_DISTANCE * 1.1;
+                    let target_distance = PARTICLE_DISTANCE;
                     let repulsion_strength: f32 = 10.0;
                     for (j, other_particle) in self.particles.iter().enumerate() {
                         if i != j {
