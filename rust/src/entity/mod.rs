@@ -14,14 +14,16 @@ const PARTICLE_DISTANCE: f32 = 0.25;
 #[derive(PartialEq, Clone)]
 struct Connection {
     target_index: usize,
+    direction: Vector3,
     distance: f32,
     active: bool,
 }
 
 impl Connection {
-    const fn new(target_index: usize, distance: f32) -> Self {
+    const fn new(target_index: usize, direction: Vector3, distance: f32) -> Self {
         Self {
             target_index,
+            direction,
             distance,
             active: true,
         }
@@ -91,11 +93,11 @@ impl RigidBody3DVirtual for Entity {
                             + Vector3::new(x as f32, y as f32, z as f32) * PARTICLE_DISTANCE,
                     );
                     // Anchor a the top corner particles
-                    // if (x == -grid_size || x == grid_size)
-                    //     && y == grid_size
-                    //     && (z == -grid_size || z == grid_size)
-                    // {
-                    if y == grid_size {
+                    if (x == -grid_size || x == grid_size)
+                        && y == grid_size
+                        && (z == -grid_size || z == grid_size)
+                    {
+                        // if y == grid_size {
                         particle.anchored = true;
                     }
                     // Add particle to entity
@@ -117,8 +119,9 @@ impl RigidBody3DVirtual for Entity {
                             <= PARTICLE_DISTANCE * 1.8
                     {
                         // Connect the particles
+                        let direction = (particle2.position - particle1.position).normalized();
                         let dist = particle1.position.distance_to(particle2.position);
-                        local_connections.push((idx1, Connection::new(idx2, dist)));
+                        local_connections.push((idx1, Connection::new(idx2, direction, dist)));
                     }
                 }
                 local_connections
@@ -208,11 +211,15 @@ impl Entity {
                         }
                     }
 
+                    // Clamp max force
+                    let max_force = 100.0;
+                    if net_force.length() > max_force {
+                        net_force = net_force.normalized() * max_force;
+                    }
+
                     // Verlet integration step
                     let damping = 0.98;
                     let velocity = (particle.position - particle.old_position) * damping;
-
-                    // Classic Verlet integration step using the damped velocity
                     let new_pos = particle.position + velocity + net_force * delta * delta;
 
                     (i, new_pos)
@@ -309,7 +316,7 @@ impl Entity {
                         Color::from_rgb(1.0, 0.5, 0.0)
                     } else {
                         // Lerp between green and red based on strain
-                        let lerp = (strain / 0.1).clamp(0.0, 1.0);
+                        let lerp = (strain / 0.4).clamp(0.0, 1.0);
                         Color::from_rgb(lerp, 1.0 - lerp, 0.0)
                     };
                     render_geometry.surface_set_color(color);
