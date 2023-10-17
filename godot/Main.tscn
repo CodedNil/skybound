@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://bleiy822sqj7t"]
+[gd_scene load_steps=6 format=3 uid="uid://bleiy822sqj7t"]
 
 [ext_resource type="Script" path="res://FreeLookCamera.gd" id="2_7c1k2"]
 
@@ -15,6 +15,8 @@ sky = SubResource("Sky_sih0r")
 tonemap_mode = 2
 glow_enabled = true
 
+[sub_resource type="PlaneMesh" id="PlaneMesh_oa6ha"]
+
 [node name="Node3D" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -29,3 +31,7 @@ transform = Transform3D(0.810952, 0, 0.585113, -0.232489, 0.917671, 0.322224, -0
 shadow_enabled = true
 
 [node name="Entity" type="Entity" parent="."]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+mesh = SubResource("PlaneMesh_oa6ha")

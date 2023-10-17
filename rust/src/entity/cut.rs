@@ -1,11 +1,10 @@
+use super::Entity;
 use anyhow::{Context, Result};
 use godot::{
     engine::{mesh::PrimitiveType, ImmediateMesh, Material},
     prelude::*,
 };
 use std::f32::consts::PI;
-
-use super::Entity;
 
 impl Entity {
     fn get_camera_transform(&self) -> Result<Transform3D> {
@@ -41,15 +40,18 @@ impl Entity {
             }
         };
 
+        // Lock the particles mutex
+        let mut particles_guard = self.particles.lock().unwrap();
+
         // Find cuts
         let mut cut_connections = Vec::new();
-        for (i1, particle) in self.particles.iter().enumerate() {
+        for (i1, particle) in particles_guard.iter().enumerate() {
             for (i2, connection) in particle.connections.iter().enumerate() {
                 if connection.active {
                     // Check if the connection intersects with the plane
                     let intersects = line_intersects_finite_plane(
                         particle.position,
-                        self.particles[connection.target_index].position,
+                        particles_guard[connection.target_index].position,
                         cut_plane,
                     );
                     if intersects {
@@ -61,7 +63,7 @@ impl Entity {
 
         // Make cuts
         for (i1, i2) in cut_connections {
-            self.particles[i1].connections[i2].active = false;
+            particles_guard[i1].connections[i2].active = false;
         }
         Ok(())
     }

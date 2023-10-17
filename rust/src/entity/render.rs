@@ -1,3 +1,5 @@
+use super::cut::{line_intersects_finite_plane, render_cut_plane};
+use super::Entity;
 use anyhow::{Context, Result};
 use godot::{
     engine::{mesh::PrimitiveType, ImmediateMesh, Material, MeshInstance3D, ResourceLoader},
@@ -5,12 +7,17 @@ use godot::{
 };
 use std::str::FromStr;
 
-use super::cut::{line_intersects_finite_plane, render_cut_plane};
-use super::Entity;
-
 impl Entity {
     #[allow(clippy::too_many_lines)]
-    pub fn render_particles(&mut self) {
+    pub fn render_particles(&mut self, alpha: f32) {
+        // Lock the mutex and clone the particles for read-only access
+        let mut particles = self.particles.lock().unwrap().clone();
+        for particle in &mut particles {
+            let interpolated_position =
+                particle.old_position + (particle.position - particle.old_position) * alpha;
+            particle.position = interpolated_position;
+        }
+
         let mut render_geometry = match self.get_immediate_mesh() {
             Ok(mesh) => mesh,
             Err(e) => {
@@ -46,12 +53,8 @@ impl Entity {
             (Vector3::BACK, Vector3::DOWN, Vector3::LEFT),   // Bottom Back Left Face
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
-        for particle in &self.particles {
-            if particle.anchored {
-                render_geometry.surface_set_color(Color::from_rgb(0.5, 0.2, 1.0));
-            } else {
-                render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
-            }
+        for particle in &particles {
+            render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
             for (pos1, pos2, pos3) in faces.clone() {
                 render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
                 render_geometry.surface_add_vertex(particle.position + pos1 * diamond_size);
@@ -79,11 +82,11 @@ impl Entity {
                 Variant::from(material),
             ],
         );
-        for particle in &self.particles {
+        for particle in &particles {
             for connection in &particle.connections {
                 if connection.active {
                     let a = particle.position;
-                    let b = self.particles[connection.target_index].position;
+                    let b = particles[connection.target_index].position;
                     let dist = a.distance_to(b);
                     let strain = f32::abs(connection.distance - dist);
 
