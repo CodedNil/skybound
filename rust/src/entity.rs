@@ -19,30 +19,9 @@ struct Connection {
 }
 
 impl Connection {
-    fn new(origin_particle: &Particle, target_particle: &Particle, target_index: usize) -> Self {
+    const fn new(target_index: usize, distance: f32) -> Self {
         Self {
             target_index,
-            distance: origin_particle
-                .position
-                .distance_to(target_particle.position),
-            active: true,
-        }
-    }
-}
-
-#[derive(PartialEq, Clone)]
-struct LinkedLine {
-    target_index1: usize,
-    target_index2: usize,
-    distance: f32,
-    active: bool,
-}
-
-impl LinkedLine {
-    const fn new(target_index1: usize, target_index2: usize, distance: f32) -> Self {
-        Self {
-            target_index1,
-            target_index2,
             distance,
             active: true,
         }
@@ -54,7 +33,6 @@ struct Particle {
     position: Vector3,
     old_position: Vector3,
     connections: Vec<Connection>,
-    links: Vec<LinkedLine>,
     anchored: bool,
 }
 
@@ -64,33 +42,8 @@ impl Particle {
             position: pos,
             old_position: pos,
             connections: Vec::new(),
-            links: Vec::new(),
             anchored: false,
         }
-    }
-
-    fn create_links(&mut self, particles: &[Self]) {
-        // Create links between two opposite connections
-        let mut links: Vec<LinkedLine> = Vec::new();
-        for (i1, connection1) in self.connections.iter().enumerate() {
-            for (i2, connection2) in self.connections.iter().enumerate() {
-                if i1 != i2 {
-                    // Check if the connections are on opposite sides of the particle
-                    let pos1 = particles[connection1.target_index].position;
-                    let pos2 = particles[connection2.target_index].position;
-                    let distance_opposites =
-                        (pos2 - self.position).distance_to(self.position - pos1);
-                    if distance_opposites < 0.05 {
-                        links.push(LinkedLine::new(
-                            connection1.target_index,
-                            connection2.target_index,
-                            connection1.distance,
-                        ));
-                    }
-                }
-            }
-        }
-        self.links = links;
     }
 }
 
@@ -164,7 +117,8 @@ impl RigidBody3DVirtual for Entity {
                             <= PARTICLE_DISTANCE * 1.0
                     {
                         // Connect the particles
-                        local_connections.push((idx1, Connection::new(particle1, particle2, idx2)));
+                        let dist = particle1.position.distance_to(particle2.position);
+                        local_connections.push((idx1, Connection::new(idx2, dist)));
                     }
                 }
                 local_connections
@@ -174,12 +128,6 @@ impl RigidBody3DVirtual for Entity {
         // Add connections to particles
         for (index, connection) in connections {
             self.particles[index].connections.push(connection);
-        }
-
-        // Create links
-        let particles_clone = self.particles.clone();
-        for particle in &mut self.particles {
-            particle.create_links(&particles_clone);
         }
     }
 
@@ -240,28 +188,6 @@ impl Entity {
                             net_force += force_vector;
                         }
                     }
-
-                    // // Link forces
-                    // for link in &particle.links {
-                    //     if link.active {
-                    //         // Get the target particles from the link's target indices
-                    //         let target1 = &self.particles[link.target_index1];
-                    //         let target2 = &self.particles[link.target_index2];
-                    //         let center_point = (target1.position + target2.position) * 0.5;
-
-                    //         // Force trying to keep the particle centered between the link's targets
-                    //         let ideal_distance = (center_point - particle.position).length();
-
-                    //         // Have some tolerance on the bend, so the link doesn't have to be perfectly straight
-                    //         let tolerance = 0.3;
-                    //         if ideal_distance < tolerance {
-                    //             continue;
-                    //         }
-                    //         let ideal_direction = (center_point - particle.position).normalized();
-                    //         let strength = f32::max(ideal_distance - tolerance, 0.0);
-                    //         net_force += ideal_direction * strength * 0.1;
-                    //     }
-                    // }
 
                     // Repulsion forces
                     let target_distance = PARTICLE_DISTANCE * 1.1;
@@ -391,21 +317,6 @@ impl Entity {
                     render_geometry.surface_add_vertex(b);
                 }
             }
-            // for link in &particle.links {
-            //     if link.active {
-            //         let a = self.particles[link.target_index1].position;
-            //         let b = self.particles[link.target_index2].position;
-
-            //         let color = if line_intersects_finite_plane(a, b, cut_plane) {
-            //             Color::from_rgb(0.8, 0.4, 0.0)
-            //         } else {
-            //             Color::from_rgb(0.0, 0.8, 0.0)
-            //         };
-            //         render_geometry.surface_set_color(color);
-            //         render_geometry.surface_add_vertex(a);
-            //         render_geometry.surface_add_vertex(b);
-            //     }
-            // }
         }
         render_geometry.surface_end();
     }
@@ -457,7 +368,6 @@ impl Entity {
 
         // Find cuts
         let mut cut_connections = Vec::new();
-        let mut cut_links = Vec::new();
         for (i1, particle) in self.particles.iter().enumerate() {
             for (i2, connection) in particle.connections.iter().enumerate() {
                 if connection.active {
@@ -472,27 +382,11 @@ impl Entity {
                     }
                 }
             }
-            for (i2, link) in particle.links.iter().enumerate() {
-                if link.active {
-                    // Check if the link intersects with the plane
-                    let intersects = line_intersects_finite_plane(
-                        self.particles[link.target_index1].position,
-                        self.particles[link.target_index2].position,
-                        cut_plane,
-                    );
-                    if intersects {
-                        cut_links.push((i1, i2));
-                    }
-                }
-            }
         }
 
         // Make cuts
         for (i1, i2) in cut_connections {
             self.particles[i1].connections[i2].active = false;
-        }
-        for (i1, i2) in cut_links {
-            self.particles[i1].links[i2].active = false;
         }
         Ok(())
     }
