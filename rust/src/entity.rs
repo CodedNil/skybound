@@ -1,9 +1,7 @@
 use anyhow::{Context, Result};
 use godot::{
     engine::{
-        global::{Key, MouseButton},
-        mesh::PrimitiveType,
-        ImmediateMesh, InputEvent, InputEventKey, InputEventMouseButton, Material, Mesh,
+        global::Key, mesh::PrimitiveType, ImmediateMesh, InputEvent, InputEventKey, Material, Mesh,
         MeshInstance3D, ResourceLoader, RigidBody3D, RigidBody3DVirtual,
     },
     prelude::*,
@@ -12,17 +10,11 @@ use rayon::prelude::*;
 use std::{f32::consts::PI, str::FromStr};
 
 const PARTICLE_DISTANCE: f32 = 0.25;
-const PARTICLE_MASS: f32 = PARTICLE_DISTANCE * PARTICLE_DISTANCE * PARTICLE_DISTANCE * 0.5;
-
-const GRAVITY_MULTIPLIER: f32 = 20.0;
-const SPRING_CONSTANT: f32 = 30.0;
-const REPULSION_STRENGTH: f32 = 40.0;
-const DAMPING: f32 = 0.95;
 
 #[derive(PartialEq, Clone)]
 struct Connection {
     target_index: usize,
-    direction: Vector3,
+    distance: f32,
     active: bool,
 }
 
@@ -30,7 +22,28 @@ impl Connection {
     fn new(origin_particle: &Particle, target_particle: &Particle, target_index: usize) -> Self {
         Self {
             target_index,
-            direction: origin_particle.position - target_particle.position,
+            distance: origin_particle
+                .position
+                .distance_to(target_particle.position),
+            active: true,
+        }
+    }
+}
+
+#[derive(PartialEq, Clone)]
+struct LinkedLine {
+    target_index1: usize,
+    target_index2: usize,
+    distance: f32,
+    active: bool,
+}
+
+impl LinkedLine {
+    const fn new(target_index1: usize, target_index2: usize, distance: f32) -> Self {
+        Self {
+            target_index1,
+            target_index2,
+            distance,
             active: true,
         }
     }
@@ -41,6 +54,7 @@ struct Particle {
     position: Vector3,
     old_position: Vector3,
     connections: Vec<Connection>,
+    links: Vec<LinkedLine>,
     anchored: bool,
 }
 
@@ -50,8 +64,33 @@ impl Particle {
             position: pos,
             old_position: pos,
             connections: Vec::new(),
+            links: Vec::new(),
             anchored: false,
         }
+    }
+
+    fn create_links(&mut self, particles: &[Self]) {
+        // Create links between two opposite connections
+        let mut links: Vec<LinkedLine> = Vec::new();
+        for (i1, connection1) in self.connections.iter().enumerate() {
+            for (i2, connection2) in self.connections.iter().enumerate() {
+                if i1 != i2 {
+                    // Check if the connections are on opposite sides of the particle
+                    let pos1 = particles[connection1.target_index].position;
+                    let pos2 = particles[connection2.target_index].position;
+                    let distance_opposites =
+                        (pos2 - self.position).distance_to(self.position - pos1);
+                    if distance_opposites < 0.05 {
+                        links.push(LinkedLine::new(
+                            connection1.target_index,
+                            connection2.target_index,
+                            connection1.distance,
+                        ));
+                    }
+                }
+            }
+        }
+        self.links = links;
     }
 }
 
@@ -93,17 +132,17 @@ impl RigidBody3DVirtual for Entity {
             for y in -grid_size..=grid_size {
                 for z in -grid_size..=grid_size {
                     // Create new particle
+                    #[allow(clippy::cast_precision_loss)]
                     let mut particle = Particle::new(
                         self.base.get_global_position()
                             + Vector3::new(x as f32, y as f32, z as f32) * PARTICLE_DISTANCE,
                     );
-                    // Anchor a strip of particles in the center
-                    let error_margin = 0.05;
-                    if (particle.position.x - self.base.get_global_position().x).abs()
-                        < error_margin
-                        && (particle.position.y - self.base.get_global_position().y).abs()
-                            < error_margin
-                    {
+                    // Anchor a the top corner particles
+                    // if (x == -grid_size || x == grid_size)
+                    //     && y == grid_size
+                    //     && (z == -grid_size || z == grid_size)
+                    // {
+                    if y == grid_size {
                         particle.anchored = true;
                     }
                     // Add particle to entity
@@ -122,7 +161,7 @@ impl RigidBody3DVirtual for Entity {
                 for (idx2, particle2) in self.particles.iter().enumerate() {
                     if idx1 != idx2
                         && particle1.position.distance_to(particle2.position)
-                            <= PARTICLE_DISTANCE * 1.5
+                            <= PARTICLE_DISTANCE * 1.0
                     {
                         // Connect the particles
                         local_connections.push((idx1, Connection::new(particle1, particle2, idx2)));
@@ -135,6 +174,12 @@ impl RigidBody3DVirtual for Entity {
         // Add connections to particles
         for (index, connection) in connections {
             self.particles[index].connections.push(connection);
+        }
+
+        // Create links
+        let particles_clone = self.particles.clone();
+        for particle in &mut self.particles {
+            particle.create_links(&particles_clone);
         }
     }
 
@@ -162,8 +207,11 @@ impl RigidBody3DVirtual for Entity {
 
 impl Entity {
     fn process_physics(&mut self, delta: f64) {
+        #[allow(clippy::cast_possible_truncation)]
         let delta = delta as f32;
-        let gravity = Vector3::new(0.0, -GRAVITY_MULTIPLIER, 0.0) * PARTICLE_MASS;
+
+        let particle_mass = PARTICLE_DISTANCE * PARTICLE_DISTANCE;
+        let gravity = Vector3::new(0.0, -4.0, 0.0) * particle_mass;
 
         let new_positions: Vec<(usize, Vector3)> = self
             .particles
@@ -173,40 +221,75 @@ impl Entity {
                 if particle.anchored {
                     (i, particle.position)
                 } else {
-                    // Calculate velocity based on the difference of old and current positions
-                    let velocity = (particle.position - particle.old_position) * DAMPING;
-
                     // Initialize the net force to gravity
                     let mut net_force = gravity;
 
-                    // Connection Forces
+                    // Connection forces
+                    let spring_constant = 10.0;
                     for connection in &particle.connections {
                         if connection.active {
                             let target = &self.particles[connection.target_index];
-                            let target_position = target.position + connection.direction;
-                            let direction = target_position - particle.position;
-                            let spring_force = direction * SPRING_CONSTANT;
-                            net_force += spring_force;
+
+                            let direction = target.position - particle.position;
+                            let current_distance = direction.length();
+
+                            let delta_distance = current_distance - connection.distance;
+                            let spring_force_magnitude = spring_constant * delta_distance;
+                            let force_vector = direction.normalized() * spring_force_magnitude;
+
+                            net_force += force_vector;
                         }
                     }
 
-                    // Repulsion Forces
-                    for j in i + 1..self.particles.len() {
-                        let other = &self.particles[j];
-                        if other.position != particle.position {
-                            let difference = particle.position - other.position;
-                            let distance = difference.length();
-                            if distance < PARTICLE_DISTANCE {
-                                let repulsion_force = difference.normalized()
-                                    * (PARTICLE_DISTANCE - distance)
-                                    * REPULSION_STRENGTH;
-                                net_force += repulsion_force;
+                    // // Link forces
+                    // for link in &particle.links {
+                    //     if link.active {
+                    //         // Get the target particles from the link's target indices
+                    //         let target1 = &self.particles[link.target_index1];
+                    //         let target2 = &self.particles[link.target_index2];
+                    //         let center_point = (target1.position + target2.position) * 0.5;
+
+                    //         // Force trying to keep the particle centered between the link's targets
+                    //         let ideal_distance = (center_point - particle.position).length();
+
+                    //         // Have some tolerance on the bend, so the link doesn't have to be perfectly straight
+                    //         let tolerance = 0.3;
+                    //         if ideal_distance < tolerance {
+                    //             continue;
+                    //         }
+                    //         let ideal_direction = (center_point - particle.position).normalized();
+                    //         let strength = f32::max(ideal_distance - tolerance, 0.0);
+                    //         net_force += ideal_direction * strength * 0.1;
+                    //     }
+                    // }
+
+                    // Repulsion forces
+                    let target_distance = PARTICLE_DISTANCE * 1.1;
+                    let repulsion_strength: f32 = 10.0;
+                    for (j, other_particle) in self.particles.iter().enumerate() {
+                        if i != j {
+                            let direction = particle.position - other_particle.position;
+                            let distance = direction.length();
+
+                            if distance < target_distance {
+                                let delta_distance = target_distance - distance;
+                                let repulsion_force_magnitude = repulsion_strength * delta_distance
+                                    / distance.mul_add(distance, 1.0); // The +1.0 helps in preventing division by very small values
+                                let repulsion_vector =
+                                    direction.normalized() * repulsion_force_magnitude;
+                                net_force += repulsion_vector;
                             }
                         }
                     }
 
                     // Verlet integration step
-                    (i, particle.position + velocity + net_force * delta * delta)
+                    let damping = 0.98;
+                    let velocity = (particle.position - particle.old_position) * damping;
+
+                    // Classic Verlet integration step using the damped velocity
+                    let new_pos = particle.position + velocity + net_force * delta * delta;
+
+                    (i, new_pos)
                 }
             })
             .collect();
@@ -218,6 +301,7 @@ impl Entity {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render_particles(&mut self) {
         let mut render_geometry = match self.get_immediate_mesh() {
             Ok(mesh) => mesh,
@@ -255,7 +339,11 @@ impl Entity {
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
         for particle in &self.particles {
-            render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
+            if particle.anchored {
+                render_geometry.surface_set_color(Color::from_rgb(0.5, 0.2, 1.0));
+            } else {
+                render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
+            }
             for (pos1, pos2, pos3) in faces.clone() {
                 render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
                 render_geometry.surface_add_vertex(particle.position + pos1 * diamond_size);
@@ -266,20 +354,14 @@ impl Entity {
         render_geometry.surface_end();
 
         // Render cut plane on camera
-        let (plane_center, plane_euler_rotation, plane_size) = match self.get_cut_plane() {
+        let cut_plane = match self.get_cut_plane() {
             Ok(plane) => plane,
             Err(e) => {
                 godot_print!("Failed to get cut plane {e}");
                 return;
             }
         };
-        render_cut_plane(
-            &mut render_geometry,
-            material.clone(),
-            plane_center,
-            plane_euler_rotation,
-            plane_size,
-        );
+        render_cut_plane(&mut render_geometry, material.clone(), cut_plane);
 
         // Render connection lines
         render_geometry.call(
@@ -292,24 +374,38 @@ impl Entity {
         for particle in &self.particles {
             for connection in &particle.connections {
                 if connection.active {
-                    // Check if the connection intersects with the plane
-                    let color = if line_intersects_finite_plane(
-                        particle.position,
-                        self.particles[connection.target_index].position,
-                        plane_center,
-                        plane_euler_rotation,
-                        plane_size,
-                    ) {
+                    let a = particle.position;
+                    let b = self.particles[connection.target_index].position;
+                    let dist = a.distance_to(b);
+                    let strain = f32::abs(connection.distance - dist);
+
+                    let color = if line_intersects_finite_plane(a, b, cut_plane) {
                         Color::from_rgb(1.0, 0.5, 0.0)
                     } else {
-                        Color::from_rgb(0.0, 1.0, 0.0)
+                        // Lerp between green and red based on strain
+                        let lerp = (strain / 0.1).clamp(0.0, 1.0);
+                        Color::from_rgb(lerp, 1.0 - lerp, 0.0)
                     };
                     render_geometry.surface_set_color(color);
-                    render_geometry.surface_add_vertex(particle.position);
-                    render_geometry
-                        .surface_add_vertex(self.particles[connection.target_index].position);
+                    render_geometry.surface_add_vertex(a);
+                    render_geometry.surface_add_vertex(b);
                 }
             }
+            // for link in &particle.links {
+            //     if link.active {
+            //         let a = self.particles[link.target_index1].position;
+            //         let b = self.particles[link.target_index2].position;
+
+            //         let color = if line_intersects_finite_plane(a, b, cut_plane) {
+            //             Color::from_rgb(0.8, 0.4, 0.0)
+            //         } else {
+            //             Color::from_rgb(0.0, 0.8, 0.0)
+            //         };
+            //         render_geometry.surface_set_color(color);
+            //         render_geometry.surface_add_vertex(a);
+            //         render_geometry.surface_add_vertex(b);
+            //     }
+            // }
         }
         render_geometry.surface_end();
     }
@@ -351,7 +447,7 @@ impl Entity {
 
     fn cut_on_plane(&mut self) -> Result<()> {
         // Get cut plane
-        let (plane_center, plane_euler_rotation, plane_size) = match self.get_cut_plane() {
+        let cut_plane = match self.get_cut_plane() {
             Ok(plane) => plane,
             Err(e) => {
                 godot_print!("Failed to get cut plane {e}");
@@ -360,7 +456,8 @@ impl Entity {
         };
 
         // Find cuts
-        let mut cuts = Vec::new();
+        let mut cut_connections = Vec::new();
+        let mut cut_links = Vec::new();
         for (i1, particle) in self.particles.iter().enumerate() {
             for (i2, connection) in particle.connections.iter().enumerate() {
                 if connection.active {
@@ -368,20 +465,34 @@ impl Entity {
                     let intersects = line_intersects_finite_plane(
                         particle.position,
                         self.particles[connection.target_index].position,
-                        plane_center,
-                        plane_euler_rotation,
-                        plane_size,
+                        cut_plane,
                     );
                     if intersects {
-                        cuts.push((i1, i2));
+                        cut_connections.push((i1, i2));
+                    }
+                }
+            }
+            for (i2, link) in particle.links.iter().enumerate() {
+                if link.active {
+                    // Check if the link intersects with the plane
+                    let intersects = line_intersects_finite_plane(
+                        self.particles[link.target_index1].position,
+                        self.particles[link.target_index2].position,
+                        cut_plane,
+                    );
+                    if intersects {
+                        cut_links.push((i1, i2));
                     }
                 }
             }
         }
 
         // Make cuts
-        for (i1, i2) in cuts {
+        for (i1, i2) in cut_connections {
             self.particles[i1].connections[i2].active = false;
+        }
+        for (i1, i2) in cut_links {
+            self.particles[i1].links[i2].active = false;
         }
         Ok(())
     }
@@ -390,10 +501,9 @@ impl Entity {
 fn render_cut_plane(
     render_geometry: &mut ImmediateMesh,
     material: Gd<Material>,
-    plane_center: Vector3,
-    plane_euler_rotation: Vector3,
-    plane_size: Vector2,
+    cut_plane: (Vector3, Vector3, Vector2),
 ) {
+    let (plane_center, plane_euler_rotation, plane_size) = cut_plane;
     render_geometry.call(
         StringName::from("surface_begin"),
         &[
@@ -432,10 +542,9 @@ fn render_cut_plane(
 fn line_intersects_finite_plane(
     a: Vector3,
     b: Vector3,
-    plane_center: Vector3,
-    plane_euler_rotation: Vector3,
-    plane_size: Vector2,
+    cut_plane: (Vector3, Vector3, Vector2),
 ) -> bool {
+    let (plane_center, plane_euler_rotation, plane_size) = cut_plane;
     let plane_rotation = Basis::from_euler(EulerOrder::XYZ, plane_euler_rotation);
     let plane_normal = plane_rotation * Vector3::UP;
 
