@@ -1,7 +1,9 @@
+use std::str::FromStr;
+
 use godot::{
     engine::{
-        mesh::PrimitiveType, ImmediateMesh, Mesh, MeshInstance3D, RigidBody3D, RigidBody3DVirtual,
-        SphereMesh,
+        mesh::PrimitiveType, ImmediateMesh, Material, Mesh, MeshInstance3D, ResourceLoader,
+        RigidBody3D, RigidBody3DVirtual,
     },
     prelude::*,
 };
@@ -78,7 +80,7 @@ impl RigidBody3DVirtual for Entity {
     }
 
     fn ready(&mut self) {
-        let grid_size: i32 = 5;
+        let grid_size: i32 = 4;
 
         // Create grid of particles
         for x in -grid_size..=grid_size {
@@ -100,17 +102,6 @@ impl RigidBody3DVirtual for Entity {
                     }
                     // Add particle to entity
                     self.particles.push(particle);
-
-                    // Instantiate the sphere for each particle
-                    let mut sphere = MeshInstance3D::new_alloc();
-                    let mesh = SphereMesh::new().upcast::<Mesh>();
-                    sphere.set_mesh(mesh);
-                    sphere.set_scale(Vector3::new(
-                        PARTICLE_DISTANCE * 0.5,
-                        PARTICLE_DISTANCE * 0.5,
-                        PARTICLE_DISTANCE * 0.5,
-                    ));
-                    self.base.add_child(sphere.upcast::<Node>());
                 }
             }
         }
@@ -142,7 +133,7 @@ impl RigidBody3DVirtual for Entity {
     }
 
     fn process(&mut self, delta: f64) {
-        // self.process_physics(delta);
+        self.process_physics(delta);
         self.render_particles();
     }
 }
@@ -208,28 +199,65 @@ impl Entity {
     fn render_particles(&mut self) {
         if let Some(render_mesh_node) = self.base.get_child(0) {
             if let Some(render_mesh) = render_mesh_node.try_cast::<MeshInstance3D>() {
-                if let Some(render_geometry) = render_mesh.get_mesh() {
-                    let mut render_geometry = render_geometry.cast::<ImmediateMesh>();
-                    render_geometry.clear_surfaces();
-                    // render_geometry.surface_begin(PrimitiveType::PRIMITIVE_TRIANGLES);
-                    render_geometry.call(
-                        StringName::from("surface_begin"),
-                        &[Variant::from(PrimitiveType::PRIMITIVE_LINES)],
-                    );
-                    render_geometry.surface_add_vertex(Vector3::ZERO);
-                    render_geometry.surface_add_vertex(Vector3::UP);
-                    render_geometry.surface_add_vertex(Vector3::LEFT);
-                    render_geometry.surface_add_vertex(Vector3::UP);
-                    render_geometry.surface_end();
-                }
-            }
-        }
+                let mut render_geometry = render_mesh.get_mesh().unwrap().cast::<ImmediateMesh>();
+                render_geometry.clear_surfaces();
 
-        for (i, particle) in self.particles.iter().enumerate() {
-            if let Some(sphere) = self.base.get_child(i as i32) {
-                if let Some(mut sphere_mesh) = sphere.try_cast::<MeshInstance3D>() {
-                    sphere_mesh.set_global_position(particle.position);
+                // Load material
+                let material = ResourceLoader::singleton()
+                    .load(GodotString::from_str("res://debug_node.tres").unwrap())
+                    .unwrap()
+                    .cast::<Material>();
+
+                // Render out particles
+                render_geometry.call(
+                    StringName::from("surface_begin"),
+                    &[
+                        Variant::from(PrimitiveType::PRIMITIVE_TRIANGLE_STRIP),
+                        Variant::from(material.clone()),
+                    ],
+                );
+                let diamond_size = 0.05;
+                let faces = vec![
+                    (Vector3::FORWARD, Vector3::RIGHT, Vector3::UP), // Top Front Right Face
+                    (Vector3::UP, Vector3::LEFT, Vector3::FORWARD),  // Top Front Left Face
+                    (Vector3::BACK, Vector3::LEFT, Vector3::UP),     // Top Back Left Face
+                    (Vector3::UP, Vector3::RIGHT, Vector3::BACK),    // Top Back Right Face
+                    (Vector3::FORWARD, Vector3::DOWN, Vector3::RIGHT), // Bottom Front Right Face
+                    (Vector3::DOWN, Vector3::FORWARD, Vector3::LEFT), // Bottom Front Left Face
+                    (Vector3::BACK, Vector3::DOWN, Vector3::LEFT),   // Bottom Back Left Face
+                    (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
+                ];
+                for particle in &self.particles {
+                    render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
+                    for (pos1, pos2, pos3) in faces.clone() {
+                        render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
+                        render_geometry.surface_add_vertex(particle.position + pos1 * diamond_size);
+                        render_geometry.surface_add_vertex(particle.position + pos2 * diamond_size);
+                        render_geometry.surface_add_vertex(particle.position + pos3 * diamond_size);
+                    }
                 }
+                render_geometry.surface_end();
+
+                // Render out connection lines
+                render_geometry.call(
+                    StringName::from("surface_begin"),
+                    &[
+                        Variant::from(PrimitiveType::PRIMITIVE_LINES),
+                        Variant::from(material),
+                    ],
+                );
+                for particle in &self.particles {
+                    for connection in &particle.connections {
+                        if connection.active {
+                            render_geometry.surface_set_color(Color::from_rgb(0.0, 1.0, 0.0));
+                            render_geometry.surface_add_vertex(particle.position);
+                            render_geometry.surface_add_vertex(
+                                self.particles[connection.target_index].position,
+                            );
+                        }
+                    }
+                }
+                render_geometry.surface_end();
             }
         }
     }
