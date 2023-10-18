@@ -9,14 +9,9 @@ use std::str::FromStr;
 
 impl Entity {
     #[allow(clippy::too_many_lines)]
-    pub fn render_particles(&mut self, alpha: f32) {
-        // Lock the mutex and clone the particles for read-only access
-        let mut particles = self.particles.lock().unwrap().clone();
-        for particle in &mut particles {
-            let interpolated_position =
-                particle.old_position + (particle.position - particle.old_position) * alpha;
-            particle.position = interpolated_position;
-        }
+    pub fn render_particles(&mut self) {
+        // Clone the particles for read-only access
+        let particles = self.particles.clone();
 
         let mut render_geometry = match self.get_immediate_mesh() {
             Ok(mesh) => mesh,
