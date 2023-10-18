@@ -5,9 +5,8 @@ use godot::{
     },
     prelude::*,
 };
+use rapier3d::prelude::*;
 
-mod cut;
-mod physics;
 mod render;
 
 const PARTICLE_DISTANCE: f32 = 0.25;
@@ -33,16 +32,14 @@ impl Connection {
 
 #[derive(PartialEq, Clone)]
 pub struct Particle {
-    position: Vector3,
-    old_position: Vector3,
+    body_handle: RigidBodyHandle,
     connections: Vec<Connection>,
 }
 
 impl Particle {
-    const fn new(pos: Vector3) -> Self {
+    const fn new(body_handle: RigidBodyHandle) -> Self {
         Self {
-            position: pos,
-            old_position: pos,
+            body_handle,
             connections: Vec::new(),
         }
     }
@@ -56,6 +53,21 @@ struct Entity {
     particles: Vec<Particle>,
     central_particle: usize,
 
+    physics_pipeline: PhysicsPipeline,
+    integration_parameters: IntegrationParameters,
+    island_manager: IslandManager,
+    broad_phase: BroadPhase,
+    narrow_phase: NarrowPhase,
+    impulse_joint_set: ImpulseJointSet,
+    multibody_joint_set: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    physics_hooks: (),
+    event_handler: (),
+    accumulator: f32,
+
+    rigid_body_set: RigidBodySet,
+    collider_set: ColliderSet,
+
     plane_rotate: bool,
     plane_size: f32,
 }
@@ -68,9 +80,25 @@ impl RigidBody3DVirtual for Entity {
             particles: Vec::new(),
             central_particle: 0,
 
+            physics_pipeline: PhysicsPipeline::new(),
+            integration_parameters: IntegrationParameters::default(),
+            island_manager: IslandManager::new(),
+            broad_phase: BroadPhase::new(),
+            narrow_phase: NarrowPhase::new(),
+            impulse_joint_set: ImpulseJointSet::new(),
+            multibody_joint_set: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+            physics_hooks: (),
+            event_handler: (),
+            accumulator: 0.0,
+
+            rigid_body_set: RigidBodySet::new(),
+            collider_set: ColliderSet::new(),
+
             plane_rotate: false,
             plane_size: 0.2,
         };
+        instance.integration_parameters.dt = 1.0 / 60.0;
         instance.base.set_gravity_scale(0.0);
 
         // Add render mesh to it
@@ -85,14 +113,37 @@ impl RigidBody3DVirtual for Entity {
         let grid_size: i32 = 3;
         let mut local_particles = Vec::new();
 
+        /* Create the ground. */
+        let collider = ColliderBuilder::cuboid(100.0, 0.5, 100.0)
+            .translation(vector![0.0, -0.5 - PARTICLE_DISTANCE * 0.5, 0.0])
+            .restitution(0.7)
+            .build();
+        self.collider_set.insert(collider);
+
         // Create grid of particles
         for x in -grid_size..=grid_size {
             for y in -grid_size..=grid_size {
                 for z in -grid_size..=grid_size {
                     #[allow(clippy::cast_precision_loss)]
-                    local_particles.push(Particle::new(
-                        Vector3::new(x as f32, y as f32 + 4.0, z as f32) * PARTICLE_DISTANCE,
-                    ));
+                    let body = RigidBodyBuilder::dynamic()
+                        .translation(
+                            vector![x as f32, y as f32 + 4.0, z as f32] * PARTICLE_DISTANCE,
+                        )
+                        .linear_damping(0.5)
+                        .angular_damping(0.5)
+                        .build();
+                    let collider = ColliderBuilder::ball(PARTICLE_DISTANCE * 0.5)
+                        .restitution(0.7)
+                        .build();
+                    let handle = self.rigid_body_set.insert(body);
+                    self.collider_set.insert_with_parent(
+                        collider,
+                        handle,
+                        &mut self.rigid_body_set,
+                    );
+
+                    #[allow(clippy::cast_precision_loss)]
+                    local_particles.push(Particle::new(handle));
                     // Set the central particle
                     if x == 0 && y == 0 && z == 0 {
                         self.central_particle = local_particles.len() - 1;
@@ -100,65 +151,66 @@ impl RigidBody3DVirtual for Entity {
                 }
             }
         }
+        godot_print!("Created {} particles", local_particles.len());
 
-        // Connect particles, starting from central particle expanding outwards
-        let mut total_connections = 0;
-        let mut processed_particles = Vec::new();
-        let mut connected_particles_next = vec![self.central_particle];
-        while !connected_particles_next.is_empty() {
-            let mut next_next = Vec::new();
-            let mut new_connections = Vec::new();
+        // // Connect particles, starting from central particle expanding outwards
+        // let mut total_connections = 0;
+        // let mut processed_particles = Vec::new();
+        // let mut connected_particles_next = vec![self.central_particle];
+        // while !connected_particles_next.is_empty() {
+        //     let mut next_next = Vec::new();
+        //     let mut new_connections = Vec::new();
 
-            for particle_index in connected_particles_next {
-                // If the particle has already been processed, skip
-                if processed_particles.contains(&particle_index) {
-                    continue;
-                }
-                // Add the particle to the connected list
-                processed_particles.push(particle_index);
+        //     for particle_index in connected_particles_next {
+        //         // If the particle has already been processed, skip
+        //         if processed_particles.contains(&particle_index) {
+        //             continue;
+        //         }
+        //         // Add the particle to the connected list
+        //         processed_particles.push(particle_index);
 
-                // Connect the particle to nearby particles
-                let particle = &local_particles[particle_index];
-                for (other_index, other_particle) in local_particles.iter().enumerate() {
-                    if particle_index == other_index || processed_particles.contains(&other_index) {
-                        continue;
-                    }
+        //         // Connect the particle to nearby particles
+        //         let particle = &local_particles[particle_index];
+        //         for (other_index, other_particle) in local_particles.iter().enumerate() {
+        //             if particle_index == other_index || processed_particles.contains(&other_index) {
+        //                 continue;
+        //             }
 
-                    let distance = particle.position.distance_to(other_particle.position);
-                    if distance > PARTICLE_DISTANCE * 1.8 {
-                        continue;
-                    }
+        //             let distance = particle.position.distance_to(other_particle.position);
+        //             if distance > PARTICLE_DISTANCE * 1.8 {
+        //                 continue;
+        //             }
 
-                    // Check if that particle already has a connection to the current particle
-                    let has_connection = local_particles[other_index]
-                        .connections
-                        .iter()
-                        .any(|connection| connection.target_index == particle_index);
+        //             // Check if that particle already has a connection to the current particle
+        //             let has_connection = local_particles[other_index]
+        //                 .connections
+        //                 .iter()
+        //                 .any(|connection| connection.target_index == particle_index);
 
-                    if !has_connection {
-                        // Connect the particles
-                        let direction = (other_particle.position - particle.position).normalized();
-                        new_connections.push((
-                            particle_index,
-                            Connection::new(other_index, direction, distance),
-                        ));
-                        total_connections += 1;
+        //             if !has_connection {
+        //                 // Connect the particles
+        //                 let direction = (other_particle.position - particle.position).normalized();
+        //                 new_connections.push((
+        //                     particle_index,
+        //                     Connection::new(other_index, direction, distance),
+        //                 ));
+        //                 total_connections += 1;
 
-                        // Add the other particle to the next list
-                        next_next.push(other_index);
-                    }
-                }
-            }
+        //                 // Add the other particle to the next list
+        //                 next_next.push(other_index);
+        //             }
+        //         }
+        //     }
 
-            // Set the next list to the next next list
-            connected_particles_next = next_next;
+        //     // Set the next list to the next next list
+        //     connected_particles_next = next_next;
 
-            // Add connections to particles
-            for (index, connection) in new_connections {
-                local_particles[index].connections.push(connection);
-            }
-        }
-        godot_print!("Connected particles: {}", total_connections);
+        //     // Add connections to particles
+        //     for (index, connection) in new_connections {
+        //         local_particles[index].connections.push(connection);
+        //     }
+        // }
+        // godot_print!("Connected particles: {}", total_connections);
 
         // Replace the particles with the local version
         self.particles = local_particles;
@@ -166,18 +218,33 @@ impl RigidBody3DVirtual for Entity {
 
     #[allow(clippy::cast_possible_truncation)]
     fn process(&mut self, delta: f64) {
-        self.render_particles();
-        // If c is pressed, cut the connections that intersect with the plane
-        if Input::singleton().is_key_pressed(Key::KEY_C) {
-            self.cut_on_plane().unwrap();
+        self.accumulator += delta as f32;
+        // // If c is pressed, cut the connections that intersect with the plane
+        // if Input::singleton().is_key_pressed(Key::KEY_C) {
+        //     self.cut_on_plane().unwrap();
+        // }
+
+        while self.accumulator >= self.integration_parameters.dt {
+            let gravity: Vector<Real> = vector![0.0, -9.81, 0.0];
+            self.physics_pipeline.step(
+                &gravity,
+                &self.integration_parameters,
+                &mut self.island_manager,
+                &mut self.broad_phase,
+                &mut self.narrow_phase,
+                &mut self.rigid_body_set,
+                &mut self.collider_set,
+                &mut self.impulse_joint_set,
+                &mut self.multibody_joint_set,
+                &mut self.ccd_solver,
+                None,
+                &self.physics_hooks,
+                &self.event_handler,
+            );
+            self.accumulator -= self.integration_parameters.dt;
         }
 
-        // Receive and apply the new positions
-        let new_positions = physics::process_step(&self.particles, delta as f32);
-        for (i, new_position) in new_positions {
-            self.particles[i].old_position = self.particles[i].position;
-            self.particles[i].position = new_position;
-        }
+        self.render_particles();
     }
 
     fn input(&mut self, event: Gd<InputEvent>) {
