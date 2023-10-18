@@ -1,12 +1,3 @@
-use std::{
-    sync::{
-        mpsc::{self, Receiver},
-        Arc, Mutex,
-    },
-    thread,
-    time::{Duration, Instant},
-};
-
 use godot::{
     engine::{
         global::Key, ImmediateMesh, InputEvent, InputEventKey, Mesh, MeshInstance3D, RigidBody3D,
@@ -15,6 +6,14 @@ use godot::{
     prelude::*,
 };
 use rayon::prelude::*;
+use std::{
+    sync::{
+        mpsc::{self, Receiver},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 
 mod cut;
 mod physics;
@@ -64,6 +63,7 @@ struct Entity {
     #[base]
     base: Base<RigidBody3D>,
     particles: Arc<Mutex<Vec<Particle>>>,
+    physics_sender: mpsc::Sender<Vec<(usize, Vector3)>>,
     physics_receiver: Receiver<Vec<(usize, Vector3)>>,
     time_since_last_tick: f32,
     physics_update_rate: f32,
@@ -78,29 +78,14 @@ impl RigidBody3DVirtual for Entity {
         // Create a channel for physics communication
         let (sender, main_receiver) = mpsc::channel();
         let shared_particles = Arc::new(Mutex::new(Vec::new()));
-        let physics_particles = Arc::clone(&shared_particles);
-        let physics_update_rate = 0.05;
-
-        // Start the physics thread
-        thread::spawn(move || {
-            let mut last_run = Instant::now();
-            loop {
-                if last_run.elapsed().as_secs_f32() > physics_update_rate {
-                    let particles = physics_particles.lock().unwrap().clone();
-                    let new_positions = physics::process_step(&particles, physics_update_rate);
-                    sender.send(new_positions).unwrap();
-                    last_run = Instant::now();
-                }
-                thread::sleep(Duration::from_millis(1));
-            }
-        });
 
         let mut instance = Self {
             base,
             particles: shared_particles,
+            physics_sender: sender,
             physics_receiver: main_receiver,
             time_since_last_tick: 0.0,
-            physics_update_rate,
+            physics_update_rate: 0.05,
 
             plane_rotate: false,
             plane_size: 0.2,
@@ -160,6 +145,23 @@ impl RigidBody3DVirtual for Entity {
         // Lock the mutex and replace the shared particles with the local version
         let mut shared_particles = self.particles.lock().unwrap();
         *shared_particles = local_particles;
+
+        // Start the physics thread
+        let physics_particles = Arc::clone(&self.particles);
+        let physics_update_rate = 0.05;
+        let sender = self.physics_sender.clone();
+        thread::spawn(move || {
+            let mut last_run = Instant::now();
+            loop {
+                if last_run.elapsed().as_secs_f32() > physics_update_rate {
+                    let particles = physics_particles.lock().unwrap().clone();
+                    let new_positions = physics::process_step(&particles, physics_update_rate);
+                    sender.send(new_positions).unwrap();
+                    last_run = Instant::now();
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
+        });
     }
 
     #[allow(clippy::cast_possible_truncation)]
