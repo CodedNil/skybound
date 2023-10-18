@@ -63,6 +63,7 @@ struct Entity {
     #[base]
     base: Base<RigidBody3D>,
     particles: Arc<Mutex<Vec<Particle>>>,
+    central_particle: usize,
     physics_sender: mpsc::Sender<Vec<(usize, Vector3)>>,
     physics_receiver: Receiver<Vec<(usize, Vector3)>>,
     time_since_last_tick: f32,
@@ -82,6 +83,7 @@ impl RigidBody3DVirtual for Entity {
         let mut instance = Self {
             base,
             particles: shared_particles,
+            central_particle: 0,
             physics_sender: sender,
             physics_receiver: main_receiver,
             time_since_last_tick: 0.0,
@@ -112,35 +114,74 @@ impl RigidBody3DVirtual for Entity {
                     local_particles.push(Particle::new(
                         Vector3::new(x as f32, y as f32 + 4.0, z as f32) * PARTICLE_DISTANCE,
                     ));
+                    // Set the central particle
+                    if x == 0 && y == 0 && z == 0 {
+                        self.central_particle = local_particles.len() - 1;
+                    }
                 }
             }
         }
 
-        // Connect adjacent particles based on distance threshold
-        let connections: Vec<_> = local_particles
-            .par_iter()
-            .enumerate()
-            .flat_map(|(idx1, particle1)| {
-                let mut local_connections = Vec::new();
-                for (idx2, particle2) in local_particles.iter().enumerate() {
-                    if idx1 != idx2
-                        && particle1.position.distance_to(particle2.position)
-                            <= PARTICLE_DISTANCE * 1.8
+        // Connect particles, starting from central particle expanding outwards
+        let mut total_connections = 0;
+        let mut processed_particles = Vec::new();
+        let mut connected_particles_next = vec![self.central_particle];
+        while !connected_particles_next.is_empty() {
+            let mut next_next = Vec::new();
+            let mut new_connections = Vec::new();
+
+            for particle_index in connected_particles_next {
+                // If the particle has already been processed, skip
+                if processed_particles.contains(&particle_index) {
+                    continue;
+                }
+                // Add the particle to the connected list
+                processed_particles.push(particle_index);
+
+                // Connect the particle to nearby particles
+                let particle = &local_particles[particle_index];
+                for (other_index, other_particle) in local_particles.iter().enumerate() {
+                    if particle_index == other_index || processed_particles.contains(&other_index) {
+                        continue;
+                    }
+
+                    if particle.position.distance_to(other_particle.position)
+                        > PARTICLE_DISTANCE * 1.8
                     {
+                        continue;
+                    }
+
+                    // Check if that particle already has a connection to the current particle
+                    let has_connection = local_particles[other_index]
+                        .connections
+                        .iter()
+                        .any(|connection| connection.target_index == particle_index);
+
+                    if !has_connection {
                         // Connect the particles
-                        let direction = (particle2.position - particle1.position).normalized();
-                        let dist = particle1.position.distance_to(particle2.position);
-                        local_connections.push((idx1, Connection::new(idx2, direction, dist)));
+                        let direction = (other_particle.position - particle.position).normalized();
+                        let distance = particle.position.distance_to(other_particle.position);
+                        new_connections.push((
+                            particle_index,
+                            Connection::new(other_index, direction, distance),
+                        ));
+                        total_connections += 1;
+
+                        // Add the other particle to the next list
+                        next_next.push(other_index);
                     }
                 }
-                local_connections
-            })
-            .collect();
+            }
 
-        // Add connections to particles
-        for (index, connection) in connections {
-            local_particles[index].connections.push(connection);
+            // Set the next list to the next next list
+            connected_particles_next = next_next;
+
+            // Add connections to particles
+            for (index, connection) in new_connections {
+                local_particles[index].connections.push(connection);
+            }
         }
+        godot_print!("Connected particles: {}", total_connections);
 
         // Lock the mutex and replace the shared particles with the local version
         let mut shared_particles = self.particles.lock().unwrap();
