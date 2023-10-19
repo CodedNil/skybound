@@ -1,4 +1,4 @@
-// use super::cut::{line_intersects_finite_plane, render_cut_plane};
+use super::cut::{line_intersects_finite_plane, render_cut_plane};
 use super::Entity;
 use anyhow::{Context, Result};
 use godot::{
@@ -10,16 +10,6 @@ use std::str::FromStr;
 impl Entity {
     #[allow(clippy::too_many_lines)]
     pub fn render_particles(&mut self) {
-        // Get particle positions
-        let mut particle_positions = Vec::new();
-        for particle in &self.particles {
-            if let Some(body) = self.rigid_body_set.get(particle.body_handle) {
-                let vec = body.translation();
-                let vec3 = Vector3::new(vec.x, vec.y, vec.z);
-                particle_positions.push(vec3);
-            }
-        }
-
         let mut render_geometry = match self.get_immediate_mesh() {
             Ok(mesh) => mesh,
             Err(e) => {
@@ -55,7 +45,8 @@ impl Entity {
             (Vector3::BACK, Vector3::DOWN, Vector3::LEFT),   // Bottom Back Left Face
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
-        for position in particle_positions {
+        for particle in &self.particles {
+            let position = particle.get_position(&self.rigid_body_set);
             render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
             for (pos1, pos2, pos3) in faces.clone() {
                 render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
@@ -66,46 +57,47 @@ impl Entity {
         }
         render_geometry.surface_end();
 
-        // // Render cut plane on camera
-        // let cut_plane = match self.get_cut_plane() {
-        //     Ok(plane) => plane,
-        //     Err(e) => {
-        //         godot_print!("Failed to get cut plane {e}");
-        //         return;
-        //     }
-        // };
-        // render_cut_plane(&mut render_geometry, material.clone(), cut_plane);
+        // Render cut plane on camera
+        let cut_plane = match self.get_cut_plane() {
+            Ok(plane) => plane,
+            Err(e) => {
+                godot_print!("Failed to get cut plane {e}");
+                return;
+            }
+        };
+        render_cut_plane(&mut render_geometry, material.clone(), cut_plane);
 
-        // // Render connection lines
-        // render_geometry.call(
-        //     StringName::from("surface_begin"),
-        //     &[
-        //         Variant::from(PrimitiveType::PRIMITIVE_LINES),
-        //         Variant::from(material),
-        //     ],
-        // );
-        // for particle in &particles {
-        //     for connection in &particle.connections {
-        //         if connection.active {
-        //             let a = particle.position;
-        //             let b = particles[connection.target_index].position;
-        //             let dist = a.distance_to(b);
-        //             let strain = f32::abs(connection.distance - dist);
+        // Render connection lines
+        render_geometry.call(
+            StringName::from("surface_begin"),
+            &[
+                Variant::from(PrimitiveType::PRIMITIVE_LINES),
+                Variant::from(material),
+            ],
+        );
+        for particle in &self.particles {
+            for connection in &particle.connections {
+                if connection.active {
+                    let a = particle.get_position(&self.rigid_body_set);
+                    let b =
+                        self.particles[connection.target_index].get_position(&self.rigid_body_set);
+                    let dist = a.distance_to(b);
+                    let strain = f32::abs(connection.distance - dist);
 
-        //             let color = if line_intersects_finite_plane(a, b, cut_plane) {
-        //                 Color::from_rgb(1.0, 0.5, 0.0)
-        //             } else {
-        //                 // Lerp between green and red based on strain
-        //                 let lerp = (strain / 0.4).clamp(0.0, 1.0);
-        //                 Color::from_rgb(lerp, 1.0 - lerp, 0.0)
-        //             };
-        //             render_geometry.surface_set_color(color);
-        //             render_geometry.surface_add_vertex(a);
-        //             render_geometry.surface_add_vertex(b);
-        //         }
-        //     }
-        // }
-        // render_geometry.surface_end();
+                    let color = if line_intersects_finite_plane(a, b, cut_plane) {
+                        Color::from_rgb(1.0, 0.5, 0.0)
+                    } else {
+                        // Lerp between green and red based on strain
+                        let lerp = (strain / 0.4).clamp(0.0, 1.0);
+                        Color::from_rgb(lerp, 1.0 - lerp, 0.0)
+                    };
+                    render_geometry.surface_set_color(color);
+                    render_geometry.surface_add_vertex(a);
+                    render_geometry.surface_add_vertex(b);
+                }
+            }
+        }
+        render_geometry.surface_end();
     }
 
     fn get_immediate_mesh(&self) -> Result<Gd<ImmediateMesh>> {

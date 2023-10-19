@@ -4,6 +4,7 @@ use godot::{
     engine::{mesh::PrimitiveType, ImmediateMesh, Material},
     prelude::*,
 };
+use rapier3d::prelude::*;
 use std::f32::consts::PI;
 
 impl Entity {
@@ -47,8 +48,8 @@ impl Entity {
                 if connection.active {
                     // Check if the connection intersects with the plane
                     let intersects = line_intersects_finite_plane(
-                        particle.position,
-                        self.particles[connection.target_index].position,
+                        particle.get_position(&self.rigid_body_set),
+                        self.particles[connection.target_index].get_position(&self.rigid_body_set),
                         cut_plane,
                     );
                     if intersects {
@@ -61,6 +62,21 @@ impl Entity {
         // Make cuts
         for (i1, i2) in cut_connections {
             self.particles[i1].connections[i2].active = false;
+            // Make joint inactive
+            self.impulse_joint_set
+                .get_mut(self.particles[i1].connections[i2].joint_handle)
+                .unwrap()
+                .data
+                .enabled = JointEnabled::Disabled;
+            // Wake up the rigid bodies
+            self.rigid_body_set
+                .get_mut(self.particles[i1].body_handle)
+                .unwrap()
+                .wake_up(true);
+            self.rigid_body_set
+                .get_mut(self.particles[i2].body_handle)
+                .unwrap()
+                .wake_up(true);
         }
         Ok(())
     }
