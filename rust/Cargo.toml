@@ -16,7 +16,6 @@ anyhow = "1.0"
 # dotenv = "0.15"
 rayon = "1.8"
 rand = "0.8"
-rapier3d = { version = "0.17", features = ["simd-stable", "parallel"] }
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]

@@ -5,10 +5,9 @@ use godot::{
     },
     prelude::*,
 };
-use rapier3d::prelude::*;
 
 mod cut;
-// mod physics;
+mod physics;
 mod render;
 
 const PARTICLE_DISTANCE: f32 = 0.25;
@@ -18,22 +17,15 @@ pub struct Connection {
     target_index: usize,
     direction: Vector3,
     distance: f32,
-    joint_handle: ImpulseJointHandle,
     active: bool,
 }
 
 impl Connection {
-    const fn new(
-        target_index: usize,
-        direction: Vector3,
-        distance: f32,
-        joint_handle: ImpulseJointHandle,
-    ) -> Self {
+    const fn new(target_index: usize, direction: Vector3, distance: f32) -> Self {
         Self {
             target_index,
             direction,
             distance,
-            joint_handle,
             active: true,
         }
     }
@@ -41,25 +33,17 @@ impl Connection {
 
 #[derive(PartialEq, Clone)]
 pub struct Particle {
-    body_handle: RigidBodyHandle,
+    position: Vector3,
+    old_position: Vector3,
     connections: Vec<Connection>,
 }
 
 impl Particle {
-    const fn new(body_handle: RigidBodyHandle) -> Self {
+    const fn new(position: Vector3) -> Self {
         Self {
-            body_handle,
+            position,
+            old_position: position,
             connections: Vec::new(),
-        }
-    }
-
-    fn get_position(&self, rigid_body_set: &RigidBodySet) -> Vector3 {
-        match rigid_body_set.get(self.body_handle) {
-            Some(rigid_body) => {
-                let vec = rigid_body.translation();
-                Vector3::new(vec.x, vec.y, vec.z)
-            }
-            None => Vector3::ZERO,
         }
     }
 }
@@ -72,20 +56,7 @@ struct Entity {
     particles: Vec<Particle>,
     central_particle: usize,
 
-    physics_pipeline: PhysicsPipeline,
-    integration_parameters: IntegrationParameters,
-    island_manager: IslandManager,
-    broad_phase: BroadPhase,
-    narrow_phase: NarrowPhase,
-    impulse_joint_set: ImpulseJointSet,
-    multibody_joint_set: MultibodyJointSet,
-    ccd_solver: CCDSolver,
-    physics_hooks: (),
-    event_handler: (),
     accumulator: f32,
-
-    rigid_body_set: RigidBodySet,
-    collider_set: ColliderSet,
 
     plane_rotate: bool,
     plane_size: f32,
@@ -99,25 +70,11 @@ impl RigidBody3DVirtual for Entity {
             particles: Vec::new(),
             central_particle: 0,
 
-            physics_pipeline: PhysicsPipeline::new(),
-            integration_parameters: IntegrationParameters::default(),
-            island_manager: IslandManager::new(),
-            broad_phase: BroadPhase::new(),
-            narrow_phase: NarrowPhase::new(),
-            impulse_joint_set: ImpulseJointSet::new(),
-            multibody_joint_set: MultibodyJointSet::new(),
-            ccd_solver: CCDSolver::new(),
-            physics_hooks: (),
-            event_handler: (),
             accumulator: 0.0,
-
-            rigid_body_set: RigidBodySet::new(),
-            collider_set: ColliderSet::new(),
 
             plane_rotate: false,
             plane_size: 0.2,
         };
-        instance.integration_parameters.dt = 1.0 / 60.0;
         instance.base.set_gravity_scale(0.0);
 
         // Add render mesh to it
@@ -132,36 +89,14 @@ impl RigidBody3DVirtual for Entity {
         let grid_size: i32 = 3;
         let mut local_particles = Vec::new();
 
-        /* Create the ground. */
-        let collider = ColliderBuilder::cuboid(100.0, 0.5, 100.0)
-            .translation(vector![0.0, -0.5, 0.0])
-            .restitution(0.7)
-            .build();
-        self.collider_set.insert(collider);
-
         // Create grid of particles
         for x in -grid_size..=grid_size {
             for y in -grid_size..=grid_size {
                 for z in -grid_size..=grid_size {
                     #[allow(clippy::cast_precision_loss)]
-                    let body = RigidBodyBuilder::dynamic()
-                        .translation(
-                            vector![x as f32, y as f32, z as f32] * PARTICLE_DISTANCE
-                                + vector![0.0, 2.0, 0.0],
-                        )
-                        .linear_damping(0.5)
-                        .angular_damping(0.5)
-                        .build();
-                    let collider = ColliderBuilder::ball(0.05).restitution(0.7).build();
-                    let handle = self.rigid_body_set.insert(body);
-                    self.collider_set.insert_with_parent(
-                        collider,
-                        handle,
-                        &mut self.rigid_body_set,
-                    );
-
-                    #[allow(clippy::cast_precision_loss)]
-                    local_particles.push(Particle::new(handle));
+                    let position =
+                        Vector3::new(x as f32, y as f32 + 5.0, z as f32) * PARTICLE_DISTANCE;
+                    local_particles.push(Particle::new(position));
                     // Set the central particle
                     if x == 0 && y == 0 && z == 0 {
                         self.central_particle = local_particles.len() - 1;
@@ -189,15 +124,15 @@ impl RigidBody3DVirtual for Entity {
 
                 // Connect the particle to nearby particles
                 let particle = &local_particles[particle_index];
-                let particle_pos = particle.get_position(&self.rigid_body_set);
+                let particle_pos = particle.position;
                 for (other_index, other_particle) in local_particles.iter().enumerate() {
                     if particle_index == other_index || processed_particles.contains(&other_index) {
                         continue;
                     }
-                    let other_particle_pos = other_particle.get_position(&self.rigid_body_set);
+                    let other_particle_pos = other_particle.position;
 
                     let distance = particle_pos.distance_to(other_particle_pos);
-                    if distance > PARTICLE_DISTANCE * 1.5 {
+                    if distance > PARTICLE_DISTANCE * 1.8 {
                         continue;
                     }
 
@@ -211,22 +146,9 @@ impl RigidBody3DVirtual for Entity {
                         // Connect the particles
                         let direction = (other_particle_pos - particle_pos).normalized();
 
-                        let joint = FixedJointBuilder::new()
-                            .local_anchor1(point![particle_pos.x, particle_pos.y, particle_pos.z])
-                            .local_anchor2(point![
-                                other_particle_pos.x,
-                                other_particle_pos.y,
-                                other_particle_pos.z
-                            ]);
-                        let joint_handle = self.impulse_joint_set.insert(
-                            particle.body_handle,
-                            other_particle.body_handle,
-                            joint,
-                            true,
-                        );
                         new_connections.push((
                             particle_index,
-                            Connection::new(other_index, direction, distance, joint_handle),
+                            Connection::new(other_index, direction, distance),
                         ));
 
                         total_connections += 1;
@@ -259,24 +181,15 @@ impl RigidBody3DVirtual for Entity {
             self.cut_on_plane().unwrap();
         }
 
-        while self.accumulator >= self.integration_parameters.dt {
-            let gravity: Vector<Real> = vector![0.0, -9.81, 0.0];
-            self.physics_pipeline.step(
-                &gravity,
-                &self.integration_parameters,
-                &mut self.island_manager,
-                &mut self.broad_phase,
-                &mut self.narrow_phase,
-                &mut self.rigid_body_set,
-                &mut self.collider_set,
-                &mut self.impulse_joint_set,
-                &mut self.multibody_joint_set,
-                &mut self.ccd_solver,
-                None,
-                &self.physics_hooks,
-                &self.event_handler,
-            );
-            self.accumulator -= self.integration_parameters.dt;
+        let time_step = 1.0 / 60.0;
+        if self.accumulator >= time_step {
+            // Physics step
+            let new_positions = physics::process_step(&self.particles, time_step);
+            for (index, position) in new_positions {
+                self.particles[index].old_position = self.particles[index].position;
+                self.particles[index].position = position;
+            }
+            self.accumulator -= time_step;
         }
 
         self.render_particles();
