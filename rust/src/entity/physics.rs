@@ -5,17 +5,17 @@ use rayon::prelude::*;
 pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector3)> {
     let start_time = std::time::Instant::now();
     let particle_mass = PARTICLE_DISTANCE * PARTICLE_DISTANCE;
-    let gravity = Vector3::new(0.0, -5.0, 0.0) * particle_mass;
+    let gravity = Vector3::new(0.0, -15.0, 0.0) * particle_mass;
 
     let new_positions = particles
         .par_iter()
         .enumerate()
-        .map(|(i, particle)| {
+        .map(|(particle_index, particle)| {
             // Initialize the net force to gravity
             let mut net_force = gravity;
 
             // Connection forces
-            let spring_constant = 40.0;
+            let spring_constant = 20.0;
             for connection in &particle.connections {
                 if connection.active {
                     let target = &particles[connection.target_index];
@@ -69,10 +69,10 @@ pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector
                 let reflected_velocity_y = -implicit_velocity_y * restitution;
 
                 // Adjust new_position to be right on the floor and apply the reflected velocity
-                new_position.y = floor_y + reflected_velocity_y * delta;
+                new_position.y = floor_y;
             }
 
-            (i, new_position)
+            (particle_index, new_position)
         })
         .collect();
 

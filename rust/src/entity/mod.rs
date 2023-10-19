@@ -175,13 +175,13 @@ impl RigidBody3DVirtual for Entity {
 
     #[allow(clippy::cast_possible_truncation)]
     fn process(&mut self, delta: f64) {
-        self.accumulator += delta as f32;
         // If c is pressed, cut the connections that intersect with the plane
         if Input::singleton().is_key_pressed(Key::KEY_C) {
             self.cut_on_plane().unwrap();
         }
 
         let time_step = 1.0 / 60.0;
+        self.accumulator += delta as f32;
         if self.accumulator >= time_step {
             // Physics step
             let new_positions = physics::process_step(&self.particles, time_step);
