@@ -1,5 +1,5 @@
 use super::cut::{line_intersects_finite_plane, render_cut_plane};
-use super::Entity;
+use super::{Entity, ParticleMaterial};
 use anyhow::{Context, Result};
 use godot::{
     engine::{mesh::PrimitiveType, ImmediateMesh, Material, MeshInstance3D, ResourceLoader},
@@ -48,8 +48,13 @@ impl Entity {
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
         for particle in &self.particles {
-            let position = transform_inv * particle.get_position(&self.rigid_body_set);
-            render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
+            let material_color = match particle.material {
+                ParticleMaterial::Flesh => Color::from_rgb(1.0, 0.3, 0.3),
+                ParticleMaterial::Bone => Color::from_rgb(1.0, 1.0, 1.0),
+                ParticleMaterial::Heart => Color::from_rgb(1.0, 0.0, 0.0),
+            };
+            let position = transform_inv * particle.position;
+            render_geometry.surface_set_color(material_color);
             for (pos1, pos2, pos3) in faces.clone() {
                 render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
                 render_geometry.surface_add_vertex(position + pos1 * diamond_size);
@@ -80,10 +85,8 @@ impl Entity {
         for particle in &self.particles {
             for connection in &particle.connections {
                 if connection.active {
-                    let a = transform_inv * particle.get_position(&self.rigid_body_set);
-                    let b = transform_inv
-                        * self.particles[connection.target_index]
-                            .get_position(&self.rigid_body_set);
+                    let a = transform_inv * particle.position;
+                    let b = transform_inv * self.particles[connection.target_index].position;
                     let dist = a.distance_to(b);
                     let strain = f32::abs(connection.distance - dist);
 
