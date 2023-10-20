@@ -15,10 +15,10 @@ sky = SubResource("Sky_sih0r")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="SphereMesh" id="SphereMesh_mp4fc"]
+[sub_resource type="BoxMesh" id="BoxMesh_v4uwu"]
 flip_faces = true
 
-[sub_resource type="BoxMesh" id="BoxMesh_v4uwu"]
+[sub_resource type="SphereMesh" id="SphereMesh_mp4fc"]
 flip_faces = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_oa6ha"]
@@ -39,13 +39,13 @@ shadow_enabled = true
 [node name="Entity" type="Entity" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
+[node name="Wings_Wing" type="MeshInstance3D" parent="Entity"]
+transform = Transform3D(4, 0, 0, 0, 0.3, 0, 0, 0, 1, 0, 0, -0.613371)
+mesh = SubResource("BoxMesh_v4uwu")
+
 [node name="Body_Flesh" type="MeshInstance3D" parent="Entity"]
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 5, 0, 0, 0)
 mesh = SubResource("SphereMesh_mp4fc")
-
-[node name="Wings_Flesh" type="MeshInstance3D" parent="Entity"]
-transform = Transform3D(4, 0, 0, 0, 0.3, 0, 0, 0, 1, 0, 0, -0.613371)
-mesh = SubResource("BoxMesh_v4uwu")
 
 [node name="Tail_Flesh" type="MeshInstance3D" parent="Entity"]
 transform = Transform3D(0.75, 0, 0, 0, 0.486238, -0.466011, 0, 0.116503, 1.94495, 0, -0.388639, 3)

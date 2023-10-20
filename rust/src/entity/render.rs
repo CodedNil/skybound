@@ -52,6 +52,7 @@ impl Entity {
                 ParticleMaterial::Flesh => Color::from_rgb(1.0, 0.3, 0.3),
                 ParticleMaterial::Bone => Color::from_rgb(1.0, 1.0, 1.0),
                 ParticleMaterial::Heart => Color::from_rgb(1.0, 0.0, 0.0),
+                ParticleMaterial::Wing => Color::from_rgb(0.3, 0.3, 1.0),
             };
             let position = transform_inv * particle.position;
             render_geometry.surface_set_color(material_color);

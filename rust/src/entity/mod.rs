@@ -57,6 +57,7 @@ enum ParticleMaterial {
     Flesh,
     Bone,
     Heart,
+    Wing,
 }
 
 enum ShapeType {
@@ -260,6 +261,7 @@ impl Entity {
                         "Flesh" => ParticleMaterial::Flesh,
                         "Bone" => ParticleMaterial::Bone,
                         "Heart" => ParticleMaterial::Heart,
+                        "Wing" => ParticleMaterial::Wing,
                         _ => {
                             godot_print!(
                                 "Unexpected material for mesh_instance: {}",
