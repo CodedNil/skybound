@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://bleiy822sqj7t"]
+[gd_scene load_steps=8 format=3 uid="uid://bleiy822sqj7t"]
 
 [ext_resource type="Script" path="res://FreeLookCamera.gd" id="2_7c1k2"]
 
@@ -15,6 +15,12 @@ sky = SubResource("Sky_sih0r")
 tonemap_mode = 2
 glow_enabled = true
 
+[sub_resource type="SphereMesh" id="SphereMesh_mp4fc"]
+flip_faces = true
+
+[sub_resource type="BoxMesh" id="BoxMesh_v4uwu"]
+flip_faces = true
+
 [sub_resource type="PlaneMesh" id="PlaneMesh_oa6ha"]
 
 [node name="Node3D" type="Node3D"]
@@ -30,7 +36,26 @@ script = ExtResource("2_7c1k2")
 transform = Transform3D(0.810952, 0, 0.585113, -0.232489, 0.917671, 0.322224, -0.536942, -0.39734, 0.744187, 4.28669, 2.1574, 1.02638)
 shadow_enabled = true
 
+[node name="Body_Flesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 5, 0, 1, 0)
+mesh = SubResource("SphereMesh_mp4fc")
+skeleton = NodePath("../Entity")
+
 [node name="Entity" type="Entity" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="Wings_Flesh" type="MeshInstance3D" parent="Entity"]
+transform = Transform3D(4, 0, 0, 0, 0.3, 0, 0, 0, 1, 0, 0, -0.613371)
+mesh = SubResource("BoxMesh_v4uwu")
+
+[node name="Tail_Flesh" type="MeshInstance3D" parent="Entity"]
+transform = Transform3D(0.5, 0, 0, 0, 0.278647, -0.74105, 0, 0.111158, 1.85764, 0, -0.49612, 3)
+mesh = SubResource("BoxMesh_v4uwu")
+
+[node name="Heart_Heart" type="MeshInstance3D" parent="Entity"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
+mesh = SubResource("SphereMesh_mp4fc")
+skeleton = NodePath("../../Body_Flesh")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)

@@ -17,6 +17,7 @@ impl Entity {
                 return;
             }
         };
+        let transform = self.base.get_global_transform();
 
         render_geometry.clear_surfaces();
 
@@ -46,7 +47,7 @@ impl Entity {
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
         for particle in &self.particles {
-            let position = particle.position;
+            let position = transform * -particle.get_position(&self.rigid_body_set);
             render_geometry.surface_set_color(Color::from_rgb(0.2, 0.2, 1.0));
             for (pos1, pos2, pos3) in faces.clone() {
                 render_geometry.surface_set_normal((pos1 + pos2 + pos3).normalized());
@@ -78,8 +79,10 @@ impl Entity {
         for particle in &self.particles {
             for connection in &particle.connections {
                 if connection.active {
-                    let a = particle.position;
-                    let b = self.particles[connection.target_index].position;
+                    let a = transform * -particle.get_position(&self.rigid_body_set);
+                    let b = transform
+                        * -self.particles[connection.target_index]
+                            .get_position(&self.rigid_body_set);
                     let dist = a.distance_to(b);
                     let strain = f32::abs(connection.distance - dist);
 
@@ -101,7 +104,7 @@ impl Entity {
 
     fn get_immediate_mesh(&self) -> Result<Gd<ImmediateMesh>> {
         self.base
-            .get_child(0)
+            .get_child(self.base.get_child_count() - 1)
             .context("No child at index 0")?
             .try_cast::<MeshInstance3D>()
             .context("Failed to cast node to MeshInstance3D")?
