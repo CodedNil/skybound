@@ -1,7 +1,7 @@
 use godot::{
     engine::{
-        global::Key, mesh_instance_3d, ImmediateMesh, InputEvent, InputEventKey, Mesh,
-        MeshInstance3D, RigidBody3D, RigidBody3DVirtual,
+        global::Key, ImmediateMesh, InputEvent, InputEventKey, Mesh, MeshInstance3D, RigidBody3D,
+        RigidBody3DVirtual,
     },
     prelude::*,
 };
@@ -10,7 +10,7 @@ use rapier3d::prelude::*;
 mod cut;
 mod render;
 
-const PARTICLE_DISTANCE: f32 = 0.25;
+const PARTICLE_DISTANCE: f32 = 0.2;
 
 #[derive(PartialEq, Clone)]
 pub struct Connection {
@@ -155,8 +155,8 @@ impl RigidBody3DVirtual for Entity {
                     // Check if the position is inside a shape
                     let mut inside_shape = false;
                     for shape in &shapes {
-                        let local_position = shape.transform.affine_inverse() * position;
                         let shape_size = shape.transform.basis.scale();
+                        let local_position = shape.transform.affine_inverse() * position;
                         let inside = match shape.shape_type {
                             ShapeType::Box => {
                                 local_position.x.abs() < shape_size.x * 0.5
@@ -164,11 +164,10 @@ impl RigidBody3DVirtual for Entity {
                                     && local_position.z.abs() < shape_size.z * 0.5
                             }
                             ShapeType::Ellipsoid => {
-                                let scaled_position = local_position / shape_size;
-                                scaled_position.x.powi(2)
-                                    + scaled_position.y.powi(2)
-                                    + scaled_position.z.powi(2)
-                                    < 1.0
+                                local_position.x.powi(2)
+                                    + local_position.y.powi(2)
+                                    + local_position.z.powi(2)
+                                    < 0.25
                             }
                         };
                         if inside {
@@ -274,21 +273,26 @@ impl Entity {
                 godot_print!("Found mesh: {}", mesh_instance.get_name());
 
                 // Get the global transform of the mesh
-                let global_transform = mesh_instance.get_global_transform();
+                let transform = mesh_instance.get_global_transform();
 
-                // Transform the mesh's local AABB by its global transform.
-                let mesh_bounds = mesh_instance.get_aabb();
-                let transformed_min = global_transform * mesh_bounds.position;
-                let transformed_max = global_transform * (mesh_bounds.position + mesh_bounds.size);
+                // Transform these local corners to world space
+                let corner_1 = transform * Vector3::new(-0.5, -0.5, -0.5);
+                let corner_2 = transform * Vector3::new(0.5, 0.5, 0.5);
 
                 // Update the global bounds.
-                bounds_min.x = f32::min(bounds_min.x, transformed_min.x);
-                bounds_min.y = f32::min(bounds_min.y, transformed_min.y);
-                bounds_min.z = f32::min(bounds_min.z, transformed_min.z);
+                bounds_min.x = f32::min(bounds_min.x, corner_1.x);
+                bounds_min.y = f32::min(bounds_min.y, corner_1.y);
+                bounds_min.z = f32::min(bounds_min.z, corner_1.z);
+                bounds_min.x = f32::min(bounds_min.x, corner_2.x);
+                bounds_min.y = f32::min(bounds_min.y, corner_2.y);
+                bounds_min.z = f32::min(bounds_min.z, corner_2.z);
 
-                bounds_max.x = f32::max(bounds_max.x, transformed_max.x);
-                bounds_max.y = f32::max(bounds_max.y, transformed_max.y);
-                bounds_max.z = f32::max(bounds_max.z, transformed_max.z);
+                bounds_max.x = f32::max(bounds_max.x, corner_1.x);
+                bounds_max.y = f32::max(bounds_max.y, corner_1.y);
+                bounds_max.z = f32::max(bounds_max.z, corner_1.z);
+                bounds_max.x = f32::max(bounds_max.x, corner_2.x);
+                bounds_max.y = f32::max(bounds_max.y, corner_2.y);
+                bounds_max.z = f32::max(bounds_max.z, corner_2.z);
 
                 let shape_type = match mesh_instance
                     .get_mesh()
@@ -319,7 +323,7 @@ impl Entity {
                     shapes.push(Shape {
                         name,
                         material,
-                        transform: global_transform,
+                        transform,
                         shape_type,
                     });
                 } else {
