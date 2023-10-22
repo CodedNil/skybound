@@ -16,10 +16,14 @@ uniform vec3 cameraPos = vec3(-5.0, 0.0, 0.0);
 uniform vec3 front = vec3(1.0, 0.0, 0.0);
 uniform vec3 up = vec3(0.0, 1.0, 0.0);
 
-float sdPlane( vec3 p, vec4 n )
-{
-    // n must be normalized
-    return dot(p,n.xyz) + n.w;
+// Locations of spheres to render
+uniform int sphereN = 0;
+uniform vec3 sphereCenters[100000];
+
+uniform float blendAmount = 0.2;
+float smoothMin(float a, float b) {
+    float h = clamp(0.5 + 0.5 * (b - a) / blendAmount, 0.0, 1.0);
+    return mix(b, a, h) - blendAmount * h * (1.0 - h);
 }
 
 float sdSphere( vec3 p, vec3 c, float s )
@@ -27,11 +31,12 @@ float sdSphere( vec3 p, vec3 c, float s )
     return length(c-p)-s;
 }
 
-float sdf(vec3 p)
-{
-    float res = min(
-        sdSphere(p, vec3( 1.0, 0.0, 0.0), 1.0),
-        sdSphere(p, vec3(-1.0, 0.0, 0.0), 1.0));
+float sdf(vec3 p) {
+    float res = MAX_DIST; 
+    for(int i = 0; i < sphereN; i++) {
+        float d = sdSphere(p, sphereCenters[i], 0.1);
+        res = i == 0 ? d : smoothMin(res, d);
+    }
     return res;
 }
 

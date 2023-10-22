@@ -1,3 +1,4 @@
+use crate::entity::Entity;
 use godot::{
     engine::{
         control::LayoutPreset, ColorRect, Control, ControlVirtual, Material, ResourceLoader,
@@ -5,7 +6,7 @@ use godot::{
     },
     prelude::*,
 };
-use std::{str::FromStr, time::Instant};
+use std::time::Instant;
 
 #[derive(GodotClass)]
 #[class(base=Control)]
@@ -26,7 +27,7 @@ impl ControlVirtual for Raymarch {
         // Add ColorRect as child
         let mut color_rect = ColorRect::new_alloc();
         let material = ResourceLoader::singleton()
-            .load(GodotString::from_str("res://RaymarchMaterial.tres").unwrap())
+            .load("res://RaymarchMaterial.tres".into())
             .unwrap()
             .cast::<ShaderMaterial>();
         color_rect.set_anchors_preset(LayoutPreset::PRESET_FULL_RECT);
@@ -44,25 +45,54 @@ impl ControlVirtual for Raymarch {
         let camera = viewport.get_camera_3d().unwrap();
         let camera_transform = camera.get_global_transform();
 
+        let mut entity_particle_locations = VariantArray::new();
+        // Get all entities
+        for entity_node in self
+            .base
+            .get_tree()
+            .unwrap()
+            .get_nodes_in_group("Entity".into())
+            .iter_shared()
+        {
+            if let Some(entity) = entity_node.try_cast::<Entity>() {
+                for particle in &entity.bind().particles {
+                    if particle.interior {
+                        continue;
+                    }
+                    entity_particle_locations.push(particle.position.to_variant());
+                }
+            }
+        }
+        godot_print!(
+            "Entity particle locations: {}",
+            entity_particle_locations.len()
+        );
+
         if let Some(first_child) = self.base.get_child(0) {
             if let Some(color_rect) = first_child.try_cast::<ColorRect>() {
                 if let Some(material) = color_rect.get_material() {
                     if let Some(mut shader) = material.try_cast::<ShaderMaterial>() {
+                        shader.set_shader_parameter("lightPos".into(), light_pos.to_variant());
                         shader.set_shader_parameter(
-                            StringName::from_str("lightPos").unwrap(),
-                            light_pos.to_variant(),
-                        );
-                        shader.set_shader_parameter(
-                            StringName::from_str("cameraPos").unwrap(),
+                            "cameraPos".into(),
                             camera_transform.origin.to_variant(),
                         );
                         shader.set_shader_parameter(
-                            StringName::from_str("front").unwrap(),
+                            "front".into(),
                             (-camera_transform.basis.col_c()).to_variant(),
                         );
+                        shader.set_shader_parameter("fov".into(), camera.get_fov().to_variant());
+
+                        // Set sphere data
+                        // uniform int sphereN = 0;
+                        // uniform vec3 sphereCenters[100];
                         shader.set_shader_parameter(
-                            StringName::from_str("fov").unwrap(),
-                            camera.get_fov().to_variant(),
+                            "sphereN".into(),
+                            (entity_particle_locations.len() as u64).to_variant(),
+                        );
+                        shader.set_shader_parameter(
+                            "sphereCenters".into(),
+                            entity_particle_locations.to_variant(),
                         );
                     }
                 }

@@ -34,11 +34,11 @@ impl Connection {
 
 #[derive(PartialEq, Clone)]
 pub struct Particle {
-    position: Vector3,
+    pub position: Vector3,
     old_position: Vector3,
-    interior: bool,
+    pub interior: bool,
     connections: Vec<Connection>,
-    material: ParticleMaterial,
+    pub material: ParticleMaterial,
 }
 
 impl Particle {
@@ -54,7 +54,7 @@ impl Particle {
 }
 
 #[derive(PartialEq, Clone)]
-enum ParticleMaterial {
+pub enum ParticleMaterial {
     Flesh,
     Bone,
     Heart,
@@ -75,10 +75,10 @@ struct Shape {
 
 #[derive(GodotClass)]
 #[class(base=RigidBody3D)]
-struct Entity {
+pub struct Entity {
     #[base]
     base: Base<RigidBody3D>,
-    particles: Vec<Particle>,
+    pub particles: Vec<Particle>,
     central_particle: usize,
 
     accumulator: f32,
@@ -100,6 +100,7 @@ impl RigidBody3DVirtual for Entity {
             plane_size: 0.2,
         };
         instance.base.set_gravity_scale(0.0);
+        instance.base.add_to_group("Entity".into());
 
         instance
     }
@@ -155,12 +156,12 @@ impl RigidBody3DVirtual for Entity {
 
         self.connect_particles(&mut local_particles);
 
-        // // Set interior particles
-        // for particle in &mut local_particles {
-        //     if particle.connections.len() > 10 {
-        //         particle.interior = true;
-        //     }
-        // }
+        // Set interior particles
+        for particle in &mut local_particles {
+            if particle.connections.len() > 8 {
+                particle.interior = true;
+            }
+        }
 
         // Replace the particles with the local version
         self.particles = local_particles;
@@ -191,7 +192,7 @@ impl RigidBody3DVirtual for Entity {
             self.accumulator -= time_step;
         }
 
-        self.render_particles();
+        // self.render_particles();
     }
 
     fn input(&mut self, event: Gd<InputEvent>) {
