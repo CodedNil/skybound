@@ -1,6 +1,7 @@
 use godot::prelude::*;
 
 mod entity;
+mod raymarch;
 
 struct SkyboundExtension;
 

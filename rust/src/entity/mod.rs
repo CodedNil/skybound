@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use godot::{
     engine::{
         global::Key, ImmediateMesh, InputEvent, InputEventKey, Mesh, MeshInstance3D, RigidBody3D,
@@ -7,12 +5,13 @@ use godot::{
     },
     prelude::*,
 };
+use std::collections::{HashMap, HashSet};
 
 mod cut;
 mod physics;
 mod render;
 
-const PARTICLE_DISTANCE: f32 = 0.1;
+const PARTICLE_DISTANCE: f32 = 0.15;
 
 #[derive(PartialEq, Clone)]
 pub struct Connection {
@@ -37,15 +36,17 @@ impl Connection {
 pub struct Particle {
     position: Vector3,
     old_position: Vector3,
+    interior: bool,
     connections: Vec<Connection>,
     material: ParticleMaterial,
 }
 
 impl Particle {
-    const fn new(position: Vector3, material: ParticleMaterial) -> Self {
+    const fn new(position: Vector3, material: ParticleMaterial, interior: bool) -> Self {
         Self {
             position,
             old_position: position,
+            interior,
             connections: Vec::new(),
             material,
         }
@@ -141,7 +142,7 @@ impl RigidBody3DVirtual for Entity {
                         continue;
                     }
 
-                    local_particles.push(Particle::new(position, particle_material));
+                    local_particles.push(Particle::new(position, particle_material, false));
 
                     // Set the central particle
                     if x == 0 && y == 0 && z == 0 {
@@ -153,6 +154,13 @@ impl RigidBody3DVirtual for Entity {
         godot_print!("Created {} particles", local_particles.len());
 
         self.connect_particles(&mut local_particles);
+
+        // // Set interior particles
+        // for particle in &mut local_particles {
+        //     if particle.connections.len() > 10 {
+        //         particle.interior = true;
+        //     }
+        // }
 
         // Replace the particles with the local version
         self.particles = local_particles;
@@ -171,7 +179,7 @@ impl RigidBody3DVirtual for Entity {
             self.cut_on_plane().unwrap();
         }
 
-        let time_step = 1.0 / 60.0;
+        let time_step = 1.0 / 30.0;
         self.accumulator += delta as f32;
         if self.accumulator >= time_step {
             // Physics step
@@ -256,8 +264,8 @@ impl Entity {
                 let name_parts: Vec<&str> = name.split('_').collect();
 
                 if name_parts.len() == 2 {
-                    let name = name_parts[0].to_string();
-                    let material = match name_parts[1].to_string().as_str() {
+                    let name = name_parts[1].to_string();
+                    let material = match name_parts[0].to_string().as_str() {
                         "Flesh" => ParticleMaterial::Flesh,
                         "Bone" => ParticleMaterial::Bone,
                         "Heart" => ParticleMaterial::Heart,

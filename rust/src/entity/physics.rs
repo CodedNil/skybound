@@ -2,11 +2,13 @@ use super::{Particle, PARTICLE_DISTANCE};
 use crate::entity::ParticleMaterial;
 use godot::prelude::*;
 use rand::seq::SliceRandom;
-use std::collections::HashMap;
+use rayon::prelude::*;
+use std::{collections::HashMap, sync::Mutex};
 
+#[allow(clippy::too_many_lines)]
 pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector3)> {
     let start_time = std::time::Instant::now();
-    let gravity = Vector3::new(0.0, -50.0, 0.0);
+    let gravity = Vector3::new(0.0, -10.0, 0.0);
 
     // Create grid for lookup
     let cell_size = PARTICLE_DISTANCE;
@@ -30,11 +32,14 @@ pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector
 
         // Wing uplift
         if particle.material == ParticleMaterial::Wing {
-            let wing_uplift_strength = 100.0;
+            let wing_uplift_strength = 50.0;
             acceleration += Vector3::new(0.0, wing_uplift_strength, 0.0);
         }
 
-        let new_position = particle.position + velocity + acceleration * delta * delta;
+        let mut new_position = particle.position + velocity + acceleration * delta * delta;
+        if particle.material == ParticleMaterial::Bone {
+            new_position = particle.position;
+        }
         predicted_positions.push(new_position);
     }
 
@@ -47,7 +52,7 @@ pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector
     let mut corrected_positions = predicted_positions.clone();
     for _ in 0..solver_iterations {
         // Collision constraints
-        let restitution = 0.5; // 1 is perfectly elastic, 0 is no bounce
+        let restitution = 0.7; // 1 is perfectly elastic, 0 is no bounce
         for &i in &indices {
             if corrected_positions[i].y < 0.0 {
                 let penetration = 0.0 - corrected_positions[i].y;
@@ -68,8 +73,11 @@ pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector
         // Self-collision constraints
         let minimum_distance = PARTICLE_DISTANCE;
         let stiffness = 0.2;
-        for &particle_index in &indices {
+        let corrections: Mutex<Vec<(usize, Vector3)>> = Mutex::new(Vec::new());
+
+        indices.par_iter().for_each(|&particle_index| {
             let position = corrected_positions[particle_index];
+            let mut local_corrections = Vec::new();
 
             #[allow(clippy::cast_possible_truncation)]
             let (cell_x, cell_y) = (
@@ -90,31 +98,65 @@ pub fn process_step(particles: &Vec<Particle>, delta: f32) -> Vec<(usize, Vector
                                 let correction = (dir / current_distance)
                                     * ((minimum_distance - current_distance) * 0.5)
                                     * stiffness;
-                                corrected_positions[particle_index] -= correction;
-                                corrected_positions[other_index] += correction;
+                                local_corrections.push((particle_index, -correction));
+                                local_corrections.push((other_index, correction));
                             }
                         }
                     }
                 }
             }
+            // Extend the shared corrections with local results
+            corrections
+                .lock()
+                .unwrap()
+                .extend(local_corrections.into_iter());
+        });
+        // Apply corrections
+        for (index, correction) in corrections.lock().unwrap().iter() {
+            corrected_positions[*index] += *correction;
         }
 
         // Spring constraints
-        let stiffness = 0.2;
+        let stiffness = 0.1;
         for &i in &indices {
             let particle = &particles[i];
+
             for connection in &particle.connections {
                 if connection.active {
+                    // let j = connection.target_index;
+                    // let offset = corrected_positions[j] - corrected_positions[i];
+                    // let direction = offset.normalized();
+                    // let current_distance = offset.length();
+                    // let difference = current_distance - connection.distance;
+                    // let correction = direction * (difference * 0.5) * stiffness;
+
+                    // // Adjust the positions of both particles
+                    // corrected_positions[i] += correction;
+                    // corrected_positions[j] -= correction;
+
                     let j = connection.target_index;
-                    let direction = (corrected_positions[j] - corrected_positions[i]).normalized();
-                    let current_distance =
-                        (corrected_positions[j] - corrected_positions[i]).length();
-                    let difference = current_distance - connection.distance;
-                    let correction = direction * (difference * 0.5) * stiffness;
+
+                    // Compute the offset and its direction
+                    let offset = corrected_positions[j] - corrected_positions[i];
+                    let direction = offset.normalized();
+
+                    // Compute how much the current direction deviates from the desired direction
+                    let direction_difference = direction - connection.direction.normalized();
+
+                    // Calculate the correction based on the direction difference
+                    let directional_correction = direction_difference * stiffness;
+
+                    // Calculate the stretching or compressing of the spring
+                    let current_distance = offset.length();
+                    let distance_difference = current_distance - connection.distance;
+                    let stretch_correction = direction * (distance_difference * 0.5) * stiffness;
+
+                    // Combine the corrections
+                    let total_correction = stretch_correction + directional_correction;
 
                     // Adjust the positions of both particles
-                    corrected_positions[i] += correction;
-                    corrected_positions[j] -= correction;
+                    corrected_positions[i] += total_correction;
+                    corrected_positions[j] -= total_correction;
                 }
             }
         }

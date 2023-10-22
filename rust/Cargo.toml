@@ -17,9 +17,9 @@ anyhow = "1.0"
 rayon = "1.8"
 rand = "0.8"
 
-# Enable a small amount of optimization in debug mode
+# Enable optimization in debug mode
 [profile.dev]
-opt-level = 2
+opt-level = 3
 
 # Enable high optimizations for dependencies
 [profile.dev.package."*"]

@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://bdwfwdvmwx30k"]
+
+[ext_resource type="Shader" path="res://RaymarchShader.gdshader" id="1_xdgk7"]
+
+[resource]
+shader = ExtResource("1_xdgk7")
+shader_parameter/MAX_STEPS = 100
+shader_parameter/MAX_DIST = 20.0
+shader_parameter/MIN_HIT_DIST = 0.0001
+shader_parameter/DERIVATIVE_STEP = 0.0001
+shader_parameter/ambientCoeff = 0.2
+shader_parameter/diffuseCoeff = 0.9
+shader_parameter/specularCoeff = 1.0
+shader_parameter/specularExponent = 64.0
+shader_parameter/lightPos = Vector3(0, 5, 0)
+shader_parameter/fov = 45.0
+shader_parameter/cameraPos = Vector3(-5, 0, 0)
+shader_parameter/front = Vector3(1, 0, 0)
+shader_parameter/up = Vector3(0, 1, 0)

@@ -48,6 +48,9 @@ impl Entity {
             (Vector3::DOWN, Vector3::BACK, Vector3::RIGHT),  // Bottom Back Right Face
         ];
         for particle in &self.particles {
+            if particle.interior {
+                continue;
+            }
             let material_color = match particle.material {
                 ParticleMaterial::Flesh => Color::from_rgb(1.0, 0.3, 0.3),
                 ParticleMaterial::Bone => Color::from_rgb(1.0, 1.0, 1.0),
