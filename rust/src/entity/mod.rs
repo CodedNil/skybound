@@ -11,14 +11,14 @@ mod cut;
 mod physics;
 mod render;
 
-const PARTICLE_DISTANCE: f32 = 0.15;
+const PARTICLE_DISTANCE: f32 = 0.1;
 
 #[derive(PartialEq, Clone)]
 pub struct Connection {
-    target_index: usize,
+    pub target_index: usize,
     direction: Vector3,
     distance: f32,
-    active: bool,
+    pub active: bool,
 }
 
 impl Connection {
@@ -37,7 +37,7 @@ pub struct Particle {
     pub position: Vector3,
     old_position: Vector3,
     pub interior: bool,
-    connections: Vec<Connection>,
+    pub connections: Vec<Connection>,
     pub material: ParticleMaterial,
 }
 
@@ -56,6 +56,7 @@ impl Particle {
 #[derive(PartialEq, Clone)]
 pub enum ParticleMaterial {
     Flesh,
+    Skin,
     Bone,
     Heart,
     Wing,
@@ -118,29 +119,41 @@ impl RigidBody3DVirtual for Entity {
 
                     // Check if the position is inside a shape
                     let mut inside_shape = false;
+                    let mut surface_distance = 0.0;
                     let mut particle_material = ParticleMaterial::Flesh;
                     for shape in &shapes {
                         let local_position = shape.transform.affine_inverse() * position;
-                        let inside = match shape.shape_type {
+
+                        let (inside, distance_to_edge) = match shape.shape_type {
                             ShapeType::Box => {
-                                local_position.x.abs() < 0.5
-                                    && local_position.y.abs() < 0.5
-                                    && local_position.z.abs() < 0.5
+                                let dx = 0.5 - local_position.x.abs();
+                                let dy = 0.5 - local_position.y.abs();
+                                let dz = 0.5 - local_position.z.abs();
+                                let distance = dx.min(dy).min(dz);
+                                (distance > 0.0, distance)
                             }
                             ShapeType::Ellipsoid => {
-                                local_position.x.powi(2)
+                                let norm_squared = local_position.x.powi(2)
                                     + local_position.y.powi(2)
-                                    + local_position.z.powi(2)
-                                    < 0.25
+                                    + local_position.z.powi(2);
+                                let distance = 0.5 - norm_squared.sqrt();
+                                (norm_squared < 0.25, distance)
                             }
                         };
                         if inside {
                             inside_shape = true;
                             particle_material = shape.material.clone();
+                            surface_distance = f32::max(surface_distance, distance_to_edge);
                         }
                     }
                     if !inside_shape {
                         continue;
+                    }
+                    // Check if on the surface
+                    godot_print!("Surface distance: {}", surface_distance);
+                    let is_skin = surface_distance != 0.0 && surface_distance < PARTICLE_DISTANCE;
+                    if is_skin && particle_material == ParticleMaterial::Flesh {
+                        particle_material = ParticleMaterial::Skin;
                     }
 
                     local_particles.push(Particle::new(position, particle_material, false));
@@ -157,11 +170,11 @@ impl RigidBody3DVirtual for Entity {
         self.connect_particles(&mut local_particles);
 
         // Set interior particles
-        for particle in &mut local_particles {
-            if particle.connections.len() > 8 {
-                particle.interior = true;
-            }
-        }
+        // for particle in &mut local_particles {
+        //     if particle.connections.len() > 10 {
+        //         particle.interior = true;
+        //     }
+        // }
 
         // Replace the particles with the local version
         self.particles = local_particles;
@@ -180,19 +193,19 @@ impl RigidBody3DVirtual for Entity {
             self.cut_on_plane().unwrap();
         }
 
-        let time_step = 1.0 / 30.0;
-        self.accumulator += delta as f32;
-        if self.accumulator >= time_step {
-            // Physics step
-            let new_positions = physics::process_step(&self.particles, time_step);
-            for (index, position) in new_positions {
-                self.particles[index].old_position = self.particles[index].position;
-                self.particles[index].position = position;
-            }
-            self.accumulator -= time_step;
-        }
+        // let time_step = 1.0 / 30.0;
+        // self.accumulator += delta as f32;
+        // if self.accumulator >= time_step {
+        //     // Physics step
+        //     let new_positions = physics::process_step(&self.particles, time_step);
+        //     for (index, position) in new_positions {
+        //         self.particles[index].old_position = self.particles[index].position;
+        //         self.particles[index].position = position;
+        //     }
+        //     self.accumulator -= time_step;
+        // }
 
-        // self.render_particles();
+        self.render_particles();
     }
 
     fn input(&mut self, event: Gd<InputEvent>) {

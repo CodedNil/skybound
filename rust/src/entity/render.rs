@@ -53,6 +53,7 @@ impl Entity {
             }
             let material_color = match particle.material {
                 ParticleMaterial::Flesh => Color::from_rgb(1.0, 0.3, 0.3),
+                ParticleMaterial::Skin => Color::from_rgb(1.0, 0.5, 0.7),
                 ParticleMaterial::Bone => Color::from_rgb(1.0, 1.0, 1.0),
                 ParticleMaterial::Heart => Color::from_rgb(1.0, 0.0, 0.0),
                 ParticleMaterial::Wing => Color::from_rgb(0.3, 0.3, 1.0),

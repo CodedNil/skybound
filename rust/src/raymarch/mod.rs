@@ -37,6 +37,7 @@ impl ControlVirtual for Raymarch {
         instance
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process(&mut self, _delta: f64) {
         let time = self.start_time.elapsed().as_secs_f32();
         let light_pos = Vector3::new(2.0 * time.cos(), 5.0, 2.0 * time.sin());
@@ -78,14 +79,16 @@ impl ControlVirtual for Raymarch {
                             camera_transform.origin.to_variant(),
                         );
                         shader.set_shader_parameter(
-                            "front".into(),
+                            "cameraFront".into(),
                             (-camera_transform.basis.col_c()).to_variant(),
+                        );
+                        shader.set_shader_parameter(
+                            "cameraUp".into(),
+                            camera_transform.basis.col_b().to_variant(),
                         );
                         shader.set_shader_parameter("fov".into(), camera.get_fov().to_variant());
 
                         // Set sphere data
-                        // uniform int sphereN = 0;
-                        // uniform vec3 sphereCenters[100];
                         shader.set_shader_parameter(
                             "sphereN".into(),
                             (entity_particle_locations.len() as u64).to_variant(),

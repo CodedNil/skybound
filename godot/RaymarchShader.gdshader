@@ -13,14 +13,14 @@ uniform vec3 lightPos = vec3(0.0, 5.0, 0.0);
 
 uniform float fov = 45.0;
 uniform vec3 cameraPos = vec3(-5.0, 0.0, 0.0);
-uniform vec3 front = vec3(1.0, 0.0, 0.0);
-uniform vec3 up = vec3(0.0, 1.0, 0.0);
+uniform vec3 cameraFront = vec3(1.0, 0.0, 0.0);
+uniform vec3 cameraUp = vec3(0.0, 1.0, 0.0);
 
 // Locations of spheres to render
 uniform int sphereN = 0;
 uniform vec3 sphereCenters[100000];
 
-uniform float blendAmount = 0.2;
+uniform float blendAmount = 0.1;
 float smoothMin(float a, float b) {
     float h = clamp(0.5 + 0.5 * (b - a) / blendAmount, 0.0, 1.0);
     return mix(b, a, h) - blendAmount * h * (1.0 - h);
@@ -31,11 +31,18 @@ float sdSphere( vec3 p, vec3 c, float s )
     return length(c-p)-s;
 }
 
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+    vec3 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+
 float sdf(vec3 p) {
     float res = MAX_DIST; 
     for(int i = 0; i < sphereN; i++) {
-        float d = sdSphere(p, sphereCenters[i], 0.1);
-        res = i == 0 ? d : smoothMin(res, d);
+        float d = sdSphere(p, sphereCenters[i], 0.05);
+        // res = i == 0 ? d : smoothMin(res, d);
+		res = i == 0 ? d : min(res, d);
     }
     return res;
 }
@@ -53,13 +60,10 @@ vec3 blinnPhong(vec3 position, vec3 lightPosition, vec3 ambient, vec3 diffuse)
     vec3 normal = estimateNormal(position);
     vec3 toEye = normalize(cameraPos - position);
     vec3 toLight = normalize(lightPosition - position);
-    // vec3 reflection = reflect(-toLight, normal); // uncomment for Phong model
     vec3 halfwayDir = normalize(toLight + toEye);
     
     vec3 ambientFactor = ambient * ambientCoeff;
     vec3 diffuseFactor = diffuse * max(0.0, dot(normal, toLight));
-    // vec3 specularFactor = diffuse * pow(max(0.0, dot(toEye, reflection)), specularExponent)
-    //                     * specularCoeff; // uncomment for Phong model
     vec3 specularFactor = diffuse * pow(max(0.0, dot(normal, halfwayDir)), specularExponent)
                         * specularCoeff;
     
@@ -103,8 +107,8 @@ vec3 getRayDirection(vec2 resolution, vec2 uv)
 	
 	vec2 offsets = screenCoord * tan(fov2);
 	
-	vec3 rayFront = normalize(front);
-	vec3 rayRight = normalize(cross(rayFront, normalize(up)));
+	vec3 rayFront = normalize(cameraFront);
+	vec3 rayRight = normalize(cross(rayFront, normalize(cameraUp)));
 	vec3 rayUp = cross(rayRight, rayFront);
 	vec3 rayDir = rayFront + rayRight * offsets.x + rayUp * offsets.y;
 	
