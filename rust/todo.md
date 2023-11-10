@@ -1,13 +1,18 @@
-todo
+reactor
+radiator
+engine
+rcs
+propellent
 
-blender creation of entities
-bones as predefined lines, rendered specially with thickness (shader shortens the lines and makes them thicker at the ends)
-mesh for flesh, this has particles created for inside the mesh (and ones closest to skin get projected onto the skin)
+projectiles turret:
+render trails
+blunt or sharp, whether they impact with force, causing damage on the surface hit, or try to punch through
+seeking, force applied on the projectile to seek it towards target, heavier projectiles are less able
+variants, rapid fire, heavy, fast
 
-render sdfs of the line connections between particles with thickness
+beam weapon:
+magic beam builds inside a tube, so it has much less aimability, the craft as a whole must rotate to aim
+great for cutting chunks out of shields
 
-separate skin from flesh, skin based on if particles average connection directions are far enough from 0
-
-bounding volume hierarchy for rendering particles efficiently, in cpu before passing through
-
-volumetric clouds https://www.shadertoy.com/view/XslGRr
+spear:
+ram into ships to pierce with extreme force
