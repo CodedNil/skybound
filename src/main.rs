@@ -1,7 +1,8 @@
+use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
     pbr::{
-        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
+        CascadeShadowConfigBuilder, FogVolume, NotShadowCaster, VolumetricFog, VolumetricLight,
         light_consts::lux,
     },
     prelude::*,
@@ -12,15 +13,24 @@ use smooth_bevy_cameras::{
     controllers::unreal::{UnrealCameraBundle, UnrealCameraController, UnrealCameraPlugin},
 };
 
+mod wind; // Declare the wind module
+use crate::wind::apply_wind_force; // Import the apply_wind_force system
+
 fn main() {
     App::new()
         .insert_resource(AmbientLight {
-            brightness: 0.2,
+            brightness: lux::AMBIENT_DAYLIGHT,
             ..default()
         })
-        .add_plugins(DefaultPlugins)
-        .add_plugins((LookTransformPlugin, UnrealCameraPlugin::default()))
+        .add_plugins((
+            DefaultPlugins,
+            PhysicsPlugins::default(),
+            LookTransformPlugin,
+            UnrealCameraPlugin::default(),
+        ))
+        .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
         .add_systems(Startup, setup)
+        .add_systems(FixedUpdate, apply_wind_force) // Add our wind force system to the fixed update schedule
         .run();
 }
 
@@ -38,12 +48,6 @@ fn setup(
                 ..default()
             },
             Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
-            Atmosphere::EARTH,
-            AtmosphereSettings {
-                aerial_view_lut_max_distance: 3.2e5,
-                scene_units_to_m: 1e+4,
-                ..Default::default()
-            },
             Exposure::SUNLIGHT,
             Tonemapping::AcesFitted,
             Bloom::NATURAL,
@@ -52,10 +56,14 @@ fn setup(
                 directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
                 directional_light_exponent: 30.0,
                 falloff: FogFalloff::from_visibility_colors(
-                    15.0,
+                    500.0,
                     Color::srgb(0.35, 0.5, 0.66),
                     Color::srgb(0.8, 0.844, 1.0),
                 ),
+            },
+            VolumetricFog {
+                ambient_intensity: 0.0,
+                ..default()
             },
         ))
         .insert(UnrealCameraBundle::new(
@@ -67,21 +75,28 @@ fn setup(
 
     // Circular base
     commands.spawn((
-        Mesh3d(meshes.add(Circle::new(4.0))),
+        RigidBody::Static,
+        Collider::cylinder(8.0, 0.1),
+        Mesh3d(meshes.add(Cylinder::new(8.0, 0.1))),
         MeshMaterial3d(materials.add(Color::WHITE)),
-        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
     ));
+
     // Cube
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+        RigidBody::Dynamic,
+        LinearDamping(0.8),
+        AngularDamping(1.6),
+        Collider::cuboid(1.0, 1.0, 1.0),
+        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
+        Mesh3d(meshes.add(Cuboid::from_length(1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
+        Transform::from_xyz(0.0, 4.0, 0.0),
     ));
 
     // Sun
     commands.spawn((
         DirectionalLight {
-            illuminance: lux::RAW_SUNLIGHT,
+            illuminance: lux::DIRECT_SUNLIGHT,
             shadows_enabled: true,
             ..default()
         },
@@ -91,7 +106,8 @@ fn setup(
             ..default()
         }
         .build(),
-        Transform::from_xyz(1.0, -0.4, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        VolumetricLight,
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
     ));
     // Sky
     commands.spawn((
@@ -104,5 +120,11 @@ fn setup(
         })),
         Transform::from_scale(Vec3::splat(1_000_000.0)),
         NotShadowCaster,
+    ));
+
+    // Fog volume
+    commands.spawn((
+        FogVolume::default(),
+        Transform::from_scale(Vec3::splat(35.0)),
     ));
 }

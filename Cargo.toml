@@ -5,11 +5,11 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.16.1", features = [
-    "dynamic_linking", # Don't ship with this enabled
+    # "dynamic_linking", # Don't ship with this enabled
     "wayland",
 ] }
 smooth-bevy-cameras = "0.14.0"
-
+avian3d = "0.3"
 
 [profile.dev]
 opt-level = 1
