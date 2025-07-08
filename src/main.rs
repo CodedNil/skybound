@@ -10,8 +10,10 @@ use smooth_bevy_cameras::{
     controllers::unreal::{UnrealCameraBundle, UnrealCameraController, UnrealCameraPlugin},
 };
 
-mod wind; // Declare the wind module
-use crate::wind::apply_wind_force; // Import the apply_wind_force system
+mod clouds;
+mod wind;
+use crate::clouds::CloudPlugin;
+use crate::wind::apply_wind_force;
 
 fn main() {
     App::new()
@@ -21,6 +23,7 @@ fn main() {
         })
         .add_plugins((
             DefaultPlugins,
+            CloudPlugin,
             PhysicsPlugins::default(),
             LookTransformPlugin,
             UnrealCameraPlugin::default(),
