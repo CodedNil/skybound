@@ -1,10 +1,7 @@
 use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
-    pbr::{
-        CascadeShadowConfigBuilder, FogVolume, NotShadowCaster, VolumetricFog, VolumetricLight,
-        light_consts::lux,
-    },
+    pbr::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
     prelude::*,
     render::camera::Exposure,
 };
@@ -30,7 +27,7 @@ fn main() {
         ))
         .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, apply_wind_force) // Add our wind force system to the fixed update schedule
+        .add_systems(FixedUpdate, apply_wind_force)
         .run();
 }
 
@@ -61,15 +58,11 @@ fn setup(
                     Color::srgb(0.8, 0.844, 1.0),
                 ),
             },
-            VolumetricFog {
-                ambient_intensity: 0.0,
-                ..default()
-            },
         ))
         .insert(UnrealCameraBundle::new(
             UnrealCameraController::default(),
-            Vec3::new(-2.0, 5.0, 5.0),
-            Vec3::new(0., 0., 0.),
+            Vec3::new(-15.0, 8.0, 18.0),
+            Vec3::new(0.0, 4.0, 0.0),
             Vec3::Y,
         ));
 
@@ -106,7 +99,6 @@ fn setup(
             ..default()
         }
         .build(),
-        VolumetricLight,
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
     ));
     // Sky
@@ -120,11 +112,5 @@ fn setup(
         })),
         Transform::from_scale(Vec3::splat(1_000_000.0)),
         NotShadowCaster,
-    ));
-
-    // Fog volume
-    commands.spawn((
-        FogVolume::default(),
-        Transform::from_scale(Vec3::splat(35.0)),
     ));
 }
