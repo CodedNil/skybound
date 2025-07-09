@@ -56,7 +56,7 @@ impl Plugin for CloudsPlugin {
             return;
         };
 
-        render_app.init_resource::<PostProcessPipeline>();
+        render_app.init_resource::<VolumetricCloudsPipeline>();
     }
 }
 
@@ -69,7 +69,6 @@ struct VolumetricCloudsNode;
 impl ViewNode for VolumetricCloudsNode {
     type ViewQuery = (
         &'static ViewTarget,
-        &'static VolumetricClouds,
         &'static ViewUniformOffset,
         &'static DynamicUniformIndex<VolumetricClouds>,
     );
@@ -78,15 +77,14 @@ impl ViewNode for VolumetricCloudsNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_target, _post_process_settings, view_uniform_offset, settings_index): QueryItem<
-            Self::ViewQuery,
-        >,
+        (view_target, view_uniform_offset, settings_index): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        let post_process_pipeline = world.resource::<PostProcessPipeline>();
+        let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
 
-        let Some(pipeline) = pipeline_cache.get_render_pipeline(post_process_pipeline.pipeline_id)
+        let Some(pipeline) =
+            pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id)
         else {
             return Ok(());
         };
@@ -104,11 +102,11 @@ impl ViewNode for VolumetricCloudsNode {
         let post_process = view_target.post_process_write();
 
         let bind_group = render_context.render_device().create_bind_group(
-            "post_process_bind_group",
-            &post_process_pipeline.layout,
+            "volumetric_clouds_bind_group",
+            &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
                 post_process.source,
-                &post_process_pipeline.sampler,
+                &volumetric_clouds_pipeline.sampler,
                 view_binding.clone(),
                 settings_binding.clone(),
             )),
@@ -116,7 +114,7 @@ impl ViewNode for VolumetricCloudsNode {
 
         // Begin the render pass
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("post_process_pass"),
+            label: Some("volumetric_clouds_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: post_process.destination,
                 resolve_target: None,
@@ -141,18 +139,18 @@ impl ViewNode for VolumetricCloudsNode {
 
 // Global data used by the render pipeline
 #[derive(Resource)]
-struct PostProcessPipeline {
+struct VolumetricCloudsPipeline {
     layout: BindGroupLayout,
     sampler: Sampler,
     pipeline_id: CachedRenderPipelineId,
 }
 
-impl FromWorld for PostProcessPipeline {
+impl FromWorld for VolumetricCloudsPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
         let layout = render_device.create_bind_group_layout(
-            "post_process_bind_group_layout",
+            "volumetric_clouds_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
@@ -171,7 +169,7 @@ impl FromWorld for PostProcessPipeline {
         let sampler = render_device.create_sampler(&SamplerDescriptor::default());
 
         let pipeline_descriptor = RenderPipelineDescriptor {
-            label: Some("post_process_pipeline".into()),
+            label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout.clone()],
             vertex: fullscreen_shader_vertex_state(),
             fragment: Some(FragmentState {

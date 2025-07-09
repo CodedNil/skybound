@@ -4,7 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.16.1", features = ["wayland"] }
+bevy = { version = "0.16.1", default-features = false, features = [
+    "wayland",
+
+    "async_executor",
+    "bevy_core_pipeline",
+    "bevy_log",
+    "bevy_pbr",
+    "bevy_window",
+    "multi_threaded",
+] }
 smooth-bevy-cameras = "0.14.0"
 avian3d = "0.3"
 
