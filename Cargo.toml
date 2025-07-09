@@ -4,10 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.16.1", features = [
-    # "dynamic_linking", # Don't ship with this enabled
-    "wayland",
-] }
+bevy = { version = "0.16.1", features = ["wayland"] }
 smooth-bevy-cameras = "0.14.0"
 avian3d = "0.3"
 

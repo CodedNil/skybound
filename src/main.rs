@@ -12,7 +12,7 @@ use smooth_bevy_cameras::{
 
 mod clouds;
 mod wind;
-use crate::clouds::CloudPlugin;
+use crate::clouds::{CloudsPlugin, VolumetricClouds};
 use crate::wind::apply_wind_force;
 
 fn main() {
@@ -21,14 +21,14 @@ fn main() {
             brightness: lux::AMBIENT_DAYLIGHT,
             ..default()
         })
+        .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
         .add_plugins((
             DefaultPlugins,
-            CloudPlugin,
+            CloudsPlugin,
             PhysicsPlugins::default(),
             LookTransformPlugin,
             UnrealCameraPlugin::default(),
         ))
-        .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, apply_wind_force)
         .run();
@@ -61,6 +61,7 @@ fn setup(
                     Color::srgb(0.8, 0.844, 1.0),
                 ),
             },
+            VolumetricClouds { intensity: 0.002 },
         ))
         .insert(UnrealCameraBundle::new(
             UnrealCameraController::default(),

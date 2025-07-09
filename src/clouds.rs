@@ -1,40 +1,191 @@
 use bevy::{
-    pbr::MaterialPlugin,
+    core_pipeline::{
+        core_3d::graph::{Core3d, Node3d},
+        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+    },
+    ecs::query::QueryItem,
     prelude::*,
-    render::render_resource::{AsBindGroup, ShaderRef},
+    render::{
+        RenderApp,
+        extract_component::{
+            ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
+            UniformComponentPlugin,
+        },
+        render_graph::{
+            NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
+        },
+        render_resource::{
+            binding_types::{sampler, texture_2d, uniform_buffer},
+            *,
+        },
+        renderer::{RenderContext, RenderDevice},
+        view::ViewTarget,
+    },
 };
 
-pub struct CloudPlugin;
+pub struct CloudsPlugin;
 
-impl Plugin for CloudPlugin {
+impl Plugin for CloudsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<CloudMaterial>::default())
-            .add_systems(Startup, setup_clouds);
+        app.add_plugins((
+            ExtractComponentPlugin::<VolumetricClouds>::default(),
+            UniformComponentPlugin::<VolumetricClouds>::default(),
+        ));
+
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
+        };
+
+        render_app
+            .add_render_graph_node::<ViewNodeRunner<PostProcessNode>>(Core3d, PostProcessLabel)
+            .add_render_graph_edges(
+                Core3d,
+                (
+                    Node3d::Tonemapping,
+                    PostProcessLabel,
+                    Node3d::EndMainPassPostProcessing,
+                ),
+            );
+    }
+
+    fn finish(&self, app: &mut App) {
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
+        };
+
+        render_app.init_resource::<PostProcessPipeline>();
     }
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-pub struct CloudMaterial {}
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+struct PostProcessLabel;
 
-impl Material for CloudMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/clouds.wgsl".into()
-    }
+#[derive(Default)]
+struct PostProcessNode;
 
-    fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+impl ViewNode for PostProcessNode {
+    type ViewQuery = (
+        &'static ViewTarget,
+        &'static VolumetricClouds,
+        &'static DynamicUniformIndex<VolumetricClouds>,
+    );
+
+    fn run(
+        &self,
+        _graph: &mut RenderGraphContext,
+        render_context: &mut RenderContext,
+        (view_target, _post_process_settings, settings_index): QueryItem<Self::ViewQuery>,
+        world: &World,
+    ) -> Result<(), NodeRunError> {
+        let post_process_pipeline = world.resource::<PostProcessPipeline>();
+        let pipeline_cache = world.resource::<PipelineCache>();
+
+        let Some(pipeline) = pipeline_cache.get_render_pipeline(post_process_pipeline.pipeline_id)
+        else {
+            return Ok(());
+        };
+
+        let settings_uniforms = world.resource::<ComponentUniforms<VolumetricClouds>>();
+        let Some(settings_binding) = settings_uniforms.uniforms().binding() else {
+            return Ok(());
+        };
+
+        let post_process = view_target.post_process_write();
+
+        let bind_group = render_context.render_device().create_bind_group(
+            "post_process_bind_group",
+            &post_process_pipeline.layout,
+            &BindGroupEntries::sequential((
+                post_process.source,
+                &post_process_pipeline.sampler,
+                settings_binding.clone(),
+            )),
+        );
+
+        // Begin the render pass
+        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
+            label: Some("post_process_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: post_process.destination,
+                resolve_target: None,
+                ops: Operations::default(),
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_render_pipeline(pipeline);
+        render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
+        render_pass.draw(0..3, 0..1);
+
+        Ok(())
     }
 }
 
-fn setup_clouds(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<CloudMaterial>>,
-) {
-    // Create a large cube or sphere to represent the cloud volume
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(20.0, 20.0, 20.0))),
-        MeshMaterial3d(materials.add(CloudMaterial {})),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-    ));
+// Global data used by the render pipeline
+#[derive(Resource)]
+struct PostProcessPipeline {
+    layout: BindGroupLayout,
+    sampler: Sampler,
+    pipeline_id: CachedRenderPipelineId,
+}
+
+impl FromWorld for PostProcessPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let render_device = world.resource::<RenderDevice>();
+
+        let layout = render_device.create_bind_group_layout(
+            "post_process_bind_group_layout",
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::FRAGMENT,
+                (
+                    // The screen texture
+                    texture_2d(TextureSampleType::Float { filterable: true }),
+                    // The sampler that will be used to sample the screen texture
+                    sampler(SamplerBindingType::Filtering),
+                    // The settings uniform that will control the effect
+                    uniform_buffer::<VolumetricClouds>(true),
+                ),
+            ),
+        );
+
+        let sampler = render_device.create_sampler(&SamplerDescriptor::default());
+
+        let pipeline_descriptor = RenderPipelineDescriptor {
+            label: Some("post_process_pipeline".into()),
+            layout: vec![layout.clone()],
+            vertex: fullscreen_shader_vertex_state(),
+            fragment: Some(FragmentState {
+                shader: world.load_asset("shaders/clouds.wgsl"),
+                shader_defs: vec![],
+                entry_point: "fragment".into(),
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            push_constant_ranges: vec![],
+            zero_initialize_workgroup_memory: false,
+        };
+        let pipeline_id = world
+            .resource_mut::<PipelineCache>()
+            .queue_render_pipeline(pipeline_descriptor);
+
+        Self {
+            layout,
+            sampler,
+            pipeline_id,
+        }
+    }
+}
+
+// Component that will get passed to the shader
+#[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
+pub struct VolumetricClouds {
+    pub intensity: f32,
 }
