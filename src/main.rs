@@ -30,6 +30,7 @@ fn main() {
             UnrealCameraPlugin::default(),
         ))
         .add_systems(Startup, setup)
+        .add_systems(Update, clouds::update_settings)
         .add_systems(FixedUpdate, apply_wind_force)
         .run();
 }
@@ -61,7 +62,10 @@ fn setup(
                     Color::srgb(0.8, 0.844, 1.0),
                 ),
             },
-            VolumetricClouds { intensity: 2.0 },
+            VolumetricClouds {
+                time: 0.0,
+                intensity: 2.0,
+            },
         ))
         .insert(UnrealCameraBundle::new(
             UnrealCameraController::default(),

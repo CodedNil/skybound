@@ -37,12 +37,15 @@ impl Plugin for CloudsPlugin {
         };
 
         render_app
-            .add_render_graph_node::<ViewNodeRunner<PostProcessNode>>(Core3d, PostProcessLabel)
+            .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
+                Core3d,
+                VolumetricCloudsLabel,
+            )
             .add_render_graph_edges(
                 Core3d,
                 (
                     Node3d::Tonemapping,
-                    PostProcessLabel,
+                    VolumetricCloudsLabel,
                     Node3d::EndMainPassPostProcessing,
                 ),
             );
@@ -58,12 +61,12 @@ impl Plugin for CloudsPlugin {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct PostProcessLabel;
+struct VolumetricCloudsLabel;
 
 #[derive(Default)]
-struct PostProcessNode;
+struct VolumetricCloudsNode;
 
-impl ViewNode for PostProcessNode {
+impl ViewNode for VolumetricCloudsNode {
     type ViewQuery = (
         &'static ViewTarget,
         &'static VolumetricClouds,
@@ -202,5 +205,13 @@ impl FromWorld for PostProcessPipeline {
 // Component that will get passed to the shader
 #[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
 pub struct VolumetricClouds {
+    pub time: f32,
     pub intensity: f32,
+}
+
+// Change the intensity over time to show that the effect is controlled from the main world
+pub fn update_settings(mut settings: Query<&mut VolumetricClouds>, time: Res<Time>) {
+    for mut setting in &mut settings {
+        setting.time = time.elapsed_secs();
+    }
 }

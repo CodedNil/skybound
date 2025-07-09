@@ -10,13 +10,6 @@ with pkgs;
       vulkan-loader
       mold
 
-      # To use the x11 feature
-      xorg.libX11
-      xorg.libXcursor
-      xorg.libXi
-      xorg.libXrandr
-
-      # To use the wayland feature
       libxkbcommon
       wayland
     ];
