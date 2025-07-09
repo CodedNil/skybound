@@ -61,7 +61,7 @@ fn setup(
                     Color::srgb(0.8, 0.844, 1.0),
                 ),
             },
-            VolumetricClouds { intensity: 0.002 },
+            VolumetricClouds { intensity: 2.0 },
         ))
         .insert(UnrealCameraBundle::new(
             UnrealCameraController::default(),

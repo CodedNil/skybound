@@ -19,7 +19,7 @@ use bevy::{
             *,
         },
         renderer::{RenderContext, RenderDevice},
-        view::ViewTarget,
+        view::{ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
 };
 
@@ -67,6 +67,7 @@ impl ViewNode for PostProcessNode {
     type ViewQuery = (
         &'static ViewTarget,
         &'static VolumetricClouds,
+        &'static ViewUniformOffset,
         &'static DynamicUniformIndex<VolumetricClouds>,
     );
 
@@ -74,7 +75,9 @@ impl ViewNode for PostProcessNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_target, _post_process_settings, settings_index): QueryItem<Self::ViewQuery>,
+        (view_target, _post_process_settings, view_uniform_offset, settings_index): QueryItem<
+            Self::ViewQuery,
+        >,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let post_process_pipeline = world.resource::<PostProcessPipeline>();
@@ -90,6 +93,11 @@ impl ViewNode for PostProcessNode {
             return Ok(());
         };
 
+        let view_uniforms = world.resource::<ViewUniforms>();
+        let Some(view_binding) = view_uniforms.uniforms.binding() else {
+            return Ok(());
+        };
+
         let post_process = view_target.post_process_write();
 
         let bind_group = render_context.render_device().create_bind_group(
@@ -98,6 +106,7 @@ impl ViewNode for PostProcessNode {
             &BindGroupEntries::sequential((
                 post_process.source,
                 &post_process_pipeline.sampler,
+                view_binding.clone(),
                 settings_binding.clone(),
             )),
         );
@@ -116,7 +125,11 @@ impl ViewNode for PostProcessNode {
         });
 
         render_pass.set_render_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
+        render_pass.set_bind_group(
+            0,
+            &bind_group,
+            &[view_uniform_offset.offset, settings_index.index()],
+        );
         render_pass.draw(0..3, 0..1);
 
         Ok(())
@@ -144,6 +157,8 @@ impl FromWorld for PostProcessPipeline {
                     texture_2d(TextureSampleType::Float { filterable: true }),
                     // The sampler that will be used to sample the screen texture
                     sampler(SamplerBindingType::Filtering),
+                    // The view uniform with the view info
+                    uniform_buffer::<ViewUniform>(true),
                     // The settings uniform that will control the effect
                     uniform_buffer::<VolumetricClouds>(true),
                 ),
