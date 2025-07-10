@@ -1,14 +1,13 @@
 #import bevy_render::view::View
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 
-@group(0) @binding(0) var screen_texture: texture_2d<f32>;
-@group(0) @binding(1) var texture_sampler: sampler;
-@group(0) @binding(2) var<uniform> view: View;
+@group(0) @binding(0) var<uniform> clouds: VolumetricClouds;
+@group(0) @binding(1) var<uniform> view: View;
 struct VolumetricClouds {
     time: f32,
-    intensity: f32,
 }
-@group(0) @binding(3) var<uniform> clouds: VolumetricClouds;
+@group(0) @binding(2) var screen_texture: texture_2d<f32>;
+@group(0) @binding(3) var texture_sampler: sampler;
 
 
 const SUNDIR: vec3<f32> = vec3<f32>(0.577350269, 0.0, -0.577350269);
@@ -66,9 +65,7 @@ fn density(pos: vec3<f32>) -> f32 {
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>) -> vec4<f32> {
     var sumCol = vec4<f32>(0.0);
     // random jitter per pixel
-    var t = 0.05 * fract(sin(dot(vec2<f32>(
-        f32(px.x & 1023), f32(px.y & 1023)
-    ), vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    var t = 0.05 * fract(sin(dot(vec2<f32>(f32(px.x & 1023), f32(px.y & 1023)), vec2<f32>(12.9898, 78.233))) * 43758.5453);
 
     for (var i = 0; i < 240; i = i + 1) {
         if sumCol.a > 0.99 { break; }

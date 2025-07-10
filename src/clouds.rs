@@ -105,10 +105,10 @@ impl ViewNode for VolumetricCloudsNode {
             "volumetric_clouds_bind_group",
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
+                settings_binding.clone(),
+                view_binding.clone(),
                 post_process.source,
                 &volumetric_clouds_pipeline.sampler,
-                view_binding.clone(),
-                settings_binding.clone(),
             )),
         );
 
@@ -129,7 +129,7 @@ impl ViewNode for VolumetricCloudsNode {
         render_pass.set_bind_group(
             0,
             &bind_group,
-            &[view_uniform_offset.offset, settings_index.index()],
+            &[settings_index.index(), view_uniform_offset.offset],
         );
         render_pass.draw(0..3, 0..1);
 
@@ -154,14 +154,14 @@ impl FromWorld for VolumetricCloudsPipeline {
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
+                    // The settings uniform that will control the effect
+                    uniform_buffer::<VolumetricClouds>(true),
+                    // The view uniform with the view info
+                    uniform_buffer::<ViewUniform>(true),
                     // The screen texture
                     texture_2d(TextureSampleType::Float { filterable: true }),
                     // The sampler that will be used to sample the screen texture
                     sampler(SamplerBindingType::Filtering),
-                    // The view uniform with the view info
-                    uniform_buffer::<ViewUniform>(true),
-                    // The settings uniform that will control the effect
-                    uniform_buffer::<VolumetricClouds>(true),
                 ),
             ),
         );
@@ -203,8 +203,7 @@ impl FromWorld for VolumetricCloudsPipeline {
 // Component that will get passed to the shader
 #[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
 pub struct VolumetricClouds {
-    pub time: f32,
-    pub intensity: f32,
+    time: f32,
 }
 
 // Change the intensity over time to show that the effect is controlled from the main world
