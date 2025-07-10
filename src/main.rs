@@ -15,6 +15,9 @@ mod wind;
 use crate::clouds::{CloudsPlugin, VolumetricClouds};
 use crate::wind::apply_wind_force;
 
+mod fpscounter;
+use crate::fpscounter::FpsCounterPlugin;
+
 fn main() {
     App::new()
         .insert_resource(AmbientLight {
@@ -24,10 +27,11 @@ fn main() {
         .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
         .add_plugins((
             DefaultPlugins,
-            CloudsPlugin,
             PhysicsPlugins::default(),
+            CloudsPlugin,
             LookTransformPlugin,
             UnrealCameraPlugin::default(),
+            FpsCounterPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, clouds::update_settings)

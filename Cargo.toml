@@ -11,7 +11,9 @@ bevy = { version = "0.16.1", default-features = false, features = [
     "bevy_core_pipeline",
     "bevy_log",
     "bevy_pbr",
+    "bevy_ui",
     "bevy_window",
+    "default_font",
     "multi_threaded",
 ] }
 smooth-bevy-cameras = "0.14.0"

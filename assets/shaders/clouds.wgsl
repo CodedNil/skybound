@@ -8,21 +8,14 @@ struct VolumetricClouds {
     time: f32,
     intensity: f32,
 }
-@group(0) @binding(3) var<uniform> settings: VolumetricClouds;
+@group(0) @binding(3) var<uniform> clouds: VolumetricClouds;
 
 
-const sundir: vec3<f32> = vec3<f32>(0.577350269, 0.0, -0.577350269);
+const SUNDIR: vec3<f32> = vec3<f32>(0.577350269, 0.0, -0.577350269);
 
 // Simple hash function for noise
 fn hash(n: f32) -> f32 {
     return fract(sin(n) * 43758.5453);
-}
-
-// Simple 2D hash function for pseudo-random noise
-fn hash2(p: vec2<i32>) -> f32 {
-    let p_float: vec2<f32> = vec2<f32>(f32(p.x), f32(p.y));
-    let n: f32 = dot(p_float, vec2<f32>(127.1, 311.7));
-    return fract(sin(n) * 43758.5453123);
 }
 
 // Simple noise function
@@ -46,161 +39,79 @@ fn noise(p: vec3<f32>) -> f32 {
     ) * 2.0 - 1.0;
 }
 
-// Map functions
-fn map5(p: vec3<f32>) -> f32 {
-    let q = p - vec3<f32>(0.0, 0.1, 1.0) * settings.time;
-    var f: f32 = 0.0;
-    var scale: f32 = 1.0;
-    var q_temp = q;
 
-    f += 0.50000 * noise(q_temp);
-    q_temp = q_temp * 2.02;
-    f += 0.25000 * noise(q_temp);
-    q_temp = q_temp * 2.03;
-    f += 0.12500 * noise(q_temp);
-    q_temp = q_temp * 2.01;
-    f += 0.06250 * noise(q_temp);
-    q_temp = q_temp * 2.02;
-    f += 0.03125 * noise(q_temp);
-
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f, 0.0, 1.0);
+// FBM
+fn fbm(p_original: vec3<f32>) -> f32 {
+    var p = p_original;
+    var w = 1.0;
+    var sum = 0.0;
+    // 5 octaves
+    for (var i = 0; i < 5; i = i + 1) {
+        sum += w * noise(p);
+        p = p * 2.0 + vec3<f32>(12.34, 45.67, 78.90); // optional offset
+        w = w * 0.5;
+    }
+    return sum;
 }
-fn map4(p: vec3<f32>) -> f32 {
-    let q = p - vec3<f32>(0.0, 0.1, 1.0) * settings.time;
-    var f: f32 = 0.0;
-    var scale: f32 = 1.0;
-    var q_temp = q;
 
-    f += 0.50000 * noise(q_temp);
-    q_temp = q_temp * 2.02;
-    f += 0.25000 * noise(q_temp);
-    q_temp = q_temp * 2.03;
-    f += 0.12500 * noise(q_temp);
-    q_temp = q_temp * 2.01;
-    f += 0.06250 * noise(q_temp);
-
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f, 0.0, 1.0);
-}
-fn map3(p: vec3<f32>) -> f32 {
-    let q = p - vec3<f32>(0.0, 0.1, 1.0) * settings.time;
-    var f: f32 = 0.0;
-    var scale: f32 = 1.0;
-    var q_temp = q;
-
-    f += 0.50000 * noise(q_temp);
-    q_temp = q_temp * 2.02;
-    f += 0.25000 * noise(q_temp);
-    q_temp = q_temp * 2.03;
-    f += 0.12500 * noise(q_temp);
-
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f, 0.0, 1.0);
-}
-fn map2(p: vec3<f32>) -> f32 {
-    let q = p - vec3<f32>(0.0, 0.1, 1.0) * settings.time;
-    var f: f32 = 0.0;
-    var q_temp = q;
-
-    f += 0.50000 * noise(q_temp);
-    q_temp = q_temp * 2.02;
-    f += 0.25000 * noise(q_temp);
-
-    return clamp(1.5 - p.y - 2.0 + 1.75 * f, 0.0, 1.0);
+// Density map
+fn density(pos: vec3<f32>) -> f32 {
+  // advect clouds with time
+    let q = pos - vec3<f32>(0.0, 0.1, 1.0) * clouds.time;
+    let d = clamp(1.5 - pos.y - 2.0 + 1.75 * fbm(q), 0.0, 1.0);
+    return d;
 }
 
 // Raymarch function
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bgcol: vec3<f32>, px: vec2<i32>) -> vec4<f32> {
-    var sum = vec4<f32>(0.0);
-    var t = 0.05 * hash2(vec2<i32>(px.x & 1023, px.y & 1023));
-    let sundir = vec3<f32>(-0.7071, 0.0, -0.7071);
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>) -> vec4<f32> {
+    var sumCol = vec4<f32>(0.0);
+    // random jitter per pixel
+    var t = 0.05 * fract(sin(dot(vec2<f32>(
+        f32(px.x & 1023), f32(px.y & 1023)
+    ), vec2<f32>(12.9898, 78.233))) * 43758.5453);
 
-    for (var i = 0; i < 40; i++) {
-        let pos = ro + t * rd;
-        if pos.y < -3.0 || pos.y > 2.0 || sum.a > 0.99 { break; }
-        let den = map5(pos);
+    for (var i = 0; i < 240; i = i + 1) {
+        if sumCol.a > 0.99 { break; }
+        let pos = ro + rd * t;
+        if pos.y < -3.0 || pos.y > 2.0 {
+            t += max(0.06, 0.05 * t);
+            continue;
+        }
+
+        let den = density(pos);
         if den > 0.01 {
-            let dif = clamp((den - map5(pos + 0.3 * sundir)) / 0.6, 0.0, 1.0);
+            // simple self‐shadowing
+            let dif = clamp((den - density(pos + SUNDIR * 0.3)) / 0.6, 0.0, 1.0);
             let lin = vec3<f32>(1.0, 0.6, 0.3) * dif + vec3<f32>(0.91, 0.98, 1.05);
-            var col = vec4<f32>(
-                mix(vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.25, 0.3, 0.35), den),
-                den
+
+            // base cloud color lerp
+            var col = mix(vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.25, 0.30, 0.35), den);
+
+            // apply lighting & background dusting
+            col = col * lin;
+            col = mix(col, bg, exp(-0.003 * t));
+
+            // accumulate in alpha‐weighted front‐to‐back
+            let a = den * 0.4;        // per‐step opacity
+            col *= a;
+            sumCol = vec4<f32>(
+                sumCol.xyz + col * (1.0 - sumCol.a),
+                sumCol.a + a * (1.0 - sumCol.a)
             );
-            col = vec4<f32>(col.xyz * lin, col.w * 0.4);
-            col = vec4<f32>(mix(col.xyz, bgcol, 1.0 - exp(-0.003 * t * t)), col.w);
-            col = vec4<f32>(col.rgb * col.a, col.a);
-            sum += col * (1.0 - sum.a);
         }
         t += max(0.06, 0.05 * t);
     }
 
-    for (var i = 0; i < 40; i++) {
-        let pos = ro + t * rd;
-        if pos.y < -3.0 || pos.y > 2.0 || sum.a > 0.99 { break; }
-        let den = map4(pos);
-        if den > 0.01 {
-            let dif = clamp((den - map4(pos + 0.3 * sundir)) / 0.6, 0.0, 1.0);
-            let lin = vec3<f32>(1.0, 0.6, 0.3) * dif + vec3<f32>(0.91, 0.98, 1.05);
-            var col = vec4<f32>(
-                mix(vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.25, 0.3, 0.35), den),
-                den
-            );
-            col = vec4<f32>(col.xyz * lin, col.w * 0.4);
-            col = vec4<f32>(mix(col.xyz, bgcol, 1.0 - exp(-0.003 * t * t)), col.w);
-            col = vec4<f32>(col.rgb * col.a, col.a);
-            sum += col * (1.0 - sum.a);
-        }
-        t += max(0.06, 0.05 * t);
-    }
-
-    for (var i = 0; i < 30; i++) {
-        let pos = ro + t * rd;
-        if pos.y < -3.0 || pos.y > 2.0 || sum.a > 0.99 { break; }
-        let den = map3(pos);
-        if den > 0.01 {
-            let dif = clamp((den - map3(pos + 0.3 * sundir)) / 0.6, 0.0, 1.0);
-            let lin = vec3<f32>(1.0, 0.6, 0.3) * dif + vec3<f32>(0.91, 0.98, 1.05);
-            var col = vec4<f32>(
-                mix(vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.25, 0.3, 0.35), den),
-                den
-            );
-            col = vec4<f32>(col.xyz * lin, col.w * 0.4);
-            col = vec4<f32>(mix(col.xyz, bgcol, 1.0 - exp(-0.003 * t * t)), col.w);
-            col = vec4<f32>(col.rgb * col.a, col.a);
-            sum += col * (1.0 - sum.a);
-        }
-        t += max(0.06, 0.05 * t);
-    }
-
-    for (var i = 0; i < 30; i++) {
-        let pos = ro + t * rd;
-        if pos.y < -3.0 || pos.y > 2.0 || sum.a > 0.99 { break; }
-        let den = map2(pos);
-        if den > 0.01 {
-            let dif = clamp((den - map2(pos + 0.3 * sundir)) / 0.6, 0.0, 1.0);
-            let lin = vec3<f32>(1.0, 0.6, 0.3) * dif + vec3<f32>(0.91, 0.98, 1.05);
-            var col = vec4<f32>(
-                mix(vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.25, 0.3, 0.35), den),
-                den
-            );
-            col = vec4<f32>(col.xyz * lin, col.w * 0.4);
-            col = vec4<f32>(mix(col.xyz, bgcol, 1.0 - exp(-0.003 * t * t)), col.w);
-            col = vec4<f32>(col.rgb * col.a, col.a);
-            sum += col * (1.0 - sum.a);
-        }
-        t += max(0.06, 0.05 * t);
-    }
-
-    return clamp(sum, vec4<f32>(0.0), vec4<f32>(1.0));
+    return clamp(sumCol, vec4<f32>(0.0), vec4<f32>(1.0));
 }
 
 // Render function
-fn render(ro: vec3<f32>, rd: vec3<f32>, background_color: vec3<f32>, px: vec2<i32>) -> vec4<f32> {
-    let sun: f32 = clamp(dot(sundir, rd), 0.0, 1.0);
-
-    var col = background_color;
-
+fn render(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>) -> vec4<f32> {
     // Clouds
-    let res: vec4<f32> = raymarch(ro, rd, col, px);
-    col = col * (1.0 - res.w) + res.xyz;
+    let clouds: vec4<f32> = raymarch(ro, rd, bg, px);
+
+    // Composite over background
+    let col = bg * (1.0 - clouds.a) + clouds.xyz;
 
     return vec4<f32>(col, 1.0);
 }
