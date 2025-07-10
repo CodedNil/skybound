@@ -42,18 +42,21 @@ const m3: mat3x3f = mat3x3f(
     vec3(-0.6, 0.8, 0.0),
     vec3(0.0, 0.0, 1.0)
 );
+const m3_1 = m3 * 2.02;
+const m3_2 = m3 * 2.03;
+const m3_3 = m3 * 2.01;
 fn fbm(p_original: vec3<f32>) -> f32 {
     var p = p_original;
     var f: f32 = 0.0;
 
     f = f + 0.5000 * noise3(p);
-    p = m3 * p * 2.02;
+    p = m3_1 * p;
 
     f = f + 0.2500 * noise3(p);
-    p = m3 * p * 2.03;
+    p = m3_2 * p;
 
     f = f + 0.1250 * noise3(p);
-    p = m3 * p * 2.01;
+    p = m3_3 * p;
 
     f = f + 0.0625 * noise3(p);
 
@@ -69,13 +72,13 @@ fn density(pos: vec3<f32>) -> f32 {
 }
 
 // Raymarch function
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>, t_scene: f32) -> vec4<f32> {
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
     var t = 0.0;
     let step_size = 0.2;
 
-    for (var i = 0; i < 240; i = i + 1) {
-        if sumCol.a > 0.99 { break; } // || t > t_scene
+    for (var i = 0; i < 120; i = i + 1) {
+        if sumCol.a > 0.99 || t > t_scene { break; }
         let pos = ro + rd * t;
 
         let den = density(pos);
@@ -89,7 +92,6 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>, t_scene:
 
             // apply lighting & background dusting
             col = col * lin;
-            col = mix(col, bg, exp(-0.003 * t));
 
             // accumulate in alpha‐weighted front‐to‐back
             let a = den * 0.4;
@@ -105,43 +107,28 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>, t_scene:
     return clamp(sumCol, vec4(0.0), vec4(1.0));
 }
 
-// Render function
-fn render(ro: vec3<f32>, rd: vec3<f32>, bg: vec3<f32>, px: vec2<i32>, t_scene: f32) -> vec4<f32> {
-    // Clouds
-    let clouds = raymarch(ro, rd, bg, px, t_scene);
-
-    // Composite over background
-    let col = bg * (1.0 - clouds.a) + clouds.xyz;
-
-    return vec4(col, 1.0);
-}
-
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let ray_origin = view.world_position;
+    // G-buffer loads
+    let screen_color: vec3f = textureLoad(screen_texture, vec2<i32>(in.position.xy), 0).xyz;
+    let depth: f32 = textureLoad(depth_texture, vec2<i32>(in.position.xy), 0);
 
-    let background_color = textureLoad(screen_texture, vec2<i32>(in.position.xy), 0).xyz;
+    // Unproject to world
+    let ndc = vec3(in.uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth);
+    let world_pos_raw = view.world_from_clip * vec4(ndc, 1.0);
+    let world_pos = world_pos_raw.xyz / world_pos_raw.w;
 
-    // Convert UV to NDC: [0, 1] -> [-1, 1]
-    let ndc = in.uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
+    // Form the ray
+    let origin = view.world_position;
+    let ray_vec = world_pos - origin;
+    let t_scene = length(ray_vec);
+    let ray_dir = ray_vec / t_scene;
 
-    // Transform UV to ray direction
-    let view_position_homogeneous = view.view_from_clip * vec4(ndc, 1.0, 1.0);
-    let view_ray_direction = view_position_homogeneous.xyz / view_position_homogeneous.w;
-    let ray_direction = normalize((view.world_from_view * vec4(view_ray_direction, 0.0)).xyz);
+    // Ray-march clouds
+    let clouds = raymarch(origin, ray_dir, t_scene);
 
-    let resolution: vec2f = view.viewport.zw;
-    let px: vec2<i32> = vec2<i32>(in.uv * resolution - 0.5);
+    // Composite over background
+    let col = mix(screen_color, clouds.xyz, clouds.a);
 
-    // Get depth
-    let depth = textureLoad(depth_texture, vec2<i32>(in.position.xy), 0);
-    let ndc_z = 2.0 * depth - 1.0;
-    let view_space_homogeneous = view.view_from_clip * vec4(ndc.x, ndc.y, ndc_z, 1.0);
-    let view_space_pos = view_space_homogeneous.xyz / view_space_homogeneous.w;
-    let world_space_pos = (view.world_from_view * vec4(view_space_pos, 1.0)).xyz;
-    let t_scene = length(world_space_pos - ray_origin.xyz);
-
-    // Perform raymarching
-    return render(ray_origin, ray_direction, background_color, px, t_scene);
-    // return vec4(depth, depth, depth, 1.0);
+    return vec4(col, 1.0);
 }
