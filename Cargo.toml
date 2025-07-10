@@ -15,6 +15,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
     "bevy_window",
     "default_font",
     "multi_threaded",
+    "tonemapping_luts",
 ] }
 smooth-bevy-cameras = "0.14.0"
 avian3d = "0.3"

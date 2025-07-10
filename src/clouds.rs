@@ -2,6 +2,7 @@ use bevy::{
     core_pipeline::{
         core_3d::graph::{Core3d, Node3d},
         fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+        prepass::ViewPrepassTextures,
     },
     ecs::query::QueryItem,
     prelude::*,
@@ -15,7 +16,7 @@ use bevy::{
             NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
-            binding_types::{sampler, texture_2d, uniform_buffer},
+            binding_types::{texture_2d, texture_depth_2d_multisampled, uniform_buffer},
             *,
         },
         renderer::{RenderContext, RenderDevice},
@@ -55,7 +56,6 @@ impl Plugin for CloudsPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-
         render_app.init_resource::<VolumetricCloudsPipeline>();
     }
 }
@@ -71,13 +71,16 @@ impl ViewNode for VolumetricCloudsNode {
         &'static ViewTarget,
         &'static ViewUniformOffset,
         &'static DynamicUniformIndex<VolumetricClouds>,
+        &'static ViewPrepassTextures,
     );
 
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_target, view_uniform_offset, settings_index): QueryItem<Self::ViewQuery>,
+        (view_target, view_uniform_offset, settings_index, prepass_textures): QueryItem<
+            Self::ViewQuery,
+        >,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
@@ -108,7 +111,7 @@ impl ViewNode for VolumetricCloudsNode {
                 settings_binding.clone(),
                 view_binding.clone(),
                 post_process.source,
-                &volumetric_clouds_pipeline.sampler,
+                prepass_textures.depth_view().unwrap(),
             )),
         );
 
@@ -141,7 +144,6 @@ impl ViewNode for VolumetricCloudsNode {
 #[derive(Resource)]
 struct VolumetricCloudsPipeline {
     layout: BindGroupLayout,
-    sampler: Sampler,
     pipeline_id: CachedRenderPipelineId,
 }
 
@@ -154,19 +156,13 @@ impl FromWorld for VolumetricCloudsPipeline {
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
-                    // The settings uniform that will control the effect
-                    uniform_buffer::<VolumetricClouds>(true),
-                    // The view uniform with the view info
-                    uniform_buffer::<ViewUniform>(true),
-                    // The screen texture
-                    texture_2d(TextureSampleType::Float { filterable: true }),
-                    // The sampler that will be used to sample the screen texture
-                    sampler(SamplerBindingType::Filtering),
+                    uniform_buffer::<VolumetricClouds>(true), // The settings uniform that will control the effect
+                    uniform_buffer::<ViewUniform>(true),      // The view uniform with the view info
+                    texture_2d(TextureSampleType::Float { filterable: false }), // The screen texture
+                    texture_depth_2d_multisampled(),                            // The depth texture
                 ),
             ),
         );
-
-        let sampler = render_device.create_sampler(&SamplerDescriptor::default());
 
         let pipeline_descriptor = RenderPipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
@@ -194,7 +190,6 @@ impl FromWorld for VolumetricCloudsPipeline {
 
         Self {
             layout,
-            sampler,
             pipeline_id,
         }
     }
@@ -206,7 +201,7 @@ pub struct VolumetricClouds {
     time: f32,
 }
 
-// Change the intensity over time to show that the effect is controlled from the main world
+// Update the time every frame
 pub fn update_settings(mut settings: Query<&mut VolumetricClouds>, time: Res<Time>) {
     for mut setting in &mut settings {
         setting.time = time.elapsed_secs();

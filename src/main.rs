@@ -1,6 +1,6 @@
 use avian3d::prelude::*;
 use bevy::{
-    core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
+    core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
     pbr::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
     prelude::*,
     render::camera::Exposure,
@@ -52,20 +52,20 @@ fn setup(
                 hdr: true,
                 ..default()
             },
+            DepthPrepass,
             Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
             Exposure::SUNLIGHT,
-            Tonemapping::AcesFitted,
             Bloom::NATURAL,
-            DistanceFog {
-                color: Color::srgba(0.35, 0.48, 0.66, 1.0),
-                directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
-                directional_light_exponent: 30.0,
-                falloff: FogFalloff::from_visibility_colors(
-                    500.0,
-                    Color::srgb(0.35, 0.5, 0.66),
-                    Color::srgb(0.8, 0.844, 1.0),
-                ),
-            },
+            // DistanceFog {
+            //     color: Color::srgba(0.35, 0.48, 0.66, 1.0),
+            //     directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
+            //     directional_light_exponent: 30.0,
+            //     falloff: FogFalloff::from_visibility_colors(
+            //         500.0,
+            //         Color::srgb(0.35, 0.5, 0.66),
+            //         Color::srgb(0.8, 0.844, 1.0),
+            //     ),
+            // },
             VolumetricClouds::default(),
         ))
         .insert(UnrealCameraBundle::new(
@@ -81,6 +81,13 @@ fn setup(
         Collider::cylinder(8.0, 0.1),
         Mesh3d(meshes.add(Cylinder::new(8.0, 0.1))),
         MeshMaterial3d(materials.add(Color::WHITE)),
+    ));
+    commands.spawn((
+        RigidBody::Static,
+        Collider::cylinder(8.0, 0.1),
+        Mesh3d(meshes.add(Cylinder::new(8.0, 0.1))),
+        MeshMaterial3d(materials.add(Color::WHITE)),
+        Transform::from_xyz(0.0, -10.0, 0.0),
     ));
 
     // Cube
