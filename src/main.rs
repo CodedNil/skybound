@@ -1,3 +1,11 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::wildcard_imports,
+    clippy::needless_pass_by_value
+)]
+
 use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
@@ -52,7 +60,6 @@ fn setup(
                 hdr: true,
                 ..default()
             },
-            DepthPrepass,
             Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
             Exposure::SUNLIGHT,
             Bloom::NATURAL,
@@ -66,6 +73,7 @@ fn setup(
             //         Color::srgb(0.8, 0.844, 1.0),
             //     ),
             // },
+            DepthPrepass,
             VolumetricClouds::default(),
         ))
         .insert(UnrealCameraBundle::new(

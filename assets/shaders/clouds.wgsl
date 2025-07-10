@@ -9,6 +9,9 @@ struct VolumetricClouds {
 @group(0) @binding(2) var screen_texture: texture_2d<f32>;
 @group(0) @binding(3) var depth_texture: texture_depth_multisampled_2d;
 
+@group(0) @binding(4) var noise_texture: texture_3d<f32>;
+@group(0) @binding(5) var noise_sampler: sampler;
+
 
 const SUNDIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
 const MAX_DISTANCE: f32 = 400.0;
@@ -72,9 +75,15 @@ const m3_1 = m3 * 2.02;
 const m3_2 = m3 * 2.03;
 const m3_3 = m3 * 2.01;
 const m3_4 = m3 * 2.0;
+fn get_texture_noise(uvw: vec3<f32>) -> f32 {
+    let scaled_uvw = fract(uvw * 2.0);
+    let sampled_value = textureSample(noise_texture, noise_sampler, scaled_uvw).r;
+    return sampled_value * 2.0 - 1.0; // Remap [0, 1] to [-1, 1]
+}
 fn fbm(p_original: vec3<f32>) -> f32 {
     var p = p_original;
     var f: f32 = 0.0;
+    let scale = 0.005;
 
     f = f + 0.5000 * noise3(p);
     p = m3_1 * p;
@@ -117,8 +126,8 @@ fn density(pos: vec3<f32>) -> f32 {
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, offset: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
     var t = offset * 2.0; // Dithering offset
-    let min_step = 0.05;
-    let k = 0.02; // The fall-off of step size with distance
+    let min_step = 0.02;
+    let k = 0.01; // The fall-off of step size with distance
     let epsilon = 0.5; // How far to move through less dense areas
 
     for (var i = 0; i < 500; i = i + 1) {

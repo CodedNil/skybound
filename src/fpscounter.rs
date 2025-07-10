@@ -61,7 +61,7 @@ fn update(
     } else {
         let fps_dialog: Option<f64> = diagnostics
             .get(&FrameTimeDiagnosticsPlugin::FPS)
-            .and_then(|fps| fps.average());
+            .and_then(bevy::diagnostic::Diagnostic::average);
 
         for entity in query {
             if let Some(fps) = fps_dialog {
