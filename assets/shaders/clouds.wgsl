@@ -12,50 +12,57 @@ struct VolumetricClouds {
 
 const SUNDIR: vec3<f32> = vec3<f32>(0.577350269, 0.0, -0.577350269);
 
-// Simple hash function for noise
-fn hash(n: f32) -> f32 {
-    return fract(sin(n) * 43758.5453);
-}
-
 // Simple noise function
-fn noise(p: vec3<f32>) -> f32 {
+fn rand11(n: f32) -> f32 {
+    return fract(sin(n) * 43758.5453123);
+}
+fn noise3(p: vec3f) -> f32 {
     let p_floor = floor(p);
     let p_fract = fract(p);
     let f = p_fract * p_fract * (3.0 - 2.0 * p_fract);
     let n = p_floor.x + p_floor.y * 57.0 + p_floor.z * 113.0;
     return mix(
         mix(
-            mix(hash(n + 0.0), hash(n + 1.0), f.x),
-            mix(hash(n + 57.0), hash(n + 58.0), f.x),
+            mix(rand11(n + 0.0), rand11(n + 1.0), f.x),
+            mix(rand11(n + 57.0), rand11(n + 58.0), f.x),
             f.y
         ),
         mix(
-            mix(hash(n + 113.0), hash(n + 114.0), f.x),
-            mix(hash(n + 170.0), hash(n + 171.0), f.x),
+            mix(rand11(n + 113.0), rand11(n + 114.0), f.x),
+            mix(rand11(n + 170.0), rand11(n + 171.0), f.x),
             f.y
         ),
         f.z
     ) * 2.0 - 1.0;
 }
 
-
 // FBM
-fn fbm(p_original: vec3<f32>) -> f32 {
+const m3: mat3x3f = mat3x3f(
+    vec3f(0.8, 0.6, 0.0),
+    vec3f(-0.6, 0.8, 0.0),
+    vec3f(0.0, 0.0, 1.0)
+);
+fn fbm(p_original: vec3f) -> f32 {
     var p = p_original;
-    var w = 1.0;
-    var sum = 0.0;
-    // 5 octaves
-    for (var i = 0; i < 5; i = i + 1) {
-        sum += w * noise(p);
-        p = p * 2.0 + vec3<f32>(12.34, 45.67, 78.90); // optional offset
-        w = w * 0.5;
-    }
-    return sum;
+    var f: f32 = 0.0;
+
+    f = f + 0.5000 * noise3(p);
+    p = m3 * p * 2.02;
+
+    f = f + 0.2500 * noise3(p);
+    p = m3 * p * 2.03;
+
+    f = f + 0.1250 * noise3(p);
+    p = m3 * p * 2.01;
+
+    f = f + 0.0625 * noise3(p);
+
+    return f / 0.9375;
 }
 
 // Density map
 fn density(pos: vec3<f32>) -> f32 {
-  // advect clouds with time
+    // advect clouds with time
     let q = pos - vec3<f32>(0.0, 0.1, 1.0) * clouds.time;
     let d = clamp(1.5 - pos.y - 2.0 + 1.75 * fbm(q), 0.0, 1.0);
     return d;
