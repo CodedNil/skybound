@@ -15,69 +15,50 @@ const MAX_DISTANCE: f32 = 2000.0;
 
 
 // Simple noise function for white noise
-fn rand11(n: f32) -> f32 {
-    return fract(sin(n) * 43758.5453123);
+fn hash1(p: f32) -> f32 {
+    var p = fract(p * .1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+fn hash2(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+fn hash3i(p: vec3<i32>) -> f32 {
+    var n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
+    n = (n << 13) ^ n;
+    n = n * (n * n * 15731 + 789221) + 1376312589;
+    return -1.0 + 2.0 * f32(n & 0x0fffffff) / f32(0x0fffffff);
 }
 
 // Procedural blue noise approximation
 fn blue_noise(uv: vec2<f32>) -> f32 {
-    // Generate white noise
-    let n = rand11(uv.x + uv.y * 57.0 + clouds.time);
-    // Simple high-pass filter: subtract average of neighboring samples
-    var sum = 0.0;
-    let offsets = array<vec2<f32>, 4>(
-        vec2<f32>(-1.0, 0.0),
-        vec2<f32>(1.0, 0.0),
-        vec2<f32>(0.0, -1.0),
-        vec2<f32>(0.0, 1.0)
-    );
-    for (var i = 0; i < 4; i = i + 1) {
-        let offset = offsets[i] / 1024.0; // Small offset for neighboring pixels
-        sum += rand11((uv + offset).x + (uv + offset).y * 57.0 + clouds.time);
-    }
-    let avg = sum / 4.0;
-    let high_pass = n - avg;
-    // Re-normalize to [0,1]
-    return clamp((high_pass + 1.0) / 2.0, 0.0, 1.0);
-}
-
-// 2D noise function using the 3D noise texture at fixed y
-fn fbm2d(p: vec2<f32>) -> f32 {
-    var f = 0.0;
-    var amplitude = 1.0;
-    var frequency = 1.0;
-    let scale = 0.001; // Adjust for desired spatial variation
-    var p_scaled = p * scale;
-
-    for (var i = 0; i < 5; i = i + 1) {
-        let uvw = vec3(p_scaled.x * frequency, 0.0, p_scaled.y * frequency);
-        f = f + amplitude * noise3(uvw);
-        amplitude *= 0.5;
-        frequency *= 2.0;
-    }
-
-    return f;
+    let v = hash2(uv + vec2(-1, 0)) + hash2(uv + vec2(1, 0)) + hash2(uv + vec2(0, 1)) + hash2(uv + vec2(0, -1));
+    return hash2(uv) - v / 4.0 + 0.5;
 }
 
 // Simple 3D noise function
-fn noise3(p: vec3<f32>) -> f32 {
-    let p_floor = floor(p);
-    let p_fract = fract(p);
-    let f = p_fract * p_fract * (3.0 - 2.0 * p_fract);
-    let n = p_floor.x + p_floor.y * 57.0 + p_floor.z * 113.0;
-    return mix(
-        mix(
-            mix(rand11(n + 0.0), rand11(n + 1.0), f.x),
-            mix(rand11(n + 57.0), rand11(n + 58.0), f.x),
-            f.y
-        ),
-        mix(
-            mix(rand11(n + 113.0), rand11(n + 114.0), f.x),
-            mix(rand11(n + 170.0), rand11(n + 171.0), f.x),
-            f.y
-        ),
-        f.z
-    ) * 2.0 - 1.0;
+fn noise3(x: vec3<f32>) -> f32 {
+    let i: vec3<i32> = vec3<i32>(floor(x));
+    let w: vec3<f32> = fract(x);
+
+    // Smoothstep weights
+    let u: vec3<f32> = w * w * (3.0 - 2.0 * w);
+
+    // Hash values at cube corners, interpolate along x
+    let lerp_x0 = mix(hash3i(i + vec3<i32>(0, 0, 0)), hash3i(i + vec3<i32>(1, 0, 0)), u.x);
+    let lerp_x1 = mix(hash3i(i + vec3<i32>(0, 1, 0)), hash3i(i + vec3<i32>(1, 1, 0)), u.x);
+    let lerp_x2 = mix(hash3i(i + vec3<i32>(0, 0, 1)), hash3i(i + vec3<i32>(1, 0, 1)), u.x);
+    let lerp_x3 = mix(hash3i(i + vec3<i32>(0, 1, 1)), hash3i(i + vec3<i32>(1, 1, 1)), u.x);
+
+    // Interpolate along y
+    let lerp_y0 = mix(lerp_x0, lerp_x1, u.y);
+    let lerp_y1 = mix(lerp_x2, lerp_x3, u.y);
+
+    // Interpolate along z and return
+    return mix(lerp_y0, lerp_y1, u.z);
 }
 
 // FBM
