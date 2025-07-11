@@ -74,20 +74,16 @@ impl Plugin for CloudsPlugin {
 #[derive(Resource, Component, ExtractResource, Clone)]
 struct NoiseTextureHandle(Handle<Image>);
 fn setup_noise_texture(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let size = 32; // 32x32x32 texture
+    let size = 64;
     let mut data = vec![0u8; size * size * size * 4]; // RGBA
     let noise = Noise::<Perlin>::default();
 
     for z in 0..size {
         for y in 0..size {
             for x in 0..size {
-                let pos = Vec3::new(
-                    x as f32 / size as f32,
-                    y as f32 / size as f32,
-                    z as f32 / size as f32,
-                );
-                let sample_value: f32 = noise.sample(pos); // Normalize to [0,1]
-                let value = sample_value.mul_add(0.5, 0.5);
+                let pos = Vec3::new(x as f32, y as f32, z as f32) / size as f32;
+                let sample_value: f32 = noise.sample(pos * 50.0);
+                let value = sample_value.mul_add(0.5, 0.5); // Normalize to [0,1]
                 let idx = (z * size * size + y * size + x) * 4;
                 data[idx] = (value * 255.0) as u8; // R
                 data[idx + 1] = (value * 255.0) as u8; // G

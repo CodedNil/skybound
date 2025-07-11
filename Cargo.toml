@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.16.1", default-features = false, features = [
+    "dynamic_linking", # Don't enable when building for release
     "wayland",
 
     "async_executor",

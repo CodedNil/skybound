@@ -44,40 +44,14 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     return clamp((high_pass + 1.0) / 2.0, 0.0, 1.0);
 }
 
-// Simple noise function
-fn noise3(p: vec3<f32>) -> f32 {
-    let p_floor = floor(p);
-    let p_fract = fract(p);
-    let f = p_fract * p_fract * (3.0 - 2.0 * p_fract);
-    let n = p_floor.x + p_floor.y * 57.0 + p_floor.z * 113.0;
-    return mix(
-        mix(
-            mix(rand11(n + 0.0), rand11(n + 1.0), f.x),
-            mix(rand11(n + 57.0), rand11(n + 58.0), f.x),
-            f.y
-        ),
-        mix(
-            mix(rand11(n + 113.0), rand11(n + 114.0), f.x),
-            mix(rand11(n + 170.0), rand11(n + 171.0), f.x),
-            f.y
-        ),
-        f.z
-    ) * 2.0 - 1.0;
-}
-
 // FBM
 const m3: mat3x3f = mat3x3f(
     vec3(0.8, 0.6, 0.0),
     vec3(-0.6, 0.8, 0.0),
     vec3(0.0, 0.0, 1.0)
-);
-const m3_1 = m3 * 2.02;
-const m3_2 = m3 * 2.03;
-const m3_3 = m3 * 2.01;
-const m3_4 = m3 * 2.0;
+) * 2.0;
 fn get_texture_noise(uvw: vec3<f32>) -> f32 {
-    let scaled_uvw = fract(uvw * 2.0);
-    let sampled_value = textureSample(noise_texture, noise_sampler, scaled_uvw).r;
+    let sampled_value = textureSample(noise_texture, noise_sampler, uvw * 0.02).r;
     return sampled_value * 2.0 - 1.0; // Remap [0, 1] to [-1, 1]
 }
 fn fbm(p_original: vec3<f32>) -> f32 {
@@ -85,19 +59,19 @@ fn fbm(p_original: vec3<f32>) -> f32 {
     var f: f32 = 0.0;
     let scale = 0.005;
 
-    f = f + 0.5000 * noise3(p);
-    p = m3_1 * p;
+    f = f + 0.5000 * get_texture_noise(p);
+    p = m3 * p;
 
-    f = f + 0.2500 * noise3(p);
-    p = m3_2 * p;
+    f = f + 0.2500 * get_texture_noise(p);
+    p = m3 * p;
 
-    f = f + 0.1250 * noise3(p);
-    p = m3_3 * p;
+    f = f + 0.1250 * get_texture_noise(p);
+    p = m3 * p;
 
-    f = f + 0.0625 * noise3(p);
-    p = m3_4 * p;
+    f = f + 0.0625 * get_texture_noise(p);
+    p = m3 * p;
 
-    f = f + 0.03125 * noise3(p);
+    f = f + 0.03125 * get_texture_noise(p);
 
     return f / 0.96875;
 }
@@ -112,9 +86,9 @@ fn density(pos: vec3<f32>) -> f32 {
         density = clamp(1.5 - pos.y - 2.0 + 1.75 * fbm_value, 0.0, 1.0);
     } else if pos.y < 60.0 {
         // Normal clouds
-        let cloud_scale = 30.0;
+        let cloud_scale = 10.0;
         let fbm_value = fbm(pos / cloud_scale - vec3(0.0, 0.1, 1.0) * clouds.time / cloud_scale);
-        density = smoothstep(0.2, 0.4, fbm_value);
+        density = smoothstep(0.1, 0.2, fbm_value);
     } else {
         density = 0.0; // Clear sky
     }
@@ -183,8 +157,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let ray_dir = ray_vec / t_scene;
 
     // Procedural blue noise dithering
-    let blue_noise_val = blue_noise(in.position.xy);
-    let offset = fract(blue_noise_val);
+    let offset = fract(blue_noise(in.position.xy));
 
     // Ray-march clouds
     let clouds = raymarch(origin, ray_dir, t_scene, offset);
