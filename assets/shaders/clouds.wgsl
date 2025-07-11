@@ -44,36 +44,75 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     return clamp((high_pass + 1.0) / 2.0, 0.0, 1.0);
 }
 
+// Function to get noise value from a 3D texture
+fn get_texture_noise(uvw: vec3<f32>) -> f32 {
+    let sampled_value = textureSample(noise_texture, noise_sampler, uvw * 0.02).r;
+    return sampled_value * 2.0 - 1.0; // Remap [0, 1] to [-1, 1]
+}
+
+// 2D noise function using the 3D noise texture at fixed y
+fn fbm2d(p: vec2<f32>) -> f32 {
+    var f = 0.0;
+    var amplitude = 1.0;
+    var frequency = 1.0;
+    let scale = 0.001; // Adjust for desired spatial variation
+    var p_scaled = p * scale;
+
+    for (var i = 0; i < 5; i = i + 1) {
+        let uvw = vec3(p_scaled.x * frequency, 0.0, p_scaled.y * frequency);
+        f = f + amplitude * noise3(uvw);
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+
+    return f;
+}
+
+// Simple 3D noise function
+fn noise3(p: vec3<f32>) -> f32 {
+    let p_floor = floor(p);
+    let p_fract = fract(p);
+    let f = p_fract * p_fract * (3.0 - 2.0 * p_fract);
+    let n = p_floor.x + p_floor.y * 57.0 + p_floor.z * 113.0;
+    return mix(
+        mix(
+            mix(rand11(n + 0.0), rand11(n + 1.0), f.x),
+            mix(rand11(n + 57.0), rand11(n + 58.0), f.x),
+            f.y
+        ),
+        mix(
+            mix(rand11(n + 113.0), rand11(n + 114.0), f.x),
+            mix(rand11(n + 170.0), rand11(n + 171.0), f.x),
+            f.y
+        ),
+        f.z
+    ) * 2.0 - 1.0;
+}
+
 // FBM
 const m3: mat3x3f = mat3x3f(
     vec3(0.8, 0.6, 0.0),
     vec3(-0.6, 0.8, 0.0),
     vec3(0.0, 0.0, 1.0)
 ) * 2.0;
-fn get_texture_noise(uvw: vec3<f32>) -> f32 {
-    let sampled_value = textureSample(noise_texture, noise_sampler, uvw * 0.02).r;
-    return sampled_value * 2.0 - 1.0; // Remap [0, 1] to [-1, 1]
-}
-fn fbm(p_original: vec3<f32>) -> f32 {
-    var p = p_original;
-    var f: f32 = 0.0;
-    let scale = 0.005;
 
-    f = f + 0.5000 * get_texture_noise(p);
-    p = m3 * p;
+fn fbm_cloud(p: vec3<f32>, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
+    var f = 0.0;
+    var amplitude = 1.0;
+    var frequency = 1.0;
+    var p_scaled = p;
 
-    f = f + 0.2500 * get_texture_noise(p);
-    p = m3 * p;
+    for (var i = 0; i < octaves; i = i + 1) {
+        f = f + amplitude * noise3(p_scaled * frequency);
+        if i == octaves - 1 {
+            break;
+        }
+        p_scaled = m3 * p_scaled;
+        amplitude *= gain;
+        frequency *= lacunarity;
+    }
 
-    f = f + 0.1250 * get_texture_noise(p);
-    p = m3 * p;
-
-    f = f + 0.0625 * get_texture_noise(p);
-    p = m3 * p;
-
-    f = f + 0.03125 * get_texture_noise(p);
-
-    return f / 0.96875;
+    return f / (1.0 - pow(gain, f32(octaves))) * (1.0 - gain);
 }
 
 // Density map
@@ -99,8 +138,8 @@ fn density(pos: vec3<f32>) -> f32 {
 // Raymarch function
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, offset: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
-    var t = offset * 2.0; // Dithering offset
-    let min_step = 0.02;
+    var t = offset; // Dithering offset
+    let min_step = 0.2;
     let k = 0.01; // The fall-off of step size with distance
     let epsilon = 0.5; // How far to move through less dense areas
 
