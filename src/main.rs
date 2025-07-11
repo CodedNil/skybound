@@ -34,7 +34,6 @@ fn main() {
             FpsCounterPlugin,
         ))
         .add_systems(Startup, setup)
-        .add_systems(Update, clouds::update_settings)
         .add_systems(FixedUpdate, apply_wind_force)
         .run();
 }

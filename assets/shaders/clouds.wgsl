@@ -9,12 +9,9 @@ struct VolumetricClouds {
 @group(0) @binding(2) var screen_texture: texture_2d<f32>;
 @group(0) @binding(3) var depth_texture: texture_depth_multisampled_2d;
 
-@group(0) @binding(4) var noise_texture: texture_3d<f32>;
-@group(0) @binding(5) var noise_sampler: sampler;
-
 
 const SUNDIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
-const MAX_DISTANCE: f32 = 400.0;
+const MAX_DISTANCE: f32 = 2000.0;
 
 
 // Simple noise function for white noise
@@ -42,12 +39,6 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     let high_pass = n - avg;
     // Re-normalize to [0,1]
     return clamp((high_pass + 1.0) / 2.0, 0.0, 1.0);
-}
-
-// Function to get noise value from a 3D texture
-fn get_texture_noise(uvw: vec3<f32>) -> f32 {
-    let sampled_value = textureSample(noise_texture, noise_sampler, uvw * 0.02).r;
-    return sampled_value * 2.0 - 1.0; // Remap [0, 1] to [-1, 1]
 }
 
 // 2D noise function using the 3D noise texture at fixed y
@@ -96,23 +87,25 @@ const m3: mat3x3f = mat3x3f(
     vec3(0.0, 0.0, 1.0)
 ) * 2.0;
 
-fn fbm_cloud(p: vec3<f32>, octaves: i32, lacunarity: f32, gain: f32) -> f32 {
-    var f = 0.0;
-    var amplitude = 1.0;
-    var frequency = 1.0;
-    var p_scaled = p;
+fn fbm(p_original: vec3<f32>) -> f32 {
+    var p = p_original;
+    var f: f32 = 0.0;
 
-    for (var i = 0; i < octaves; i = i + 1) {
-        f = f + amplitude * noise3(p_scaled * frequency);
-        if i == octaves - 1 {
-            break;
-        }
-        p_scaled = m3 * p_scaled;
-        amplitude *= gain;
-        frequency *= lacunarity;
-    }
+    f = f + 0.5000 * noise3(p);
+    p = m3 * p;
 
-    return f / (1.0 - pow(gain, f32(octaves))) * (1.0 - gain);
+    f = f + 0.2500 * noise3(p);
+    p = m3 * p;
+
+    f = f + 0.1250 * noise3(p);
+    p = m3 * p;
+
+    f = f + 0.0625 * noise3(p);
+    p = m3 * p;
+
+    f = f + 0.03125 * noise3(p);
+
+    return f / 0.96875;
 }
 
 // Density map
@@ -125,9 +118,9 @@ fn density(pos: vec3<f32>) -> f32 {
         density = clamp(1.5 - pos.y - 2.0 + 1.75 * fbm_value, 0.0, 1.0);
     } else if pos.y < 60.0 {
         // Normal clouds
-        let cloud_scale = 10.0;
+        let cloud_scale = 30.0;
         let fbm_value = fbm(pos / cloud_scale - vec3(0.0, 0.1, 1.0) * clouds.time / cloud_scale);
-        density = smoothstep(0.1, 0.2, fbm_value);
+        density = smoothstep(0.2, 0.4, fbm_value);
     } else {
         density = 0.0; // Clear sky
     }
