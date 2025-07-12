@@ -1,7 +1,10 @@
 use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
-    pbr::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
+    pbr::{
+        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
+        light_consts::lux,
+    },
     prelude::*,
     render::camera::Exposure,
 };
@@ -52,6 +55,12 @@ fn setup(
                 ..default()
             },
             Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
+            Atmosphere::EARTH,
+            AtmosphereSettings {
+                aerial_view_lut_max_distance: 3.2e5,
+                scene_units_to_m: 1.0,
+                ..Default::default()
+            },
             Exposure::SUNLIGHT,
             Bloom::NATURAL,
             DepthPrepass,
@@ -97,13 +106,29 @@ fn setup(
             ..default()
         }
         .build(),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(-Vec3::Y, Vec3::Y),
+    ));
+    // Aur Light
+    commands.spawn((
+        DirectionalLight {
+            illuminance: lux::DIRECT_SUNLIGHT,
+            shadows_enabled: true,
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 0.3,
+            maximum_distance: 3.0,
+            ..default()
+        }
+        .build(),
         Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
     ));
+
     // Sky
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(2.0, 1.0, 1.0))),
+        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Srgba::hex("888888").unwrap().into(),
+            base_color: Srgba::hex("000000").unwrap().into(),
             unlit: true,
             cull_mode: None,
             ..default()

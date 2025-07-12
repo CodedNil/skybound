@@ -4,7 +4,7 @@ use bevy::{
         fullscreen_vertex_shader::fullscreen_shader_vertex_state,
         prepass::ViewPrepassTextures,
     },
-    ecs::query::QueryItem,
+    ecs::{query::QueryItem, system::lifetimeless::Read},
     prelude::*,
     render::{
         RenderApp,
@@ -12,11 +12,14 @@ use bevy::{
             ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
             UniformComponentPlugin,
         },
+        globals::{GlobalsBuffer, GlobalsUniform},
         render_graph::{
             NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
-            binding_types::{texture_2d, texture_depth_2d_multisampled, uniform_buffer},
+            binding_types::{
+                texture_2d, texture_depth_2d_multisampled, uniform_buffer, uniform_buffer_sized,
+            },
             *,
         },
         renderer::{RenderContext, RenderDevice},
@@ -89,10 +92,10 @@ struct VolumetricCloudsNode;
 
 impl ViewNode for VolumetricCloudsNode {
     type ViewQuery = (
-        &'static ViewTarget,
-        &'static ViewUniformOffset,
-        &'static DynamicUniformIndex<VolumetricClouds>,
-        &'static ViewPrepassTextures,
+        Read<ViewTarget>,
+        Read<ViewUniformOffset>,
+        Read<DynamicUniformIndex<VolumetricClouds>>,
+        Read<ViewPrepassTextures>,
     );
 
     fn run(
@@ -105,20 +108,24 @@ impl ViewNode for VolumetricCloudsNode {
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let view_uniforms = world.resource::<ViewUniforms>();
-
-        let Some(pipeline) =
-            pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id)
+        let Some(pipeline) = world
+            .resource::<PipelineCache>()
+            .get_render_pipeline(volumetric_clouds_pipeline.pipeline_id)
         else {
             return Ok(());
         };
 
-        let cloud_uniforms = world.resource::<ComponentUniforms<VolumetricClouds>>();
-        let Some(cloud_uniforms_binding) = cloud_uniforms.uniforms().binding() else {
+        let Some(cloud_uniforms_binding) = world
+            .resource::<ComponentUniforms<VolumetricClouds>>()
+            .uniforms()
+            .binding()
+        else {
             return Ok(());
         };
-        let Some(view_binding) = view_uniforms.uniforms.binding() else {
+        let Some(view_binding) = world.resource::<ViewUniforms>().uniforms.binding() else {
+            return Ok(());
+        };
+        let Some(globals_uniforms) = world.resource::<GlobalsBuffer>().buffer.binding() else {
             return Ok(());
         };
         let Some(depth_texture_view) = prepass_textures.depth_view() else {
@@ -133,6 +140,7 @@ impl ViewNode for VolumetricCloudsNode {
             &BindGroupEntries::sequential((
                 cloud_uniforms_binding.clone(),
                 view_binding.clone(),
+                globals_uniforms.clone(),
                 post_process.source,
                 depth_texture_view,
             )),
@@ -173,7 +181,8 @@ impl FromWorld for VolumetricCloudsPipeline {
                 ShaderStages::FRAGMENT,
                 (
                     uniform_buffer::<VolumetricClouds>(true), // The clouds uniform that will control the effect
-                    uniform_buffer::<ViewUniform>(true),      // The view uniform with the view info
+                    uniform_buffer::<ViewUniform>(true),      // The view uniform
+                    uniform_buffer_sized(false, Some(GlobalsUniform::min_size())), // The globals uniform
                     texture_2d(TextureSampleType::Float { filterable: false }), // The screen texture
                     texture_depth_2d_multisampled(),                            // The depth texture
                 ),
