@@ -36,31 +36,22 @@ impl Plugin for CloudsPlugin {
             UniformComponentPlugin::<VolumetricClouds>::default(),
         ))
         .add_systems(Update, update);
-
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-
-        render_app
-            .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
-                Core3d,
-                VolumetricCloudsLabel,
-            )
-            .add_render_graph_edges(
-                Core3d,
-                (
-                    Node3d::Tonemapping,
-                    VolumetricCloudsLabel,
-                    Node3d::EndMainPassPostProcessing,
-                ),
-            );
     }
 
     fn finish(&self, app: &mut App) {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-        render_app.init_resource::<VolumetricCloudsPipeline>();
+        render_app
+            .init_resource::<VolumetricCloudsPipeline>()
+            .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
+                Core3d,
+                VolumetricCloudsLabel,
+            )
+            .add_render_graph_edges(
+                Core3d,
+                (Node3d::EndMainPass, VolumetricCloudsLabel, Node3d::Bloom),
+            );
     }
 }
 
@@ -108,27 +99,27 @@ impl ViewNode for VolumetricCloudsNode {
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
-        let Some(pipeline) = world
-            .resource::<PipelineCache>()
-            .get_render_pipeline(volumetric_clouds_pipeline.pipeline_id)
-        else {
-            return Ok(());
-        };
 
-        let Some(cloud_uniforms_binding) = world
-            .resource::<ComponentUniforms<VolumetricClouds>>()
-            .uniforms()
-            .binding()
+        // Fetch the uniform buffer and binding.
+        let (
+            Some(pipeline),
+            Some(cloud_uniforms_binding),
+            Some(view_binding),
+            Some(globals_binding),
+            Some(depth_view),
+        ) = (
+            world
+                .resource::<PipelineCache>()
+                .get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
+            world
+                .resource::<ComponentUniforms<VolumetricClouds>>()
+                .uniforms()
+                .binding(),
+            world.resource::<ViewUniforms>().uniforms.binding(),
+            world.resource::<GlobalsBuffer>().buffer.binding(),
+            prepass_textures.depth_view(),
+        )
         else {
-            return Ok(());
-        };
-        let Some(view_binding) = world.resource::<ViewUniforms>().uniforms.binding() else {
-            return Ok(());
-        };
-        let Some(globals_uniforms) = world.resource::<GlobalsBuffer>().buffer.binding() else {
-            return Ok(());
-        };
-        let Some(depth_texture_view) = prepass_textures.depth_view() else {
             return Ok(());
         };
 
@@ -140,9 +131,9 @@ impl ViewNode for VolumetricCloudsNode {
             &BindGroupEntries::sequential((
                 cloud_uniforms_binding.clone(),
                 view_binding.clone(),
-                globals_uniforms.clone(),
+                globals_binding.clone(),
                 post_process.source,
-                depth_texture_view,
+                depth_view,
             )),
         );
 
