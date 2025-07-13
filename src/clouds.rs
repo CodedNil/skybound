@@ -34,16 +34,16 @@ use bevy::{
     },
 };
 
-const FROXEL_HEIGHT: u32 = 64;
-const FROXEL_WIDTH: u32 = (FROXEL_HEIGHT * 16 + 9 - 1) / 9;
-const FROXEL_DEPTH: u32 = 128;
+const FROXEL_HEIGHT: usize = 128;
+const FROXEL_WIDTH: usize = (FROXEL_HEIGHT * 16 + 9 - 1) / 9;
+const FROXEL_DEPTH: usize = 192;
 
 const CLIP_NEAR: f32 = 0.1;
 const CLIP_FAR: f32 = 1000.0;
 
 const TEMPORAL_N: usize = 3;
 const LOD_THRESHOLD: usize = (FROXEL_DEPTH as usize * 3) / 4;
-const FAR_SKIP: usize = 2; // update only every 2nd far slice
+const FAR_SKIP: usize = 2;
 
 pub struct CloudsPlugin;
 
@@ -85,7 +85,11 @@ pub struct VolumetricClouds {
 impl Default for VolumetricClouds {
     fn default() -> Self {
         Self {
-            froxel_res: UVec3::new(FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH),
+            froxel_res: UVec3::new(
+                FROXEL_WIDTH as u32,
+                FROXEL_HEIGHT as u32,
+                FROXEL_DEPTH as u32,
+            ),
             froxel_near: CLIP_NEAR,
             froxel_far: CLIP_FAR,
         }
@@ -127,44 +131,46 @@ fn update(
         let w = FROXEL_WIDTH as usize;
         let h = FROXEL_HEIGHT as usize;
 
-        // Iterate each RGBA‑chunk with x,y,z counters
-        let mut x = 0;
-        let mut y = 0;
-        let mut z = 0;
-        for pixel in data.chunks_exact_mut(4) {
+        for z in 0..FROXEL_DEPTH as usize {
+            let z_lin = scratch.z_pre[z];
+
             let skip_temporal = z % TEMPORAL_N != frame_mod;
             let skip_far =
                 z >= LOD_THRESHOLD && (z - LOD_THRESHOLD) % FAR_SKIP != (frame_mod % FAR_SKIP);
-            if !(skip_temporal || skip_far) {
-                let z_lin = scratch.z_pre[z];
-                let u_ndc = scratch.u_pre[x];
-                let v_ndc = scratch.v_pre[y];
-
-                // World‐space position via basis
-                let world = cam_pos
-                    + x_basis * (u_ndc * z_lin)
-                    + y_basis * (v_ndc * z_lin)
-                    + z_basis * z_lin;
-
-                // Squared‑distance to sphere centre at (0,10,0)
-                let d2 = (world - Vec3::new(0.0, 10.0, 0.0)).length_squared();
-                let v = (1.0 - d2 / (10.0 * 10.0)).clamp(0.0, 1.0);
-
-                let c = (v * 255.0) as u8;
-                pixel[0] = c;
-                pixel[1] = c;
-                pixel[2] = c;
-                pixel[3] = 255;
+            if skip_temporal || skip_far {
+                continue;
             }
 
-            // advance x,y,z
-            x += 1;
-            if x == w {
-                x = 0;
-                y += 1;
-                if y == h {
-                    y = 0;
-                    z += 1;
+            let z_basis_zlin = z_basis * z_lin;
+
+            for y in 0..h {
+                let v_ndc = scratch.v_pre[y];
+                let y_basis_vz = y_basis * (v_ndc * z_lin);
+                let offset = cam_pos + y_basis_vz + z_basis_zlin;
+
+                for x in 0..w {
+                    let u_ndc = scratch.u_pre[x];
+
+                    // World‐space position via basis
+                    let world = offset + x_basis * (u_ndc * z_lin);
+
+                    // Distance calculation
+                    let bmin = Vec3::new(-10.0, 0.0, -10.0);
+                    let bmax = Vec3::new(10.0, 20.0, 10.0);
+                    let v = if world.clamp(bmin, bmax) == world {
+                        let dist_sq = world.distance_squared(Vec3::new(0.0, 10.0, 0.0));
+                        (1.0 - dist_sq / 100.0).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+
+                    // Write to data buffer
+                    let c = (v * 255.0) as u8;
+                    let idx = (((z * FROXEL_HEIGHT + y) * FROXEL_WIDTH + x) as usize) * 4;
+                    data[idx] = c; // R
+                    data[idx + 1] = c; // G
+                    data[idx + 2] = c; // B
+                    data[idx + 3] = 255; // A
                 }
             }
         }
@@ -185,9 +191,9 @@ struct FroxelScratch {
 fn setup_froxels(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let mut image = Image::new(
         Extent3d {
-            width: FROXEL_WIDTH,
-            height: FROXEL_HEIGHT,
-            depth_or_array_layers: FROXEL_DEPTH,
+            width: FROXEL_WIDTH as u32,
+            height: FROXEL_HEIGHT as u32,
+            depth_or_array_layers: FROXEL_DEPTH as u32,
         },
         TextureDimension::D3,
         vec![0u8; (FROXEL_WIDTH * FROXEL_HEIGHT * FROXEL_DEPTH * 4) as usize],

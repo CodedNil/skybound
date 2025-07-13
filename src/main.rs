@@ -1,3 +1,5 @@
+#![feature(portable_simd, default_field_values)]
+
 use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
