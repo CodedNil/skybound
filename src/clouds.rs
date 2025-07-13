@@ -5,6 +5,7 @@ use bevy::{
         fullscreen_vertex_shader::fullscreen_shader_vertex_state,
         prepass::ViewPrepassTextures,
     },
+    diagnostic::FrameCount,
     ecs::{query::QueryItem, system::lifetimeless::Read},
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
     prelude::*,
@@ -33,9 +34,16 @@ use bevy::{
     },
 };
 
-const FROXEL_HEIGHT: u32 = 96;
+const FROXEL_HEIGHT: u32 = 64;
 const FROXEL_WIDTH: u32 = (FROXEL_HEIGHT * 16 + 9 - 1) / 9;
-const FROXEL_DEPTH: u32 = 192;
+const FROXEL_DEPTH: u32 = 128;
+
+const CLIP_NEAR: f32 = 0.1;
+const CLIP_FAR: f32 = 1000.0;
+
+const TEMPORAL_N: usize = 3;
+const LOD_THRESHOLD: usize = (FROXEL_DEPTH as usize * 3) / 4;
+const FAR_SKIP: usize = 2; // update only every 2nd far slice
 
 pub struct CloudsPlugin;
 
@@ -68,27 +76,34 @@ impl Plugin for CloudsPlugin {
 }
 
 /// Component that will get passed to the shader
-#[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
+#[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
 pub struct VolumetricClouds {
     froxel_res: UVec3,
     froxel_near: f32,
     froxel_far: f32,
 }
+impl Default for VolumetricClouds {
+    fn default() -> Self {
+        Self {
+            froxel_res: UVec3::new(FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH),
+            froxel_near: CLIP_NEAR,
+            froxel_far: CLIP_FAR,
+        }
+    }
+}
 
 /// Update the data including froxels every frame
 fn update(
-    mut cloud_uniforms: Query<&mut VolumetricClouds>,
     froxel_handle: Res<FroxelTextureHandle>,
     mut images: ResMut<Assets<Image>>,
     camera_query: Query<(&GlobalTransform, &Projection), With<Camera>>,
+    scratch: ResMut<FroxelScratch>,
+    frame_count: Res<FrameCount>,
 ) {
     // Get camera transforms
     let (camera_transform, projection) = match camera_query.single() {
-        Ok((transform, projection)) => (transform, projection),
-        Err(e) => {
-            warn!("Failed to get single camera: {:?}", e);
-            return; // Skip this frame if no unique camera is found
-        }
+        Ok(c) => c,
+        Err(_) => return,
     };
     let view_matrix = camera_transform.compute_matrix();
 
@@ -96,61 +111,77 @@ fn update(
     if let (Some(image), Projection::Perspective(persp)) =
         (images.get_mut(&froxel_handle.0), projection)
     {
-        let total_voxels = (FROXEL_WIDTH * FROXEL_HEIGHT * FROXEL_DEPTH) as usize;
-        let mut data = vec![0u8; total_voxels * 4];
-
-        let (near, far, fov, aspect) = (persp.near, persp.far, persp.fov, persp.aspect_ratio);
+        let frame_mod = (frame_count.0 as usize) % TEMPORAL_N;
+        let (fov, aspect) = (persp.fov, persp.aspect_ratio);
         let tan_half = (fov * 0.5).tan();
+        let u_scale = aspect * tan_half;
+        let v_scale = tan_half;
 
-        for mut uniform in &mut cloud_uniforms {
-            uniform.froxel_res = UVec3::new(FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH);
-            uniform.froxel_near = near;
-            uniform.froxel_far = far;
-        }
+        let cam_pos = view_matrix.w_axis.truncate() / view_matrix.w_axis.w;
+        let x_basis = (view_matrix * Vec4::new(u_scale, 0.0, 0.0, 0.0)).truncate();
+        let y_basis = (view_matrix * Vec4::new(0.0, v_scale, 0.0, 0.0)).truncate();
+        let z_basis = (view_matrix * Vec4::new(0.0, 0.0, -1.0, 0.0)).truncate();
 
-        for z in 0..FROXEL_DEPTH {
-            let fraction = (z as f32 + 0.5) / FROXEL_DEPTH as f32;
-            let z_lin = near * (far / near).powf(fraction);
+        // Write into data buffer
+        let data = image.data.as_mut().expect("Image must have data");
+        let w = FROXEL_WIDTH as usize;
+        let h = FROXEL_HEIGHT as usize;
 
-            for y in 0..FROXEL_HEIGHT {
-                let v_ndc = 2.0 * ((y as f32 + 0.5) / FROXEL_HEIGHT as f32) - 1.0;
+        // Iterate each RGBA‑chunk with x,y,z counters
+        let mut x = 0;
+        let mut y = 0;
+        let mut z = 0;
+        for pixel in data.chunks_exact_mut(4) {
+            let skip_temporal = z % TEMPORAL_N != frame_mod;
+            let skip_far =
+                z >= LOD_THRESHOLD && (z - LOD_THRESHOLD) % FAR_SKIP != (frame_mod % FAR_SKIP);
+            if !(skip_temporal || skip_far) {
+                let z_lin = scratch.z_pre[z];
+                let u_ndc = scratch.u_pre[x];
+                let v_ndc = scratch.v_pre[y];
 
-                for x in 0..FROXEL_WIDTH {
-                    let u_ndc = 2.0 * ((x as f32 + 0.5) / FROXEL_WIDTH as f32) - 1.0;
+                // World‐space position via basis
+                let world = cam_pos
+                    + x_basis * (u_ndc * z_lin)
+                    + y_basis * (v_ndc * z_lin)
+                    + z_basis * z_lin;
 
-                    // Compute view‐space position
-                    let view_pos = Vec4::new(
-                        u_ndc * aspect * tan_half * z_lin,
-                        v_ndc * tan_half * z_lin,
-                        -z_lin,
-                        1.0,
-                    );
+                // Squared‑distance to sphere centre at (0,10,0)
+                let d2 = (world - Vec3::new(0.0, 10.0, 0.0)).length_squared();
+                let v = (1.0 - d2 / (10.0 * 10.0)).clamp(0.0, 1.0);
 
-                    // Transform to world space
-                    let world_hom = view_matrix * view_pos;
-                    let world_pos = world_hom.truncate() / world_hom.w;
+                let c = (v * 255.0) as u8;
+                pixel[0] = c;
+                pixel[1] = c;
+                pixel[2] = c;
+                pixel[3] = 255;
+            }
 
-                    // Simple sphere distance
-                    let distance = (world_pos - Vec3::new(0.0, 10.0, 0.0)).length();
-                    let value = (1.0 - (distance / 10.0)).clamp(0.0, 1.0);
-
-                    // Update the texture data with the new value
-                    let idx = (((z * FROXEL_HEIGHT + y) * FROXEL_WIDTH + x) as usize) * 4;
-                    data[idx] = (value * 255.0) as u8; // R
-                    data[idx + 1] = (value * 255.0) as u8; // G
-                    data[idx + 2] = (value * 255.0) as u8; // B
-                    data[idx + 3] = 255; // A
+            // advance x,y,z
+            x += 1;
+            if x == w {
+                x = 0;
+                y += 1;
+                if y == h {
+                    y = 0;
+                    z += 1;
                 }
             }
         }
-
-        image.data = Some(data);
     }
 }
 
-// System to generate 3D noise texture
+// Froxel setup
 #[derive(Resource, Component, ExtractResource, Clone)]
 struct FroxelTextureHandle(Handle<Image>);
+
+#[derive(Resource)]
+struct FroxelScratch {
+    u_pre: Vec<f32>,
+    v_pre: Vec<f32>,
+    z_pre: Vec<f32>,
+}
+
 fn setup_froxels(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let mut image = Image::new(
         Extent3d {
@@ -175,6 +206,28 @@ fn setup_froxels(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
 
     let handle = images.add(image);
     commands.insert_resource(FroxelTextureHandle(handle));
+
+    // Froxel scratch
+    let mut u_pre = Vec::with_capacity(FROXEL_WIDTH as usize);
+    let mut v_pre = Vec::with_capacity(FROXEL_HEIGHT as usize);
+    let mut z_pre = Vec::with_capacity(FROXEL_DEPTH as usize);
+    for x in 0..FROXEL_WIDTH {
+        let u_ndc = 2.0 * (x as f32 + 0.5) / FROXEL_WIDTH as f32 - 1.0;
+        u_pre.push(u_ndc);
+    }
+    for y in 0..FROXEL_HEIGHT {
+        let v_ndc = 2.0 * (y as f32 + 0.5) / FROXEL_HEIGHT as f32 - 1.0;
+        v_pre.push(v_ndc);
+    }
+    for z in 0..FROXEL_DEPTH {
+        let frac = (z as f32 + 0.5) / FROXEL_DEPTH as f32;
+        z_pre.push(CLIP_NEAR * (CLIP_FAR / CLIP_NEAR).powf(frac));
+    }
+    commands.insert_resource(FroxelScratch {
+        u_pre,
+        v_pre,
+        z_pre,
+    });
 }
 
 // Global data used by the render pipeline
