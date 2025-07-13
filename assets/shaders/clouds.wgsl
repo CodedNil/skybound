@@ -4,12 +4,17 @@
 
 @group(0) @binding(0) var<uniform> clouds: VolumetricClouds;
 struct VolumetricClouds {
-    time: f32,
+    froxel_res: vec3<u32>,
+    froxel_near: f32,
+    froxel_far: f32,
 }
 @group(0) @binding(1) var<uniform> view: View;
 @group(0) @binding(2) var<uniform> globals: Globals;
 @group(0) @binding(3) var screen_texture: texture_2d<f32>;
 @group(0) @binding(4) var depth_texture: texture_depth_multisampled_2d;
+
+@group(0) @binding(5) var froxel_texture: texture_3d<f32>;
+@group(0) @binding(6) var froxel_sampler: sampler;
 
 
 const SUNDIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
@@ -91,78 +96,6 @@ fn fbm(po: vec3<f32>) -> f32 {
     return f / 0.96875;
 }
 
-// Base noise function for clouds
-fn sample_base_noise(pos: vec3<f32>, time: f32) -> f32 {
-    // Animate clouds over time by offsetting position
-    return fbm(pos * 0.005 + vec3(0.0, time * 0.02, 0.0));
-}
-
-// Density map
-fn density(pos: vec3<f32>) -> f32 {
-    let clouds_type: f32 = 0.0;
-    let clouds_coverage: f32 = 1.0;
-
-    let altitude = pos.y;
-    var density = 0.0;
-
-    // Thick aur fog below 0m
-    let fog_density = smoothstep(0.0, -10.0, pos.y);
-    if fog_density > 0.01 {
-        // Thick fog
-        let fbm_value = fbm(pos / 5.0 - vec3(0.0, 0.1, 1.0) * globals.time);
-        density = fbm_value * fog_density * 2.0;
-    }
-
-    let low_gradient = smoothstep(-20.0, 20.0, pos.y) * smoothstep(800.0, 700.0, pos.y);
-    let mid_gradient = smoothstep(700.0, 800.0, pos.y) * smoothstep(1800.0, 1700.0, pos.y);
-    let high_gradient = smoothstep(1700.0, 1800.0, pos.y) * smoothstep(2700.0, 2500.0, pos.y);
-
-    // Cloud type blending (0=stratus, 0.5=cumulus, 1=cirrus)
-    let low_type = mix(
-        stratus_profile(altitude),
-        cumulus_profile(altitude),
-        saturate(clouds_type * 2.0)
-    );
-    let high_type = cirrus_profile(altitude);
-
-    // Generate base cloud shapes
-    if low_gradient > 0.01 {
-        let base_noise = sample_base_noise(pos, globals.time);
-        let shaped_noise = base_noise * low_type;
-        density += shaped_noise * low_gradient * clouds_coverage;
-    }
-    if mid_gradient > 0.01 {
-        let base_noise = sample_base_noise(pos * 0.8, globals.time);
-        let shaped_noise = base_noise * mix(low_type, high_type, 0.5);
-        density += shaped_noise * mid_gradient * clouds_coverage;
-    }
-    if high_gradient > 0.01 {
-        let base_noise = sample_base_noise(pos * 0.6, globals.time);
-        let shaped_noise = base_noise * high_type;
-        density += shaped_noise * high_gradient * clouds_coverage * 0.7; // Thinner high clouds
-    }
-
-    return clamp(density, 0.0, 1.0);
-}
-
-// Cloud type profiles
-fn stratus_profile(altitude: f32) -> f32 {
-    // Flat, layered profile
-    return smoothstep(0.0, 200.0, altitude) * smoothstep(1500.0, 1000.0, altitude);
-}
-
-fn cumulus_profile(altitude: f32) -> f32 {
-    // Puffy, vertical development
-    let base = smoothstep(200.0, 500.0, altitude);
-    let top = smoothstep(3000.0, 2000.0, altitude);
-    return base * top * (1.0 + 0.5 * sin(altitude * 0.002)); // Add vertical variation
-}
-
-fn cirrus_profile(altitude: f32) -> f32 {
-    // Thin, wispy profile
-    return smoothstep(5000.0, 6000.0, altitude) * smoothstep(12000.0, 10000.0, altitude) * 0.3;
-}
-
 // Enhanced lighting with Beer-Powder approximation
 fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
     // Traditional Beer's Law
@@ -185,10 +118,33 @@ fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) ->
     return (light_color * beers_powder * hg + ambient) * density;
 }
 
+fn density_from_froxel(pos: vec3<f32>) -> f32 {
+    // world→clip→NDC→UV
+    let clip = view.clip_from_world * vec4<f32>(pos, 1.0);
+    let ndc = clip.xyz / clip.w;
+    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+
+    // Convert linear view-space depth to [0..1] Z tex coord using near/far
+    let vz = -(view.view_from_world * vec4<f32>(pos, 1.0)).z;
+    // log‐z in [0,1]
+    let log_z = log(vz / clouds.froxel_near) / log(clouds.froxel_far / clouds.froxel_near);
+    let zf = clamp(log_z, 0.0, 1.0);
+
+    var base = textureSample(froxel_texture, froxel_sampler, vec3<f32>(uv, zf));
+
+    var density = base.r;
+    if density > 0.01 {
+        let noise = fbm(pos * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
+        density = max(density - 0.2, 0.0) + density * noise;
+    }
+
+    return clamp(density, 0.0, 1.0);
+}
+
 // Raymarch function
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, offset: f32) -> vec4<f32> {
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
-    var t = offset; // Dithering offset
+    var t = dither; // Dithering offset
     let min_step = 0.2;
     let k = 0.01; // The fall-off of step size with distance
     let epsilon = 0.5; // How far to move through less dense areas
@@ -197,7 +153,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, offset: f32) -> vec4<f32
         if sumCol.a > 0.99 || t > min(t_scene, MAX_DISTANCE) { break; }
 
         let pos = ro + rd * t;
-        let den = density(pos);
+        let den = density_from_froxel(pos);
 
         if den > 0.01 {
             // Self-shadowing
@@ -237,14 +193,14 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Form the ray
     let origin = view.world_position;
     let ray_vec = world_pos - origin;
-    let t_scene = length(ray_vec);
-    let ray_dir = ray_vec / t_scene;
+    let tmax = length(ray_vec);
+    let ray_dir = ray_vec / tmax;
 
     // Procedural blue noise dithering
-    let offset = fract(blue_noise(in.position.xy));
+    let dither = fract(blue_noise(in.position.xy));
 
     // Ray-march clouds
-    let clouds = raymarch(origin, ray_dir, t_scene, offset);
+    let clouds = raymarch(origin, ray_dir, tmax, dither);
 
     // Composite over background
     let col = mix(screen_color, clouds.xyz, clouds.a);
