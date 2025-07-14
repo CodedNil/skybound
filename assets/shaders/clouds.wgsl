@@ -110,9 +110,12 @@ fn fbm(po: vec3<f32>) -> f32 {
 }
 
 // Enhanced lighting with Beer-Powder approximation
+const extinction = 0.04;
+const g = 0.05; // anisotropy
+const light_color = vec3(1.0, 0.98, 0.95); // Very white sunlight
+const ambient = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
 fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
     // Traditional Beer's Law
-    let extinction = 0.04;
     let beer = exp(-density * extinction);
 
     // Powder effect for dark edges
@@ -120,56 +123,63 @@ fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) ->
     let beers_powder = mix(beer, beer * powder, powder);
 
     // Henyey-Greenstein phase function
-    let g = 0.05; // anisotropy
     let cos_theta = dot(light_dir, view_dir);
     let hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5);
-
-    // Combine components
-    let light_color = vec3(1.0, 0.98, 0.95); // Very white sunlight
-    let ambient = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
 
     return (light_color * beers_powder * hg + ambient) * density;
 }
 
 // Check density against clouds
-fn density_at(pos: vec3<f32>) -> f32 {
-    let n = clouds.num_clouds;
-    var d: f32 = 0.0;
-    for (var i: u32 = 0u; i < n; i = i + 1u) {
-        let c = cloud_array[i];
-        let d = pos - c.position.xyz;
-        if dot(d, d) < c.radius2 {
-            return 1.0;
-        }
+fn density_at_cloud(pos: vec3<f32>, c: Cloud) -> f32 {
+    let d = pos - c.position.xyz;
+    let dist2 = dot(d, d);
+    if dist2 < c.radius2 {
+        return 1.0;
     }
     return 0.0;
 }
 
 // Raymarch function
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, dither: f32) -> vec4<f32> {
+const MIN_STEP = 0.2;
+const K_STEP = 0.005; // The fall-off of step size with distance
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
-    var t = dither; // Dithering offset
-    let min_step = 0.2;
-    let k = 0.01; // The fall-off of step size with distance
-    let epsilon = 0.5; // How far to move through less dense areas
 
-    for (var i = 0; i < 500; i = i + 1) {
-        if sumCol.a > 0.99 || t > min(t_scene, MAX_DISTANCE) { break; }
-
-        let pos = ro + rd * t;
-        let den = density_at(pos);
-        if den > 0.01 {
-            var col = enhanced_lighting(den, SUNDIR, rd);
-            let a = den * 0.4;
-            col *= a;
-            sumCol = vec4(
-                sumCol.xyz + col * (1.0 - sumCol.a),
-                sumCol.a + a * (1.0 - sumCol.a)
-            );
+    // Loop over all clouds which are sorted by camera distance
+    for (var i: u32 = 0u; i < clouds.num_clouds; i = i + 1u) {
+        let c = cloud_array[i];
+        let oc = ro - c.position.xyz;
+        let b = dot(oc, rd);
+        let disc = b * b - (dot(oc, oc) - c.radius2);
+        if disc <= 0.0 {
+            continue;  // no intersection
         }
 
-        let step_size = max(min_step, k * t) / (den + epsilon);
-        t += step_size;
+        let sq = sqrt(disc);
+        let t0 = max(-b - sq, dither);
+        let t1 = min(-b + sq, tmax);
+        if t0 >= t1 {
+            continue;  // missed or degenerate
+        }
+
+        // March this sphere segment
+        var t = t0;
+        while t < t1 && sumCol.a < 0.99 {
+            let pos = ro + rd * t;
+            let den = density_at_cloud(pos, c);
+            if den > 0.01 {
+                var col = enhanced_lighting(den, SUNDIR, rd);
+                let a = den * 0.4;
+                col *= a;
+                sumCol = sumCol + vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
+            }
+            t += max(MIN_STEP, K_STEP * t);
+        }
+
+        // Once we saturate, stop testing any more distant clouds
+        if sumCol.a >= 0.99 {
+            break;
+        }
     }
 
     return clamp(sumCol, vec4(0.0), vec4(1.0));

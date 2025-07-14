@@ -33,7 +33,7 @@ use bevy::{
 };
 use rand::{Rng, rng};
 use smooth_bevy_cameras::controllers::unreal::{UnrealCameraBundle, UnrealCameraController};
-use std::f32::consts::TAU;
+use std::{cmp::Ordering, f32::consts::TAU};
 
 /// Component that will get passed to the shader
 #[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
@@ -175,7 +175,7 @@ impl FromWorld for CloudsBuffer {
 
 fn setup(mut commands: Commands) {
     let mut rng = rng();
-    let num_clouds = 100;
+    let num_clouds = 200;
     let mut clouds = Vec::with_capacity(num_clouds);
     for _ in 1..=num_clouds {
         clouds.push(
@@ -242,20 +242,35 @@ fn update(time: Res<Time>, mut clouds_buffer_data: ResMut<CloudsBufferData>) {
 
 fn update_buffer(
     mut commands: Commands,
-    clouds_data: Res<CloudsBufferData>,
+    mut clouds_data: ResMut<CloudsBufferData>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     clouds_buffer: Option<Res<CloudsBuffer>>,
+    camera_query: Query<&GlobalTransform, With<Camera>>,
 ) {
+    let cam_transform = camera_query
+        .single()
+        .expect("There must be a Camera in the world");
+    let cam_pos: Vec3 = cam_transform.translation();
+
+    // Sort the Vec<Cloud> front-to-back by: frontDist = ||center – cam_pos|| – radius
+    clouds_data.0.sort_unstable_by(|a, b| {
+        // front‐distance
+        let da = (a.position.xyz() - cam_pos).length() - a.radius2.sqrt();
+        let db = (b.position.xyz() - cam_pos).length() - b.radius2.sqrt();
+        // compare with partial_cmp
+        da.partial_cmp(&db).unwrap_or(Ordering::Equal)
+    });
+
+    // Upload to the GPU
+    let bytes: &[u8] = bytemuck::cast_slice(&clouds_data.0);
     if let Some(clouds_buffer) = clouds_buffer {
-        // Update existing buffer
-        let data = bytemuck::cast_slice(&clouds_data.0);
-        render_queue.write_buffer(&clouds_buffer.buffer, 0, data);
+        render_queue.write_buffer(&clouds_buffer.buffer, 0, bytes);
     } else {
         // Create new buffer
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("clouds_buffer"),
-            contents: bytemuck::cast_slice(&clouds_data.0),
+            contents: bytes,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
         commands.insert_resource(CloudsBuffer { buffer });
