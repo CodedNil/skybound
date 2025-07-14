@@ -21,6 +21,8 @@ bevy = { version = "0.16.1", default-features = false, features = [
 smooth-bevy-cameras = "0.14.0"
 avian3d = "0.3"
 noiz = "0.2.0"
+rand = "0.9.1"
+bytemuck = "1.23.1"
 
 [profile.dev]
 opt-level = 1

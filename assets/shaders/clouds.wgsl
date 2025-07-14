@@ -2,19 +2,32 @@
 #import bevy_render::globals::Globals
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 
-@group(0) @binding(0) var<uniform> clouds: VolumetricClouds;
+@group(0) @binding(0) var<uniform> view: View;
+@group(0) @binding(1) var<uniform> globals: Globals;
+@group(0) @binding(2) var screen_texture: texture_2d<f32>;
+@group(0) @binding(3) var depth_texture: texture_depth_multisampled_2d;
+@group(0) @binding(4) var<uniform> clouds: VolumetricClouds;
 struct VolumetricClouds {
-    froxel_res: vec3<u32>,
-    froxel_near: f32,
-    froxel_far: f32,
+    num_clouds: u32,
 }
-@group(0) @binding(1) var<uniform> view: View;
-@group(0) @binding(2) var<uniform> globals: Globals;
-@group(0) @binding(3) var screen_texture: texture_2d<f32>;
-@group(0) @binding(4) var depth_texture: texture_depth_multisampled_2d;
+@group(0) @binding(5) var<storage, read> cloud_array: array<Cloud>;
+struct Cloud {
+    // 2× Vec4
+    position: vec4<f32>,
+    scale: vec4<f32>,
 
-@group(0) @binding(5) var froxel_texture: texture_3d<f32>;
-@group(0) @binding(6) var froxel_sampler: sampler;
+    // 4 floats → Vec4
+    rotation: f32,
+    radius2: f32,
+    seed: f32,
+    density: f32,
+
+    // 4 floats → Vec4
+    detail: f32,
+    flatness: f32,
+    streakiness: f32,
+    anvil: f32,
+}
 
 
 const SUNDIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
@@ -118,27 +131,18 @@ fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) ->
     return (light_color * beers_powder * hg + ambient) * density;
 }
 
-fn density_from_froxel(pos: vec3<f32>) -> f32 {
-    // world→clip→NDC→UV
-    let clip = view.clip_from_world * vec4<f32>(pos, 1.0);
-    let ndc = clip.xyz / clip.w;
-    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
-
-    // Convert linear view-space depth to [0..1] Z tex coord using near/far
-    let vz = -(view.view_from_world * vec4<f32>(pos, 1.0)).z;
-    // log‐z in [0,1]
-    let log_z = log(vz / clouds.froxel_near) / log(clouds.froxel_far / clouds.froxel_near);
-    let zf = clamp(log_z, 0.0, 1.0);
-
-    var base = textureSample(froxel_texture, froxel_sampler, vec3<f32>(uv, zf));
-
-    var density = base.r;
-    if density > 0.01 {
-        let noise = fbm(pos * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
-        density = max(density - 0.2, 0.0) + density * noise;
+// Check density against clouds
+fn density_at(pos: vec3<f32>) -> f32 {
+    let n = clouds.num_clouds;
+    var d: f32 = 0.0;
+    for (var i: u32 = 0u; i < n; i = i + 1u) {
+        let c = cloud_array[i];
+        let d = pos - c.position.xyz;
+        if dot(d, d) < c.radius2 {
+            return 1.0;
+        }
     }
-
-    return clamp(density, 0.0, 1.0);
+    return 0.0;
 }
 
 // Raymarch function
@@ -153,13 +157,9 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, t_scene: f32, dither: f32) -> vec4<f32
         if sumCol.a > 0.99 || t > min(t_scene, MAX_DISTANCE) { break; }
 
         let pos = ro + rd * t;
-        let den = density_from_froxel(pos);
-
+        let den = density_at(pos);
         if den > 0.01 {
-            // Self-shadowing
             var col = enhanced_lighting(den, SUNDIR, rd);
-
-            // Accumulate in alpha‐weighted front‐to‐back
             let a = den * 0.4;
             col *= a;
             sumCol = vec4(

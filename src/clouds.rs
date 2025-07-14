@@ -1,55 +1,75 @@
 use bevy::{
-    asset::RenderAssetUsages,
     core_pipeline::{
+        bloom::Bloom,
         core_3d::graph::{Core3d, Node3d},
         fullscreen_vertex_shader::fullscreen_shader_vertex_state,
-        prepass::ViewPrepassTextures,
+        prepass::{DepthPrepass, ViewPrepassTextures},
     },
     ecs::{query::QueryItem, system::lifetimeless::Read},
-    image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    pbr::{Atmosphere, AtmosphereSettings},
     prelude::*,
     render::{
-        RenderApp,
+        Render, RenderApp, RenderSet,
+        camera::Exposure,
         extract_component::{
             ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
             UniformComponentPlugin,
         },
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         globals::{GlobalsBuffer, GlobalsUniform},
-        render_asset::RenderAssets,
         render_graph::{
             NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{
-                sampler, texture_2d, texture_3d, texture_depth_2d_multisampled, uniform_buffer,
-                uniform_buffer_sized,
+                storage_buffer_read_only, texture_2d, texture_depth_2d_multisampled,
+                uniform_buffer, uniform_buffer_sized,
             },
             *,
         },
-        renderer::{RenderContext, RenderDevice},
-        texture::GpuImage,
+        renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
 };
+use rand::{Rng, rng};
+use smooth_bevy_cameras::controllers::unreal::{UnrealCameraBundle, UnrealCameraController};
+use std::f32::consts::TAU;
 
-const FROXEL_HEIGHT: usize = 64;
-const FROXEL_WIDTH: usize = (FROXEL_HEIGHT * 16 + 9 - 1) / 9;
-const FROXEL_DEPTH: usize = 256;
+/// Component that will get passed to the shader
+#[derive(Component, Default, Clone, Copy, ExtractComponent, ShaderType)]
+struct VolumetricClouds {
+    num_clouds: u32,
+}
 
-const CLIP_NEAR: f32 = 0.1;
-const CLIP_FAR: f32 = 1000.0;
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, ShaderType)]
+#[repr(C)]
+struct Cloud {
+    // 2× Vec4 (position, scale)
+    position: Vec4, // xyz=centre, w unused
+    scale: Vec4,    // xyz=scale, w unused
+
+    // 4 floats → Vec4
+    rotation: f32, // Yaw
+    radius2: f32,  // For sphere testing, squared radius
+    seed: f32,     // Unique identifier for noise
+    density: f32,  // Overall fill (0=almost empty mist, 1=solid cloud mass)
+
+    // 4 floats → Vec4
+    detail: f32,   // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
+    flatness: f32, // 0 = fully 3D (cumulus), 1 = totally squashed pancake (stratus)
+    streakiness: f32, // 0 = no banding, 1 = strong linear streaks (cirrus style)
+    anvil: f32,    // 0 = none, 1 = full anvil cap (cumulonimbus top shear)
+}
 
 pub struct CloudsPlugin;
-
 impl Plugin for CloudsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            ExtractResourcePlugin::<FroxelTextureHandle>::default(),
+            ExtractResourcePlugin::<CloudsBufferData>::default(),
             ExtractComponentPlugin::<VolumetricClouds>::default(),
             UniformComponentPlugin::<VolumetricClouds>::default(),
         ))
-        .add_systems(Startup, setup_froxels)
+        .add_systems(Startup, setup)
         .add_systems(Update, update);
     }
 
@@ -59,6 +79,7 @@ impl Plugin for CloudsPlugin {
         };
         render_app
             .init_resource::<VolumetricCloudsPipeline>()
+            .add_systems(Render, update_buffer.in_set(RenderSet::Prepare))
             .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
                 Core3d,
                 VolumetricCloudsLabel,
@@ -70,292 +91,175 @@ impl Plugin for CloudsPlugin {
     }
 }
 
-/// Component that will get passed to the shader
-#[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
-pub struct VolumetricClouds {
-    froxel_res: UVec3,
-    froxel_near: f32,
-    froxel_far: f32,
-}
-impl Default for VolumetricClouds {
-    fn default() -> Self {
-        Self {
-            froxel_res: UVec3::new(
-                FROXEL_WIDTH as u32,
-                FROXEL_HEIGHT as u32,
-                FROXEL_DEPTH as u32,
-            ),
-            froxel_near: CLIP_NEAR,
-            froxel_far: CLIP_FAR,
-        }
+impl Cloud {
+    fn new(position: Vec3, scale: Vec3, rotation: f32) -> Self {
+        let mut cloud = Cloud {
+            position: position.extend(0.0),
+            scale: scale.extend(0.0),
+            rotation: rotation,
+            radius2: 0.0,
+            seed: rng().random(),
+            density: 1.0,
+            detail: 0.5,
+            flatness: 0.0,
+            streakiness: 0.0,
+            anvil: 0.0,
+        };
+        cloud.compute_radius(scale, rotation);
+        cloud
+    }
+
+    fn update_transforms(&mut self, position: Vec3, scale: Vec3, rotation: f32) {
+        self.position = position.extend(0.0);
+        self.scale = scale.extend(0.0);
+        self.rotation = rotation;
+        self.compute_radius(scale, rotation);
+    }
+
+    fn compute_radius(&mut self, scale: Vec3, rotation: f32) {
+        let half = scale * 0.5;
+        let (sin_a, cos_a) = rotation.sin_cos();
+        let ext_x = half.x * cos_a.abs() + half.z * sin_a.abs();
+        let ext_z = half.x * sin_a.abs() + half.z * cos_a.abs();
+        let ext_y = half.y;
+        // largest extent = radius
+        let r = ext_x.max(ext_y).max(ext_z);
+        self.radius2 = r * r;
+    }
+
+    fn with_density(mut self, density: f32) -> Self {
+        self.density = density;
+        self
+    }
+
+    fn with_detail(mut self, detail: f32) -> Self {
+        self.detail = detail;
+        self
+    }
+
+    fn with_flatness(mut self, flatness: f32) -> Self {
+        self.flatness = flatness;
+        self
+    }
+
+    fn with_streakiness(mut self, streakiness: f32) -> Self {
+        self.streakiness = streakiness;
+        self
+    }
+
+    fn with_anvil(mut self, anvil: f32) -> Self {
+        self.anvil = anvil;
+        self
     }
 }
 
-/// Update the data including froxels every frame
-fn update(
-    froxel_handle: Res<FroxelTextureHandle>,
-    mut images: ResMut<Assets<Image>>,
-    camera_query: Query<(&GlobalTransform, &Projection), With<Camera>>,
-    clouds: ResMut<CloudsData>,
-) {
-    // Get camera transforms
-    let (camera_transform, projection) = match camera_query.single() {
-        Ok((t, Projection::Perspective(p))) => (t, p),
-        Ok(_) => return,
-        Err(_) => return,
-    };
-    let view_matrix = camera_transform.compute_matrix();
-    let image = match images.get_mut(&froxel_handle.0) {
-        Some(image) => image,
-        None => return,
-    };
-
-    // Update froxel texture with a time-based offset
-    let tan_half = (projection.fov * 0.5).tan();
-    let u_scale = projection.aspect_ratio * tan_half;
-    let v_scale = tan_half;
-
-    // Precompute constants
-    let r = CLIP_FAR / CLIP_NEAR;
-    let ln_r = r.ln();
-    let inv_tan_half = 1.0 / tan_half;
-    let inv_aspect = 1.0 / projection.aspect_ratio;
-
-    // Calculate camera position and basis vectors
-    let cam_pos = view_matrix.w_axis.truncate() / view_matrix.w_axis.w;
-    let x_basis = (view_matrix * Vec4::new(u_scale, 0.0, 0.0, 0.0)).truncate();
-    let y_basis = (view_matrix * Vec4::new(0.0, v_scale, 0.0, 0.0)).truncate();
-    let z_basis = (view_matrix * Vec4::new(0.0, 0.0, -1.0, 0.0)).truncate();
-
-    // Initialize buffer to accumulate voxel values
-    let (wf, hf, df) = (
-        FROXEL_WIDTH as f32,
-        FROXEL_HEIGHT as f32,
-        FROXEL_DEPTH as f32,
-    );
-    let froxel_max = Vec3::new(
-        (FROXEL_WIDTH - 1) as f32,
-        (FROXEL_HEIGHT - 1) as f32,
-        (FROXEL_DEPTH - 1) as f32,
-    );
-    let mut v_buffer = vec![0u8; FROXEL_WIDTH * FROXEL_HEIGHT * FROXEL_DEPTH * 4];
-
-    // Process each cloud
-    for cloud in &clouds.clouds {
-        let bmin = cloud.position - cloud.size / 2.0;
-        let bmax = cloud.position + cloud.size / 2.0;
-
-        // Compute eight corners of AABB
-        let corners = [
-            bmin,
-            Vec3::new(bmax.x, bmin.y, bmin.z),
-            Vec3::new(bmin.x, bmax.y, bmin.z),
-            Vec3::new(bmin.x, bmin.y, bmax.z),
-            Vec3::new(bmax.x, bmax.y, bmin.z),
-            Vec3::new(bmax.x, bmin.y, bmax.z),
-            Vec3::new(bmin.x, bmax.y, bmax.z),
-            bmax,
-        ];
-
-        // Map each corner to froxel space
-        let mut min_froxel = Vec3::MAX;
-        let mut max_froxel = Vec3::MIN;
-
-        for corner in corners {
-            // Transform to camera space
-            let p_world_homogeneous = Vec4::new(corner.x, corner.y, corner.z, 1.0);
-            let p_cam_homogeneous = view_matrix.inverse() * p_world_homogeneous;
-            let p_cam = p_cam_homogeneous.truncate() / p_cam_homogeneous.w;
-
-            if p_cam.z < 0.0 {
-                let d = -p_cam.z;
-                if d >= CLIP_NEAR && d <= CLIP_FAR {
-                    let inv_d_tan_half = inv_tan_half / d;
-                    let u_ndc = p_cam.x * inv_d_tan_half * inv_aspect;
-                    let v_ndc = p_cam.y * inv_d_tan_half;
-
-                    let frac = (d / CLIP_NEAR).ln() / ln_r;
-
-                    let froxel_pos = Vec3::new(
-                        ((u_ndc + 1.0) * 0.5) * wf - 0.5,
-                        ((v_ndc + 1.0) * 0.5) * hf - 0.5,
-                        frac * df - 0.5,
-                    );
-
-                    min_froxel = min_froxel.min(froxel_pos);
-                    max_froxel = max_froxel.max(froxel_pos);
-                }
-            }
-        }
-
-        // Compute froxel ranges
-        let start = min_froxel
-            .floor()
-            .max(Vec3::ZERO)
-            .min(froxel_max)
-            .as_uvec3();
-        let end = max_froxel.ceil().max(Vec3::ZERO).min(froxel_max).as_uvec3();
-
-        // Process only relevant froxels
-        if start.x <= end.x && start.y <= end.y && start.z <= end.z {
-            for z in start.z..=end.z {
-                let z = z as usize;
-                let z_lin = clouds.z_pre[z];
-                let z_basis_zlin = z_basis * z_lin;
-
-                for y in start.y..=end.y {
-                    let y = y as usize;
-                    let v_ndc = clouds.v_pre[y];
-                    let y_basis_vz = y_basis * (v_ndc * z_lin);
-                    let offset = cam_pos + y_basis_vz + z_basis_zlin;
-
-                    for x in start.x..=end.x {
-                        let x = x as usize;
-                        let u_ndc = clouds.u_pre[x];
-                        let world = offset + x_basis * (u_ndc * z_lin);
-
-                        if world.clamp(bmin, bmax) == world {
-                            let dist_sq_ellipsoid =
-                                ((world - cloud.position) / (cloud.size / 2.0)).length_squared();
-
-                            // Only contribute density if inside the ellipsoid
-                            if dist_sq_ellipsoid <= 1.0 {
-                                let v = (1.0 - dist_sq_ellipsoid).clamp(0.0, 1.0);
-                                let c = (v * 255.0) as u8;
-                                let idx = ((z * FROXEL_HEIGHT + y) * FROXEL_WIDTH + x) * 4;
-                                v_buffer[idx] = v_buffer[idx].saturating_add(c); // R
-                                v_buffer[idx + 1] = 0; // G
-                                v_buffer[idx + 2] = 0; // B
-                                v_buffer[idx + 3] = 0; // A
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    image.data = Some(v_buffer);
-
-    // let data = image.data.as_mut().expect("Image must have data");
-    // for z in 0..d {
-    //     let z_lin = clouds.z_pre[z];
-    //     let z_basis_zlin = z_basis * z_lin;
-
-    //     for y in 0..h {
-    //         let v_ndc = clouds.v_pre[y];
-    //         let y_basis_vz = y_basis * (v_ndc * z_lin);
-    //         let offset = cam_pos + y_basis_vz + z_basis_zlin;
-
-    //         for x in 0..w {
-    //             let u_ndc = clouds.u_pre[x];
-
-    //             // World‐space position via basis
-    //             let world = offset + x_basis * (u_ndc * z_lin);
-
-    //             // Distance calculation to clouds
-    //             let mut v = 0.0;
-    //             for cloud in &clouds.clouds {
-    //                 let bmin = cloud.position - cloud.size / 2.0;
-    //                 let bmax = cloud.position + cloud.size / 2.0;
-    //                 if world.clamp(bmin, bmax) == world {
-    //                     let dist_sq = world.distance_squared(cloud.position);
-    //                     v += (1.0 - dist_sq / 25.0).clamp(0.0, 1.0);
-    //                     if v >= 1.0 {
-    //                         break;
-    //                     }
-    //                 };
-    //             }
-
-    //             // Write to data buffer
-    //             let c = (v * 255.0) as u8;
-    //             let idx = ((z * FROXEL_HEIGHT + y) * FROXEL_WIDTH + x) * 4;
-    //             data[idx] = c; // R
-    //             data[idx + 1] = c; // G
-    //             data[idx + 2] = c; // B
-    //             data[idx + 3] = 255; // A
-    //         }
-    //     }
-    // }
-}
-
-// Froxel setup
-#[derive(Resource, Component, ExtractResource, Clone)]
-struct FroxelTextureHandle(Handle<Image>);
+#[derive(Resource, ExtractResource, Clone)]
+struct CloudsBufferData(Vec<Cloud>);
 
 #[derive(Resource)]
-struct CloudsData {
-    clouds: Vec<Cloud>,
-
-    u_pre: Vec<f32>,
-    v_pre: Vec<f32>,
-    z_pre: Vec<f32>,
+struct CloudsBuffer {
+    buffer: Buffer,
+}
+impl FromWorld for CloudsBuffer {
+    fn from_world(world: &mut World) -> Self {
+        let clouds_data = world.resource::<CloudsBufferData>();
+        let render_device = world.resource::<RenderDevice>();
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("clouds_buffer"),
+            contents: bytemuck::cast_slice(&clouds_data.0),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        Self { buffer }
+    }
 }
 
-struct Cloud {
-    position: Vec3,
-    size: Vec3,
+fn setup(mut commands: Commands) {
+    let mut rng = rng();
+    let num_clouds = 100;
+    let mut clouds = Vec::with_capacity(num_clouds);
+    for _ in 1..=num_clouds {
+        clouds.push(
+            Cloud::new(
+                Vec3::new(
+                    rng.random_range(-500.0..500.0),
+                    rng.random_range(10.0..1000.0),
+                    rng.random_range(-500.0..500.0),
+                ),
+                Vec3::new(
+                    rng.random_range(15.0..50.0),
+                    rng.random_range(5.0..20.0),
+                    rng.random_range(15.0..50.0),
+                ),
+                rng.random_range(0.0..=TAU),
+            )
+            .with_density(rng.random_range(0.5..=1.0))
+            .with_detail(rng.random_range(0.0..=1.0)),
+        );
+    }
+    clouds.push(Cloud::new(
+        Vec3::new(0.0, 10.0, 0.0),
+        Vec3::new(40.0, 10.0, 20.0),
+        0.0,
+    ));
+
+    let clouds_num = clouds.len() as u32;
+    commands.insert_resource(CloudsBufferData(clouds));
+    commands
+        .spawn((
+            Camera3d::default(),
+            Camera {
+                hdr: true,
+                ..default()
+            },
+            Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
+            Atmosphere::EARTH,
+            AtmosphereSettings {
+                aerial_view_lut_max_distance: 3.2e5,
+                scene_units_to_m: 1.0,
+                ..Default::default()
+            },
+            Exposure::SUNLIGHT,
+            Bloom::NATURAL,
+            DepthPrepass,
+            VolumetricClouds {
+                num_clouds: clouds_num,
+            },
+        ))
+        .insert(UnrealCameraBundle::new(
+            UnrealCameraController::default(),
+            Vec3::new(-15.0, 8.0, 18.0),
+            Vec3::new(0.0, 4.0, 0.0),
+            Vec3::Y,
+        ));
 }
 
-fn setup_froxels(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let mut image = Image::new(
-        Extent3d {
-            width: FROXEL_WIDTH as u32,
-            height: FROXEL_HEIGHT as u32,
-            depth_or_array_layers: FROXEL_DEPTH as u32,
-        },
-        TextureDimension::D3,
-        vec![0u8; (FROXEL_WIDTH * FROXEL_HEIGHT * FROXEL_DEPTH * 4) as usize],
-        TextureFormat::Rgba8Unorm,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::ClampToEdge,
-        address_mode_v: ImageAddressMode::ClampToEdge,
-        address_mode_w: ImageAddressMode::ClampToEdge,
-        mag_filter: ImageFilterMode::Linear,
-        min_filter: ImageFilterMode::Linear,
-        mipmap_filter: ImageFilterMode::Linear,
-        ..default()
-    });
-
-    let handle = images.add(image);
-    commands.insert_resource(FroxelTextureHandle(handle));
-
-    // Initial clouds
-    let clouds = vec![
-        Cloud {
-            position: Vec3::new(0.0, 10.0, 0.0),
-            size: Vec3::new(40.0, 10.0, 20.0),
-        },
-        Cloud {
-            position: Vec3::new(40.0, 20.0, 10.0),
-            size: Vec3::new(40.0, 20.0, 10.0),
-        },
-    ];
-
-    // Froxel scratch
-    let mut u_pre = Vec::with_capacity(FROXEL_WIDTH as usize);
-    let mut v_pre = Vec::with_capacity(FROXEL_HEIGHT as usize);
-    let mut z_pre = Vec::with_capacity(FROXEL_DEPTH as usize);
-    for x in 0..FROXEL_WIDTH {
-        let u_ndc = 2.0 * (x as f32 + 0.5) / FROXEL_WIDTH as f32 - 1.0;
-        u_pre.push(u_ndc);
+fn update(time: Res<Time>, mut clouds_buffer_data: ResMut<CloudsBufferData>) {
+    for cloud in &mut clouds_buffer_data.0 {
+        cloud.position.x += time.delta_secs() * 10.0;
+        cloud.update_transforms(cloud.position.xyz(), cloud.scale.xyz(), cloud.rotation);
     }
-    for y in 0..FROXEL_HEIGHT {
-        let v_ndc = 2.0 * (y as f32 + 0.5) / FROXEL_HEIGHT as f32 - 1.0;
-        v_pre.push(v_ndc);
-    }
-    for z in 0..FROXEL_DEPTH {
-        let frac = (z as f32 + 0.5) / FROXEL_DEPTH as f32;
-        z_pre.push(CLIP_NEAR * (CLIP_FAR / CLIP_NEAR).powf(frac));
-    }
+}
 
-    commands.insert_resource(CloudsData {
-        clouds,
-        u_pre,
-        v_pre,
-        z_pre,
-    });
+fn update_buffer(
+    mut commands: Commands,
+    clouds_data: Res<CloudsBufferData>,
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    clouds_buffer: Option<Res<CloudsBuffer>>,
+) {
+    if let Some(clouds_buffer) = clouds_buffer {
+        // Update existing buffer
+        let data = bytemuck::cast_slice(&clouds_data.0);
+        render_queue.write_buffer(&clouds_buffer.buffer, 0, data);
+    } else {
+        // Create new buffer
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("clouds_buffer"),
+            contents: bytemuck::cast_slice(&clouds_data.0),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+        commands.insert_resource(CloudsBuffer { buffer });
+    }
 }
 
 // Global data used by the render pipeline
@@ -390,14 +294,14 @@ impl ViewNode for VolumetricCloudsNode {
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
 
-        // Fetch the uniform buffer and binding.
+        // Fetch the data safely.
         let (
             Some(pipeline),
             Some(cloud_uniforms_binding),
             Some(view_binding),
             Some(globals_binding),
             Some(depth_view),
-            Some(froxel_gpu_image),
+            Some(clouds_buffer),
         ) = (
             world
                 .resource::<PipelineCache>()
@@ -409,9 +313,7 @@ impl ViewNode for VolumetricCloudsNode {
             world.resource::<ViewUniforms>().uniforms.binding(),
             world.resource::<GlobalsBuffer>().buffer.binding(),
             prepass_textures.depth_view(),
-            world
-                .resource::<RenderAssets<GpuImage>>()
-                .get(&world.resource::<FroxelTextureHandle>().0),
+            world.get_resource::<CloudsBuffer>(),
         )
         else {
             return Ok(());
@@ -423,13 +325,12 @@ impl ViewNode for VolumetricCloudsNode {
             "volumetric_clouds_bind_group",
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
-                cloud_uniforms_binding.clone(),
                 view_binding.clone(),
                 globals_binding.clone(),
                 post_process.source,
                 depth_view,
-                &froxel_gpu_image.texture_view,
-                &froxel_gpu_image.sampler,
+                cloud_uniforms_binding.clone(),
+                clouds_buffer.buffer.as_entire_binding(),
             )),
         );
 
@@ -450,7 +351,7 @@ impl ViewNode for VolumetricCloudsNode {
         render_pass.set_bind_group(
             0,
             &bind_group,
-            &[cloud_uniforms_index.index(), view_uniform_offset.offset],
+            &[view_uniform_offset.offset, cloud_uniforms_index.index()],
         );
         render_pass.draw(0..3, 0..1);
 
@@ -467,13 +368,12 @@ impl FromWorld for VolumetricCloudsPipeline {
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
-                    uniform_buffer::<VolumetricClouds>(true), // The clouds uniform that will control the effect
-                    uniform_buffer::<ViewUniform>(true),      // The view uniform
-                    uniform_buffer_sized(false, Some(GlobalsUniform::min_size())), // The globals uniform
-                    texture_2d(TextureSampleType::Float { filterable: false }), // The screen texture
-                    texture_depth_2d_multisampled(),                            // The depth texture
-                    texture_3d(TextureSampleType::Float { filterable: true }),  // Froxel texture
-                    sampler(SamplerBindingType::Filtering),                     // Froxel sampler
+                    uniform_buffer::<ViewUniform>(true),
+                    uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
+                    texture_2d(TextureSampleType::Float { filterable: false }),
+                    texture_depth_2d_multisampled(),
+                    uniform_buffer::<VolumetricClouds>(true),
+                    storage_buffer_read_only::<Cloud>(false),
                 ),
             ),
         );
