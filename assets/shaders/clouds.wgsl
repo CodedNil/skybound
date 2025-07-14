@@ -134,14 +134,16 @@ fn density_at_cloud(pos: vec3<f32>, c: Cloud) -> f32 {
     let d = pos - c.position.xyz;
     let dist2 = dot(d, d);
     if dist2 < c.radius2 {
-        return 1.0;
+        let density = 1.0 - dist2 / c.radius2;
+        let noise = fbm((pos - c.position.xyz) * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
+        return max(density - 0.2, 0.0) + density * noise;
     }
     return 0.0;
 }
 
 // Raymarch function
 const MIN_STEP = 0.2;
-const K_STEP = 0.005; // The fall-off of step size with distance
+const K_STEP = 0.001; // The fall-off of step size with distance
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
 
