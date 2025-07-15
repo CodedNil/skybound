@@ -34,9 +34,14 @@ const MAX_STEPS: u32 = 250;
 const K_STEP = 0.008; // The fall-off of step size with distance
 
 // Lighting variables
-const SUN_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
 const EXTINCTION: f32 = 0.04;
+
+const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0); // Direction of the aur light from below
+const AUR_COLOR = vec3(0.5, 0.7, 1.0); // Light blue
+
+const SUN_DIR: vec3<f32> = vec3(0.70710678, 0.0, -0.70710678);
 const SUN_COLOR = vec3(1.0, 0.98, 0.95); // Very white sunlight
+
 const AMBIENT_COLOR = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
 
 
@@ -188,77 +193,121 @@ fn intersect_ellipsoid(
 
 // Raymarch through all the clouds, first gathering the intersects
 const MAX_INTERSECTS = 32u;
-struct Intersect {
-    t0: f32,
-    t1: f32,
+const MAX_EVENTS = MAX_INTERSECTS * 2;
+struct Event {
+    t: f32,
     idx: u32,
+    isEnter: bool,
 };
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
-    var intersects: array<Intersect, MAX_INTERSECTS>;
-    var count: u32 = 0u;
+    var events: array<Event, MAX_EVENTS>;
+    var evCount: u32 = 0u;
 
-    // Find cloud intersects
+    // Gather enter/exit events
     for (var i: u32 = 0u; i < clouds_buffer.num_clouds; i = i + 1u) {
         let cloud = clouds_buffer.clouds[i];
         let ts = intersect_ellipsoid(ro, rd, cloud);
         let t0 = max(ts.x, 0.0);
         let t1 = min(ts.y, tMax);
-        if t1 > t0 {
-            intersects[count] = Intersect(t0, t1, i);
-            count = count + 1u;
-            if count >= MAX_INTERSECTS {
-                break;
-            }
+        if t1 > t0 && evCount + 2u <= MAX_EVENTS {
+            events[evCount] = Event(t0, i, true);
+            events[evCount + 1] = Event(t1, i, false);
+            evCount = evCount + 2u;
         }
     }
 
-    // Sort the small array by t0 ascending (insertion sort)
-    for (var i: u32 = 1u; i < count; i = i + 1u) {
-        let key = intersects[i];
+    // Sort the events by ascending t
+    for (var i: u32 = 1u; i < evCount; i = i + 1u) {
+        let key = events[i];
         var j: i32 = i32(i) - 1;
-        // shift larger elements up
+        // shift larger times forward
         loop {
             if j < 0 { break; }
-            if intersects[u32(j)].t0 <= key.t0 { break; }
-            intersects[u32(j + 1)] = intersects[u32(j)];
+            if events[u32(j)].t <= key.t { break; }
+            events[u32(j + 1)] = events[u32(j)];
             j = j - 1;
         }
-        intersects[u32(j + 1)] = key;
+        events[u32(j + 1)] = key;
     }
 
-    // Ray-march each segment front to back
+    // Sweep through events, marching each sub-interval
+    var activeClouds: array<u32, MAX_INTERSECTS>;
+    var activeCount: u32 = 0u;
+    var sumCol: vec4<f32> = vec4<f32>(0.0);
+    var curT: f32 = 0.0;
     let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
     let timeOffsetA = timeOffsetB * 0.2;
-    var sumCol = vec4<f32>(0.0);
-    for (var k: u32 = 0u; k < count; k = k + 1u) {
-        let seg = intersects[k];
-        let cloud = clouds_buffer.clouds[seg.idx];
-        var t = seg.t0 + dither;
 
-        for (var step: u32 = 0u; step < MAX_STEPS; step = step + 1u) {
-            if t >= seg.t1 || sumCol.a >= 0.99 {
-                break;
-            }
-            let pos = ro + rd * t;
-            let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
-            if density > 0.01 {
-                let beer = 1.0 / (1.0 + density * EXTINCTION);
-                var col = (SUN_COLOR * beer + AMBIENT_COLOR * (1.0 - beer)) * density;
-                let a = density * 0.4;
-                col *= a;
-                sumCol += vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
-                t += max(MIN_STEP, K_STEP * t);
-            } else {
-                t += max(MIN_STEP * 2.0, K_STEP * t); // Larger step in empty space
-            }
+    for (var e: u32 = 0u; e < evCount; e = e + 1u) {
+        let event = events[e];
+        let nextT = min(event.t, tMax);
 
-            if sumCol.a >= 0.99 {
-                break; // Opacity threshold reached
+        // March the chunk [curT, nextT) if any clouds are active
+        if activeCount > 0u && nextT > curT {
+            var t: f32 = curT + dither;
+
+            for (var step: u32 = 0u; step < MAX_STEPS; step = step + 1u) {
+                if t >= nextT || sumCol.a >= 0.99 {  break; } // Opacity threshold reached, or end of segment
+
+                let pos = ro + rd * t;
+                let stepSize = max(MIN_STEP, K_STEP * t);
+
+                // Sum densities & colors over active clouds
+                var totalD: f32 = 0.0;
+                var totalLight: vec3<f32> = vec3<f32>(0.0);
+                for (var a: u32 = 0u; a < activeCount; a = a + 1u) {
+                    let cloud = clouds_buffer.clouds[activeClouds[a]];
+                    let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
+                    if density > 0.001 {
+                        totalD += density;
+
+                        // Cheap Henyey–Greenstein / phase‐like factor:
+                        let phase = max(dot(-rd, SUN_DIR), 0.0);
+                        // Mix between ambient & full sun color:
+                        let inscatter = SUN_COLOR * phase + AMBIENT_COLOR * (1.0 - phase);
+                        // Accumulate inscattered light * density
+                        totalLight += inscatter * density;
+                    }
+                }
+
+                // Composite this step
+                if totalD > 0.001 {
+                    // Proper Beer–Lambert for this step
+                    let α = 1.0 - exp(-EXTINCTION * totalD * stepSize);
+                    let αsafe = max(α, 1e-4);
+
+                    // Average the light per unit density, then scale by α
+                    let avgLight = totalLight / totalD;
+
+                    // Composite over the running sumCol
+                    sumCol += vec4(
+                        avgLight * αsafe * (1.0 - sumCol.a),
+                        αsafe * (1.0 - sumCol.a)
+                    );
+                }
+                t += stepSize;
             }
+            if sumCol.a >= 0.99 { break; } // Early out: fully opaque
         }
-        if sumCol.a >= 0.99 {
-            break; // Opacity threshold reached
+
+        // Process the event: enter or exit
+        if event.isEnter {
+            // Add cloud
+            activeClouds[activeCount] = event.idx;
+            activeCount = activeCount + 1u;
+        } else {
+            // Remove cloud (linear scan—activeCount is tiny)
+            var dst: u32 = 0u;
+            for (var i: u32 = 0u; i < activeCount; i = i + 1u) {
+                if activeClouds[i] != event.idx {
+                    activeClouds[dst] = activeClouds[i];
+                    dst = dst + 1u;
+                }
+            }
+            activeCount = dst;
         }
+
+        curT = nextT;
     }
 
     return clamp(sumCol, vec4(0.0), vec4(1.0));
