@@ -164,7 +164,7 @@ fn update(
     // Get camera data
     let Ok((transform, frustum)) = camera_query.single() else {
         buffer.num_clouds = 0;
-        info!("No camera found, clearing clouds buffer");
+        error!("No camera found, clearing clouds buffer");
         return;
     };
 

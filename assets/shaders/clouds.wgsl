@@ -186,56 +186,78 @@ fn intersect_ellipsoid(
     return vec2<f32>(tNear, tFar);
 }
 
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
-    var sumCol = vec4(0.0);
+// Raymarch through all the clouds, first gathering the intersects
+const MAX_INTERSECTS = 32u;
+struct Intersect {
+    t0: f32,
+    t1: f32,
+    idx: u32,
+};
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
+    var intersects: array<Intersect, MAX_INTERSECTS>;
+    var count: u32 = 0u;
 
-    // Pre computed values
-    let time_offsets_b = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
-    let time_offsets_a = time_offsets_b * 0.2;
-
-    // Loop over all clouds which are sorted by camera distance
+    // Find cloud intersects
     for (var i: u32 = 0u; i < clouds_buffer.num_clouds; i = i + 1u) {
         let cloud = clouds_buffer.clouds[i];
-
-        // Ellipsoid intersection:
         let ts = intersect_ellipsoid(ro, rd, cloud);
-        if ts.y <= ts.x {
-            continue; // Miss
-        }
-
-        // Clamp to [dither, tmax]
-        let t0 = max(ts.x, dither);
-        let t1 = min(ts.y, tmax);
-        if t0 >= t1 {
-            continue; // Either entirely behind us or past the end
-        }
-
-        // March this sphere segment
-        var t = t0 - dither;
-        for (var step: u32 = 0u; step < MAX_STEPS; step = step + 1u) {
-            if t >= t1 || sumCol.a >= 0.99 {
-                break; // Exit early if we’ve gone past the segment or alpha-saturated
+        let t0 = max(ts.x, 0.0);
+        let t1 = min(ts.y, tMax);
+        if t1 > t0 {
+            intersects[count] = Intersect(t0, t1, i);
+            count = count + 1u;
+            if count >= MAX_INTERSECTS {
+                break;
             }
+        }
+    }
 
+    // Sort the small array by t0 ascending (insertion sort)
+    for (var i: u32 = 1u; i < count; i = i + 1u) {
+        let key = intersects[i];
+        var j: i32 = i32(i) - 1;
+        // shift larger elements up
+        loop {
+            if j < 0 { break; }
+            if intersects[u32(j)].t0 <= key.t0 { break; }
+            intersects[u32(j + 1)] = intersects[u32(j)];
+            j = j - 1;
+        }
+        intersects[u32(j + 1)] = key;
+    }
+
+    // Ray-march each segment front to back
+    let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
+    let timeOffsetA = timeOffsetB * 0.2;
+    var sumCol = vec4<f32>(0.0);
+    for (var k: u32 = 0u; k < count; k = k + 1u) {
+        let seg = intersects[k];
+        let cloud = clouds_buffer.clouds[seg.idx];
+        var t = seg.t0 + dither;
+
+        for (var step: u32 = 0u; step < MAX_STEPS; step = step + 1u) {
+            if t >= seg.t1 || sumCol.a >= 0.99 {
+                break;
+            }
             let pos = ro + rd * t;
-            let density = density_at_cloud(pos, cloud, t, time_offsets_a, time_offsets_b);
+            let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
             if density > 0.01 {
-                // Single‐pass Beer approximation
                 let beer = 1.0 / (1.0 + density * EXTINCTION);
                 var col = (SUN_COLOR * beer + AMBIENT_COLOR * (1.0 - beer)) * density;
-
                 let a = density * 0.4;
                 col *= a;
-                sumCol = sumCol + vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
+                sumCol += vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
                 t += max(MIN_STEP, K_STEP * t);
             } else {
                 t += max(MIN_STEP * 2.0, K_STEP * t); // Larger step in empty space
             }
-        }
 
-        // Once we saturate, stop testing any more distant clouds
+            if sumCol.a >= 0.99 {
+                break; // Opacity threshold reached
+            }
+        }
         if sumCol.a >= 0.99 {
-            break;
+            break; // Opacity threshold reached
         }
     }
 
@@ -246,31 +268,29 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
-    let current_pos = in.position.xy;
+    let pix = in.position.xy;
 
     // G-buffer loads
-    let screen_color: vec3f = textureLoad(screen_texture, vec2<i32>(current_pos), 0).xyz;
-    var depth: f32 = textureLoad(depth_texture, vec2<i32>(current_pos), 0);
+    let sceneCol: vec3f = textureLoad(screen_texture, vec2<i32>(pix), 0).xyz;
+    var depth: f32 = textureLoad(depth_texture, vec2<i32>(pix), 0);
 
     // Unproject to world
     let ndc = vec3(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth);
-    let world_pos_raw = view.world_from_clip * vec4(ndc, 1.0);
-    let world_pos = world_pos_raw.xyz / world_pos_raw.w;
+    let wpos = view.world_from_clip * vec4(ndc, 1.0);
+    let worldPos = wpos.xyz / wpos.w;
 
     // Form the ray
-    let origin = view.world_position;
-    let ray_vec = world_pos - origin;
-    let tmax = length(ray_vec);
-    let ray_dir = ray_vec / tmax;
-
-    // Procedural blue noise dithering
-    let dither = fract(blue_noise(in.position.xy));
+    let ro = view.world_position;
+    let rd_vec = worldPos - ro;
+    let tMax = length(rd_vec);
+    let rd = rd_vec / tMax;
 
     // Ray-march clouds
-    let clouds = raymarch(origin, ray_dir, tmax, dither);
+    let dither = fract(blue_noise(in.position.xy));
+    let clouds = raymarch(ro, rd, tMax, dither);
 
     // Composite over background
-    let col = mix(screen_color, clouds.xyz, clouds.a);
+    let col = mix(sceneCol, clouds.xyz, clouds.a);
 
     return vec4(col, 1.0);
 }
