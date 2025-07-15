@@ -29,9 +29,9 @@ struct Cloud {
 
 
 // Raymarch variables
-const MIN_STEP = 0.8;
+const MIN_STEP = 0.6;
 const MAX_STEPS: u32 = 250;
-const K_STEP = 0.005; // The fall-off of step size with distance
+const K_STEP = 0.008; // The fall-off of step size with distance
 
 // Lighting variables
 const SUN_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
@@ -41,19 +41,19 @@ const AMBIENT_COLOR = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
 
 
 // Simple noise function for white noise
-fn hash1(po: f32) -> f32 {
-    var p = fract(po * 0.1031);
+fn hash1(pos: f32) -> f32 {
+    var p = fract(pos * 0.1031);
     p *= p + 33.33;
     p *= p + p;
     return fract(p);
 }
-fn hash2(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3(p.xyx) * 0.1031);
+fn hash2(pos: vec2<f32>) -> f32 {
+    var p3 = fract(vec3(pos.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
-fn hash3i(p: vec3<i32>) -> f32 {
-    var n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
+fn hash3i(pos: vec3<i32>) -> f32 {
+    var n: i32 = pos.x * 3 + pos.y * 113 + pos.z * 311;
     n = (n << 13) ^ n;
     n = n * (n * n * 15731 + 789221) + 1376312589;
     return -1.0 + 2.0 * f32(n & 0x0fffffff) / f32(0x0fffffff);
@@ -94,9 +94,9 @@ const m3: mat3x3f = mat3x3f(
 const MAX_OCT: u32 = 5u;
 const WEIGHTS = array<f32,MAX_OCT>(0.5, 0.25, 0.125, 0.0625, 0.03125);
 const NORMS = array<f32,MAX_OCT>(1.0, 0.75, 0.875, 0.9375, 0.96875);
-fn fbm_lod(p: vec3<f32>, octaves: u32) -> f32 {
+fn fbm_lod(pos: vec3<f32>, octaves: u32) -> f32 {
     var sum = 0.0;
-    var freqp = p;
+    var freqp = pos;
     for (var i: u32 = 0u; i < octaves; i = i + 1u) {
         sum += WEIGHTS[i] * noise3(freqp);
         freqp = freqp * m3;
@@ -105,19 +105,26 @@ fn fbm_lod(p: vec3<f32>, octaves: u32) -> f32 {
 }
 
 // Check density against clouds
-fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, dist: f32, time_offsets_a: vec3<f32>, time_offsets_b: vec3<f32>) -> f32 {
-    // Distance to cloud center
+const EDGE_INNER = 0.9;
+const COARSE_FREQ = 0.1;
+const COARSE_OCT = 2u;
+const WARP_AMP = 0.2;
+fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, viewDistance: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
+    // Vector from cloud center
     let dpos = pos - cloud.pos;
+    let invRadius = 2.0 / cloud.scale;
+
+    // Normalized distance to the unwarped surface, and fade the edge
+    let normDir = dpos * invRadius;
+    let edgeDistance = length(normDir);
+    let edgeFade = smoothstep(1.0, EDGE_INNER, edgeDistance);
 
     // Compute a very low frequency warp
     let seed = vec3(cloud.seed);
-    let coarse_freq = 0.1;       // 10× larger features
-    let coarse_octaves = 2u;     // only 2 octaves
-    let coarse = fbm_lod(dpos * coarse_freq + time_offsets_a + seed * 0.3, coarse_octaves);
+    let coarse = fbm_lod(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, COARSE_OCT);
 
     // Warp the sample position
-    let warp_amp = 0.2;
-    let dpos_warped = dpos + warp_amp * cloud.scale * (coarse - 0.5);
+    let dpos_warped = dpos + WARP_AMP * cloud.scale * (coarse - 0.5);
 
     // Compute the ellipsoid shape on the warped position
     let invS = 3.0 / cloud.scale;  // 1/(scale/2)
@@ -128,52 +135,55 @@ fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, dist: f32, time_offsets_a: vec
     }
 
     // Level of detail fading for both the puff and octaves
-    let lodf1 = clamp(1.0 - dist * 0.01, 0.0, 1.0);  // 0..1 over 100 units
-    let lodf2 = clamp(1.0 - dist * 0.0025, 0.0, 1.0);  // 0..1 over 400 units
+    let lodf1 = clamp(1.0 - viewDistance * 0.01, 0.0, 1.0);  // 0..1 over 100 units
+    let lodf2 = clamp(1.0 - viewDistance * 0.0025, 0.0, 1.0);  // 0..1 over 400 units
 
     // Sample puff noise
     let octaves = u32(mix(2.0, f32(MAX_OCT), lodf1));
-    let n = fbm_lod(dpos * 0.6 + time_offsets_b + seed * 0.7, octaves);
+    let n = fbm_lod(dpos * 0.6 + timeOffsetB + seed * 0.7, octaves);
 
     // Build a little “flat core” and then add noisy puffs scaled by detail & fade
     let core = max(shape - 0.2, 0.0);
     let noiseAmp = cloud.detail * lodf2;
     let puff = shape * n * noiseAmp;
 
-    return (core + puff) * cloud.density;
+    return (core + puff) * cloud.density * edgeFade;
 }
 
 // Returns (t_near, t_far).  If t_far <= t_near, the caller should skip this cloud.
+const CLOUD_SIZE_BUFFER = vec3<f32>(1.2, 1.4, 1.2);
 fn intersect_ellipsoid(
     ro: vec3<f32>,      // ray origin
     rd: vec3<f32>,      // ray direction (unit or not, we only need relative)
     cloud: Cloud        // your cloud struct, with .pos and .scale.xy
 ) -> vec2<f32> {
-    // Half-axes of the ellipsoid
-    let halfA = cloud.scale.x * 0.75;    // x radius, with a small buffer (0.75 instead of 0.5)
-    let halfB = cloud.scale.y * 0.75;    // y radius, with a small buffer
-    let halfC = cloud.scale.z * 0.75;    // z radius, with a small buffer
+    // Transform ray into the unit‐sphere space of our ellipsoid:
+    let invRadius = 2.0 / (cloud.scale * CLOUD_SIZE_BUFFER);    // = 1.0/(scale*0.5), with a small buffer
+    let originLocal = (ro - cloud.pos) * invRadius;
+    let dirLocal = rd * invRadius;
 
-    // Transform ray into cloud‐local “unit sphere” space
-    let invScale = vec3<f32>(1.0 / halfA, 1.0 / halfB, 1.0 / halfA);
-    let ro_loc = (ro - cloud.pos) * invScale;
-    let rd_loc = rd * invScale;
+    // Build the quadratic:
+    let a = dot(dirLocal, dirLocal);
+    let b = dot(originLocal, dirLocal);
+    let c = dot(originLocal, originLocal) - 1.0;
 
-    // Quadratic coefficients for intersection with unit sphere at origin
-    let A = dot(rd_loc, rd_loc);
-    let B = 2.0 * dot(ro_loc, rd_loc);
-    let C = dot(ro_loc, ro_loc) - 1.0;
-
-    let disc = B * B - 4.0 * A * C;
-    if disc <= 0.0 {
+    // If the ray origin is outside the sphere (c>0) and the ray is pointing away from it (b>0), there is no intersection.
+    if c > 0.0 && b > 0.0 {
         return vec2<f32>(1.0, 0.0); // No intersection
     }
 
-    let sq = sqrt(disc);
-    let inv2A = 1.0 / (2.0 * A);
-    let t0 = (-B - sq) * inv2A;
-    let t1 = (-B + sq) * inv2A;
-    return vec2<f32>(t0, t1);
+    // Compute the discriminant:
+    let disc = b * b - a * c;
+    if disc <= 0.0 {
+        return vec2<f32>(1.0, 0.0); // No real roots → no intersection.
+    }
+
+    // Solve for the two roots
+    let sqrtDisc = sqrt(disc);
+    let invA = 1.0 / a;
+    let tNear = (-b - sqrtDisc) * invA;
+    let tFar = (-b + sqrtDisc) * invA;
+    return vec2<f32>(tNear, tFar);
 }
 
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
@@ -201,7 +211,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
         }
 
         // March this sphere segment
-        var t = t0;
+        var t = t0 - dither;
         for (var step: u32 = 0u; step < MAX_STEPS; step = step + 1u) {
             if t >= t1 || sumCol.a >= 0.99 {
                 break; // Exit early if we’ve gone past the segment or alpha-saturated
