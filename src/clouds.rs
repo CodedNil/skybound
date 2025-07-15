@@ -26,7 +26,7 @@ use bevy::{
     },
 };
 use rand::{Rng, rng};
-use std::{cmp::Ordering, f32::consts::TAU};
+use std::cmp::Ordering;
 
 const MAX_VISIBLE: usize = 2048;
 
@@ -78,41 +78,42 @@ struct CloudsBufferData {
 #[derive(Default, Clone, Copy, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct Cloud {
-    // 2× 16 bytes
-    transform: Vec4, // xyz=centre, w used for rotation yaw
-    scale: Vec4,     // xyz=scale, w is dynamically used for squared radius
+    // Anvil of cumulonimbus clouds can be automatically generated based on scale, really tall and wide clouds get an anvil
+    // Cirrus is potentially smooth low detail, yet stretched out?, cirrocumulus and stratocumulus could simply be clouds with very low height but high detail so they are broken up a lot
+    // Cirrostratus clouds which are more faded, if its a really short cloud then reduce its density
 
-    // 4 floats → 16 bytes
-    seed: f32,    // Unique identifier for noise
+    // 16 bytes
+    pos: Vec3, // Position of the cloud
+    seed: f32, // Unique identifier for noise
+
+    // 16 bytes
+    scale: Vec3, // x=width, y=height, z=length
+    squared_radius: f32,
+
     density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
     detail: f32,  // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
     form: f32, // 0 = linear streaks like cirrus, 0.5 = solid like cumulus, 1 = anvil like cumulonimbus
+    color: f32, // 0 = white, 1 = black
 }
 impl Cloud {
-    fn new(position: Vec3, scale: Vec3, rotation: f32) -> Self {
+    fn new(position: Vec3, scale: Vec3) -> Self {
         let mut cloud = Cloud::default();
-        cloud.seed = rng().random();
+        cloud.seed = rng().random::<f32>() * 10000.0;
         cloud.density = 1.0;
-        cloud.detail = 0.5;
-        cloud.update_transforms(position, rotation, scale);
+        cloud.update_transforms(position, scale);
         cloud
     }
 
-    fn update_transforms(&mut self, position: Vec3, rotation: f32, scale: Vec3) {
-        self.transform = position.extend(rotation);
-        self.scale = scale.extend(0.0);
+    fn update_transforms(&mut self, position: Vec3, scale: Vec3) {
+        self.pos = position;
+        self.scale = scale;
         self.calc_dynamics();
     }
 
     fn calc_dynamics(&mut self) {
         // Use the largest extent as radius
-        let r = self.scale.xyz().max_element() / 2.0;
-        self.scale.w = r * r; // Add squared radius in the w component
-    }
-
-    fn set_density(mut self, density: f32) -> Self {
-        self.density = density;
-        self
+        let r = self.scale.max_element() / 2.0;
+        self.squared_radius = r * r
     }
 
     fn set_detail(mut self, detail: f32) -> Self {
@@ -125,7 +126,7 @@ impl Cloud {
 
 fn setup(mut commands: Commands) {
     let mut rng = rng();
-    let num_clouds = 500;
+    let num_clouds = 1000;
     let mut clouds = Vec::with_capacity(num_clouds + 1);
     for _ in 1..=num_clouds {
         clouds.push(
@@ -136,21 +137,14 @@ fn setup(mut commands: Commands) {
                     rng.random_range(-500.0..500.0),
                 ),
                 Vec3::new(
-                    rng.random_range(15.0..50.0),
-                    rng.random_range(5.0..20.0),
-                    rng.random_range(15.0..50.0),
+                    rng.random_range(140.0..350.0),
+                    rng.random_range(15.0..40.0),
+                    rng.random_range(80.0..300.0),
                 ),
-                rng.random_range(0.0..=TAU),
             )
-            .set_density(rng.random_range(0.5..=1.0))
-            .set_detail(rng.random_range(0.0..=1.0)),
+            .set_detail(rng.random_range(0.1..=1.0)),
         );
     }
-    clouds.push(Cloud::new(
-        Vec3::new(0.0, 10.0, 0.0),
-        Vec3::new(40.0, 10.0, 20.0),
-        0.0,
-    ));
 
     commands.insert_resource(CloudsState { clouds });
     commands.insert_resource(CloudsBufferData {
@@ -163,46 +157,44 @@ fn setup(mut commands: Commands) {
 // Main world system: Update cloud positions and compute visible subset
 fn update(
     time: Res<Time>,
-    mut clouds_state: ResMut<CloudsState>,
-    mut clouds_buffer: ResMut<CloudsBufferData>,
+    mut state: ResMut<CloudsState>,
+    mut buffer: ResMut<CloudsBufferData>,
     camera_query: Query<(&GlobalTransform, &Frustum), With<Camera>>,
 ) {
     // Get camera data
     let Ok((transform, frustum)) = camera_query.single() else {
-        clouds_buffer.num_clouds = 0;
+        buffer.num_clouds = 0;
         info!("No camera found, clearing clouds buffer");
         return;
     };
 
     // Update all clouds' positions, and gather ones that are visible
-    let mut visible_clouds = Vec::new();
-    for cloud in &mut clouds_state.clouds {
-        cloud.transform.x += time.delta_secs() * 10.0;
+    let mut count = 0;
+    for cloud in &mut state.clouds {
+        cloud.pos.x += time.delta_secs() * 10.0;
         cloud.calc_dynamics();
-        if frustum.intersects_sphere(
-            &Sphere {
-                center: cloud.transform.truncate().into(),
-                radius: cloud.scale.w.sqrt(),
-            },
-            true,
-        ) {
-            visible_clouds.push(cloud);
+        if count < MAX_VISIBLE
+            && frustum.intersects_sphere(
+                &Sphere {
+                    center: cloud.pos.into(),
+                    radius: cloud.squared_radius.sqrt(),
+                },
+                false,
+            )
+        {
+            buffer.clouds[count] = *cloud;
+            count += 1;
         }
     }
 
     // Sort clouds by distance from camera
     let cam_pos = transform.translation();
-    visible_clouds.sort_unstable_by(|a, b| {
-        let da = (a.transform.xyz() - cam_pos).length_squared() - a.scale.w;
-        let db = (b.transform.xyz() - cam_pos).length_squared() - b.scale.w;
+    buffer.clouds[..count].sort_unstable_by(|a, b| {
+        let da = (a.pos - cam_pos).length_squared() - a.squared_radius;
+        let db = (b.pos - cam_pos).length_squared() - b.squared_radius;
         da.partial_cmp(&db).unwrap_or(Ordering::Equal)
     });
-
-    // Update the temporary buffer for rendering
-    clouds_buffer.num_clouds = visible_clouds.len().min(MAX_VISIBLE) as u32;
-    for (i, cloud) in visible_clouds.iter().enumerate().take(MAX_VISIBLE) {
-        clouds_buffer.clouds[i] = **cloud;
-    }
+    buffer.num_clouds = count as u32;
 }
 
 // Render world system: Upload visible clouds to GPU
