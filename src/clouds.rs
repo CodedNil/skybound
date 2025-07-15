@@ -28,7 +28,7 @@ use bevy::{
 use rand::{Rng, rng};
 use std::{cmp::Ordering, f32::consts::TAU};
 
-const MAX_CLOUDS: usize = 2048;
+const MAX_VISIBLE: usize = 2048;
 
 // --- Plugin Definition ---
 pub struct CloudsPlugin;
@@ -71,7 +71,7 @@ struct CloudsState {
 struct CloudsBufferData {
     num_clouds: u32,
     _padding: [u32; 3], // Padding to align clouds array to 16 bytes (Vec4 alignment)
-    clouds: [Cloud; MAX_CLOUDS],
+    clouds: [Cloud; MAX_VISIBLE],
 }
 
 /// Represents a cloud with its properties
@@ -105,13 +105,8 @@ impl Cloud {
     }
 
     fn calc_dynamics(&mut self) {
-        let half = self.scale.xyz() * 0.5;
-        let (sin_a, cos_a) = self.transform.w.sin_cos();
-        let ext_x = half.x * cos_a.abs() + half.z * sin_a.abs();
-        let ext_z = half.x * sin_a.abs() + half.z * cos_a.abs();
-        let ext_y = half.y;
-        // largest extent = radius
-        let r = ext_x.max(ext_y).max(ext_z);
+        // Use the largest extent as radius
+        let r = self.scale.xyz().max_element() / 2.0;
         self.scale.w = r * r; // Add squared radius in the w component
     }
 
@@ -161,7 +156,7 @@ fn setup(mut commands: Commands) {
     commands.insert_resource(CloudsBufferData {
         num_clouds: 0,
         _padding: [0; 3],
-        clouds: [Cloud::default(); MAX_CLOUDS],
+        clouds: [Cloud::default(); MAX_VISIBLE],
     });
 }
 
@@ -172,12 +167,6 @@ fn update(
     mut clouds_buffer: ResMut<CloudsBufferData>,
     camera_query: Query<(&GlobalTransform, &Frustum), With<Camera>>,
 ) {
-    // Update all clouds' positions
-    for cloud in &mut clouds_state.clouds {
-        cloud.transform.x += time.delta_secs() * 10.0;
-        cloud.calc_dynamics();
-    }
-
     // Get camera data
     let Ok((transform, frustum)) = camera_query.single() else {
         clouds_buffer.num_clouds = 0;
@@ -185,33 +174,34 @@ fn update(
         return;
     };
 
-    // Frustum cull and sort clouds
-    let mut visible_clouds = clouds_state
-        .clouds
-        .iter()
-        .filter(|cloud| {
-            frustum.intersects_sphere(
-                &Sphere {
-                    center: cloud.transform.truncate().into(),
-                    radius: cloud.scale.w.sqrt(),
-                },
-                true,
-            )
-        })
-        .copied()
-        .collect::<Vec<_>>();
+    // Update all clouds' positions, and gather ones that are visible
+    let mut visible_clouds = Vec::new();
+    for cloud in &mut clouds_state.clouds {
+        cloud.transform.x += time.delta_secs() * 10.0;
+        cloud.calc_dynamics();
+        if frustum.intersects_sphere(
+            &Sphere {
+                center: cloud.transform.truncate().into(),
+                radius: cloud.scale.w.sqrt(),
+            },
+            true,
+        ) {
+            visible_clouds.push(cloud);
+        }
+    }
 
+    // Sort clouds by distance from camera
     let cam_pos = transform.translation();
     visible_clouds.sort_unstable_by(|a, b| {
-        let da = (a.transform.xyz() - cam_pos).length() - a.scale.w.sqrt();
-        let db = (b.transform.xyz() - cam_pos).length() - b.scale.w.sqrt();
+        let da = (a.transform.xyz() - cam_pos).length_squared() - a.scale.w;
+        let db = (b.transform.xyz() - cam_pos).length_squared() - b.scale.w;
         da.partial_cmp(&db).unwrap_or(Ordering::Equal)
     });
 
     // Update the temporary buffer for rendering
-    clouds_buffer.num_clouds = visible_clouds.len().min(MAX_CLOUDS) as u32;
-    for (i, cloud) in visible_clouds.iter().enumerate().take(MAX_CLOUDS) {
-        clouds_buffer.clouds[i] = *cloud;
+    clouds_buffer.num_clouds = visible_clouds.len().min(MAX_VISIBLE) as u32;
+    for (i, cloud) in visible_clouds.iter().enumerate().take(MAX_VISIBLE) {
+        clouds_buffer.clouds[i] = **cloud;
     }
 }
 

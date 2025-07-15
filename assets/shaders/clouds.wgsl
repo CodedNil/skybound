@@ -25,7 +25,6 @@ struct Cloud {
 
 
 const SUNDIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
-const MAX_DISTANCE: f32 = 2000.0;
 
 
 // Simple noise function for white noise
@@ -81,48 +80,45 @@ const m3: mat3x3f = mat3x3f(
     vec3(-0.6, 0.8, 0.0),
     vec3(0.0, 0.0, 1.0)
 ) * 2.0;
-
-fn fbm(po: vec3<f32>) -> f32 {
-    var p = po;
-    var f: f32 = 0.0;
-
-    f = f + 0.5000 * noise3(p);
-    p = m3 * p;
-
-    f = f + 0.2500 * noise3(p);
-    p = m3 * p;
-
-    f = f + 0.1250 * noise3(p);
-    p = m3 * p;
-
-    f = f + 0.0625 * noise3(p);
-    p = m3 * p;
-
-    f = f + 0.03125 * noise3(p);
-
-    return f / 0.96875;
-}
-
-fn get_cloud_lod(distance: f32) -> f32 {
-    // Reduce quality for distant clouds
-    return clamp(distance / 500.0, 0.25, 1.0);
+const MAX_OCT: u32 = 5u;
+const WEIGHTS = array<f32,MAX_OCT>(0.5, 0.25, 0.125, 0.0625, 0.03125);
+const NORMS = array<f32,MAX_OCT>(1.0, 0.75, 0.875, 0.9375, 0.96875);
+fn fbm_lod(p: vec3<f32>, octaves: u32) -> f32 {
+    var sum = 0.0;
+    var freqp = p;
+    for (var i: u32 = 0u; i < octaves; i = i + 1u) {
+        sum += WEIGHTS[i] * noise3(freqp);
+        freqp = freqp * m3;
+    }
+    return sum / NORMS[octaves - 1u];
 }
 
 // Check density against clouds
-fn density_at_cloud(pos: vec3<f32>, c: Cloud) -> f32 {
-    let d = pos - c.transform.xyz;
-    let dist2 = dot(d, d);
-    let density = 1.0 - dist2 / c.scale.w;
+fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, dist: f32, time_offsets: vec3<f32>) -> f32 {
+    // Distance to cloud center
+    let dpos = pos - cloud.transform.xyz;
+    var density = 1.0 - dot(dpos, dpos) / cloud.scale.w;
+
+    // Add noises to the lower density regions
+    if density > 0.0 {
+        // Compute LOD octaves based on current distance from camera
+        let lodf = clamp(1.0 - dist * 0.01, 0.0, 1.0);  // 0..1 over 100 units
+        let octaves = u32(mix(2.0, f32(MAX_OCT), lodf));
+
+        // Sample noise
+        let noise = fbm_lod(dpos * 0.6 + time_offsets, octaves);
+
+        return max(density - 0.2, 0.0) + density * noise;
+    }
+
     return density;
-    // let noise = fbm((pos - c.transform.xyz) * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
-    // return max(density - 0.2, 0.0) + density * noise;
 }
 
-// Raymarch function
+// Raymarch variables
 const MIN_STEP = 0.2;
 const K_STEP = 0.01; // The fall-off of step size with distance
 
-// Lighting
+// Lighting variables
 const extinction = 0.04;
 const g = 0.05; // anisotropy
 const light_color = vec3(1.0, 0.98, 0.95); // Very white sunlight
@@ -131,15 +127,16 @@ const ambient = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
 
-    // Henyey-Greenstein phase function
-    let hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * dot(SUNDIR, rd), 1.5);
+    // Pre computed values
+    let time_offsets = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
 
     // Loop over all clouds which are sorted by camera distance
     for (var i: u32 = 0u; i < clouds_buffer.num_clouds; i = i + 1u) {
-        let c = clouds_buffer.clouds[i];
-        let oc = ro - c.transform.xyz;
+        let cloud = clouds_buffer.clouds[i];
+
+        let oc = ro - cloud.transform.xyz;
         let b = dot(oc, rd);
-        let disc = b * b - (dot(oc, oc) - c.scale.w);
+        let disc = b * b - (dot(oc, oc) - cloud.scale.w);
         if disc <= 0.0 {
             continue;  // no intersection
         }
@@ -155,13 +152,11 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
         var t = t0;
         while t < t1 && sumCol.a < 0.99 {
             let pos = ro + rd * t;
-            let density = density_at_cloud(pos, c);
+            let density = density_at_cloud(pos, cloud, t, time_offsets);
             if density > 0.01 {
-                // Traditional Beer's Law with Beer-Powder approximation
+                // Single‐pass Beer approximation
                 let beer = 1.0 / (1.0 + density * extinction);
-                let powder = 1.0 / (1.0 + density * 0.8);
-                let beers_powder = mix(beer, beer * powder, powder);
-                var col = (light_color * beers_powder * hg + ambient) * density;
+                var col = (light_color * beer + ambient * (1.0 - beer)) * density;
 
                 let a = density * 0.4;
                 col *= a;
