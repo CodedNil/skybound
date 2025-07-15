@@ -2,10 +2,18 @@
 
 use avian3d::prelude::*;
 use bevy::{
-    pbr::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
+    core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
+    pbr::{
+        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
+        light_consts::lux,
+    },
     prelude::*,
+    render::camera::Exposure,
 };
-use smooth_bevy_cameras::{LookTransformPlugin, controllers::unreal::UnrealCameraPlugin};
+use smooth_bevy_cameras::{
+    LookTransformPlugin,
+    controllers::unreal::{UnrealCameraBundle, UnrealCameraController, UnrealCameraPlugin},
+};
 
 mod clouds;
 mod wind;
@@ -40,6 +48,32 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // Camera
+    commands
+        .spawn((
+            Camera3d::default(),
+            Camera {
+                hdr: true,
+                ..default()
+            },
+            Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
+            Atmosphere::EARTH,
+            AtmosphereSettings {
+                aerial_view_lut_max_distance: 3.2e5,
+                scene_units_to_m: 1.0,
+                ..Default::default()
+            },
+            Exposure::SUNLIGHT,
+            Bloom::NATURAL,
+            DepthPrepass,
+        ))
+        .insert(UnrealCameraBundle::new(
+            UnrealCameraController::default(),
+            Vec3::new(-15.0, 8.0, 18.0),
+            Vec3::new(0.0, 4.0, 0.0),
+            Vec3::Y,
+        ));
+
     // Circular base
     commands.spawn((
         RigidBody::Static,

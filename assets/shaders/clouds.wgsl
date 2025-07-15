@@ -6,27 +6,21 @@
 @group(0) @binding(1) var<uniform> globals: Globals;
 @group(0) @binding(2) var screen_texture: texture_2d<f32>;
 @group(0) @binding(3) var depth_texture: texture_depth_multisampled_2d;
-@group(0) @binding(4) var<uniform> clouds: VolumetricClouds;
-struct VolumetricClouds {
+@group(0) @binding(4) var<storage, read> clouds_buffer: CloudsBuffer;
+struct CloudsBuffer {
     num_clouds: u32,
+    clouds: array<Cloud, 2048>,
 }
-@group(0) @binding(5) var<storage, read> cloud_array: array<Cloud>;
 struct Cloud {
     // 2× Vec4
-    position: vec4<f32>,
-    scale: vec4<f32>,
+    transform: vec4<f32>, // xyz=centre, w used for rotation yaw
+    scale: vec4<f32>,     // xyz=scale, w is dynamically used for squared radius
 
-    // 4 floats → Vec4
-    rotation: f32,
-    radius2: f32,
-    seed: f32,
-    density: f32,
-
-    // 4 floats → Vec4
-    detail: f32,
-    flatness: f32,
-    streakiness: f32,
-    anvil: f32,
+    // 4 floats → 16 bytes
+    seed: f32,    // Unique identifier for noise
+    density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
+    detail: f32,  // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
+    form: f32,    // 0 = linear streaks like cirrus, 0.5 = solid like cumulus, 1 = anvil like cumulonimbus
 }
 
 
@@ -109,50 +103,43 @@ fn fbm(po: vec3<f32>) -> f32 {
     return f / 0.96875;
 }
 
-// Enhanced lighting with Beer-Powder approximation
-const extinction = 0.04;
-const g = 0.05; // anisotropy
-const light_color = vec3(1.0, 0.98, 0.95); // Very white sunlight
-const ambient = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
-fn enhanced_lighting(density: f32, light_dir: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
-    // Traditional Beer's Law
-    let beer = exp(-density * extinction);
-
-    // Powder effect for dark edges
-    let powder = 1.0 - exp(-density * 0.8);
-    let beers_powder = mix(beer, beer * powder, powder);
-
-    // Henyey-Greenstein phase function
-    let cos_theta = dot(light_dir, view_dir);
-    let hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5);
-
-    return (light_color * beers_powder * hg + ambient) * density;
+fn get_cloud_lod(distance: f32) -> f32 {
+    // Reduce quality for distant clouds
+    return clamp(distance / 500.0, 0.25, 1.0);
 }
 
 // Check density against clouds
 fn density_at_cloud(pos: vec3<f32>, c: Cloud) -> f32 {
-    let d = pos - c.position.xyz;
+    let d = pos - c.transform.xyz;
     let dist2 = dot(d, d);
-    if dist2 < c.radius2 {
-        let density = 1.0 - dist2 / c.radius2;
-        let noise = fbm((pos - c.position.xyz) * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
-        return max(density - 0.2, 0.0) + density * noise;
-    }
-    return 0.0;
+    let density = 1.0 - dist2 / c.scale.w;
+    return density;
+    // let noise = fbm((pos - c.transform.xyz) * 0.6 + vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6));
+    // return max(density - 0.2, 0.0) + density * noise;
 }
 
 // Raymarch function
 const MIN_STEP = 0.2;
-const K_STEP = 0.001; // The fall-off of step size with distance
+const K_STEP = 0.01; // The fall-off of step size with distance
+
+// Lighting
+const extinction = 0.04;
+const g = 0.05; // anisotropy
+const light_color = vec3(1.0, 0.98, 0.95); // Very white sunlight
+const ambient = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
+
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4(0.0);
 
+    // Henyey-Greenstein phase function
+    let hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * dot(SUNDIR, rd), 1.5);
+
     // Loop over all clouds which are sorted by camera distance
-    for (var i: u32 = 0u; i < clouds.num_clouds; i = i + 1u) {
-        let c = cloud_array[i];
-        let oc = ro - c.position.xyz;
+    for (var i: u32 = 0u; i < clouds_buffer.num_clouds; i = i + 1u) {
+        let c = clouds_buffer.clouds[i];
+        let oc = ro - c.transform.xyz;
         let b = dot(oc, rd);
-        let disc = b * b - (dot(oc, oc) - c.radius2);
+        let disc = b * b - (dot(oc, oc) - c.scale.w);
         if disc <= 0.0 {
             continue;  // no intersection
         }
@@ -168,14 +155,21 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tmax: f32, dither: f32) -> vec4<f32> {
         var t = t0;
         while t < t1 && sumCol.a < 0.99 {
             let pos = ro + rd * t;
-            let den = density_at_cloud(pos, c);
-            if den > 0.01 {
-                var col = enhanced_lighting(den, SUNDIR, rd);
-                let a = den * 0.4;
+            let density = density_at_cloud(pos, c);
+            if density > 0.01 {
+                // Traditional Beer's Law with Beer-Powder approximation
+                let beer = 1.0 / (1.0 + density * extinction);
+                let powder = 1.0 / (1.0 + density * 0.8);
+                let beers_powder = mix(beer, beer * powder, powder);
+                var col = (light_color * beers_powder * hg + ambient) * density;
+
+                let a = density * 0.4;
                 col *= a;
                 sumCol = sumCol + vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
+                t += max(MIN_STEP, K_STEP * t);
+            } else {
+                t += max(MIN_STEP * 2.0, K_STEP * t); // Larger step in empty space
             }
-            t += max(MIN_STEP, K_STEP * t);
         }
 
         // Once we saturate, stop testing any more distant clouds
