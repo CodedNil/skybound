@@ -18,13 +18,13 @@ struct Cloud {
 
     // 16 bytes
     scale: vec3<f32>, // x=width, y=height, z=length
-    squared_radius: f32,
+    density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
 
     // 16 bytes
-    density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
     detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
     form: f32, // 0 = linear streaks like cirrus, 0.5 = solid like cumulus, 1 = anvil like cumulonimbus
     color: f32, // 0 = white, 1 = black
+    _padding: f32
 }
 
 
@@ -197,34 +197,40 @@ struct Event {
     idx: u32,
     isEnter: bool,
 };
+const SORT_MAX_BACK: u32 = 8u;
+fn insert_event_bounded(
+    events: ptr<function, array<Event, MAX_EVENTS>>,
+    evCount: ptr<function, u32>,
+    newEv: Event,
+) {
+    var i: u32 = *evCount;
+    *evCount = i + 1u;
+
+    // Shift only up to SORT_MAX_BACK entries
+    let limit = select(0u, i - SORT_MAX_BACK, i > SORT_MAX_BACK);
+    loop {
+        if i == limit { break; }
+        let prev = (*events)[i - 1u];
+        if prev.t <= newEv.t { break; }
+        (*events)[i] = prev;
+        i = i - 1u;
+    }
+    (*events)[i] = newEv;
+}
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
     var events: array<Event, MAX_EVENTS>;
     var evCount: u32 = 0u;
 
     // Gather enter/exit events
-    for (var i: u32 = 0u; i < clouds_buffer.num_clouds; i = i + 1u) {
-        let cloud = clouds_buffer.clouds[i];
+    for (var c: u32 = 0u; c < clouds_buffer.num_clouds; c = c + 1u) {
+        let cloud = clouds_buffer.clouds[c];
         let ts = ellipsoid_intersect(ro, rd, cloud);
         let t0 = max(ts.x, 0.0);
         let t1 = min(ts.y, tMax);
         if t1 > t0 && evCount + 2u <= MAX_EVENTS {
-            events[evCount] = Event(t0, i, true);
-            events[evCount + 1] = Event(t1, i, false);
-            evCount = evCount + 2u;
+            insert_event_bounded(&events, &evCount, Event(t0, c, true));
+            insert_event_bounded(&events, &evCount, Event(t1, c, false));
         }
-    }
-
-    // Sort the events by ascending t
-    for (var i: u32 = 1u; i < evCount; i = i + 1u) {
-        let key = events[i];
-        var j: i32 = i32(i) - 1;
-        loop {
-            if j < 0 { break; }
-            if events[u32(j)].t <= key.t { break; }
-            events[u32(j + 1)] = events[u32(j)];
-            j = j - 1;
-        }
-        events[u32(j + 1)] = key;
     }
 
     // Sweep through events, marching each sub-interval

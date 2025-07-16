@@ -87,13 +87,14 @@ struct Cloud {
     seed: f32, // Unique identifier for noise
 
     // 16 bytes
-    scale: Vec3, // x=width, y=height, z=length
-    squared_radius: f32,
-
+    scale: Vec3,  // x=width, y=height, z=length
     density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
-    detail: f32,  // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
+
+    // 16 bytes
+    detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
     form: f32, // 0 = linear streaks like cirrus, 0.5 = solid like cumulus, 1 = anvil like cumulonimbus
     color: f32, // 0 = white, 1 = black
+    _padding: f32,
 }
 impl Cloud {
     fn new(position: Vec3, scale: Vec3) -> Self {
@@ -108,13 +109,6 @@ impl Cloud {
     fn update_transforms(&mut self, position: Vec3, scale: Vec3) {
         self.pos = position;
         self.scale = scale;
-        self.calc_dynamics();
-    }
-
-    fn calc_dynamics(&mut self) {
-        // Use the largest extent as radius
-        let r = self.scale.max_element() / 2.0;
-        self.squared_radius = r * r
     }
 
     fn set_detail(mut self, detail: f32) -> Self {
@@ -173,12 +167,11 @@ fn update(
     let mut count = 0;
     for cloud in &mut state.clouds {
         cloud.pos.x += time.delta_secs() * 10.0;
-        cloud.calc_dynamics();
         if count < MAX_VISIBLE
             && frustum.intersects_sphere(
                 &Sphere {
                     center: cloud.pos.into(),
-                    radius: cloud.squared_radius.sqrt(),
+                    radius: cloud.scale.max_element() / 2.0,
                 },
                 false,
             )
@@ -191,8 +184,8 @@ fn update(
     // Sort clouds by distance from camera
     let cam_pos = transform.translation();
     buffer.clouds[..count].sort_unstable_by(|a, b| {
-        let da = (a.pos - cam_pos).length_squared() - a.squared_radius;
-        let db = (b.pos - cam_pos).length_squared() - b.squared_radius;
+        let da = (a.pos - cam_pos).length_squared();
+        let db = (b.pos - cam_pos).length_squared();
         da.partial_cmp(&db).unwrap_or(Ordering::Equal)
     });
     buffer.num_clouds = count as u32;
