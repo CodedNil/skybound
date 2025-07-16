@@ -100,6 +100,7 @@ impl Cloud {
         let mut cloud = Cloud::default();
         cloud.seed = rng().random::<f32>() * 10000.0;
         cloud.density = 1.0;
+        cloud.color = rng().random();
         cloud.update_transforms(position, scale);
         cloud
     }
