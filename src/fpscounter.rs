@@ -4,13 +4,7 @@ use bevy::{
 };
 use std::time::Duration;
 
-const FONT_SIZE: f32 = 32.;
-const FONT_COLOR: Color = Color::WHITE;
 const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
-
-const STRING_FORMAT: &str = "FPS: ";
-const STRING_INITIAL: &str = "FPS: ...";
-const STRING_MISSING: &str = "FPS: ???";
 
 pub struct FpsCounterPlugin;
 
@@ -45,8 +39,7 @@ fn update(
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
     state_resources: Option<ResMut<FpsCounter>>,
-    query: Query<Entity, With<FpsCounterText>>,
-    mut writer: TextUiWriter,
+    mut display: Single<&mut Text, With<FpsCounterText>>,
 ) {
     let Some(mut state) = state_resources else {
         return;
@@ -54,34 +47,25 @@ fn update(
     if !(state.update_now || state.timer.tick(time.delta()).just_finished()) {
         return;
     }
-    if state.timer.paused() {
-        for entity in query {
-            writer.text(entity, 0).clear();
-        }
-    } else {
-        let fps_dialog: Option<f64> = diagnostics
-            .get(&FrameTimeDiagnosticsPlugin::FPS)
-            .and_then(bevy::diagnostic::Diagnostic::average);
+    let fps_dialog = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(bevy::diagnostic::Diagnostic::average);
 
-        for entity in query {
-            if let Some(fps) = fps_dialog {
-                *writer.text(entity, 0) = format!("{STRING_FORMAT}{fps:.0}");
-            } else {
-                *writer.text(entity, 0) = STRING_MISSING.to_string();
-            }
-        }
+    if let Some(fps) = fps_dialog {
+        display.0 = format!("FPS: {fps:.0}");
     }
 }
 
 fn spawn_text(mut commands: Commands) {
-    commands
-        .spawn((
-            Text::new(STRING_INITIAL),
-            TextFont {
-                font_size: FONT_SIZE,
-                ..Default::default()
-            },
-            TextColor(FONT_COLOR),
-        ))
-        .insert(FpsCounterText);
+    commands.spawn((
+        Text::default(),
+        TextFont::default(),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(12.0),
+            left: Val::Px(12.0),
+            ..default()
+        },
+        FpsCounterText,
+    ));
 }

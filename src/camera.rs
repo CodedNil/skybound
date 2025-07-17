@@ -27,7 +27,7 @@ fn camera_controller(
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
 ) {
-    for (mut transform, mut controller) in query.iter_mut() {
+    for (mut transform, mut controller) in &mut query {
         // Movement with WASDQE
         let mut movement = Vec3::ZERO;
         if keyboard_input.pressed(KeyCode::KeyW) {

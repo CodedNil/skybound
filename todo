@@ -12,6 +12,10 @@ cloud colours, white-black and potentially also blue-purple edges
 add aur light from below with a blue tint, then normal sun
 need a variable that properly breaks them up
 
+Anvil of cumulonimbus clouds can be automatically generated based on scale, really tall and wide clouds get an anvil
+Cirrus is potentially smooth low detail, yet stretched out?, cirrocumulus and stratocumulus could simply be clouds with very low height but high detail so they are broken up a lot
+Cirrostratus clouds which are more faded, if its a really short cloud then reduce its density
+
 do the world rendering:
 track latitude and longitude, latitude is basically just z, longitude grows faster the closer to the poles to simulate sphere
 renders poles as huge infinite beams going up, give them sunsets at 90 degrees

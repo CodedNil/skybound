@@ -1,18 +1,18 @@
 use bevy::{
     core_pipeline::{
+        FullscreenShader,
         core_3d::graph::{Core3d, Node3d},
-        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
         prepass::ViewPrepassTextures,
     },
-    ecs::{query::QueryItem, system::lifetimeless::Read},
+    ecs::query::QueryItem,
     prelude::*,
     render::{
-        Render, RenderApp, RenderSet,
+        Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         globals::{GlobalsBuffer, GlobalsUniform},
         primitives::{Frustum, Sphere},
         render_graph::{
-            NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
+            NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{
@@ -37,15 +37,14 @@ impl Plugin for CloudsPlugin {
         app.add_plugins((ExtractResourcePlugin::<CloudsBufferData>::default(),))
             .add_systems(Startup, setup)
             .add_systems(Update, update);
-    }
 
-    fn finish(&self, app: &mut App) {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
+        render_app.add_systems(RenderStartup, setup_pipeline);
+        render_app.add_systems(Render, update_buffer.in_set(RenderSystems::Prepare));
+
         render_app
-            .init_resource::<VolumetricCloudsPipeline>()
-            .add_systems(Render, update_buffer.in_set(RenderSet::Prepare))
             .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
                 Core3d,
                 VolumetricCloudsLabel,
@@ -78,10 +77,6 @@ struct CloudsBufferData {
 #[derive(Default, Clone, Copy, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct Cloud {
-    // Anvil of cumulonimbus clouds can be automatically generated based on scale, really tall and wide clouds get an anvil
-    // Cirrus is potentially smooth low detail, yet stretched out?, cirrocumulus and stratocumulus could simply be clouds with very low height but high detail so they are broken up a lot
-    // Cirrostratus clouds which are more faded, if its a really short cloud then reduce its density
-
     // 16 bytes
     pos: Vec3, // Position of the cloud
     seed: f32, // Unique identifier for noise
@@ -98,16 +93,19 @@ struct Cloud {
 }
 impl Cloud {
     fn new(position: Vec3, scale: Vec3) -> Self {
-        let mut cloud = Cloud::default();
-        cloud.seed = rng().random::<f32>() * 10000.0;
-        cloud.density = 1.0;
-        cloud.color = rng().random();
-        cloud.pos = position;
-        cloud.scale = scale;
-        cloud
+        Self {
+            pos: position,
+            seed: rng().random::<f32>() * 10000.0,
+            scale,
+            density: 1.0,
+            detail: 0.5,
+            color: rng().random(),
+            _padding0: 0.0,
+            _padding1: 0.0,
+        }
     }
 
-    fn set_detail(mut self, detail: f32) -> Self {
+    const fn set_detail(mut self, detail: f32) -> Self {
         self.detail = detail;
         self
     }
@@ -138,13 +136,13 @@ fn setup(mut commands: Commands) {
             let r = rng.random::<f32>();
             if r < 0.75 {
                 // Cumulus: 10–1800m
-                10.0 + rng.random::<f32>().powf(2.5) * 1790.0
+                rng.random::<f32>().powf(2.5).mul_add(1790.0, 10.0)
             } else if r < 0.97 {
                 // Altocumulus: 1800–2600m
-                1800.0 + rng.random::<f32>() * 800.0
+                rng.random::<f32>().mul_add(800.0, 1800.0)
             } else {
                 // Cirrocumulus (rare at 2600–3000m, scaled for effect)
-                2600.0 + rng.random::<f32>() * 400.0
+                rng.random::<f32>().mul_add(400.0, 2600.0)
             }
         };
 
@@ -236,7 +234,7 @@ fn update(
         let db = (b.pos - cam_pos).length_squared();
         da.partial_cmp(&db).unwrap_or(Ordering::Equal)
     });
-    buffer.num_clouds = count as u32;
+    buffer.num_clouds = u32::try_from(count).unwrap();
 }
 
 // Render world system: Upload visible clouds to GPU
@@ -252,7 +250,7 @@ fn update_buffer(
     render_queue: Res<RenderQueue>,
     clouds_buffer: Option<Res<CloudsBuffer>>,
 ) {
-    let binding = [*clouds_data];
+    let binding = vec![*clouds_data].into_boxed_slice();
     let bytes = bytemuck::cast_slice(&binding);
     if let Some(clouds_buffer) = clouds_buffer {
         render_queue.write_buffer(&clouds_buffer.buffer, 0, bytes);
@@ -272,20 +270,14 @@ fn update_buffer(
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 struct VolumetricCloudsLabel;
 
-#[derive(Resource)]
-struct VolumetricCloudsPipeline {
-    layout: BindGroupLayout,
-    pipeline_id: CachedRenderPipelineId,
-}
-
 #[derive(Default)]
 struct VolumetricCloudsNode;
 
 impl ViewNode for VolumetricCloudsNode {
     type ViewQuery = (
-        Read<ViewTarget>,
-        Read<ViewUniformOffset>,
-        Read<ViewPrepassTextures>,
+        &'static ViewTarget,
+        &'static ViewUniformOffset,
+        &'static ViewPrepassTextures,
     );
 
     fn run(
@@ -296,6 +288,7 @@ impl ViewNode for VolumetricCloudsNode {
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
+        let pipeline_cache = world.resource::<PipelineCache>();
 
         // Fetch the data safely.
         let (
@@ -305,9 +298,7 @@ impl ViewNode for VolumetricCloudsNode {
             Some(depth_view),
             Some(clouds_buffer),
         ) = (
-            world
-                .resource::<PipelineCache>()
-                .get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
+            pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
             world.resource::<GlobalsBuffer>().buffer.binding(),
             prepass_textures.depth_view(),
@@ -351,51 +342,52 @@ impl ViewNode for VolumetricCloudsNode {
     }
 }
 
-impl FromWorld for VolumetricCloudsPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
+#[derive(Resource)]
+struct VolumetricCloudsPipeline {
+    layout: BindGroupLayout,
+    pipeline_id: CachedRenderPipelineId,
+}
 
-        let layout = render_device.create_bind_group_layout(
-            "volumetric_clouds_bind_group_layout",
-            &BindGroupLayoutEntries::sequential(
-                ShaderStages::FRAGMENT,
-                (
-                    uniform_buffer::<ViewUniform>(true),
-                    uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
-                    texture_2d(TextureSampleType::Float { filterable: false }),
-                    texture_depth_2d_multisampled(),
-                    storage_buffer_read_only::<CloudsBufferData>(false),
-                ),
+fn setup_pipeline(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    asset_server: Res<AssetServer>,
+    fullscreen_shader: Res<FullscreenShader>,
+    pipeline_cache: Res<PipelineCache>,
+) {
+    let layout = render_device.create_bind_group_layout(
+        "volumetric_clouds_bind_group_layout",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                uniform_buffer::<ViewUniform>(true),
+                uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
+                texture_2d(TextureSampleType::Float { filterable: false }),
+                texture_depth_2d_multisampled(),
+                storage_buffer_read_only::<CloudsBufferData>(false),
             ),
-        );
+        ),
+    );
 
-        let pipeline_descriptor = RenderPipelineDescriptor {
-            label: Some("volumetric_clouds_pipeline".into()),
+    let pipeline_id = pipeline_cache
+        // This will add the pipeline to the cache and queue its creation
+        .queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("post_process_pipeline".into()),
             layout: vec![layout.clone()],
-            vertex: fullscreen_shader_vertex_state(),
+            vertex: fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
-                shader: world.load_asset("shaders/clouds.wgsl"),
-                shader_defs: vec![],
-                entry_point: "fragment".into(),
+                shader: asset_server.load("shaders/clouds.wgsl"),
                 targets: vec![Some(ColorTargetState {
                     format: TextureFormat::Rgba16Float,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
+                ..default()
             }),
-            primitive: PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            push_constant_ranges: vec![],
-            zero_initialize_workgroup_memory: false,
-        };
-        let pipeline_id = world
-            .resource_mut::<PipelineCache>()
-            .queue_render_pipeline(pipeline_descriptor);
-
-        Self {
-            layout,
-            pipeline_id,
-        }
-    }
+            ..default()
+        });
+    commands.insert_resource(VolumetricCloudsPipeline {
+        layout,
+        pipeline_id,
+    });
 }

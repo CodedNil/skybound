@@ -180,7 +180,7 @@ fn ellipsoid_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> 
 // Raymarch through all the clouds, first gathering the intersects
 const MIN_STEP = 0.8;
 const K_STEP = 0.005; // The fall-off of step size with distance
-const ALPHA_TARGET = 0.99; // Max alpha to reach before stopping
+const ALPHA_TARGET = 0.95; // Max alpha to reach before stopping
 
 const MAX_QUEUED = 12u; // Total number of clouds to consider ahead at a time
 struct CloudIntersect {
@@ -261,8 +261,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
             for (var i = 0u; i < queuedCount; i = i + 1u) {
                 if queuedList[i].enterT <= t && t <= queuedList[i].exitT {
                     let cloud = clouds_buffer.clouds[queuedList[i].idx];
-                    // let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
-                    let density = 1.0;
+                    let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
                     if density > 0.01 {
                         // Single‐pass Beer approximation
                         let beer = 1.0 / (1.0 + density * EXTINCTION);
