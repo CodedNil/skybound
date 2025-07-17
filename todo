@@ -6,6 +6,7 @@ use froxels with low resolution to send simple representations of lights or othe
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
 
 cloud lighting:
+needs one more large scale noise, many times bigger than current, to drastically distort the clouds, or maybe alter the existing and make the noise var change the scale of small noise rather than intensity
 proper self shadowing, potentially included as a data point in froxels for strong shadows - could give clouds a shadow shape shifted by the sun
 cloud colours, white-black and potentially also blue-purple edges
 add aur light from below with a blue tint, then normal sun

@@ -121,7 +121,7 @@ impl Cloud {
 
 fn setup(mut commands: Commands) {
     let mut rng = rng();
-    let num_clouds = 1000;
+    let num_clouds = 500;
     let mut clouds = Vec::with_capacity(num_clouds + 1);
     for _ in 1..=num_clouds {
         clouds.push(

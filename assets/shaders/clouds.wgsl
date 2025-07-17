@@ -105,10 +105,10 @@ fn fbm_lod(pos: vec3<f32>, octaves: u32) -> f32 {
 }
 
 // Check density against clouds
-const EDGE_INNER = 0.9;
+const EDGE_INNER = 0.8;
 const COARSE_FREQ = 0.1;
 const COARSE_OCT = 2u;
-const WARP_AMP = 0.2;
+const WARP_AMP = 0.5;
 fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, viewDistance: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
     // Vector from cloud center
     let dpos = pos - cloud.pos;
@@ -127,7 +127,7 @@ fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, viewDistance: f32, timeOffsetA
     let dpos_warped = dpos + WARP_AMP * cloud.scale * (coarse - 0.5);
 
     // Compute the ellipsoid shape on the warped position
-    let invS = 3.0 / cloud.scale;  // 1/(scale/2)
+    let invS = 2.0 / cloud.scale;  // 1/(scale/2)
     let d2 = dot(dpos_warped * invS, dpos_warped * invS);
     var shape = 1.0 - d2;
     if shape <= 0.0 {
@@ -190,55 +190,15 @@ fn ellipsoid_intersect(
 const MIN_STEP = 0.6;
 const K_STEP = 0.008; // The fall-off of step size with distance
 
-const MAX_INTERSECTS = 16u;
-const MAX_EVENTS = 512u;
-struct Event {
-    t: f32,
+// Total number of clouds to consider at a time
+const MAX_ACTIVE = 6u;
+struct Active {
     idx: u32,
-    isEnter: bool,
+    exitT: f32,
 };
-const SORT_MAX_BACK: u32 = 8u;
-fn insert_event_bounded(
-    events: ptr<function, array<Event, MAX_EVENTS>>,
-    evCount: ptr<function, u32>,
-    newEv: Event,
-) {
-    var i: u32 = *evCount;
-    *evCount = i + 1u;
-
-    // Shift only up to SORT_MAX_BACK entries
-    let limit = select(0u, i - SORT_MAX_BACK, i > SORT_MAX_BACK);
-    loop {
-        if i == limit { break; }
-        let prev = (*events)[i - 1u];
-        if prev.t <= newEv.t { break; }
-        (*events)[i] = prev;
-        i = i - 1u;
-    }
-    (*events)[i] = newEv;
-}
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
-    var events: array<Event, MAX_EVENTS>;
-    var evCount: u32 = 0u;
-
-    // Gather enter/exit events
-    for (var c: u32 = 0u; c < clouds_buffer.num_clouds; c = c + 1u) {
-        let cloud = clouds_buffer.clouds[c];
-        let ts = ellipsoid_intersect(ro, rd, cloud);
-        let t0 = max(ts.x, 0.0);
-        let t1 = min(ts.y, tMax);
-        if t1 > t0 && evCount + 2u <= MAX_EVENTS {
-            insert_event_bounded(&events, &evCount, Event(t0, c, true));
-            insert_event_bounded(&events, &evCount, Event(t1, c, false));
-        }
-    }
-
-    // Sweep through events, marching each sub-interval
-    var evIndex: u32 = 0u;
-    var activeCount: u32 = 0u;
-    var activeClouds: array<u32, MAX_INTERSECTS>;
-    var sumCol: vec4<f32> = vec4<f32>(0.0);
-    var t: f32 = dither;
+    var sumCol = vec4<f32>(0.0); // Accumulated color
+    var t = dither; // Current ray distance
 
     // Precomputed constants
     let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
@@ -246,72 +206,79 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
     let phase = max(dot(-rd, SUN_DIR), 0.0); // Cheap Henyey–Greenstein phase‐like factor:
     let inscatter = SUN_COLOR * phase + AMBIENT_COLOR * (1.0 - phase); // Mix sun vs ambient
 
-    while t < tMax && sumCol.a < 0.8 {
-        // Process all events at t or earlier
-        loop {
-            if evIndex >= evCount { break; }
-            let e = events[evIndex];
-            if e.t > t { break; }
-            if e.isEnter {
-                activeClouds[activeCount] = e.idx;
+    let numClouds = clouds_buffer.num_clouds; // Total number of clouds
+    var nextCloudIdx = 0u; // Next cloud index
+    var activeCount = 0u; // Number of active clouds
+    var activeList: array<Active, MAX_ACTIVE>; // Active cloud list
+
+    while t < tMax && sumCol.a < 0.99 {
+        // Remove any expired clouds (exitT ≤ t)
+        var dst = 0u;
+        for (var i = 0u; i < activeCount; i = i + 1u) {
+            if activeList[i].exitT > t {
+                activeList[dst] = activeList[i];
+                dst = dst + 1u;
+            }
+        }
+        activeCount = dst;
+
+        // Pull in new clouds to fill the activeList
+        var nextEntry = 1e30;
+        while nextCloudIdx < numClouds && activeCount < MAX_ACTIVE {
+            let cloud = clouds_buffer.clouds[nextCloudIdx];
+            let ts = ellipsoid_intersect(ro, rd, cloud);
+            let entry = max(ts.x, 0.0);
+            let exit = min(ts.y, tMax);
+
+            if exit <= entry {
+                nextCloudIdx += 1u;
+                continue; // Skip non‐intersection
+            }
+            if exit <= entry { continue; } // No intersection → skip
+            if t >= entry {
+                activeList[activeCount] = Active(nextCloudIdx, exit); // We are already inside → activate
                 activeCount += 1u;
-            } else {
-                // Remove e.idx from activeClouds
-                var dst: u32 = 0u;
-                for (var i: u32 = 0u; i < activeCount; i++) {
-                    if activeClouds[i] != e.idx {
-                        activeClouds[dst] = activeClouds[i];
-                        dst += 1u;
-                    }
-                }
-                activeCount = dst;
+                nextCloudIdx += 1u;
+                continue;
             }
-            evIndex += 1u;
+
+            nextEntry = entry; // This cloud’s entry is in the future → remember and stop
+            break;
         }
 
-        // If clouds are active, march by step
-        if activeCount > 0u {
-            let stepSize = max(MIN_STEP, K_STEP * t);
-            let pos = ro + rd * t;
-
-            // Sum densities & colors over active clouds
-            var totalD: f32 = 0.0;
-            var totalLight: vec3<f32> = vec3<f32>(0.0);
-            for (var a: u32 = 0u; a < activeCount; a = a + 1u) {
-                let cloud = clouds_buffer.clouds[activeClouds[a]];
-                let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
-                if density > 0.001 {
-                    totalD += density;
-
-                    totalLight += inscatter * density * cloud.color;
-                }
-            }
-
-            // Composite this step
-            if totalD > 0.001 {
-                // Proper Beer–Lambert for this step
-                let α = 1.0 - exp(-EXTINCTION * totalD * stepSize);
-                let αsafe = max(α, 1e-4);
-
-                // Average the light per unit density, then scale by α
-                let avgLight = totalLight / totalD;
-
-                // Composite over the running sumCol
-                sumCol += vec4(
-                    avgLight * αsafe * (1.0 - sumCol.a),
-                    αsafe * (1.0 - sumCol.a)
-                );
-            }
-
-            t += stepSize;
-        } else {
-            // Otherwise, jump ahead to next event
-            if evIndex < evCount {
-                t = events[evIndex].t;
+        // If no active clouds, fast‐forward t to the next entry
+        if activeCount == 0u {
+            if nextEntry < 1e30 {
+                t = nextEntry;
+                continue;
             } else {
-                t = tMax;
+                break; // No more clouds to ever march
             }
         }
+
+        // March one step through the active list
+        let step = max(MIN_STEP, K_STEP * t);
+        let pos = ro + rd * t;
+
+        var totalDensity = 0.0;
+        var totalCol = vec3<f32>(0.0);
+
+        for (var i = 0u; i < activeCount; i = i + 1u) {
+            let cloud = clouds_buffer.clouds[activeList[i].idx];
+            let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
+            totalDensity += density;
+            totalCol += inscatter * cloud.color * density;
+        }
+
+        if totalDensity > 0.001 {
+            let α = 1.0 - exp(-EXTINCTION * totalDensity * step);
+            let trans = 1.0 - sumCol.a;
+            let avgL = totalCol / totalDensity;
+            sumCol += vec4<f32>(avgL * α * trans, α * trans);
+        }
+
+        // Advance the ray
+        t = t + step;
     }
 
     return clamp(sumCol, vec4(0.0), vec4(1.0));
