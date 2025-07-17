@@ -92,9 +92,9 @@ struct Cloud {
 
     // 16 bytes
     detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
-    form: f32, // 0 = linear streaks like cirrus, 0.5 = solid like cumulus, 1 = anvil like cumulonimbus
-    color: f32, // 0 = white, 1 = black
-    _padding: f32,
+    color: f32,  // 0 = white, 1 = black
+    _padding0: f32,
+    _padding1: f32,
 }
 impl Cloud {
     fn new(position: Vec3, scale: Vec3) -> Self {
@@ -102,13 +102,9 @@ impl Cloud {
         cloud.seed = rng().random::<f32>() * 10000.0;
         cloud.density = 1.0;
         cloud.color = rng().random();
-        cloud.update_transforms(position, scale);
+        cloud.pos = position;
+        cloud.scale = scale;
         cloud
-    }
-
-    fn update_transforms(&mut self, position: Vec3, scale: Vec3) {
-        self.pos = position;
-        self.scale = scale;
     }
 
     fn set_detail(mut self, detail: f32) -> Self {
@@ -121,23 +117,75 @@ impl Cloud {
 
 fn setup(mut commands: Commands) {
     let mut rng = rng();
-    let num_clouds = 500;
-    let mut clouds = Vec::with_capacity(num_clouds + 1);
-    for _ in 1..=num_clouds {
+
+    // --- Configurable Weather Variables ---
+    let stratiform_chance = 0.25;
+    let cloudiness = 1.0f32;
+    let (detail_lower, detail_upper) = (0.4f32, 0.9f32);
+    let field_extent = 2000.0; // Distance to cover in meters for x/z
+    let num_clouds =
+        ((field_extent * 2.0 * field_extent * 2.0) / 100_000.0 * cloudiness).round() as usize;
+
+    let mut clouds = Vec::with_capacity(num_clouds);
+    for _ in 0..num_clouds {
+        // Stratiform (layer) vs cumuliform (heap-shaped)
+        let is_stratus = rng.random::<f32>() < stratiform_chance;
+        let height = if is_stratus {
+            // Stratus/Altostratus/Cirrostratus layers
+            rng.random_range(10.0..=3000.0)
+        } else {
+            // Heap clouds: bias heights for more cumulus at low, more altocumulus at middle, rare cirrocumulus at top
+            let r = rng.random::<f32>();
+            if r < 0.75 {
+                // Cumulus: 10–1800m
+                10.0 + rng.random::<f32>().powf(2.5) * 1790.0
+            } else if r < 0.97 {
+                // Altocumulus: 1800–2600m
+                1800.0 + rng.random::<f32>() * 800.0
+            } else {
+                // Cirrocumulus (rare at 2600–3000m, scaled for effect)
+                2600.0 + rng.random::<f32>() * 400.0
+            }
+        };
+
+        // Size and proportion based on cloud type
+        let (width, length, depth) = if is_stratus {
+            // Wide, thin sheets: sideways dominant, very shallow
+            let width = rng.random_range(500.0..=3000.0);
+            let length = rng.random_range(2000.0..=field_extent * 2.0);
+            let depth = rng.random_range(10.0..=100.0);
+            (width, length, depth)
+        } else if height < 1800.0 {
+            // Cumulus (round, puffy)
+            let width: f32 = rng.random_range(150.0..=1000.0);
+            let length = width * rng.random_range(0.8..=1.2);
+            let depth = rng.random_range(100.0..=width.min(800.0));
+            (width, length, depth)
+        } else if height < 2600.0 {
+            // Altocumulus (smaller, more fragments)
+            let width = rng.random_range(80.0..=300.0);
+            let length = width * rng.random_range(1.0..=2.0);
+            let depth = rng.random_range(40.0..=150.0);
+            (width, length, depth)
+        } else {
+            // Cirrocumulus (small, sheet-like, upper air)
+            let width = rng.random_range(40.0..=100.0);
+            let length = width * rng.random_range(1.2..=2.2);
+            let depth = rng.random_range(10.0..=40.0);
+            (width, length, depth)
+        };
+
+        // Position in field
+        let x = rng.random_range(-field_extent..=field_extent);
+        let z = rng.random_range(-field_extent..=field_extent);
+
+        // Noise/detail: more "ragged" at higher altitudes or for less stratiform
+        let detail =
+            rng.random_range(detail_lower..=detail_upper) + if is_stratus { -0.2 } else { 0.0 };
+
         clouds.push(
-            Cloud::new(
-                Vec3::new(
-                    rng.random_range(-500.0..500.0),
-                    rng.random_range(10.0..1000.0),
-                    rng.random_range(-500.0..500.0),
-                ),
-                Vec3::new(
-                    rng.random_range(140.0..350.0),
-                    rng.random_range(15.0..40.0),
-                    rng.random_range(80.0..300.0),
-                ),
-            )
-            .set_detail(rng.random_range(0.1..=1.0)),
+            Cloud::new(Vec3::new(x, height, z), Vec3::new(length, depth, width))
+                .set_detail(detail.clamp(0.1, 1.0)),
         );
     }
 

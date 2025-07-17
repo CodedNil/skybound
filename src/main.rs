@@ -1,6 +1,5 @@
 #![feature(portable_simd, default_field_values)]
 
-use avian3d::prelude::*;
 use bevy::{
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
     pbr::{
@@ -10,18 +9,16 @@ use bevy::{
     prelude::*,
     render::camera::Exposure,
 };
-use smooth_bevy_cameras::{
-    LookTransformPlugin,
-    controllers::unreal::{UnrealCameraBundle, UnrealCameraController, UnrealCameraPlugin},
-};
 
 mod clouds;
-mod wind;
+// mod wind;
 use crate::clouds::CloudsPlugin;
-use crate::wind::apply_wind_force;
+// use crate::wind::apply_wind_force;
 
 mod fpscounter;
 use crate::fpscounter::FpsCounterPlugin;
+mod camera;
+use crate::camera::{CameraController, CameraPlugin};
 
 fn main() {
     App::new()
@@ -29,17 +26,9 @@ fn main() {
             brightness: lux::AMBIENT_DAYLIGHT,
             ..default()
         })
-        .insert_resource(Gravity(Vec3::NEG_Y * 4.0))
-        .add_plugins((
-            DefaultPlugins,
-            PhysicsPlugins::default(),
-            CloudsPlugin,
-            LookTransformPlugin,
-            UnrealCameraPlugin::default(),
-            FpsCounterPlugin,
-        ))
+        .add_plugins((DefaultPlugins, CloudsPlugin, CameraPlugin, FpsCounterPlugin))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, apply_wind_force)
+        // .add_systems(FixedUpdate, apply_wind_force)
         .run();
 }
 
@@ -67,28 +56,21 @@ fn setup(
             Bloom::NATURAL,
             DepthPrepass,
         ))
-        .insert(UnrealCameraBundle::new(
-            UnrealCameraController::default(),
-            Vec3::new(-15.0, 8.0, 18.0),
-            Vec3::new(0.0, 4.0, 0.0),
-            Vec3::Y,
-        ));
+        .insert(CameraController {
+            speed: 40.0,
+            sensitivity: 0.005,
+            yaw: 0.0,
+            pitch: 0.0,
+        });
 
     // Circular base
     commands.spawn((
-        RigidBody::Static,
-        Collider::cylinder(8.0, 0.1),
         Mesh3d(meshes.add(Cylinder::new(8.0, 0.1))),
         MeshMaterial3d(materials.add(Color::WHITE)),
     ));
 
     // Cube
     commands.spawn((
-        RigidBody::Dynamic,
-        LinearDamping(0.8),
-        AngularDamping(1.6),
-        Collider::cuboid(1.0, 1.0, 1.0),
-        AngularVelocity(Vec3::new(2.5, 3.5, 1.5)),
         Mesh3d(meshes.add(Cuboid::from_length(1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 4.0, 0.0),
