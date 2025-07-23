@@ -88,26 +88,21 @@ struct Cloud {
     // 16 bytes
     detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
     color: f32,  // 0 = white, 1 = black
-    _padding0: f32,
-    _padding1: f32,
+    is_stratus: u32,
+    _padding0: u32,
 }
 impl Cloud {
-    fn new(position: Vec3, scale: Vec3) -> Self {
+    fn new(position: Vec3, scale: Vec3, is_stratus: bool, detail: f32) -> Self {
         Self {
             pos: position,
             seed: rng().random::<f32>() * 10000.0,
             scale,
             density: 1.0,
-            detail: 0.5,
+            detail,
             color: rng().random(),
-            _padding0: 0.0,
-            _padding1: 0.0,
+            is_stratus: is_stratus as u32,
+            _padding0: 0,
         }
-    }
-
-    const fn set_detail(mut self, detail: f32) -> Self {
-        self.detail = detail;
-        self
     }
 }
 
@@ -181,10 +176,12 @@ fn setup(mut commands: Commands) {
         let detail =
             rng.random_range(detail_lower..=detail_upper) + if is_stratus { -0.2 } else { 0.0 };
 
-        clouds.push(
-            Cloud::new(Vec3::new(x, height, z), Vec3::new(length, depth, width))
-                .set_detail(detail.clamp(0.1, 1.0)),
-        );
+        clouds.push(Cloud::new(
+            Vec3::new(x, height, z),
+            Vec3::new(length, depth, width),
+            is_stratus,
+            detail.clamp(0.1, 1.0),
+        ));
     }
 
     commands.insert_resource(CloudsState { clouds });

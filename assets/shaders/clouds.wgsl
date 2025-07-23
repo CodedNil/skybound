@@ -23,8 +23,8 @@ struct Cloud {
     // 16 bytes
     detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
     color: f32, // 0 = white, 1 = black
-    _padding0: f32,
-    _padding1: f32,
+    is_stratus: u32,
+    _padding0: u32,
 }
 
 
@@ -52,6 +52,12 @@ fn hash2(pos: vec2<f32>) -> f32 {
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
+fn hash2i(pos: vec2<i32>) -> f32 {
+    var n: i32 = pos.x * 3 + pos.y * 113;
+    n = (n << 13) ^ n;
+    n = n * (n * n * 15731 + 789221) + 1376312589;
+    return -1.0 + 2.0 * f32(n & 0x0fffffff) / f32(0x0fffffff);
+}
 fn hash3i(pos: vec3<i32>) -> f32 {
     var n: i32 = pos.x * 3 + pos.y * 113 + pos.z * 311;
     n = (n << 13) ^ n;
@@ -65,7 +71,19 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     return hash2(uv) - v * 0.25 + 0.5;
 }
 
-// Simple 3D noise function
+// Simple noise functions
+fn noise2(pos: vec2<f32>) -> f32 {
+    let i: vec2<i32> = vec2<i32>(floor(pos));
+    let f: vec2<f32> = fract(pos);
+    let u: vec2<f32> = f * f * (3.0 - 2.0 * f); // Smoothstep weights
+
+    // Hash values at square corners, interpolate along x
+    let lerp_x0 = mix(hash2i(i + vec2<i32>(0, 0)), hash2i(i + vec2<i32>(1, 0)), u.x);
+    let lerp_x1 = mix(hash2i(i + vec2<i32>(0, 1)), hash2i(i + vec2<i32>(1, 1)), u.x);
+
+    // Interpolate along y and return
+    return mix(lerp_x0, lerp_x1, u.y);
+}
 fn noise3(pos: vec3<f32>) -> f32 {
     let i: vec3<i32> = vec3<i32>(floor(pos));
     let f: vec3<f32> = fract(pos);
@@ -85,16 +103,24 @@ fn noise3(pos: vec3<f32>) -> f32 {
     return mix(lerp_y0, lerp_y1, u.z);
 }
 
-// FBM
-const m3: mat3x3f = mat3x3f(
-    vec3(0.8, 0.6, 0.0),
-    vec3(-0.6, 0.8, 0.0),
-    vec3(0.0, 0.0, 1.0)
-) * 2.0;
+// Fractional Brownian Motion (FBM)
+const m2 = mat2x2f(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * 2.0;
+const m3 = mat3x3f(vec3(0.8, 0.6, 0.0), vec3(-0.6, 0.8, 0.0), vec3(0.0, 0.0, 1.0)) * 2.0;
 const MAX_OCT: u32 = 5u;
 const WEIGHTS = array<f32,MAX_OCT>(0.5, 0.25, 0.125, 0.0625, 0.03125);
 const NORMS = array<f32,MAX_OCT>(1.0, 0.75, 0.875, 0.9375, 0.96875);
-fn fbm_lod(pos: vec3<f32>, octaves: u32) -> f32 {
+fn fbm2(pos: vec2<f32>, octaves_f: f32) -> f32 {
+    let octaves = u32(round(octaves_f));
+    var sum = 0.0;
+    var freqp = pos;
+    for (var i: u32 = 0u; i < octaves; i = i + 1u) {
+        sum += WEIGHTS[i] * noise2(freqp);
+        freqp = freqp * m2;
+    }
+    return sum / NORMS[octaves - 1u];
+}
+fn fbm3(pos: vec3<f32>, octaves_f: f32) -> f32 {
+    let octaves = u32(round(octaves_f));
     var sum = 0.0;
     var freqp = pos;
     for (var i: u32 = 0u; i < octaves; i = i + 1u) {
@@ -105,45 +131,44 @@ fn fbm_lod(pos: vec3<f32>, octaves: u32) -> f32 {
 }
 
 // Check density against clouds
-const COARSE_FREQ = 0.01;
-const COARSE_OCT = 2u;
-const WARP_AMP = 0.2;
+const COARSE_FREQ = 0.005;
+const WARP_AMP = 0.3;
 const DETAIL_FREQ = 0.1;
 fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
     // Ellipsoid local space
     let dpos = pos - cloud.pos;
-    let invRadius = 2.0 / cloud.scale;
-    let normDir = dpos * invRadius;
-    let edgeDistance = length(normDir);
+    let inv_scale = 2.0 / cloud.scale;
+    let ellipsoid_dist = length(dpos * inv_scale);
+    let base_density = 1.0 - ellipsoid_dist;
+
+    let seed = vec3(cloud.seed);
+    if cloud.is_stratus == 1u {
+    } else {
+    }
 
     // Compute a very low frequency warp
-    let seed = vec3(cloud.seed);
-    let coarse = fbm_lod(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, COARSE_OCT);
+    let coarse = fbm3(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, mix(2.0, 4.0, smoothstep(500.0, 0.0, dist)));
 
     // Warp the sample position
-    let dpos_warped = dpos + WARP_AMP * cloud.scale * (coarse - 0.5);
+    let dpos_warped = dpos + (coarse - 0.5) * WARP_AMP * cloud.scale;
 
     // Compute the ellipsoid shape on the warped position
     let invS = 3.0 / cloud.scale;
-    let d2 = dot(dpos_warped * invS, dpos_warped * invS);
+    let d2 = dot(dpos_warped * invS, dpos_warped * invS) * ellipsoid_dist;
     var shape = 1.0 - d2;
     if shape <= 0.0 {
         return 0.0;
     }
 
-    // Level of detail fading for both the puff and octaves
-    let lodf1 = clamp(1.0 - dist * 0.002, 0.0, 1.0);  // 0..1 over 500 units
-    let lodf2 = clamp(1.0 - dist * 0.00025, 0.0, 1.0);  // 0..1 over 4000 units
-
     // Sample puff noise
-    let octaves = u32(mix(2.0, f32(MAX_OCT), lodf1));
-    let detail_noise = fbm_lod(dpos * DETAIL_FREQ + timeOffsetB + seed * 0.7, octaves);
+    let detail_noise = fbm3(dpos * DETAIL_FREQ + timeOffsetB + seed * 0.7, mix(2.0, 5.0, smoothstep(500.0, 0.0, dist)));
 
     // Build a little “flat core” and then add noisy puffs scaled by detail & fade
     let core = max(shape - 0.2, 0.0);
-    let puff = shape * detail_noise * cloud.detail * lodf2;
+    let puff = shape * detail_noise * cloud.detail * smoothstep(4000.0, 0.0, dist);
 
-    return (core + puff) * cloud.density;
+    return (core + puff) * base_density * cloud.density;
+    // return 1.0;
 }
 
 // Returns (t_near, t_far), the intersection points
@@ -178,9 +203,9 @@ fn ellipsoid_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> 
 }
 
 // Raymarch through all the clouds, first gathering the intersects
-const MIN_STEP = 0.8;
-const K_STEP = 0.005; // The fall-off of step size with distance
-const ALPHA_TARGET = 0.95; // Max alpha to reach before stopping
+const MIN_STEP = 4.0;
+const K_STEP = 0.0002; // The fall-off of step size with distance
+const ALPHA_TARGET = 0.9; // Max alpha to reach before stopping
 
 const MAX_QUEUED = 12u; // Total number of clouds to consider ahead at a time
 struct CloudIntersect {
@@ -190,11 +215,12 @@ struct CloudIntersect {
 };
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
     var sumCol = vec4<f32>(0.0); // Accumulated color
-    var t = 0.0; // Current ray distance
+    var t = dither * MIN_STEP; // Current ray distance
+    var count = 0u;
 
     // Precomputed constants
-    let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6);
-    let timeOffsetA = timeOffsetB * 0.05;
+    let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6) * 0.5;
+    let timeOffsetA = timeOffsetB * 0.02;
 
     var nextCloudIdx = 0u; // Next cloud index
     var queuedCount = 0u; // Number of queued clouds
@@ -245,7 +271,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
         // If no active clouds, fast‐forward t to the nextEvent
         if activeCount == 0u {
             if nextEvent < tMax {
-                t = nextEvent + dither + dither * (nextEvent * 0.005); // Add dither based on distance so it reduces banding
+                t = nextEvent + (dither * MIN_STEP); // Add dither so it reduces banding
                 continue;
             } else {
                 break; // No more clouds to ever march
@@ -257,28 +283,39 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
             // March one step through the active clouds
             let step = max(MIN_STEP, K_STEP * t);
             let pos = ro + rd * t;
+            var density_this_step: f32 = 0.0;
 
             for (var i = 0u; i < queuedCount; i = i + 1u) {
                 if queuedList[i].enterT <= t && t <= queuedList[i].exitT {
                     let cloud = clouds_buffer.clouds[queuedList[i].idx];
                     let density = density_at_cloud(pos, cloud, t, timeOffsetA, timeOffsetB);
+                    count++;
                     if density > 0.01 {
+                        // Keep a running total of density at this point
+                        density_this_step += density;
+
                         // Single‐pass Beer approximation
                         let beer = 1.0 / (1.0 + density * EXTINCTION);
                         var col = (SUN_COLOR * beer + AMBIENT_COLOR * (1.0 - beer)) * density * cloud.color;
 
-                        let a = density * 0.4;
-                        col *= a;
-                        sumCol = sumCol + vec4(col * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
+                        // Make alpha proportional to the step size
+                        let a = clamp(density * 0.4 * step, 0.0, 1.0);
+                        sumCol = sumCol + vec4(col * a * (1.0 - sumCol.a), a * (1.0 - sumCol.a));
                     }
                 }
             }
 
-            // Advance the ray
-            t += step;
+
+            // Advance the ray. Jump further in low-density areas.
+            let jump_multiplier = (1.0 - clamp(density_this_step * 4.0, 0.0, 1.0)) * 2.0;
+            t += step * (1.0 + jump_multiplier);
         }
     }
 
+    // Scale the sumCol so that alpha of ALPHA_TARGET becomes 1.0
+    sumCol.a = sumCol.a * (1.0 / ALPHA_TARGET);
+
+    // return vec4<f32>(f32(count) / 100.0, 0.0, 0.0, 1.0);
     return clamp(sumCol, vec4(0.0), vec4(1.0));
 }
 
