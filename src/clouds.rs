@@ -78,31 +78,110 @@ struct CloudsBufferData {
 #[repr(C)]
 struct Cloud {
     // 16 bytes
-    pos: Vec3, // Position of the cloud
-    seed: f32, // Unique identifier for noise
+    pos: Vec3, // Position of the cloud (12 bytes)
+    data: u32, // Packed data (4 bytes)
+    // 6 bits for seed, as a number 0-64
+    // 4 bits for density (Overall fill, 0=almost empty mist, 1=solid cloud mass), 0-1 in 16 steps
+    // 4 bits for detail (Noise detail power, 0=smooth blob, 1=lots of little puffs), 0-1 in 16 steps
+    // 4 bits for brightness, 0-1 in 16 steps
+    // 4 bits for white-blue-purple (to be implemented)
+    // 2 bits for form, cumulus status or cirrus, then vertical level determines cloud shape determined from both
 
     // 16 bytes
-    scale: Vec3,  // x=width, y=height, z=length
-    density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
-
-    // 16 bytes
-    detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
-    color: f32,  // 0 = white, 1 = black
-    is_stratus: u32,
+    scale: Vec3, // x=width, y=height, z=length (12 bytes)
     _padding0: u32,
 }
+
 impl Cloud {
-    fn new(position: Vec3, scale: Vec3, is_stratus: bool, detail: f32) -> Self {
+    // Bit masks and shifts as constants
+    const FORM_MASK: u32 = 0b11; // Bits 0-1
+    const FORM_SHIFT: u32 = 0;
+    const DENSITY_MASK: u32 = 0b1111 << 2; // Bits 2-5
+    const DENSITY_SHIFT: u32 = 2;
+    const DETAIL_MASK: u32 = 0b1111 << 6; // Bits 6-9
+    const DETAIL_SHIFT: u32 = 6;
+    const BRIGHTNESS_MASK: u32 = 0b1111 << 10; // Bits 10-13
+    const BRIGHTNESS_SHIFT: u32 = 10;
+    const COLOR_MASK: u32 = 0b1111 << 14; // Bits 14-17
+    const COLOR_SHIFT: u32 = 14;
+    const SEED_MASK: u32 = 0b111111 << 18; // Bits 18-23
+    const SEED_SHIFT: u32 = 18;
+
+    /// Creates a new Cloud instance with the specified position and scale.
+    fn new(position: Vec3, scale: Vec3) -> Self {
         Self {
             pos: position,
-            seed: rng().random::<f32>() * 10000.0,
+            data: 0,
             scale,
-            density: 1.0,
-            detail,
-            color: rng().random(),
-            is_stratus: is_stratus as u32,
             _padding0: 0,
         }
+    }
+
+    // Form: 0 = cumulus, 1 = stratus, 2 = cirrus
+    fn set_form(mut self, form: u32) -> Self {
+        assert!(form <= 3, "Form must be 0, 1, or 2");
+        self.data = (self.data & !Self::FORM_MASK) | ((form << Self::FORM_SHIFT) & Self::FORM_MASK);
+        self
+    }
+    fn get_form(&self) -> u32 {
+        (self.data & Self::FORM_MASK) >> Self::FORM_SHIFT
+    }
+
+    // Density: 0.0 to 1.0
+    fn set_density(mut self, density: f32) -> Self {
+        let raw = (density.clamp(0.0, 1.0) * 15.0).round() as u32;
+        self.data =
+            (self.data & !Self::DENSITY_MASK) | ((raw << Self::DENSITY_SHIFT) & Self::DENSITY_MASK);
+        self
+    }
+    fn get_density(&self) -> f32 {
+        let raw = (self.data & Self::DENSITY_MASK) >> Self::DENSITY_SHIFT;
+        raw as f32 / 15.0
+    }
+
+    // Detail: 0.0 to 1.0
+    fn set_detail(mut self, detail: f32) -> Self {
+        let raw = (detail.clamp(0.0, 1.0) * 15.0).round() as u32;
+        self.data =
+            (self.data & !Self::DETAIL_MASK) | ((raw << Self::DETAIL_SHIFT) & Self::DETAIL_MASK);
+        self
+    }
+    fn get_detail(&self) -> f32 {
+        let raw = (self.data & Self::DETAIL_MASK) >> Self::DETAIL_SHIFT;
+        raw as f32 / 15.0
+    }
+
+    // Brightness: 0.0 to 1.0
+    fn set_brightness(mut self, brightness: f32) -> Self {
+        let raw = (brightness.clamp(0.0, 1.0) * 15.0).round() as u32;
+        self.data = (self.data & !Self::BRIGHTNESS_MASK)
+            | ((raw << Self::BRIGHTNESS_SHIFT) & Self::BRIGHTNESS_MASK);
+        self
+    }
+    fn get_brightness(&self) -> f32 {
+        let raw = (self.data & Self::BRIGHTNESS_MASK) >> Self::BRIGHTNESS_SHIFT;
+        raw as f32 / 15.0
+    }
+
+    // Color: 0-15, to be interpreted as white-blue-purple in shader
+    fn set_color(mut self, color: u32) -> Self {
+        assert!(color <= 15, "Color must be 0-15");
+        self.data =
+            (self.data & !Self::COLOR_MASK) | ((color << Self::COLOR_SHIFT) & Self::COLOR_MASK);
+        self
+    }
+    fn get_color(&self) -> u32 {
+        (self.data & Self::COLOR_MASK) >> Self::COLOR_SHIFT
+    }
+
+    // Seed: 0-63
+    fn set_seed(mut self, seed: u32) -> Self {
+        assert!(seed <= 63, "Seed must be between 0 and 63");
+        self.data = (self.data & !Self::SEED_MASK) | ((seed << Self::SEED_SHIFT) & Self::SEED_MASK);
+        self
+    }
+    fn get_seed(&self) -> u32 {
+        (self.data & Self::SEED_MASK) >> Self::SEED_SHIFT
     }
 }
 
@@ -114,74 +193,85 @@ fn setup(mut commands: Commands) {
     // --- Configurable Weather Variables ---
     let stratiform_chance = 0.25;
     let cloudiness = 1.0f32;
-    let (detail_lower, detail_upper) = (0.4f32, 0.9f32);
+    let turbulence = 0.5f32; // 0.0 = calm, 1.0 = very turbulent
     let field_extent = 2000.0; // Distance to cover in meters for x/z
     let num_clouds =
         ((field_extent * 2.0 * field_extent * 2.0) / 100_000.0 * cloudiness).round() as usize;
 
     let mut clouds = Vec::with_capacity(num_clouds);
     for _ in 0..num_clouds {
-        // Stratiform (layer) vs cumuliform (heap-shaped)
-        let is_stratus = rng.random::<f32>() < stratiform_chance;
-        let height = if is_stratus {
-            // Stratus/Altostratus/Cirrostratus layers
-            rng.random_range(10.0..=3000.0)
+        // Determine cloud form
+        let form = if rng.random::<f32>() < stratiform_chance {
+            1 // Stratus
+        } else if rng.random::<f32>() < 0.75 {
+            0 // Cumulus
         } else {
-            // Heap clouds: bias heights for more cumulus at low, more altocumulus at middle, rare cirrocumulus at top
-            let r = rng.random::<f32>();
-            if r < 0.75 {
-                // Cumulus: 10–1800m
-                rng.random::<f32>().powf(2.5).mul_add(1790.0, 10.0)
-            } else if r < 0.97 {
-                // Altocumulus: 1800–2600m
-                rng.random::<f32>().mul_add(800.0, 1800.0)
-            } else {
-                // Cirrocumulus (rare at 2600–3000m, scaled for effect)
-                rng.random::<f32>().mul_add(400.0, 2600.0)
-            }
+            2 // Cirrus
         };
 
-        // Size and proportion based on cloud type
-        let (width, length, depth) = if is_stratus {
-            // Wide, thin sheets: sideways dominant, very shallow
-            let width = rng.random_range(500.0..=3000.0);
-            let length = rng.random_range(2000.0..=field_extent * 2.0);
-            let depth = rng.random_range(10.0..=100.0);
-            (width, length, depth)
-        } else if height < 1800.0 {
-            // Cumulus (round, puffy)
-            let width: f32 = rng.random_range(150.0..=1000.0);
-            let length = width * rng.random_range(0.8..=1.2);
-            let depth = rng.random_range(100.0..=width.min(800.0));
-            (width, length, depth)
-        } else if height < 2600.0 {
-            // Altocumulus (smaller, more fragments)
-            let width = rng.random_range(80.0..=300.0);
-            let length = width * rng.random_range(1.0..=2.0);
-            let depth = rng.random_range(40.0..=150.0);
-            (width, length, depth)
-        } else {
-            // Cirrocumulus (small, sheet-like, upper air)
-            let width = rng.random_range(40.0..=100.0);
-            let length = width * rng.random_range(1.2..=2.2);
-            let depth = rng.random_range(10.0..=40.0);
-            (width, length, depth)
+        // Height based on form
+        let height = match form {
+            1 => rng.random_range(10.0..=3000.0),   // Stratus
+            0 => rng.random_range(10.0..=1800.0),   // Cumulus
+            2 => rng.random_range(2600.0..=3000.0), // Cirrus
+            _ => unreachable!(),
+        };
+
+        // Size and proportion based on form
+        let (width, length, depth) = match form {
+            1 => {
+                // Stratus
+                let width = rng.random_range(500.0..=3000.0);
+                let length = rng.random_range(2000.0..=field_extent * 2.0);
+                let depth = rng.random_range(10.0..=100.0);
+                (width, length, depth)
+            }
+            0 => {
+                // Cumulus
+                let width: f32 = rng.random_range(150.0..=1000.0);
+                let length = width * rng.random_range(0.8..=1.2);
+                let depth = rng.random_range(100.0..=width.min(800.0));
+                (width, length, depth)
+            }
+            2 => {
+                // Cirrus
+                let width = rng.random_range(40.0..=100.0);
+                let length = width * rng.random_range(1.2..=2.2);
+                let depth = rng.random_range(10.0..=40.0);
+                (width, length, depth)
+            }
+            _ => unreachable!(),
         };
 
         // Position in field
         let x = rng.random_range(-field_extent..=field_extent);
         let z = rng.random_range(-field_extent..=field_extent);
+        let position = Vec3::new(x, height, z);
+        let scale = Vec3::new(length, depth, width);
 
-        // Noise/detail: more "ragged" at higher altitudes or for less stratiform
-        let detail =
-            rng.random_range(detail_lower..=detail_upper) + if is_stratus { -0.2 } else { 0.0 };
+        let density = match form {
+            0 => rng.random_range(0.8..=1.0), // Cumulus
+            1 => rng.random_range(0.3..=0.6), // Stratus
+            2 => rng.random_range(0.1..=0.3), // Cirrus
+            _ => unreachable!(),
+        };
+        let base_detail = match form {
+            1 => rng.random_range(0.1..=0.4), // Stratus
+            0 => rng.random_range(0.6..=0.9), // Cumulus
+            2 => rng.random_range(0.7..=1.0), // Cirrus
+            _ => unreachable!(),
+        };
+        let detail = base_detail + turbulence * 0.2;
 
-        clouds.push(Cloud::new(
-            Vec3::new(x, height, z),
-            Vec3::new(length, depth, width),
-            is_stratus,
-            detail.clamp(0.1, 1.0),
-        ));
+        clouds.push(
+            Cloud::new(position, scale)
+                .set_form(form)
+                .set_density(density)
+                .set_detail(detail)
+                .set_seed(rng.random_range(0..64))
+                .set_brightness(1.0)
+                .set_color(0),
+        );
     }
 
     commands.insert_resource(CloudsState { clouds });

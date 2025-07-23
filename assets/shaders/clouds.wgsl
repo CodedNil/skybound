@@ -13,20 +13,13 @@ struct CloudsBuffer {
 }
 struct Cloud {
     // 16 bytes
-    pos: vec3<f32>, // Position of the cloud
-    seed: f32, // Unique identifier for noise
+    pos: vec3<f32>, // Position of the cloud, 12 bytes
+    data: u32, // 4 bytes
 
     // 16 bytes
     scale: vec3<f32>, // x=width, y=height, z=length, w=radius^2
-    density: f32, // Overall fill (0=almost empty mist, 1=solid cloud mass)
-
-    // 16 bytes
-    detail: f32, // Fractal/noise detail power (0=smooth blob, 1=lots of little puffs)
-    color: f32, // 0 = white, 1 = black
-    is_stratus: u32,
     _padding0: u32,
 }
-
 
 // Lighting variables
 const EXTINCTION: f32 = 0.04;
@@ -38,6 +31,47 @@ const SUN_DIR: vec3<f32> = vec3(0.70710678, -0.70710678, 0.0);
 const SUN_COLOR = vec3(1.0, 0.98, 0.95); // Very white sunlight
 
 const AMBIENT_COLOR = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
+
+
+// Functions to unpack data
+const FORM_MASK: u32 = 0x00000003u;      // Bits 0-1
+const FORM_SHIFT: u32 = 0u;
+fn get_form(data: u32) -> u32 {
+    return (data & FORM_MASK) >> FORM_SHIFT;
+}
+
+const DENSITY_MASK: u32 = 0x0000003Cu;   // Bits 2-5
+const DENSITY_SHIFT: u32 = 2u;
+fn get_density(data: u32) -> f32 {
+    let density_u32 = (data & DENSITY_MASK) >> DENSITY_SHIFT;
+    return f32(density_u32) / 15.0;
+}
+
+const DETAIL_MASK: u32 = 0x000003C0u;    // Bits 6-9
+const DETAIL_SHIFT: u32 = 6u;
+fn get_detail(data: u32) -> f32 {
+    let detail_u32 = (data & DETAIL_MASK) >> DETAIL_SHIFT;
+    return f32(detail_u32) / 15.0;
+}
+
+const BRIGHTNESS_MASK: u32 = 0x00003C00u; // Bits 10-13
+const BRIGHTNESS_SHIFT: u32 = 10u;
+fn get_brightness(data: u32) -> f32 {
+    let brightness_u32 = (data & BRIGHTNESS_MASK) >> BRIGHTNESS_SHIFT;
+    return f32(brightness_u32) / 15.0;
+}
+
+const COLOR_MASK: u32 = 0x0003C000u;     // Bits 14-17
+const COLOR_SHIFT: u32 = 14u;
+fn get_color(data: u32) -> u32 {
+    return (data & COLOR_MASK) >> COLOR_SHIFT;
+}
+
+const SEED_MASK: u32 = 0x00FC0000u;      // Bits 18-23
+const SEED_SHIFT: u32 = 18u;
+fn get_seed(data: u32) -> u32 {
+    return (data & SEED_MASK) >> SEED_SHIFT;
+}
 
 
 // Simple noise function for white noise
@@ -109,8 +143,7 @@ const m3 = mat3x3f(vec3(0.8, 0.6, 0.0), vec3(-0.6, 0.8, 0.0), vec3(0.0, 0.0, 1.0
 const MAX_OCT: u32 = 5u;
 const WEIGHTS = array<f32,MAX_OCT>(0.5, 0.25, 0.125, 0.0625, 0.03125);
 const NORMS = array<f32,MAX_OCT>(1.0, 0.75, 0.875, 0.9375, 0.96875);
-fn fbm2(pos: vec2<f32>, octaves_f: f32) -> f32 {
-    let octaves = u32(round(octaves_f));
+fn fbm2(pos: vec2<f32>, octaves: u32) -> f32 {
     var sum = 0.0;
     var freqp = pos;
     for (var i: u32 = 0u; i < octaves; i = i + 1u) {
@@ -119,8 +152,7 @@ fn fbm2(pos: vec2<f32>, octaves_f: f32) -> f32 {
     }
     return sum / NORMS[octaves - 1u];
 }
-fn fbm3(pos: vec3<f32>, octaves_f: f32) -> f32 {
-    let octaves = u32(round(octaves_f));
+fn fbm3(pos: vec3<f32>, octaves: u32) -> f32 {
     var sum = 0.0;
     var freqp = pos;
     for (var i: u32 = 0u; i < octaves; i = i + 1u) {
@@ -133,42 +165,62 @@ fn fbm3(pos: vec3<f32>, octaves_f: f32) -> f32 {
 // Check density against clouds
 const COARSE_FREQ = 0.005;
 const WARP_AMP = 0.3;
-const DETAIL_FREQ = 0.1;
+const DETAIL_FREQ = 0.05;
 fn density_at_cloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
+    let form = get_form(cloud.data);
+    let seed = vec3(f32(get_seed(cloud.data)));
+
     // Ellipsoid local space
     let dpos = pos - cloud.pos;
     let inv_scale = 2.0 / cloud.scale;
     let ellipsoid_dist = length(dpos * inv_scale);
     let base_density = 1.0 - ellipsoid_dist;
 
-    let seed = vec3(cloud.seed);
-    if cloud.is_stratus == 1u {
+    if form == 1u { // Stratus
+        // Compute a very low frequency warp
+        let coarse = fbm3(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, 3);
+
+        // Warp the sample position
+        let dpos_warped = dpos + (coarse - 0.5) * WARP_AMP * cloud.scale;
+
+        // Compute the ellipsoid shape on the warped position
+        let invS = 3.0 / cloud.scale;
+        let d2 = dot(dpos_warped * invS, dpos_warped * invS);
+        var shape = (1.0 - d2) * base_density;
+        if shape <= 0.0 {
+            return 0.0;
+        }
+
+        return shape * base_density * get_density(cloud.data);
     } else {
+        // Compute a very low frequency warp
+        let coarse = fbm3(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, 3);
+
+        // Warp the sample position
+        let dpos_warped = dpos + (coarse - 0.5) * WARP_AMP * cloud.scale;
+
+        // Compute the ellipsoid shape on the warped position
+        let invS = 3.0 / cloud.scale;
+        let d2 = dot(dpos_warped * invS, dpos_warped * invS);
+        var shape = 1.0 - d2;
+
+        // Logic for flat bottom: Reduce density from y=0 downwards
+        let bottom_attenuation = smoothstep(-cloud.scale.y * 0.1, 0.0, dpos.y);
+        shape *= bottom_attenuation;
+
+        if shape <= 0.0 {
+            return 0.0;
+        }
+
+        // Sample puff noise
+        let detail_noise = fbm3(dpos * DETAIL_FREQ + timeOffsetB + seed * 0.7, u32(round(mix(2.0, 5.0, smoothstep(500.0, 0.0, dist)))));
+
+        // Build a little “flat core” and then add noisy puffs scaled by detail & fade
+        let core = max(shape - 0.2, 0.0);
+        let puff = shape * detail_noise * get_detail(cloud.data) * smoothstep(4000.0, 0.0, dist);
+
+        return clamp(core + puff, 0.0, 1.0) * base_density * get_density(cloud.data);
     }
-
-    // Compute a very low frequency warp
-    let coarse = fbm3(dpos * COARSE_FREQ + timeOffsetA + seed * 0.3, mix(2.0, 4.0, smoothstep(500.0, 0.0, dist)));
-
-    // Warp the sample position
-    let dpos_warped = dpos + (coarse - 0.5) * WARP_AMP * cloud.scale;
-
-    // Compute the ellipsoid shape on the warped position
-    let invS = 3.0 / cloud.scale;
-    let d2 = dot(dpos_warped * invS, dpos_warped * invS) * ellipsoid_dist;
-    var shape = 1.0 - d2;
-    if shape <= 0.0 {
-        return 0.0;
-    }
-
-    // Sample puff noise
-    let detail_noise = fbm3(dpos * DETAIL_FREQ + timeOffsetB + seed * 0.7, mix(2.0, 5.0, smoothstep(500.0, 0.0, dist)));
-
-    // Build a little “flat core” and then add noisy puffs scaled by detail & fade
-    let core = max(shape - 0.2, 0.0);
-    let puff = shape * detail_noise * cloud.detail * smoothstep(4000.0, 0.0, dist);
-
-    return (core + puff) * base_density * cloud.density;
-    // return 1.0;
 }
 
 // Returns (t_near, t_far), the intersection points
@@ -296,7 +348,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
 
                         // Single‐pass Beer approximation
                         let beer = 1.0 / (1.0 + density * EXTINCTION);
-                        var col = (SUN_COLOR * beer + AMBIENT_COLOR * (1.0 - beer)) * density * cloud.color;
+                        var col = (SUN_COLOR * beer + AMBIENT_COLOR * (1.0 - beer)) * density * get_brightness(cloud.data);
 
                         // Make alpha proportional to the step size
                         let a = clamp(density * 0.4 * step, 0.0, 1.0);
