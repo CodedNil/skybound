@@ -5,7 +5,7 @@ do trails from fast animal motion as spheres that get placed on it's path with v
 
 clouds:
 better shapes for cumulus
-atmospherics - colour the sky and pass that through as ambient colour
+atmospherics - colour the sky and pass that through as ambient colour, distance fog so they fade out
 cloud colours, white-black and potentially also blue-purple edges
 add aur light from below with a blue tint
 render at half res then upscale

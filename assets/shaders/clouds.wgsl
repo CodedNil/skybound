@@ -4,9 +4,8 @@
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> globals: Globals;
-@group(0) @binding(2) var screenTexture: texture_2d<f32>;
-@group(0) @binding(3) var depthTexture: texture_depth_multisampled_2d;
-@group(0) @binding(4) var<storage, read> cloudsBuffer: CloudsBuffer;
+@group(0) @binding(2) var depthTexture: texture_depth_multisampled_2d;
+@group(0) @binding(3) var<storage, read> cloudsBuffer: CloudsBuffer;
 
 struct CloudsBuffer {
     numClouds: u32,
@@ -39,14 +38,14 @@ fn getForm(data: u32) -> u32 {
     return (data & FORM_MASK) >> FORM_SHIFT;
 }
 
-const DENSITY_MASK: u32 = 0x0000003Cu;   // Bits 2-5
+const DENSITY_MASK: u32 = 0x0000003Cu;    // Bits 2-5
 const DENSITY_SHIFT: u32 = 2u;
 fn getDensity(data: u32) -> f32 {
     let raw = (data & DENSITY_MASK) >> DENSITY_SHIFT;
     return f32(raw) / 15.0;
 }
 
-const DETAIL_MASK: u32 = 0x000003C0u;    // Bits 6-9
+const DETAIL_MASK: u32 = 0x000003C0u;     // Bits 6-9
 const DETAIL_SHIFT: u32 = 6u;
 fn getDetail(data: u32) -> f32 {
     let raw = (data & DETAIL_MASK) >> DETAIL_SHIFT;
@@ -60,13 +59,13 @@ fn getBrightness(data: u32) -> f32 {
     return f32(raw) / 15.0;
 }
 
-const COLOR_MASK: u32 = 0x0003C000u;     // Bits 14-17
+const COLOR_MASK: u32 = 0x0003C000u;      // Bits 14-17
 const COLOR_SHIFT: u32 = 14u;
 fn getColor(data: u32) -> u32 {
     return (data & COLOR_MASK) >> COLOR_SHIFT;
 }
 
-const SEED_MASK: u32 = 0x00FC0000u;      // Bits 18-23
+const SEED_MASK: u32 = 0x00FC0000u;       // Bits 18-23
 const SEED_SHIFT: u32 = 18u;
 fn getSeed(data: u32) -> u32 {
     return (data & SEED_MASK) >> SEED_SHIFT;
@@ -215,7 +214,7 @@ fn densityAtCloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32
 // Returns (tNear, tFar), the intersection points
 fn ellipsoidIntersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
     // Transform ray into the unit‐sphere space of our ellipsoid:
-    let invRadius = 2.0 / cloud.scale;    // = 1.0/(scale*0.5)
+    let invRadius = 2.0 / cloud.scale; // = 1.0/(scale*0.5)
     let originLocal = (ro - cloud.pos) * invRadius;
     let dirLocal = rd * invRadius;
 
@@ -289,7 +288,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
             let cloud = cloudsBuffer.clouds[nextCloudIdx];
             let ts = ellipsoidIntersect(ro, rd, cloud);
             let entry = max(ts.x, 0.0);
-            let exit = min(ts.y, tMax);
+            let exit = min(ts.y, tMax); // Limit exit by scene depth
             if entry < exit {
                 queuedList[queuedCount] = CloudIntersect(nextCloudIdx, entry, exit);
                 queuedCount++;
@@ -389,16 +388,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     let pix = in.position.xy;
 
-    // G-buffer loads
-    let sceneCol: vec3<f32> = textureLoad(screenTexture, vec2<i32>(pix), 0).xyz;
+    // Load depth from the depthTexture
     let depth: f32 = textureLoad(depthTexture, vec2<i32>(pix), 0);
 
-    // Unproject to world
+    // Unproject to world using the depth
     let ndc = vec3(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), depth);
     let wpos = view.world_from_clip * vec4<f32>(ndc, 1.0);
     let worldPos = wpos.xyz / wpos.w;
 
-    // Form the ray
+    // Form the ray, using the scene depth as tMax
     let ro = view.world_position;
     let rdVec = worldPos - ro;
     let tMax = length(rdVec);
@@ -408,7 +406,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let dither = fract(blueNoise(in.position.xy));
     let clouds = raymarch(ro, rd, tMax, dither);
 
-    // Composite over background
-    let col = mix(sceneCol, clouds.xyz, clouds.a);
-    return vec4<f32>(col, 1.0);
+    // Return the clouds with alpha
+    return clouds;
 }

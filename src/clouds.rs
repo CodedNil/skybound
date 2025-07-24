@@ -16,13 +16,13 @@ use bevy::{
         },
         render_resource::{
             binding_types::{
-                storage_buffer_read_only, texture_2d, texture_depth_2d_multisampled,
+                sampler, storage_buffer_read_only, texture_2d, texture_depth_2d_multisampled,
                 uniform_buffer, uniform_buffer_sized,
             },
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
-        view::{ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
+        view::{ExtractedWindows, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
 };
 use rand::{Rng, rng};
@@ -41,17 +41,33 @@ impl Plugin for CloudsPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-        render_app.add_systems(RenderStartup, setup_pipeline);
-        render_app.add_systems(Render, update_buffer.in_set(RenderSystems::Prepare));
+        render_app.init_resource::<CloudRenderTexture>();
+        render_app
+            .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
+            .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
+            .add_systems(Render, update_buffer.in_set(RenderSystems::Prepare))
+            .add_systems(
+                Render,
+                manage_cloud_render_target.in_set(RenderSystems::Queue),
+            );
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
                 Core3d,
                 VolumetricCloudsLabel,
             )
+            .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsCompositeNode>>(
+                Core3d,
+                VolumetricCloudsCompositeLabel,
+            )
+            .add_render_graph_edges(Core3d, (Node3d::EndMainPass, VolumetricCloudsLabel))
             .add_render_graph_edges(
                 Core3d,
-                (Node3d::EndMainPass, VolumetricCloudsLabel, Node3d::Bloom),
+                (
+                    VolumetricCloudsLabel,
+                    VolumetricCloudsCompositeLabel,
+                    Node3d::Bloom,
+                ),
             );
     }
 }
@@ -357,7 +373,84 @@ fn update_buffer(
     }
 }
 
-// --- Render Pipeline ---
+// --- Intermediate Cloud Render Target ---
+#[derive(Resource, Default)]
+struct CloudRenderTexture {
+    texture: Option<Texture>,
+    view: Option<TextureView>,
+    sampler: Option<Sampler>,
+}
+
+// Combined system to manage cloud render target: create and resize
+fn manage_cloud_render_target(
+    mut cloud_render_texture: ResMut<CloudRenderTexture>, // Now directly the resource
+    render_device: Res<RenderDevice>,
+    windows: Res<ExtractedWindows>,
+) {
+    // Safely get the texture, primary window's entity and then its data
+    let Some(primary_window_entity) = windows.primary else {
+        return;
+    };
+    let Some(primary_window) = windows.windows.get(&primary_window_entity) else {
+        return;
+    };
+
+    let new_size = Extent3d {
+        width: primary_window.physical_width / 2, // Quarter resolution (half width, half height)
+        height: primary_window.physical_height / 2,
+        depth_or_array_layers: 1,
+    };
+
+    let mut needs_recreation = false;
+
+    // Check if the texture needs to be created or resized
+    if cloud_render_texture.texture.is_none() {
+        // Texture not yet created
+        needs_recreation = true;
+    } else if let Some(current_texture) = &cloud_render_texture.texture {
+        // Texture exists, check if size has changed
+        if current_texture.size() != new_size {
+            needs_recreation = true;
+        }
+    }
+
+    if needs_recreation {
+        let texture = render_device.create_texture(&TextureDescriptor {
+            label: Some("cloud_render_texture"),
+            size: new_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba16Float, // Needs alpha for compositing
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let sampler = render_device.create_sampler(&SamplerDescriptor {
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            ..default()
+        });
+
+        // Update the resource with the new texture, view, and sampler
+        cloud_render_texture.texture = Some(texture);
+        cloud_render_texture.view = Some(view);
+        cloud_render_texture.sampler = Some(sampler);
+
+        info!(
+            "{} cloud render target to {}x{}",
+            if cloud_render_texture.texture.is_none() {
+                "Created"
+            } else {
+                "Resized"
+            },
+            new_size.width,
+            new_size.height
+        );
+    }
+}
+
+// --- Volumetric Clouds Render Pipeline (renders clouds to intermediate texture) ---
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 struct VolumetricCloudsLabel;
@@ -366,21 +459,27 @@ struct VolumetricCloudsLabel;
 struct VolumetricCloudsNode;
 
 impl ViewNode for VolumetricCloudsNode {
-    type ViewQuery = (
-        &'static ViewTarget,
-        &'static ViewUniformOffset,
-        &'static ViewPrepassTextures,
-    );
+    type ViewQuery = (&'static ViewUniformOffset, &'static ViewPrepassTextures);
 
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_target, view_uniform_offset, prepass_textures): QueryItem<Self::ViewQuery>,
+        (view_uniform_offset, prepass_textures): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
+        let cloud_render_texture = world.resource::<CloudRenderTexture>();
+
+        // If the texture hasn't been initialized yet, return early
+        let (Some(texture), Some(view), Some(_sampler)) = (
+            cloud_render_texture.texture.as_ref(),
+            cloud_render_texture.view.as_ref(),
+            cloud_render_texture.sampler.as_ref(),
+        ) else {
+            return Ok(());
+        };
 
         // Fetch the data safely.
         let (
@@ -400,14 +499,12 @@ impl ViewNode for VolumetricCloudsNode {
             return Ok(());
         };
 
-        let post_process = view_target.post_process_write();
         let bind_group = render_context.render_device().create_bind_group(
             "volumetric_clouds_bind_group",
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
                 view_binding.clone(),
                 globals_binding.clone(),
-                post_process.source,
                 depth_view,
                 clouds_buffer.buffer.as_entire_binding(),
             )),
@@ -417,14 +514,27 @@ impl ViewNode for VolumetricCloudsNode {
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("volumetric_clouds_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: post_process.destination,
+                view: view, // Render to our intermediate texture
                 resolve_target: None,
-                ops: Operations::default(),
+                ops: Operations {
+                    load: LoadOp::Clear(Default::default()),
+                    store: StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
         });
+
+        // Set viewport to match the quarter resolution texture
+        render_pass.set_viewport(
+            0.0,
+            0.0,
+            texture.width() as f32,
+            texture.height() as f32,
+            0.0,
+            1.0,
+        );
 
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
@@ -440,7 +550,7 @@ struct VolumetricCloudsPipeline {
     pipeline_id: CachedRenderPipelineId,
 }
 
-fn setup_pipeline(
+fn setup_volumetric_clouds_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     asset_server: Res<AssetServer>,
@@ -454,7 +564,6 @@ fn setup_pipeline(
             (
                 uniform_buffer::<ViewUniform>(true),
                 uniform_buffer_sized(false, Some(GlobalsUniform::min_size())),
-                texture_2d(TextureSampleType::Float { filterable: false }),
                 texture_depth_2d_multisampled(),
                 storage_buffer_read_only::<CloudsBufferData>(false),
             ),
@@ -465,6 +574,17 @@ fn setup_pipeline(
         label: Some("volumetric_clouds_pipeline".into()),
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
         fragment: Some(FragmentState {
             shader: asset_server.load("shaders/clouds.wgsl"),
             targets: vec![Some(ColorTargetState {
@@ -477,6 +597,133 @@ fn setup_pipeline(
         ..default()
     });
     commands.insert_resource(VolumetricCloudsPipeline {
+        layout,
+        pipeline_id,
+    });
+}
+
+// --- Volumetric Clouds Composite Render Pipeline ---
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+struct VolumetricCloudsCompositeLabel;
+
+#[derive(Default)]
+struct VolumetricCloudsCompositeNode;
+
+impl ViewNode for VolumetricCloudsCompositeNode {
+    type ViewQuery = &'static ViewTarget;
+
+    fn run(
+        &self,
+        _graph: &mut RenderGraphContext,
+        render_context: &mut RenderContext,
+        view_target: QueryItem<Self::ViewQuery>,
+        world: &World,
+    ) -> Result<(), NodeRunError> {
+        let volumetric_clouds_composite_pipeline =
+            world.resource::<VolumetricCloudsCompositePipeline>();
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let cloud_render_texture = world.resource::<CloudRenderTexture>();
+
+        // If the texture hasn't been initialized yet, return early
+        let (Some(cloud_texture_view), Some(cloud_sampler)) = (
+            cloud_render_texture.view.as_ref(),
+            cloud_render_texture.sampler.as_ref(),
+        ) else {
+            return Ok(());
+        };
+
+        // Fetch the data safely.
+        let Some(pipeline) =
+            pipeline_cache.get_render_pipeline(volumetric_clouds_composite_pipeline.pipeline_id)
+        else {
+            return Ok(());
+        };
+
+        let post_process = view_target.post_process_write();
+        let bind_group = render_context.render_device().create_bind_group(
+            "volumetric_clouds_composite_bind_group",
+            &volumetric_clouds_composite_pipeline.layout,
+            &BindGroupEntries::sequential((post_process.source, cloud_texture_view, cloud_sampler)),
+        );
+
+        // Begin the render pass
+        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
+            label: Some("volumetric_clouds_composite_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: post_process.destination, // Render to main view target
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_render_pipeline(pipeline);
+        render_pass.set_bind_group(0, &bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+
+        Ok(())
+    }
+}
+
+#[derive(Resource)]
+struct VolumetricCloudsCompositePipeline {
+    layout: BindGroupLayout,
+    pipeline_id: CachedRenderPipelineId,
+}
+
+fn setup_volumetric_clouds_composite_pipeline(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    asset_server: Res<AssetServer>,
+    fullscreen_shader: Res<FullscreenShader>,
+    pipeline_cache: Res<PipelineCache>,
+) {
+    let layout = render_device.create_bind_group_layout(
+        "volumetric_clouds_composite_bind_group_layout",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d(TextureSampleType::Float { filterable: true }), // Original scene color
+                texture_2d(TextureSampleType::Float { filterable: true }), // Clouds texture
+                sampler(SamplerBindingType::Filtering),                    // Sampler for clouds
+            ),
+        ),
+    );
+
+    let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+        label: Some("volumetric_clouds_composite_pipeline".into()),
+        layout: vec![layout.clone()],
+        push_constant_ranges: Vec::new(),
+        vertex: fullscreen_shader.to_vertex_state(),
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            shader: asset_server.load("shaders/clouds_composite.wgsl"),
+            targets: vec![Some(ColorTargetState {
+                format: TextureFormat::Rgba16Float, // Output to default scene format
+                blend: Some(BlendState::ALPHA_BLENDING), // Alpha blend the clouds
+                write_mask: ColorWrites::ALL,
+            })],
+            ..default()
+        }),
+        ..default()
+    });
+    commands.insert_resource(VolumetricCloudsCompositePipeline {
         layout,
         pipeline_id,
     });
