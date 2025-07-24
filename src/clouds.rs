@@ -92,6 +92,12 @@ struct Cloud {
     _padding0: u32,
 }
 
+enum CloudForm {
+    Cumulus,
+    Stratus,
+    Cirrus,
+}
+
 impl Cloud {
     // Bit masks and shifts as constants
     const FORM_MASK: u32 = 0b11; // Bits 0-1
@@ -118,13 +124,23 @@ impl Cloud {
     }
 
     // Form: 0 = cumulus, 1 = stratus, 2 = cirrus
-    fn set_form(mut self, form: u32) -> Self {
-        assert!(form <= 3, "Form must be 0, 1, or 2");
-        self.data = (self.data & !Self::FORM_MASK) | ((form << Self::FORM_SHIFT) & Self::FORM_MASK);
+    fn set_form(mut self, form: CloudForm) -> Self {
+        let val = match form {
+            CloudForm::Cumulus => 0,
+            CloudForm::Stratus => 1,
+            CloudForm::Cirrus => 2,
+        };
+        self.data = (self.data & !Self::FORM_MASK) | ((val << Self::FORM_SHIFT) & Self::FORM_MASK);
         self
     }
-    fn get_form(&self) -> u32 {
-        (self.data & Self::FORM_MASK) >> Self::FORM_SHIFT
+    fn get_form(&self) -> CloudForm {
+        let val = (self.data & Self::FORM_MASK) >> Self::FORM_SHIFT;
+        match val {
+            0 => CloudForm::Cumulus,
+            1 => CloudForm::Stratus,
+            2 => CloudForm::Cirrus,
+            _ => unreachable!(),
+        }
     }
 
     // Density: 0.0 to 1.0
@@ -191,56 +207,48 @@ fn setup(mut commands: Commands) {
     let mut rng = rng();
 
     // --- Configurable Weather Variables ---
-    let stratiform_chance = 0.25;
+    let stratiform_chance = 0.15;
     let cloudiness = 1.0f32;
     let turbulence = 0.5f32; // 0.0 = calm, 1.0 = very turbulent
-    let field_extent = 2000.0; // Distance to cover in meters for x/z
-    let num_clouds =
-        ((field_extent * 2.0 * field_extent * 2.0) / 100_000.0 * cloudiness).round() as usize;
+    let field_extent = 6000.0; // Distance to cover in meters for x/z
+    let num_clouds = ((field_extent * field_extent) / 50_000.0 * cloudiness).round() as usize;
 
     let mut clouds = Vec::with_capacity(num_clouds);
     for _ in 0..num_clouds {
         // Determine cloud form
         let form = if rng.random::<f32>() < stratiform_chance {
-            1 // Stratus
-        } else if rng.random::<f32>() < 0.75 {
-            0 // Cumulus
+            CloudForm::Stratus
+        } else if rng.random::<f32>() < 0.9 {
+            CloudForm::Cumulus
         } else {
-            2 // Cirrus
+            CloudForm::Cirrus
         };
 
         // Height based on form
         let height = match form {
-            1 => rng.random_range(10.0..=3000.0),   // Stratus
-            0 => rng.random_range(10.0..=1800.0),   // Cumulus
-            2 => rng.random_range(2600.0..=3000.0), // Cirrus
-            _ => unreachable!(),
+            CloudForm::Cumulus => rng.random_range(200.0..=5000.0),
+            CloudForm::Stratus => rng.random_range(2000.0..=8000.0),
+            CloudForm::Cirrus => rng.random_range(7000.0..=8000.0),
         };
 
         // Size and proportion based on form
         let (width, length, depth) = match form {
-            1 => {
-                // Stratus
-                let width = rng.random_range(500.0..=3000.0);
-                let length = rng.random_range(2000.0..=field_extent * 2.0);
-                let depth = rng.random_range(10.0..=100.0);
-                (width, length, depth)
-            }
-            0 => {
-                // Cumulus
-                let width: f32 = rng.random_range(150.0..=1000.0);
-                let length = width * rng.random_range(0.8..=1.2);
+            CloudForm::Cumulus => {
+                let width: f32 = rng.random_range(400.0..=2000.0);
+                let length = width * rng.random_range(0.8..=1.5);
                 let depth = rng.random_range(100.0..=width.min(800.0));
                 (width, length, depth)
             }
-            2 => {
-                // Cirrus
-                let width = rng.random_range(40.0..=100.0);
-                let length = width * rng.random_range(1.2..=2.2);
-                let depth = rng.random_range(10.0..=40.0);
-                (width, length, depth)
-            }
-            _ => unreachable!(),
+            CloudForm::Stratus => (
+                rng.random_range(800.0..=3000.0),
+                rng.random_range(1500.0..=3500.0),
+                rng.random_range(20.0..=100.0),
+            ),
+            CloudForm::Cirrus => (
+                rng.random_range(200.0..=1000.0),
+                rng.random_range(2000.0..=4000.0),
+                rng.random_range(10.0..=40.0),
+            ),
         };
 
         // Position in field
@@ -250,18 +258,15 @@ fn setup(mut commands: Commands) {
         let scale = Vec3::new(length, depth, width);
 
         let density = match form {
-            0 => rng.random_range(0.8..=1.0), // Cumulus
-            1 => rng.random_range(0.3..=0.6), // Stratus
-            2 => rng.random_range(0.1..=0.3), // Cirrus
-            _ => unreachable!(),
+            CloudForm::Cumulus => rng.random_range(0.8..=1.0),
+            CloudForm::Stratus => rng.random_range(0.5..=0.8),
+            CloudForm::Cirrus => rng.random_range(0.4..=0.7),
         };
-        let base_detail = match form {
-            1 => rng.random_range(0.1..=0.4), // Stratus
-            0 => rng.random_range(0.6..=0.9), // Cumulus
-            2 => rng.random_range(0.7..=1.0), // Cirrus
-            _ => unreachable!(),
-        };
-        let detail = base_detail + turbulence * 0.2;
+        let detail = match form {
+            CloudForm::Cumulus => rng.random_range(0.7..=1.0),
+            CloudForm::Stratus => rng.random_range(0.3..=0.6),
+            CloudForm::Cirrus => rng.random_range(0.1..=0.2),
+        } * turbulence;
 
         clouds.push(
             Cloud::new(position, scale)

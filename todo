@@ -1,16 +1,15 @@
-render at half res then upscale
-use bluenoise texture instead of maths
 
 use froxels with low resolution to send simple representations of lights or other data
 
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
 
-cloud lighting:
-needs one more large scale noise, many times bigger than current, to drastically distort the clouds, or maybe alter the existing and make the noise var change the scale of small noise rather than intensity
-proper self shadowing, potentially included as a data point in froxels for strong shadows - could give clouds a shadow shape shifted by the sun
+clouds:
+better shapes for cumulus
+atmospherics - colour the sky and pass that through as ambient colour
 cloud colours, white-black and potentially also blue-purple edges
-add aur light from below with a blue tint, then normal sun
-need a variable that properly breaks them up
+add aur light from below with a blue tint
+render at half res then upscale
+use bluenoise texture instead of maths
 
 cumulonimbus clouds, huge with anvils
 
