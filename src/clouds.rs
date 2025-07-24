@@ -34,7 +34,7 @@ const MAX_VISIBLE: usize = 2048;
 pub struct CloudsPlugin;
 impl Plugin for CloudsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((ExtractResourcePlugin::<CloudsBufferData>::default(),))
+        app.add_plugins(ExtractResourcePlugin::<CloudsBufferData>::default())
             .add_systems(Startup, setup)
             .add_systems(Update, update);
 
@@ -456,23 +456,21 @@ fn setup_pipeline(
         ),
     );
 
-    let pipeline_id = pipeline_cache
-        // This will add the pipeline to the cache and queue its creation
-        .queue_render_pipeline(RenderPipelineDescriptor {
-            label: Some("post_process_pipeline".into()),
-            layout: vec![layout.clone()],
-            vertex: fullscreen_shader.to_vertex_state(),
-            fragment: Some(FragmentState {
-                shader: asset_server.load("shaders/clouds.wgsl"),
-                targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::Rgba16Float,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-                ..default()
-            }),
+    let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+        label: Some("volumetric_clouds_pipeline".into()),
+        layout: vec![layout.clone()],
+        vertex: fullscreen_shader.to_vertex_state(),
+        fragment: Some(FragmentState {
+            shader: asset_server.load("shaders/clouds.wgsl"),
+            targets: vec![Some(ColorTargetState {
+                format: TextureFormat::Rgba16Float,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
             ..default()
-        });
+        }),
+        ..default()
+    });
     commands.insert_resource(VolumetricCloudsPipeline {
         layout,
         pipeline_id,

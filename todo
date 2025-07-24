@@ -1,5 +1,5 @@
-investigate storing density etc as u8s, so i can fit 16 into a single 16 byte slice
-also render at half res then upscale
+render at half res then upscale
+use bluenoise texture instead of maths
 
 use froxels with low resolution to send simple representations of lights or other data
 
@@ -12,9 +12,7 @@ cloud colours, white-black and potentially also blue-purple edges
 add aur light from below with a blue tint, then normal sun
 need a variable that properly breaks them up
 
-Anvil of cumulonimbus clouds can be automatically generated based on scale, really tall and wide clouds get an anvil
-Cirrus is potentially smooth low detail, yet stretched out?, cirrocumulus and stratocumulus could simply be clouds with very low height but high detail so they are broken up a lot
-Cirrostratus clouds which are more faded, if its a really short cloud then reduce its density
+cumulonimbus clouds, huge with anvils
 
 do the world rendering:
 track latitude and longitude, latitude is basically just z, longitude grows faster the closer to the poles to simulate sphere
