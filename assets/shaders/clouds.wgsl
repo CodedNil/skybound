@@ -23,13 +23,11 @@ struct Cloud {
 }
 
 // Lighting variables
-const SHADOW_EXTINCTION: f32 = 3.0; // Higher = deeper core shadows
+const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
 
-const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0); // Direction of the aur light from below
-const AUR_COLOR: vec3<f32> = vec3(0.5, 0.7, 1.0); // Light blue
 const SUN_DIR: vec3<f32> = vec3(0.5, 1.0, 0.5);
 const SUN_COLOR: vec3<f32> = vec3(1.0, 0.98, 0.95); // Very white sunlight
-const AMBIENT_COLOR: vec3<f32> = vec3(1.0, 1.0, 1.0) * 0.25; // Bright ambient
+const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.25; // Bright ambient
 
 // Functions to unpack data
 const FORM_MASK: u32 = 0x00000003u;      // Bits 0-1
@@ -135,7 +133,8 @@ fn fbm3(pos: vec3<f32>, octaves: u32) -> f32 {
 // Check density against clouds
 const COARSE_FREQ: f32 = 0.005;
 const WARP_AMP: f32 = 0.3;
-const DETAIL_FREQ: f32 = 0.05;
+const DETAIL_FREQ: f32 = 0.04;
+const DETAIL_AMP: f32 = 0.8;
 
 fn densityAtCloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
     let form = getForm(cloud.data);
@@ -170,7 +169,7 @@ fn densityAtCloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32
         }
 
         // Sample puff noise
-        let detailNoise = fbm3(dPos * DETAIL_FREQ + timeOffsetB + seed * 0.7, u32(round(mix(2.0, 5.0, smoothstep(500.0, 0.0, dist)))));
+        let detailNoise = fbm3(dPos * DETAIL_FREQ + timeOffsetB + seed * 0.7, u32(round(mix(2.0, 4.0, smoothstep(800.0, 200.0, dist))))) * DETAIL_AMP;
 
         // Build a little “flat core” and then add noisy puffs scaled by detail & fade
         let core = max(shape - 0.2, 0.0);
@@ -199,7 +198,7 @@ fn densityAtCloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32
         let dPosWarped = dPos + (coarse - 0.5) * WARP_AMP * cloud.scale;
 
         // Compute the ellipsoid shape on the warped position
-        let invS = 3.0 / cloud.scale;
+        let invS = 2.0 / cloud.scale;
         let d2 = dot(dPosWarped * invS, dPosWarped * invS);
         var shape = (1.0 - d2) * baseDensity;
 
@@ -243,14 +242,14 @@ fn ellipsoidIntersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
 }
 
 // Raymarch through all the clouds, first gathering the intersects
-const MIN_STEP: f32 = 4.0;
-const K_STEP: f32 = 0.0002; // The fall-off of step size with distance
+const MIN_STEP: f32 = 10.0;
+const MAX_STEP: f32 = 24.0;
+const K_STEP: f32 = 0.001; // The fall-off of step size with distance
 const ALPHA_TARGET: f32 = 0.9; // Max alpha to reach before stopping
 const MAX_QUEUED: u32 = 12u; // Total number of clouds to consider ahead at a time
 
 const LIGHT_STEPS: i32 = 2; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 8.0; // Adjust based on scene scale
-
+const LIGHT_STEP_SIZE: f32 = 16.0; // Adjust based on scene scale
 
 struct CloudIntersect {
     idx: u32,
@@ -355,7 +354,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
                             let shadowDensity = densityAtCloud(lightOffset, cloud, t, timeOffsetA, timeOffsetB);
                             lightDensity += shadowDensity;
                         }
-                        shadowSum += lightDensity * LIGHT_STEP_SIZE * 0.5; // Scale for shadow strength
+                        shadowSum += lightDensity * LIGHT_STEP_SIZE;
                     }
                 }
             }
@@ -364,7 +363,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
                 stepColor /= stepDensity; // Normalize to get the albedo for this point.
 
                 let tau = clamp(shadowSum, 0.0, 1.0);
-                let selfShadow = exp(-SHADOW_EXTINCTION * clamp(shadowSum, 0.0, 1.0)); // Inner shadow darkening, with Beer function
+                let selfShadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
 
                 // Final color with self-shadowing
                 let litColor = mix(AMBIENT_COLOR, SUN_COLOR, selfShadow) * stepColor;
@@ -373,9 +372,9 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
                 sumCol = sumCol + vec4<f32>(litColor * stepAlpha * (1.0 - sumCol.a), stepAlpha * (1.0 - sumCol.a));
             }
 
-            // Advance the ray. Jump further in low-density areas.
-            let jumpMultiplier = (1.0 - clamp(stepDensity * 4.0, 0.0, 1.0)) * 0.5;
-            t += step * (1.0 + jumpMultiplier);
+            // Adjust step size based on density
+            let step_scale = mix(MAX_STEP, MIN_STEP, clamp(stepDensity * 2.0, 0.0, 1.0));
+            t += min(step_scale, step);
         }
     }
 
