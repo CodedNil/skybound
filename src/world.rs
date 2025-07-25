@@ -1,139 +1,213 @@
-use bevy::prelude::*;
-// Use the custom components defined in main.rs. This requires them to be public.
-use crate::{Mesh3d, MeshMaterial3d};
+use crate::camera::CameraController;
+use bevy::{
+    anti_aliasing::taa::TemporalAntiAliasing,
+    camera::Exposure,
+    core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
+    pbr::{
+        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
+        light_consts::lux,
+    },
+    prelude::*,
+};
+use std::f32::consts::FRAC_PI_2;
 
 // --- Constants ---
-// These constants define the dimensions of our flat-world-pretending-to-be-a-sphere.
-const PLANET_RADIUS: f32 = 1000.0;
-// The Z-coordinate distance from the equator (z=0) to a pole. Based on sphere circumference.
-const EQUATOR_TO_POLE_DISTANCE: f32 = PLANET_RADIUS * std::f32::consts::FRAC_PI_2;
-// The X-coordinate distance to wrap around the world at the equator.
-const WORLD_CIRCUMFERENCE: f32 = 2.0 * std::f32::consts::PI * PLANET_RADIUS;
+const PLANET_RADIUS: f32 = 50_000.0;
+const POLE_HEIGHT: f32 = 1_000_000.0;
+const POLE_WIDTH: f32 = 2000.0;
+const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
+const LATERAL_SPEED: f32 = 4.0; // Speed at which the planet rotates laterally from the camera
 
 // --- Components ---
+#[derive(Component)]
+struct Planet;
 
 #[derive(Component, Default)]
 pub struct WorldCoordinates {
     pub latitude: f32,
     pub longitude: f32,
+    pub altitude: f32,
 }
 
 #[derive(Component)]
-struct NorthPoleMarker;
+struct PoleMarker {
+    is_north: bool,
+}
 
 #[derive(Component)]
-struct SouthPoleMarker;
+struct SunLight;
+
+#[derive(Resource, Default)]
+struct PlanetState {
+    last_camera_pos: Option<Vec3>,
+}
 
 // --- Plugin ---
-
 pub struct WorldPlugin;
-
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_world)
-            // A single system handles all world-related updates for simplicity.
-            .add_systems(Update, update_world_and_poles);
+        app.init_resource::<PlanetState>()
+            .add_systems(Startup, setup)
+            .add_systems(Update, update);
     }
 }
 
 // --- Systems ---
-
-fn setup_world(
+fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // North Pole Marker (placed at the "top" of the world on the Z axis)
+    // Camera
     commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(10.0, 500.0))),
-        MeshMaterial3d(materials.add(Color::srgb(0.0, 0.5, 1.0))),
-        Transform::from_xyz(0.0, 250.0, EQUATOR_TO_POLE_DISTANCE),
-        NorthPoleMarker,
-        Name::new("North Pole Marker"),
+        Camera3d::default(),
+        Camera::default(),
+        Msaa::Off,
+        TemporalAntiAliasing::default(),
+        Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
+        Atmosphere {
+            bottom_radius: PLANET_RADIUS,
+            top_radius: PLANET_RADIUS + ATMOSPHERE_HEIGHT,
+            ..Atmosphere::EARTH
+        },
+        AtmosphereSettings {
+            aerial_view_lut_max_distance: 3.2e5,
+            scene_units_to_m: 1.0,
+            ..Default::default()
+        },
+        Exposure::SUNLIGHT,
+        Bloom::NATURAL,
+        DepthPrepass,
+        WorldCoordinates::default(),
+        CameraController {
+            speed: 40.0,
+            sensitivity: 0.005,
+            yaw: 0.0,
+            pitch: 0.0,
+        },
     ));
 
-    // South Pole Marker (placed at the "bottom" of the world on the Z axis)
+    // Spawn the planet entity
     commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(10.0, 500.0))),
+        Mesh3d(meshes.add(Sphere::new(PLANET_RADIUS).mesh().ico(76).unwrap())),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::linear_rgb(0.0, 0.0, 0.0),
+            unlit: true,
+            cull_mode: None,
+            ..default()
+        })),
+        Transform {
+            rotation: Quat::from_rotation_x(-FRAC_PI_2),
+            translation: Vec3::new(0.0, -PLANET_RADIUS, 0.0),
+            ..default()
+        },
+        NotShadowCaster,
+        Planet,
+    ));
+
+    // Pole markers
+    commands.spawn((
+        Mesh3d(meshes.add(Cylinder::new(POLE_WIDTH, POLE_HEIGHT))),
+        MeshMaterial3d(materials.add(Color::srgb(0.0, 0.5, 1.0))),
+        NotShadowCaster,
+        PoleMarker { is_north: true },
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cylinder::new(POLE_WIDTH, POLE_HEIGHT))),
         MeshMaterial3d(materials.add(Color::srgb(1.0, 0.5, 0.0))),
-        Transform::from_xyz(0.0, 250.0, -EQUATOR_TO_POLE_DISTANCE),
-        SouthPoleMarker,
-        Name::new("South Pole Marker"),
+        NotShadowCaster,
+        PoleMarker { is_north: false },
+    ));
+
+    // Sun
+    commands.spawn((
+        DirectionalLight {
+            illuminance: lux::DIRECT_SUNLIGHT,
+            shadows_enabled: true,
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 0.3,
+            maximum_distance: 3.0,
+            ..default()
+        }
+        .build(),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(-Vec3::Y, Vec3::Y),
+        SunLight,
+    ));
+
+    // Aur Light
+    commands.spawn((
+        DirectionalLight {
+            illuminance: lux::DIRECT_SUNLIGHT,
+            shadows_enabled: true,
+            ..default()
+        },
+        CascadeShadowConfigBuilder {
+            first_cascade_far_bound: 0.3,
+            maximum_distance: 3.0,
+            ..default()
+        }
+        .build(),
+        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
     ));
 }
 
-/// This combined system handles camera wrapping, lat/lon calculation, and pole orientation.
-fn update_world_and_poles(
-    mut camera_query: Query<(&mut Transform, &mut WorldCoordinates), With<Camera>>,
-    mut pole_query: Query<
-        (&mut Transform, AnyOf<(&NorthPoleMarker, &SouthPoleMarker)>),
-        Without<Camera>,
+fn update(
+    mut planet_state: ResMut<PlanetState>,
+    mut camera_query: Query<
+        (&Transform, &mut WorldCoordinates),
+        (With<Camera>, Without<Planet>, Without<PoleMarker>),
+    >,
+    mut planet_query: Query<&mut Transform, With<Planet>>,
+    mut poles_query: Query<
+        (&mut Transform, &PoleMarker),
+        (With<PoleMarker>, Without<Camera>, Without<Planet>),
     >,
 ) {
-    // Get the camera's transform and world coordinates.
-    if let Ok((mut camera_transform, mut world_coords)) = camera_query.single_mut() {
-        // --- 1. Handle Camera Position Wrapping ---
+    let (camera_transform, mut world_coords) = match camera_query.single_mut() {
+        Ok(res) => res,
+        Err(_) => return,
+    };
 
-        // If the camera goes past the north pole, wrap it to the other side.
-        if camera_transform.translation.z > EQUATOR_TO_POLE_DISTANCE {
-            camera_transform.translation.z =
-                2.0 * EQUATOR_TO_POLE_DISTANCE - camera_transform.translation.z;
-            camera_transform.translation.x *= -1.0; // Invert longitude position.
+    // Roll the planet under the camera
+    let current_pos = camera_transform.translation;
+    let mut planet_transform = planet_query.single_mut().unwrap();
+    if let Some(previous_pos) = planet_state.last_camera_pos {
+        let delta_pos = current_pos - previous_pos;
+        let delta_xz = delta_pos.xz() * LATERAL_SPEED;
+        if delta_xz.length_squared() > f32::EPSILON {
+            let roll = Quat::from_axis_angle(
+                Vec3::new(-delta_xz.y, 0.0, delta_xz.x).normalize(),
+                delta_xz.length() / PLANET_RADIUS,
+            );
+            planet_transform.rotation = roll * planet_transform.rotation;
         }
-        // If the camera goes past the south pole, wrap it to the other side.
-        if camera_transform.translation.z < -EQUATOR_TO_POLE_DISTANCE {
-            camera_transform.translation.z =
-                -2.0 * EQUATOR_TO_POLE_DISTANCE - camera_transform.translation.z;
-            camera_transform.translation.x *= -1.0; // Invert longitude position.
-        }
+    }
+    planet_transform.translation = Vec3::new(
+        camera_transform.translation.x,
+        -PLANET_RADIUS,
+        camera_transform.translation.z,
+    );
+    planet_state.last_camera_pos = Some(current_pos);
 
-        let position = camera_transform.translation;
+    // Compute camera’s latitude/longitude from the planet’s “up” vector
+    let planet_up = planet_transform.rotation.mul_vec3(Vec3::Y);
+    world_coords.latitude = planet_up.y.clamp(-1.0, 1.0).asin().to_degrees();
+    world_coords.longitude = planet_up.z.atan2(planet_up.x).to_degrees();
+    world_coords.altitude = camera_transform.translation.y;
 
-        // --- 2. Calculate Latitude and Longitude from Camera's Flat-World Position ---
+    // Snap each pole onto the sphere’s surface and orient it along the normal
+    for (mut pole_tf, pole_marker) in &mut poles_query {
+        let sign = if pole_marker.is_north { 1.0 } else { -1.0 };
+        let planet_center = planet_transform.translation;
+        let world_normal = planet_transform
+            .rotation
+            .mul_vec3(Vec3::Y * sign)
+            .normalize();
 
-        // Latitude angle is based on Z position.
-        let lat_rad = (position.z / PLANET_RADIUS)
-            .clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
-
-        // Longitude angle is based on X position.
-        let lon_rad = (position.x / PLANET_RADIUS).rem_euclid(2.0 * std::f32::consts::PI);
-
-        world_coords.latitude = lat_rad.to_degrees();
-        world_coords.longitude = lon_rad.to_degrees();
-
-        // --- 3. Calculate the Geometric Rotation for the Poles ---
-
-        // Find the camera's "up" vector on the conceptual sphere.
-        // This vector points from the sphere's center to the camera's surface position.
-        let camera_up_on_sphere = Vec3::new(
-            lat_rad.cos() * lon_rad.sin(),
-            lat_rad.sin(),
-            lat_rad.cos() * lon_rad.cos(),
-        )
-        .normalize();
-
-        // Calculate the rotation needed to make the camera's "up" on the sphere
-        // align with the world's "up" (Vec3::Y). This simulates the world tilting beneath you.
-        let world_tilt_rotation = Quat::from_rotation_arc(camera_up_on_sphere, Vec3::Y);
-
-        for (mut pole_transform, markers) in &mut pole_query {
-            let is_north_pole = markers.1.is_some();
-
-            // Define the pole's "up" vector in the sphere's local space.
-            let pole_up_on_sphere = if is_north_pole { Vec3::Y } else { -Vec3::Y };
-
-            // Apply the world tilt to the pole's "up" vector to find its final orientation.
-            let final_pole_direction = world_tilt_rotation * pole_up_on_sphere;
-
-            // The cylinder mesh's default orientation is along the Y axis.
-            // We rotate it to point in the calculated final direction.
-            pole_transform.rotation = Quat::from_rotation_arc(Vec3::Y, final_pole_direction);
-        }
-
-        // --- 4. Debug Print ---
-        info!(
-            "Lat: {:.2}, Lon: {:.2}",
-            world_coords.latitude, world_coords.longitude
-        );
+        // World‐space position under the sphere‐center transform
+        pole_tf.translation = planet_center + world_normal * (PLANET_RADIUS + POLE_HEIGHT * 0.5);
+        pole_tf.rotation = Quat::from_rotation_arc(Vec3::Y, world_normal);
     }
 }

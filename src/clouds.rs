@@ -524,9 +524,7 @@ impl ViewNode for VolumetricCloudsNode {
                     store: StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
+            ..default()
         });
 
         // Set the viewport to match the intermediate texture's size
@@ -567,7 +565,7 @@ fn setup_volumetric_clouds_pipeline(
     let layout = render_device.create_bind_group_layout(
         "volumetric_clouds_bind_group_layout",
         &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT, // These bindings are primarily for the fragment shader
+            ShaderStages::FRAGMENT,
             (
                 uniform_buffer::<ViewUniform>(true), // View uniforms (camera projection, etc.)
                 uniform_buffer_sized(false, Some(GlobalsUniform::min_size())), // Global uniforms (time, etc.)
@@ -585,8 +583,8 @@ fn setup_volumetric_clouds_pipeline(
         fragment: Some(FragmentState {
             shader: asset_server.load("shaders/clouds.wgsl"), // Shader for cloud rendering
             targets: vec![Some(ColorTargetState {
-                format: TextureFormat::Rgba16Float, // Output to the intermediate texture format
-                blend: None,                        // No blending in this pass
+                format: TextureFormat::Rgba16Float,
+                blend: None,
                 write_mask: ColorWrites::ALL,
             })],
             ..default()

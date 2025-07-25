@@ -385,10 +385,18 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
-    let pix = in.position.xy;
 
     // Load depth from the depthTexture
-    let depth: f32 = textureLoad(depthTexture, vec2<i32>(pix), 0);
+    let depth_texture_size = textureDimensions(depthTexture);
+    let clamped_coords = clamp(
+        vec2<i32>(
+            i32(uv.x * f32(depth_texture_size.x)),
+            i32(uv.y * f32(depth_texture_size.y))
+        ),
+        vec2<i32>(0, 0),
+        vec2<i32>(i32(depth_texture_size.x - 1u), i32(depth_texture_size.y - 1u))
+    );
+    let depth = textureLoad(depthTexture, clamped_coords, 0);
 
     // Unproject to world using the depth
     let ndc = vec3(uv * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), depth);
