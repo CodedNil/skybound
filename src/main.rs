@@ -20,6 +20,8 @@ mod fpscounter;
 use crate::fpscounter::FpsCounterPlugin;
 mod camera;
 use crate::camera::{CameraController, CameraPlugin};
+mod world;
+use crate::world::{WorldCoordinates, WorldPlugin};
 
 fn main() {
     App::new()
@@ -27,7 +29,13 @@ fn main() {
             brightness: lux::AMBIENT_DAYLIGHT,
             ..default()
         })
-        .add_plugins((DefaultPlugins, CloudsPlugin, CameraPlugin, FpsCounterPlugin))
+        .add_plugins((
+            DefaultPlugins,
+            CloudsPlugin,
+            CameraPlugin,
+            FpsCounterPlugin,
+            WorldPlugin,
+        ))
         .add_systems(Startup, setup)
         // .add_systems(FixedUpdate, apply_wind_force)
         .run();
@@ -39,27 +47,27 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Camera
-    commands
-        .spawn((
-            Camera3d::default(),
-            Camera::default(),
-            Transform::from_xyz(-1.2, 0.15, 0.0).looking_at(Vec3::Y * 0.1, Vec3::Y),
-            Atmosphere::EARTH,
-            AtmosphereSettings {
-                aerial_view_lut_max_distance: 3.2e5,
-                scene_units_to_m: 1.0,
-                ..Default::default()
-            },
-            Exposure::SUNLIGHT,
-            Bloom::NATURAL,
-            DepthPrepass,
-        ))
-        .insert(CameraController {
+    commands.spawn((
+        Camera3d::default(),
+        Camera::default(),
+        Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
+        Atmosphere::EARTH,
+        AtmosphereSettings {
+            aerial_view_lut_max_distance: 3.2e5,
+            scene_units_to_m: 1.0,
+            ..Default::default()
+        },
+        Exposure::SUNLIGHT,
+        Bloom::NATURAL,
+        DepthPrepass,
+        WorldCoordinates::default(),
+        CameraController {
             speed: 40.0,
             sensitivity: 0.005,
             yaw: 0.0,
             pitch: 0.0,
-        });
+        },
+    ));
 
     // Circular base
     commands.spawn((
