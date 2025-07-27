@@ -16,7 +16,6 @@ const PLANET_RADIUS: f32 = 50_000.0;
 const POLE_HEIGHT: f32 = 1_000_000.0;
 const POLE_WIDTH: f32 = 2000.0;
 const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
-const LATERAL_SPEED: f32 = 4.0; // Speed at which the planet rotates laterally from the camera
 
 // --- Components ---
 #[derive(Component)]
@@ -126,6 +125,8 @@ fn setup(
             shadows_enabled: true,
             ..default()
         },
+        Mesh3d(meshes.add(Cylinder::new(2.0, 20.0))),
+        MeshMaterial3d(materials.add(Color::srgb(1.0, 1.0, 1.0))),
         CascadeShadowConfigBuilder {
             first_cascade_far_bound: 0.3,
             maximum_distance: 3.0,
@@ -164,6 +165,15 @@ fn update(
         (&mut Transform, &PoleMarker),
         (With<PoleMarker>, Without<Camera>, Without<Planet>),
     >,
+    mut sun_query: Query<
+        (&mut DirectionalLight, &mut Transform),
+        (
+            With<SunLight>,
+            Without<Camera>,
+            Without<Planet>,
+            Without<PoleMarker>,
+        ),
+    >,
 ) {
     let (camera_transform, mut world_coords) = match camera_query.single_mut() {
         Ok(res) => res,
@@ -175,7 +185,7 @@ fn update(
     let mut planet_transform = planet_query.single_mut().unwrap();
     if let Some(previous_pos) = planet_state.last_camera_pos {
         let delta_pos = current_pos - previous_pos;
-        let delta_xz = delta_pos.xz() * LATERAL_SPEED;
+        let delta_xz = delta_pos.xz();
         if delta_xz.length_squared() > f32::EPSILON {
             let roll = Quat::from_axis_angle(
                 Vec3::new(-delta_xz.y, 0.0, delta_xz.x).normalize(),
@@ -198,6 +208,8 @@ fn update(
     world_coords.altitude = camera_transform.translation.y;
 
     // Snap each pole onto the sphere’s surface and orient it along the normal
+    let mut north_pole_pos = Vec3::ZERO;
+    let mut south_pole_pos = Vec3::ZERO;
     for (mut pole_tf, pole_marker) in &mut poles_query {
         let sign = if pole_marker.is_north { 1.0 } else { -1.0 };
         let planet_center = planet_transform.translation;
@@ -209,5 +221,41 @@ fn update(
         // World‐space position under the sphere‐center transform
         pole_tf.translation = planet_center + world_normal * (PLANET_RADIUS + POLE_HEIGHT * 0.5);
         pole_tf.rotation = Quat::from_rotation_arc(Vec3::Y, world_normal);
+
+        if pole_marker.is_north {
+            north_pole_pos = pole_tf.translation;
+        } else {
+            south_pole_pos = pole_tf.translation;
+        }
     }
+
+    // --- Sun Light Control Logic ---
+    let (mut sun_light, mut sun_transform) = sun_query.single_mut().unwrap();
+
+    // Get pole to snap light to
+    let dist_to_north = camera_transform.translation.distance(north_pole_pos);
+    let dist_to_south = camera_transform.translation.distance(south_pole_pos);
+    let target_pole_pos = if dist_to_north < dist_to_south {
+        north_pole_pos
+    } else {
+        south_pole_pos
+    };
+
+    sun_transform.rotation = Transform::default()
+        .looking_at(
+            -(camera_transform.translation - target_pole_pos).normalize(),
+            Vec3::Y,
+        )
+        .rotation;
+
+    let min_latitude_for_light_degrees = 15.0;
+    let max_latitude_for_light_degrees = 90.0;
+
+    let current_abs_latitude = world_coords.latitude.abs();
+
+    let intensity_factor = ((current_abs_latitude - min_latitude_for_light_degrees)
+        / (max_latitude_for_light_degrees - min_latitude_for_light_degrees))
+        .clamp(0.0, 1.0);
+
+    sun_light.illuminance = lux::DIRECT_SUNLIGHT * intensity_factor;
 }
