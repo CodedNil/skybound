@@ -12,10 +12,15 @@ use bevy::{
 use std::f32::consts::FRAC_PI_2;
 
 // --- Constants ---
-const PLANET_RADIUS: f32 = 50_000.0;
+const PLANET_RADIUS: f32 = 500_000.0;
 const POLE_HEIGHT: f32 = 1_000_000.0;
-const POLE_WIDTH: f32 = 2000.0;
+const POLE_WIDTH: f32 = 10_000.0;
 const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
+const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
+
+// Sun Angle Configuration
+const MIN_SUN_ELEVATION_DEG: f32 = -15.0;
+const MAX_SUN_ELEVATION_DEG: f32 = 70.0;
 
 // --- Components ---
 #[derive(Component)]
@@ -70,9 +75,9 @@ fn setup(
             ..Atmosphere::EARTH
         },
         AtmosphereSettings {
-            aerial_view_lut_max_distance: 3.2e5,
-            scene_units_to_m: 1.0,
-            ..Default::default()
+            aerial_view_lut_size: UVec3::new(256, 256, 256),
+            aerial_view_lut_samples: 4,
+            ..default()
         },
         Exposure::SUNLIGHT,
         Bloom::NATURAL,
@@ -100,7 +105,6 @@ fn setup(
             translation: Vec3::new(0.0, -PLANET_RADIUS, 0.0),
             ..default()
         },
-        NotShadowCaster,
         Planet,
     ));
 
@@ -125,8 +129,6 @@ fn setup(
             shadows_enabled: true,
             ..default()
         },
-        Mesh3d(meshes.add(Cylinder::new(2.0, 20.0))),
-        MeshMaterial3d(materials.add(Color::srgb(1.0, 1.0, 1.0))),
         CascadeShadowConfigBuilder {
             first_cascade_far_bound: 0.3,
             maximum_distance: 3.0,
@@ -138,35 +140,32 @@ fn setup(
     ));
 
     // Aur Light
-    commands.spawn((
-        DirectionalLight {
-            illuminance: lux::DIRECT_SUNLIGHT,
-            shadows_enabled: true,
-            ..default()
-        },
-        CascadeShadowConfigBuilder {
-            first_cascade_far_bound: 0.3,
-            maximum_distance: 3.0,
-            ..default()
-        }
-        .build(),
-        Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
-    ));
+    // commands.spawn((
+    //     DirectionalLight {
+    //         illuminance: lux::DIRECT_SUNLIGHT,
+    //         shadows_enabled: true,
+    //         ..default()
+    //     },
+    //     CascadeShadowConfigBuilder {
+    //         first_cascade_far_bound: 0.3,
+    //         maximum_distance: 3.0,
+    //         ..default()
+    //     }
+    //     .build(),
+    //     Transform::from_xyz(0.0, 0.0, 0.0).looking_at(Vec3::Y, Vec3::Y),
+    // ));
 }
 
 fn update(
     mut planet_state: ResMut<PlanetState>,
-    mut camera_query: Query<
-        (&Transform, &mut WorldCoordinates),
-        (With<Camera>, Without<Planet>, Without<PoleMarker>),
-    >,
-    mut planet_query: Query<&mut Transform, With<Planet>>,
+    mut camera_query: Query<(&mut Transform, &mut WorldCoordinates), With<Camera>>,
+    mut planet_query: Query<&mut Transform, (With<Planet>, Without<Camera>)>,
     mut poles_query: Query<
         (&mut Transform, &PoleMarker),
         (With<PoleMarker>, Without<Camera>, Without<Planet>),
     >,
     mut sun_query: Query<
-        (&mut DirectionalLight, &mut Transform),
+        &mut Transform,
         (
             With<SunLight>,
             Without<Camera>,
@@ -174,18 +173,32 @@ fn update(
             Without<PoleMarker>,
         ),
     >,
+    mut gizmos: Gizmos,
 ) {
-    let (camera_transform, mut world_coords) = match camera_query.single_mut() {
+    let (mut camera_transform, mut world_coords) = match camera_query.single_mut() {
         Ok(res) => res,
         Err(_) => return,
     };
 
+    // --- Camera Snapping Logic ---
+    let mut snap_delta = Vec3::ZERO;
+    if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD
+        || camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD
+    {
+        snap_delta = Vec3::new(
+            -camera_transform.translation.x,
+            0.0,
+            -camera_transform.translation.z,
+        );
+        camera_transform.translation.x = 0.0;
+        camera_transform.translation.z = 0.0;
+    }
+
     // Roll the planet under the camera
-    let current_pos = camera_transform.translation;
     let mut planet_transform = planet_query.single_mut().unwrap();
-    if let Some(previous_pos) = planet_state.last_camera_pos {
-        let delta_pos = current_pos - previous_pos;
-        let delta_xz = delta_pos.xz();
+    if let Some(mut previous_pos) = planet_state.last_camera_pos {
+        previous_pos += snap_delta;
+        let delta_xz = camera_transform.translation.xz() - previous_pos.xz();
         if delta_xz.length_squared() > f32::EPSILON {
             let roll = Quat::from_axis_angle(
                 Vec3::new(-delta_xz.y, 0.0, delta_xz.x).normalize(),
@@ -199,7 +212,7 @@ fn update(
         -PLANET_RADIUS,
         camera_transform.translation.z,
     );
-    planet_state.last_camera_pos = Some(current_pos);
+    planet_state.last_camera_pos = Some(camera_transform.translation);
 
     // Compute camera’s latitude/longitude from the planet’s “up” vector
     let planet_up = planet_transform.rotation.mul_vec3(Vec3::Y);
@@ -208,54 +221,46 @@ fn update(
     world_coords.altitude = camera_transform.translation.y;
 
     // Snap each pole onto the sphere’s surface and orient it along the normal
-    let mut north_pole_pos = Vec3::ZERO;
-    let mut south_pole_pos = Vec3::ZERO;
     for (mut pole_tf, pole_marker) in &mut poles_query {
         let sign = if pole_marker.is_north { 1.0 } else { -1.0 };
-        let planet_center = planet_transform.translation;
         let world_normal = planet_transform
             .rotation
             .mul_vec3(Vec3::Y * sign)
             .normalize();
-
-        // World‐space position under the sphere‐center transform
-        pole_tf.translation = planet_center + world_normal * (PLANET_RADIUS + POLE_HEIGHT * 0.5);
+        pole_tf.translation =
+            planet_transform.translation + world_normal * (PLANET_RADIUS + POLE_HEIGHT * 0.5);
         pole_tf.rotation = Quat::from_rotation_arc(Vec3::Y, world_normal);
-
-        if pole_marker.is_north {
-            north_pole_pos = pole_tf.translation;
-        } else {
-            south_pole_pos = pole_tf.translation;
-        }
     }
 
-    // --- Sun Light Control Logic ---
-    let (mut sun_light, mut sun_transform) = sun_query.single_mut().unwrap();
+    // Rotate the sun light so it's coming from the closest pole
+    let mut sun_transform = sun_query.single_mut().unwrap();
 
-    // Get pole to snap light to
-    let dist_to_north = camera_transform.translation.distance(north_pole_pos);
-    let dist_to_south = camera_transform.translation.distance(south_pole_pos);
-    let target_pole_pos = if dist_to_north < dist_to_south {
-        north_pole_pos
-    } else {
-        south_pole_pos
-    };
+    let camera_up = (camera_transform.translation - planet_transform.translation).normalize();
+    let pole_sign = (world_coords.latitude >= 0.0) as u8 as f32 * 2.0 - 1.0;
+    let planet_pole_direction = planet_transform.rotation.mul_vec3(Vec3::Y) * pole_sign;
 
-    sun_transform.rotation = Transform::default()
-        .looking_at(
-            -(camera_transform.translation - target_pole_pos).normalize(),
-            Vec3::Y,
-        )
-        .rotation;
+    // Project the pole direction onto the camera's horizon to get the sun's azimuth.
+    let sun_azimuth = (planet_pole_direction - camera_up * planet_pole_direction.dot(camera_up))
+        .normalize_or((Vec3::X - camera_up * Vec3::X.dot(camera_up)).normalize());
 
-    let min_latitude_for_light_degrees = 15.0;
-    let max_latitude_for_light_degrees = 90.0;
+    // Linearly interpolate the sun's elevation based on latitude.
+    let desired_elevation_rad = (MIN_SUN_ELEVATION_DEG
+        + (MAX_SUN_ELEVATION_DEG - MIN_SUN_ELEVATION_DEG) * (world_coords.latitude.abs() / 90.0))
+        .to_radians();
 
-    let current_abs_latitude = world_coords.latitude.abs();
+    // Point the light and set its intensity.
+    sun_transform.rotation = Quat::from_rotation_arc(
+        Vec3::NEG_Z,
+        -sun_azimuth * desired_elevation_rad.cos() - camera_up * desired_elevation_rad.sin(),
+    );
 
-    let intensity_factor = ((current_abs_latitude - min_latitude_for_light_degrees)
-        / (max_latitude_for_light_degrees - min_latitude_for_light_degrees))
-        .clamp(0.0, 1.0);
-
-    sun_light.illuminance = lux::DIRECT_SUNLIGHT * intensity_factor;
+    // --- Gizmo Update ---
+    let sun_light_direction = sun_transform.forward();
+    let arrow_start = camera_transform.translation
+        + camera_transform.forward().as_vec3() * Vec3::new(10.0, 0.0, 10.0);
+    gizmos.arrow(
+        arrow_start,
+        arrow_start + sun_light_direction * 4.0,
+        bevy::color::palettes::css::ORANGE_RED,
+    );
 }

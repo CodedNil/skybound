@@ -7,7 +7,7 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, camera_controller);
+        app.add_systems(PreUpdate, camera_controller);
     }
 }
 
@@ -51,7 +51,14 @@ fn camera_controller(
         if movement.length_squared() > 0.0 {
             movement = movement.normalize();
         }
-        transform.translation += movement * controller.speed * time.delta_secs();
+        transform.translation += movement
+            * controller.speed
+            * time.delta_secs()
+            * (if keyboard_input.pressed(KeyCode::ShiftLeft) {
+                4.0
+            } else {
+                1.0
+            });
 
         // Rotation with right-click drag
         if mouse_button_input.pressed(MouseButton::Right) {
@@ -73,7 +80,7 @@ fn camera_controller(
         // Speed adjustment with scroll wheel
         for event in mouse_wheel_events.read() {
             controller.speed += event.y * 0.1 * controller.speed;
-            controller.speed = controller.speed.clamp(0.1, 1000.0);
+            controller.speed = controller.speed.clamp(0.1, 2500.0);
         }
     }
 }

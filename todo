@@ -14,8 +14,7 @@ use bluenoise texture instead of maths
 cumulonimbus clouds, huge with anvils
 
 do the world rendering:
-track latitude and longitude, latitude is basically just z, longitude grows faster the closer to the poles to simulate sphere
-renders poles as huge infinite beams going up, give them sunsets at 90 degrees
+better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
 atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
 
 aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go

@@ -63,7 +63,7 @@ fn setup(
             cull_mode: None,
             ..default()
         })),
-        Transform::from_scale(Vec3::splat(1_000_000.0)),
+        Transform::from_scale(Vec3::splat(100_000_000.0)),
         NotShadowCaster,
     ));
 }
