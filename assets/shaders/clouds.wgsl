@@ -7,11 +7,15 @@
 @group(0) @binding(2) var depthTexture: texture_depth_2d;
 
 // Raymarcher Parameters
-const MAX_STEPS: i32 = 256;
 const ALPHA_THRESHOLD: f32 = 0.9; // Max alpha to reach before stopping
-const MIN_STEP: f32 = 6.0;
-const MAX_STEP: f32 = 12.0;
-const K_STEP: f32 = 0.0001; // The fall-off of step size with distance
+
+const MAX_STEPS: i32 = 128;
+const STEP_SIZE_INSIDE: f32 = 2.0;
+const STEP_SIZE_OUTSIDE: f32 = 8.0;
+
+const STEP_DISTANCE_SCALING_START: f32 = 100.0; // Distance from camera to start scaling step size
+const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.005; // How much to scale step size by distance
+
 const LIGHT_STEPS: i32 = 2; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 16.0;
 
@@ -19,7 +23,8 @@ const LIGHT_STEP_SIZE: f32 = 16.0;
 const LIGHT_DIRECTION: vec3<f32> = vec3<f32>(0.0, 0.89, 0.45);
 const SUN_COLOR: vec3<f32> = vec3<f32>(0.99, 0.97, 0.96);
 const AMBIENT_COLOR: vec3<f32> = vec3<f32>(0.52, 0.80, 0.92);
-const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
+const FOG_START_DISTANCE: f32 = 1000.0;
+const FOG_END_DISTANCE: f32 = 5000.0;
 
 // Cloud Material Parameters
 const BACK_SCATTERING: f32 = 1.0; // Backscattering
@@ -122,7 +127,7 @@ fn densityAtCloud(pos: vec3<f32>) -> f32 {
     // Thick aur fog below 0m
     let fog_density = smoothstep(0.0, -10.0, pos.y);
     if fog_density > 0.01 {
-        let fbm_value = fbm3(pos / 5.0 - vec3(0.0, 0.1, 1.0) * globals.time, 4);
+        let fbm_value = fbm3(pos / 5.0 - vec3(0.0, 0.1, 1.0) * globals.time, 3);
         density = fbm_value * fog_density + fog_density * 0.5;
     }
 
@@ -194,7 +199,8 @@ fn lightScattering(light: vec3<f32>, angle: f32) -> vec3<f32> {
 // Raymarch through all the clouds
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
     var accumulation = vec4<f32>(0.0);
-    var t = dither * MIN_STEP;
+    var t = dither * STEP_SIZE_INSIDE;
+    var stepsOutsideCloud = 0;
 
     let sunDirection = dot(rd, LIGHT_DIRECTION);
     let sky = renderSky(rd, sunDirection);
@@ -203,12 +209,32 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
         if t >= tMax || accumulation.a >= ALPHA_THRESHOLD {
             break;
         }
-        let step = max(MIN_STEP, t * K_STEP);
 
         let pos = ro + rd * t;
         let stepDensity = densityAtCloud(pos);
 
+        // Scale step size based on distance from camera
+        var stepScaler = 1.0;
+        if t > STEP_DISTANCE_SCALING_START {
+            stepScaler = 1.0 + (t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR;
+        }
+
+        // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
         if stepDensity > 0.0 {
+            if stepsOutsideCloud != 0 {
+                // First step into the cloud;
+                stepsOutsideCloud = 0;
+                t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * stepScaler, 0.0);
+                continue;
+            }
+        } else {
+            stepsOutsideCloud += 1;
+        }
+
+        var step = STEP_SIZE_OUTSIDE * stepScaler;
+        if stepDensity > 0.0 {
+            step = STEP_SIZE_INSIDE * stepScaler;
+
             let materialHere = stepDensity * step;
             let materialTowardsSun = computeDensityTowardsSun(pos, stepDensity);
             let lightAtParticle = transmission(SUN_COLOR, materialTowardsSun);
@@ -218,13 +244,14 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
             accumulation += vec4(lightReachingCamera, materialHere);
         }
 
-        // Adjust step size based on density
-        let stepScale = mix(MAX_STEP, MIN_STEP, clamp(stepDensity * 2.0, 0.0, 1.0));
-        t += min(stepScale, step);
+        t += step;
     }
 
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-    accumulation += vec4(beer(accumulation.a * (1.0 - BASE_TRANSMISSION)) * sky, 1.0); // Add sky
+
+    // Add sky, taking into account tMax for distance fog effect
+    let sky_alpha_factor = smoothstep(FOG_START_DISTANCE, FOG_END_DISTANCE, tMax);
+    accumulation += vec4(beer(accumulation.a * (1.0 - BASE_TRANSMISSION)) * sky, sky_alpha_factor); // Add sky
 
     return clamp(accumulation, vec4<f32>(0.0), vec4<f32>(1.0));
 }

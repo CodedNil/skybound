@@ -80,13 +80,13 @@ fn setup(
 
     // Spawn the planet entity
     commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(PLANET_RADIUS).mesh().ico(76).unwrap())),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::linear_rgb(0.0, 0.0, 0.0),
-            unlit: true,
-            cull_mode: None,
-            ..default()
-        })),
+        // Mesh3d(meshes.add(Sphere::new(PLANET_RADIUS).mesh().ico(76).unwrap())),
+        // MeshMaterial3d(materials.add(StandardMaterial {
+        //     base_color: Color::linear_rgb(0.0, 0.0, 0.0),
+        //     unlit: true,
+        //     cull_mode: None,
+        //     ..default()
+        // })),
         Transform {
             rotation: Quat::from_rotation_x(-FRAC_PI_2),
             translation: Vec3::new(0.0, -PLANET_RADIUS, 0.0),
