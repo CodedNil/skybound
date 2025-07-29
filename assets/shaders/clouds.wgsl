@@ -6,18 +6,16 @@
 @group(0) @binding(1) var<uniform> globals: Globals;
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
-@group(0) @binding(4) var history_texture: texture_2d<f32>;
-@group(0) @binding(5) var<uniform> previous_view_projection: mat4x4<f32>;
 
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.9; // Max alpha to reach before stopping
 
-const MAX_STEPS: i32 = 128;
+const MAX_STEPS: i32 = 512;
 const STEP_SIZE_INSIDE: f32 = 2.0;
-const STEP_SIZE_OUTSIDE: f32 = 8.0;
+const STEP_SIZE_OUTSIDE: f32 = 12.0;
 
 const STEP_DISTANCE_SCALING_START: f32 = 100.0; // Distance from camera to start scaling step size
-const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.005; // How much to scale step size by distance
+const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.001; // How much to scale step size by distance
 
 const LIGHT_STEPS: i32 = 2; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 16.0;
@@ -290,28 +288,5 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.uv;
     let pix = in.position.xy;
 
-    // Bayer matrix to select 1/16th of pixels
-    let bayer_index = (u32(pix.x) % BAYER_LIMIT_H) * BAYER_LIMIT_H + (u32(pix.y) % BAYER_LIMIT_H);
-    let should_render = (globals.frame_count % BAYER_LIMIT) == BAYER_FILTER[bayer_index];
-
-    // Render new pixels or use history
-    if globals.frame_count == 0u || should_render {
-        return raymarch(uv, pix); // Raymarch for 1/16th of pixels
-    }
-
-    // Reconstruct world‑space pos
-    let ndc = vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 1.0, 1.0);
-    let world_pos4 = view.world_from_clip * ndc;
-
-    // Reproject to previous UV
-    let prev_clip = previous_view_projection * world_pos4;
-    let prev_ndc = prev_clip.xyz / prev_clip.w;
-    let prev_uv = vec2(prev_ndc.x * 0.5 + 0.5, 1.0 - (prev_ndc.y * 0.5 + 0.5));
-
-    if prev_clip.w <= 0.0 || prev_uv.x < 0.0 || prev_uv.x > 1.0 || prev_uv.y < 0.0 || prev_uv.y > 1.0 {
-        return raymarch(uv, pix); // Fall back to raymarching
-    }
-
-    // Sample history
-    return textureSample(history_texture, linear_sampler, prev_uv);
+    return raymarch(uv, pix);
 }

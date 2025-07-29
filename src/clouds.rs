@@ -18,14 +18,10 @@ use bevy::{
             },
             *,
         },
-        renderer::{RenderContext, RenderDevice, RenderQueue},
-        view::{
-            ExtractedView, ExtractedWindows, ViewTarget, ViewUniform, ViewUniformOffset,
-            ViewUniforms,
-        },
+        renderer::{RenderContext, RenderDevice},
+        view::{ExtractedWindows, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
 };
-use bytemuck::{Pod, Zeroable};
 
 // --- Plugin Definition ---
 pub struct CloudsPlugin;
@@ -36,16 +32,9 @@ impl Plugin for CloudsPlugin {
         };
         render_app
             .init_resource::<CloudRenderTexture>()
-            .init_resource::<HistoryTexture>()
-            .init_resource::<PreviousViewProjection>()
-            .init_resource::<CurrentViewProjection>()
             .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
             .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
-            .add_systems(Render, manage_textures.in_set(RenderSystems::Queue))
-            .add_systems(
-                Render,
-                update_view_projection.in_set(RenderSystems::Prepare),
-            );
+            .add_systems(Render, manage_textures.in_set(RenderSystems::Queue));
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
@@ -78,27 +67,9 @@ struct CloudRenderTexture {
     sampler: Option<Sampler>,
 }
 
-#[derive(Resource, Default)]
-struct HistoryTexture {
-    texture: Option<Texture>,
-    view: Option<TextureView>,
-}
-
-#[derive(Resource, Default, Clone, Copy, ShaderType, Pod, Zeroable)]
-#[repr(C)]
-struct PreviousViewProjection {
-    mat: Mat4,
-}
-
-#[derive(Resource, Default)]
-struct CurrentViewProjection {
-    mat: Mat4,
-}
-
 /// Render world system: Manages the creation and resizing of the intermediate cloud render target.
 fn manage_textures(
     mut cloud_render_texture: ResMut<CloudRenderTexture>,
-    mut history_texture: ResMut<HistoryTexture>,
     render_device: Res<RenderDevice>,
     windows: Res<ExtractedWindows>,
 ) {
@@ -143,38 +114,6 @@ fn manage_textures(
         cloud_render_texture.view = Some(view);
         cloud_render_texture.sampler = Some(sampler);
     }
-
-    // Update HistoryTexture
-    let current_history_size = history_texture.texture.as_ref().map(|t| t.size());
-    if current_history_size != Some(new_size) {
-        let texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("history_texture"),
-            size: new_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba16Float,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&TextureViewDescriptor::default());
-        history_texture.texture = Some(texture);
-        history_texture.view = Some(view);
-    }
-}
-
-fn update_view_projection(
-    mut previous: ResMut<PreviousViewProjection>,
-    mut current: ResMut<CurrentViewProjection>,
-    views: Query<&ExtractedView, With<Camera>>,
-) {
-    if let Ok(view) = views.single() {
-        previous.mat = current.mat;
-
-        let clip_from_view = view.clip_from_view;
-        let view_from_world = view.world_from_view.to_matrix().inverse();
-        current.mat = clip_from_view * view_from_world;
-    }
 }
 
 // --- Volumetric Clouds Render Pipeline (Pass 1: Renders clouds to intermediate texture) ---
@@ -200,10 +139,6 @@ impl ViewNode for VolumetricCloudsNode {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
-        let history_texture = world.resource::<HistoryTexture>();
-        let previous_view_projection = world.resource::<PreviousViewProjection>();
-        let render_device = world.resource::<RenderDevice>();
-        let render_queue = world.resource::<RenderQueue>();
 
         // Ensure the intermediate data is ready
         let (
@@ -213,7 +148,6 @@ impl ViewNode for VolumetricCloudsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
-            Some(history_view),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
@@ -221,18 +155,10 @@ impl ViewNode for VolumetricCloudsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
-            history_texture.view.as_ref(),
         )
         else {
             return Ok(());
         };
-
-        let previous_view_projection_buffer =
-            render_device.create_buffer_with_data(&BufferInitDescriptor {
-                label: Some("previous_view_projection_buffer"),
-                contents: bytemuck::cast_slice(&[*previous_view_projection]),
-                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            });
 
         // Create the bind group for the clouds shader
         let bind_group = render_context.render_device().create_bind_group(
@@ -243,8 +169,6 @@ impl ViewNode for VolumetricCloudsNode {
                 globals_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
-                history_view,
-                previous_view_projection_buffer.as_entire_binding(),
             )),
         );
 
@@ -276,26 +200,6 @@ impl ViewNode for VolumetricCloudsNode {
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
         render_pass.draw(0..3, 0..1); // Draw 3 vertices for a full-screen triangle
-
-        // Copy cloud texture to history texture
-        let mut encoder =
-            render_device.create_command_encoder(&CommandEncoderDescriptor { label: None });
-        encoder.copy_texture_to_texture(
-            TexelCopyTextureInfo {
-                texture: texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            TexelCopyTextureInfo {
-                texture: history_texture.texture.as_ref().unwrap(),
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            texture.size(),
-        );
-        render_queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }
@@ -334,8 +238,6 @@ fn setup_volumetric_clouds_pipeline(
                 uniform_buffer_sized(false, Some(GlobalsUniform::min_size())), // Global uniforms (time, etc.)
                 sampler(SamplerBindingType::Filtering),                        // Linear sampler
                 texture_depth_2d(), // Depth texture from prepass
-                texture_2d(TextureSampleType::Float { filterable: true }),
-                uniform_buffer::<PreviousViewProjection>(false),
             ),
         ),
     );
