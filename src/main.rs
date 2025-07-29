@@ -26,7 +26,7 @@ fn main() {
         })
         .add_plugins((
             DefaultPlugins,
-            // CloudsPlugin,
+            CloudsPlugin,
             CameraPlugin,
             DebugTextPlugin,
             WorldPlugin,

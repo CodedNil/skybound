@@ -3,10 +3,7 @@ use bevy::{
     anti_aliasing::taa::TemporalAntiAliasing,
     camera::Exposure,
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
-    pbr::{
-        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
-        light_consts::lux,
-    },
+    pbr::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
     prelude::*,
 };
 use std::f32::consts::FRAC_PI_2;
@@ -69,16 +66,6 @@ fn setup(
         Msaa::Off,
         TemporalAntiAliasing::default(),
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
-        Atmosphere {
-            bottom_radius: PLANET_RADIUS,
-            top_radius: PLANET_RADIUS + ATMOSPHERE_HEIGHT,
-            ..Atmosphere::EARTH
-        },
-        AtmosphereSettings {
-            aerial_view_lut_size: UVec3::new(256, 256, 256),
-            aerial_view_lut_samples: 4,
-            ..default()
-        },
         Exposure::SUNLIGHT,
         Bloom::NATURAL,
         DepthPrepass,

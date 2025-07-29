@@ -4,70 +4,40 @@
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var<uniform> globals: Globals;
-@group(0) @binding(2) var depthTexture: texture_depth_multisampled_2d;
-@group(0) @binding(3) var<storage, read> cloudsBuffer: CloudsBuffer;
+@group(0) @binding(2) var depthTexture: texture_depth_2d;
 
-struct CloudsBuffer {
-    numClouds: u32,
-    clouds: array<Cloud, 2048>,
-}
-
-struct Cloud {
-    // 16 bytes
-    pos: vec3<f32>, // Position of the cloud, 12 bytes
-    data: u32, // 4 bytes
-
-    // 16 bytes
-    scale: vec3<f32>, // x=width, y=height, z=length
-    _padding0: u32,
-}
+// Raymarcher Parameters
+const MAX_STEPS: i32 = 128;
+const INSIDE_STEP_SIZE: f32 = 1.0;
+const OUTSIDE_STEP_SIZE: f32 = 4.0;
+const STEP_OUTSIDE_RATIO: i32 = i32(ceil(INSIDE_STEP_SIZE / OUTSIDE_STEP_SIZE));
 
 // Lighting variables
-const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
+const LIGHT_DIRECTION: vec3<f32> = vec3<f32>(0.0, 0.89, 0.45);
+const SUN_LIGHT: vec3<f32> = vec3<f32>(0.99, 0.97, 0.96);
+const AMBIENT_LIGHT: vec3<f32> = vec3<f32>(0.52, 0.80, 0.92);
+const AMBIENT_INTENSITY: f32 = 0.2;
+const SUN_INTENSITY: f32 = 1.2;
 
-const SUN_DIR: vec3<f32> = vec3(0.5, 1.0, 0.5);
-const SUN_COLOR: vec3<f32> = vec3(1.0, 0.98, 0.95); // Very white sunlight
-const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.25; // Bright ambient
+// Cloud Material Parameters
+const CLOUD_DENSITY_SCALE: f32 = 0.5;
 
-// Functions to unpack data
-const FORM_MASK: u32 = 0x00000003u;      // Bits 0-1
-const FORM_SHIFT: u32 = 0u;
-fn getForm(data: u32) -> u32 {
-    return (data & FORM_MASK) >> FORM_SHIFT;
-}
+const BACK_SCATTERING: f32 = 1.0; // Backscattering
+const BACK_SCATTERING_FALLOFF: f32 = 30.0; // Backscattering falloff
+const OMNI_SCATTERING: f32 = 0.8; // Omnidirectional Scattering
+const TRANSMISSION_SCATTERING: f32 = 1.0; // Transmission Scattering
+const TRANSMISSION_FALLOFF: f32 = 2.0; // Transmission falloff
+const BASE_TRANSMISSION: f32 = 0.95; // Light that doesn't get scattered at all
 
-const DENSITY_MASK: u32 = 0x0000003Cu;    // Bits 2-5
-const DENSITY_SHIFT: u32 = 2u;
-fn getDensity(data: u32) -> f32 {
-    let raw = (data & DENSITY_MASK) >> DENSITY_SHIFT;
-    return f32(raw) / 15.0;
-}
-
-const DETAIL_MASK: u32 = 0x000003C0u;     // Bits 6-9
-const DETAIL_SHIFT: u32 = 6u;
-fn getDetail(data: u32) -> f32 {
-    let raw = (data & DETAIL_MASK) >> DETAIL_SHIFT;
-    return f32(raw) / 15.0;
-}
-
-const BRIGHTNESS_MASK: u32 = 0x00003C00u; // Bits 10-13
-const BRIGHTNESS_SHIFT: u32 = 10u;
-fn getBrightness(data: u32) -> f32 {
-    let raw = (data & BRIGHTNESS_MASK) >> BRIGHTNESS_SHIFT;
-    return f32(raw) / 15.0;
-}
-
-const COLOR_MASK: u32 = 0x0003C000u;      // Bits 14-17
-const COLOR_SHIFT: u32 = 14u;
-fn getColor(data: u32) -> u32 {
-    return (data & COLOR_MASK) >> COLOR_SHIFT;
-}
-
-const SEED_MASK: u32 = 0x00FC0000u;       // Bits 18-23
-const SEED_SHIFT: u32 = 18u;
-fn getSeed(data: u32) -> u32 {
-    return (data & SEED_MASK) >> SEED_SHIFT;
-}
+// Cloud Shape Parameters
+const CLOUD_MAP_EXTENT: f32 = 400.0;
+const CLOUD_LAYER_HEIGHTS: vec4<f32> = vec4<f32>(-15.0, 2.0, 20.0, 300.0);
+const CLOUD_LAYER_THICKNESS: f32 = 6.0; // If this is bigger than the gap between cloudLayerHeights then the clouds can overlap
+const CLOUD_UNDERHANG: f32 = 2.0; // How much the cloud layer extends below the layer height
+const CLOUD_NOISE_SCALE: f32 = 0.02;
+const CLOUD_NOISE_SPEED: vec3<f32> = vec3<f32>(0.02, 0.0, 0.0);
+const CLOUD_NOISE_OCTAVES: i32 = 1;
+const CLOUD_DENSITY_MAP_OFFSET: vec4<f32> = vec4<f32>(0.4, 0.1, 0.0, 0.0);
 
 // Simple noise function for white noise
 fn hash2(pos: vec2<f32>) -> f32 {
@@ -81,6 +51,12 @@ fn hash3i(pos: vec3<i32>) -> f32 {
     n = (n << 13) ^ n;
     n = n * (n * n * 15731 + 789221) + 1376312589;
     return -1.0 + 2.0 * f32(n & 0x0fffffff) / f32(0x0fffffff);
+}
+
+fn hash4(pos: vec4<f32>) -> f32 {
+    var p4 = fract(pos * vec4(0.1031, 0.1030, 0.0973, 0.1099));
+    p4 += dot(p4, p4.wzxy + 33.33);
+    return fract((p4.x + p4.y) * (p4.z + p4.w));
 }
 
 // Procedural blue noise approximation
@@ -130,256 +106,159 @@ fn fbm3(pos: vec3<f32>, octaves: u32) -> f32 {
     return sum / NORMS[octaves - 1u];
 }
 
-// Check density against clouds
-const COARSE_FREQ: f32 = 0.005;
-const WARP_AMP: f32 = 0.3;
-const DETAIL_FREQ: f32 = 0.04;
-const DETAIL_AMP: f32 = 0.8;
+// Sky shading
+fn renderSky(direction: vec3<f32>) -> vec3<f32> {
+    let elevation = 1.0 - dot(direction, vec3<f32>(0.0, 1.0, 0.0));
+    let centered = 1.0 - abs(1.0 - elevation);
+    let sunDirection = dot(direction, LIGHT_DIRECTION);
 
-fn densityAtCloud(pos: vec3<f32>, cloud: Cloud, dist: f32, timeOffsetA: vec3<f32>, timeOffsetB: vec3<f32>) -> f32 {
-    let form = getForm(cloud.data);
-    let seed = vec3(f32(getSeed(cloud.data)));
+    let atmosphere_color = mix(AMBIENT_LIGHT, SUN_LIGHT, sunDirection * 0.5);
+    let base = mix(pow(AMBIENT_LIGHT, vec3<f32>(4.0)), atmosphere_color, pow(clamp(elevation, 0.0, 1.0), 0.5));
+    let haze = pow(centered + 0.02, 4.0) * (sunDirection * 0.2 + 0.8);
 
-    // Ellipsoid local space
-    let dPos = pos - cloud.pos;
-    let invScale = 2.0 / cloud.scale;
-    let ellipsoidDist = length(dPos * invScale);
-    let baseDensity = clamp(1.0 - ellipsoidDist, 0.0, 1.0);
+    let sky = mix(base, SUN_LIGHT, clamp(haze, 0.0, 1.0));
+    let sun = pow(max((sunDirection - 29.0 / 30.0) * 30.0 - 0.05, 0.0), 6.0);
 
-    if baseDensity <= 0.0 {
-        return 0.0;
-    }
-
-    if form == 0u { // Cumulus
-        // Compute a very low frequency warp
-        let coarse = fbm3(dPos * COARSE_FREQ + timeOffsetA + seed * 0.3, 3u);
-        let dPosWarped = dPos + (coarse - 0.5) * WARP_AMP * cloud.scale;
-
-        // Compute the ellipsoid shape on the warped position
-        let invS = 2.5 / cloud.scale;
-        let d2 = dot(dPosWarped * invS, dPosWarped * invS);
-        var shape = 1.0 - d2;
-
-        // Bottom cutoff
-        let flatCut = smoothstep(-0.1 * cloud.scale.y, 0.05 * cloud.scale.y, dPos.y);
-        shape *= flatCut;
-
-        if shape <= 0.0 {
-            return 0.0;
-        }
-
-        // Sample puff noise
-        let detailNoise = fbm3(dPos * DETAIL_FREQ + timeOffsetB + seed * 0.7, u32(round(mix(2.0, 4.0, smoothstep(800.0, 200.0, dist))))) * DETAIL_AMP;
-
-        // Build a little “flat core” and then add noisy puffs scaled by detail & fade
-        let core = max(shape - 0.2, 0.0);
-        let puff = shape * detailNoise * getDetail(cloud.data) * smoothstep(12000.0, 1000.0, dist);
-        return clamp(core + puff, 0.0, 1.0) * baseDensity * getDensity(cloud.data);
-    } else if form == 1u { // Stratus
-        // Compute a very low frequency warp
-        let coarse = fbm3(dPos * COARSE_FREQ + timeOffsetA + seed * 0.3, 3u);
-        // Warp the sample position
-        let dPosWarped = dPos + (coarse - 0.5) * WARP_AMP * cloud.scale;
-
-        // Compute the ellipsoid shape on the warped position
-        let invS = 3.0 / cloud.scale;
-        let d2 = dot(dPosWarped * invS, dPosWarped * invS);
-        var shape = (1.0 - d2) * baseDensity;
-
-        if shape <= 0.0 {
-            return 0.0;
-        }
-
-        return shape * baseDensity * getDensity(cloud.data);
-    } else { // Cirrus
-        // Compute a very low frequency warp
-        let coarse = fbm3(dPos * vec3(0.1, 1.0, 1.0) * COARSE_FREQ + timeOffsetA + seed * 0.3, 3u);
-        // Warp the sample position
-        let dPosWarped = dPos + (coarse - 0.5) * WARP_AMP * cloud.scale;
-
-        // Compute the ellipsoid shape on the warped position
-        let invS = 2.0 / cloud.scale;
-        let d2 = dot(dPosWarped * invS, dPosWarped * invS);
-        var shape = (1.0 - d2) * baseDensity;
-
-        if shape <= 0.0 {
-            return 0.0;
-        }
-
-        return shape * baseDensity * getDensity(cloud.data);
-    }
+    return sky + vec3<f32>(sun);
 }
 
-// Returns (tNear, tFar), the intersection points
-fn ellipsoidIntersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
-    // Transform ray into the unit‐sphere space of our ellipsoid:
-    let invRadius = 2.0 / cloud.scale; // = 1.0/(scale*0.5)
-    let originLocal = (ro - cloud.pos) * invRadius;
-    let dirLocal = rd * invRadius;
+// Cloud density
+fn densityAtCloud(pos: vec3<f32>) -> f32 {
+    let clouds_type: f32 = 0.0;
+    let clouds_coverage: f32 = 1.0;
 
-    // Build the quadratic:
-    let a = dot(dirLocal, dirLocal);
-    let b = dot(originLocal, dirLocal);
-    let c = dot(originLocal, originLocal) - 1.0;
+    let altitude = pos.y;
+    var density = 0.0;
 
-    // If the ray origin is outside the sphere (c>0) and the ray is pointing away from it (b>0), there is no intersection.
-    if c > 0.0 && b > 0.0 {
-        return vec2<f32>(1.0, 0.0); // No intersection
+    // Thick aur fog below 0m
+    let fog_density = smoothstep(0.0, -10.0, pos.y);
+    if fog_density > 0.01 {
+        // Thick fog
+        let fbm_value = fbm3(pos / 5.0 - vec3(0.0, 0.1, 1.0) * globals.time, 4);
+        density = fbm_value * fog_density * 2.0;
     }
 
-    // Compute the discriminant:
-    let disc = b * b - a * c;
-    if disc <= 0.0 {
-        return vec2<f32>(1.0, 0.0); // No real roots → no intersection.
+    let low_gradient = smoothstep(-20.0, 20.0, pos.y) * smoothstep(800.0, 700.0, pos.y);
+    let mid_gradient = smoothstep(700.0, 800.0, pos.y) * smoothstep(1800.0, 1700.0, pos.y);
+    let high_gradient = smoothstep(1700.0, 1800.0, pos.y) * smoothstep(2700.0, 2500.0, pos.y);
+
+    // Cloud type blending
+    let low_type = mix(
+        // Stratus: Flat, layered profile
+        smoothstep(0.0, 200.0, altitude) * smoothstep(1500.0, 1000.0, altitude),
+        // Cumulus: Puffy, vertical development
+        smoothstep(200.0, 500.0, altitude) * smoothstep(3000.0, 2000.0, altitude) * (1.0 + 0.5 * sin(altitude * 0.002)),
+        saturate(clouds_type * 2.0)
+    );
+    // Cirrus: Thin, wispy profile
+    let high_type = smoothstep(5000.0, 6000.0, altitude) * smoothstep(12000.0, 10000.0, altitude) * 0.3;
+
+    // Generate base cloud shapes
+    if low_gradient > 0.01 {
+        let base_noise = fbm3(pos * 0.005 + vec3(0.0, globals.time * 0.02, 0.0), 4);
+        let shaped_noise = base_noise * low_type;
+        density += shaped_noise * low_gradient * clouds_coverage;
+    }
+    if mid_gradient > 0.01 {
+        let base_noise = fbm3(pos * 0.004 + vec3(0.0, globals.time * 0.02, 0.0), 4);
+        let shaped_noise = base_noise * mix(low_type, high_type, 0.5);
+        density += shaped_noise * mid_gradient * clouds_coverage;
+    }
+    if high_gradient > 0.01 {
+        let base_noise = fbm3(pos * 0.003 + vec3(0.0, globals.time * 0.02, 0.0), 4);
+        let shaped_noise = base_noise * high_type;
+        density += shaped_noise * high_gradient * clouds_coverage * 0.7; // Thinner high clouds
     }
 
-    // Solve for the two roots
-    let sqrtDisc = sqrt(disc);
-    let invA = 1.0 / a;
-    let tNear = (-b - sqrtDisc) * invA;
-    let tFar = (-b + sqrtDisc) * invA;
-    return vec2<f32>(tNear, tFar);
+    return clamp(density, 0.0, 1.0);
 }
 
-// Raymarch through all the clouds, first gathering the intersects
-const MIN_STEP: f32 = 10.0;
-const MAX_STEP: f32 = 24.0;
-const K_STEP: f32 = 0.001; // The fall-off of step size with distance
-const ALPHA_TARGET: f32 = 0.9; // Max alpha to reach before stopping
-const MAX_QUEUED: u32 = 12u; // Total number of clouds to consider ahead at a time
+// Lighting Functions
+fn computeDensityTowardsSun(currentPosition: vec3<f32>, densityHere: f32) -> f32 {
+    var densitySunwards = max(densityHere, 0.0);
+    densitySunwards += max(0.0, densityAtCloud(currentPosition + LIGHT_DIRECTION * 1.0)) * 1.0;
+    densitySunwards += max(0.0, densityAtCloud(currentPosition + LIGHT_DIRECTION * 4.0)) * 4.0;
 
-const LIGHT_STEPS: i32 = 2; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 16.0; // Adjust based on scene scale
+    return densitySunwards;
+}
 
-struct CloudIntersect {
-    idx: u32,
-    enterT: f32,
-    exitT: f32,
-};
+fn beerPowder(materialAmount: f32) -> f32 {
+    return exp(-materialAmount) - exp(-materialAmount * materialAmount);
+}
 
+fn beer(materialAmount: f32) -> f32 {
+    return exp(-materialAmount);
+}
+
+fn transmission(light: vec3<f32>, materialAmount: f32) -> vec3<f32> {
+    return beer(materialAmount * (1.0 - BASE_TRANSMISSION)) * light;
+}
+
+fn lightScattering(light: vec3<f32>, angle: f32) -> vec3<f32> {
+    var a = (angle + 1.0) * 0.5; // Angle between 0 and 1
+
+    var ratio = 0.0;
+    ratio += BACK_SCATTERING * pow(1.0 - a, BACK_SCATTERING_FALLOFF);
+    ratio += TRANSMISSION_SCATTERING * pow(a, TRANSMISSION_FALLOFF);
+    ratio = ratio * (1.0 - OMNI_SCATTERING) + OMNI_SCATTERING;
+
+    return light * ratio * (1.0 - BASE_TRANSMISSION);
+}
+
+
+// Raymarch through all the clouds
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, tMax: f32, dither: f32) -> vec4<f32> {
-    var sumCol = vec4<f32>(0.0); // Accumulated color
-    var t = dither * MIN_STEP; // Current ray distance
+    var accumulation = vec4<f32>(0.0);
+    var distFromCamera = dither * INSIDE_STEP_SIZE;
 
-    // Precomputed constants
-    let timeOffsetB = vec3(globals.time * 0.8, globals.time * -0.2, globals.time * 0.6) * 0.5;
-    let timeOffsetA = timeOffsetB * 0.02;
+    var stepsOutsideCloud = 0;
 
-    let sunDirection = normalize(SUN_DIR);
+    let sky = renderSky(rd);
 
-    var nextCloudIdx: u32 = 0u; // Next cloud index
-    var queuedCount: u32 = 0u; // Number of queued clouds
-    var queuedList: array<CloudIntersect, MAX_QUEUED>;
+    var materialTowardsCamera = 0.0;
 
-    while t < tMax && sumCol.a < ALPHA_TARGET {
-        // Remove any expired clouds (exitT ≤ t)
-        var dst: u32 = 0u;
-        for (var i: u32 = 0u; i < queuedCount; i = i + 1u) {
-            if queuedList[i].exitT > t {
-                queuedList[dst] = queuedList[i];
-                dst++;
-            }
-        }
-        queuedCount = dst;
+    for (var i = 0; i < MAX_STEPS; i += 1) {
+        let currentPosition = ro + rd * distFromCamera;
 
-        // Pull in new clouds to fill the queuedList
-        while queuedCount < MAX_QUEUED && nextCloudIdx < cloudsBuffer.numClouds {
-            let cloud = cloudsBuffer.clouds[nextCloudIdx];
-            let ts = ellipsoidIntersect(ro, rd, cloud);
-            let entry = max(ts.x, 0.0);
-            let exit = min(ts.y, tMax); // Limit exit by scene depth
-            if entry < exit {
-                queuedList[queuedCount] = CloudIntersect(nextCloudIdx, entry, exit);
-                queuedCount++;
-            }
-            nextCloudIdx++;
-        }
+        let cloudDensity = densityAtCloud(currentPosition);
 
-        // Find the next boundary > t
-        var activeCount: u32 = 0u;
-        var nextEvent: f32 = tMax;
-
-        for (var i: u32 = 0u; i < queuedCount; i = i + 1u) {
-            let entry = queuedList[i].enterT;
-            let exit = queuedList[i].exitT;
-
-            if entry <= t && t <= exit {
-                activeCount++;
-            }
-            // Set next event
-            if entry > t && entry < nextEvent {
-                nextEvent = entry;
-            }
-            if exit < nextEvent {
-                nextEvent = exit;
-            }
-        }
-
-        // If no active clouds, fast‐forward t to the nextEvent
-        if activeCount == 0u {
-            if nextEvent < tMax {
-                t = nextEvent + (dither * MIN_STEP); // Add dither so it reduces banding
+        if cloudDensity > 0.0 {
+            if stepsOutsideCloud != 0 {
+                // First step into the cloud
+                stepsOutsideCloud = 0;
+                distFromCamera = distFromCamera - OUTSIDE_STEP_SIZE + INSIDE_STEP_SIZE;
                 continue;
-            } else {
-                break; // No more clouds to ever march
             }
+            stepsOutsideCloud = 0;
+        } else {
+            stepsOutsideCloud += 1;
         }
 
-        // Raymarch until nextEvent
-        while t < nextEvent && t < tMax && sumCol.a < ALPHA_TARGET {
-            // March one step through the active clouds
-            let step = max(MIN_STEP, K_STEP * t);
-            let pos = ro + rd * t;
+        var stepSize = OUTSIDE_STEP_SIZE;
 
-            var stepDensity: f32 = 0.0;
-            var stepColor: vec3<f32> = vec3(0.0);
-            var shadowSum: f32 = 0.0;
+        if stepsOutsideCloud <= STEP_OUTSIDE_RATIO && cloudDensity > 0.0 {
+            stepSize = INSIDE_STEP_SIZE;
 
-            // Accumulate density, color, and shadow for all active clouds
-            for (var i: u32 = 0u; i < queuedCount; i = i + 1u) {
-                if queuedList[i].enterT <= t && t <= queuedList[i].exitT {
-                    let cloud = cloudsBuffer.clouds[queuedList[i].idx];
-                    let density = densityAtCloud(pos, cloud, t, timeOffsetA, timeOffsetB);
+            let materialHere = cloudDensity * stepSize;
+            materialTowardsCamera += materialHere;
 
-                    if density > 0.01 {
-                        stepDensity += density;
+            let materialTowardsSun = computeDensityTowardsSun(currentPosition, cloudDensity);
 
-                        let cloudColor = vec3(1.0) * getBrightness(cloud.data); // Placeholder: map getColor(cloud.data) to RGB
-                        stepColor += cloudColor * density;
+            let lightAtParticle = transmission(SUN_LIGHT * SUN_INTENSITY, materialTowardsSun);
 
-                        // Lightmarching for self-shadowing
-                        var lightDensity: f32 = 0.0;
-                        for (var j: i32 = 1; j <= LIGHT_STEPS; j = j + 1) {
-                            let lightOffset = pos + sunDirection * f32(j) * LIGHT_STEP_SIZE;
-                            let shadowDensity = densityAtCloud(lightOffset, cloud, t, timeOffsetA, timeOffsetB);
-                            lightDensity += shadowDensity;
-                        }
-                        shadowSum += lightDensity * LIGHT_STEP_SIZE;
-                    }
-                }
-            }
+            let angleToSun = dot(rd, LIGHT_DIRECTION);
 
-            if stepDensity > 0.0 {
-                stepColor /= stepDensity; // Normalize to get the albedo for this point.
-
-                let tau = clamp(shadowSum, 0.0, 1.0);
-                let selfShadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
-
-                // Final color with self-shadowing
-                let litColor = mix(AMBIENT_COLOR, SUN_COLOR, selfShadow) * stepColor;
-
-                let stepAlpha = clamp(stepDensity * 0.4 * step, 0.0, 1.0);
-                sumCol = sumCol + vec4<f32>(litColor * stepAlpha * (1.0 - sumCol.a), stepAlpha * (1.0 - sumCol.a));
-            }
-
-            // Adjust step size based on density
-            let step_scale = mix(MAX_STEP, MIN_STEP, clamp(stepDensity * 2.0, 0.0, 1.0));
-            t += min(step_scale, step);
+            let lightScatteringTowardsCamera = lightScattering(lightAtParticle * materialHere, angleToSun);
+            let lightReachingCamera = transmission(lightScatteringTowardsCamera, materialTowardsCamera);
+            accumulation += vec4(lightReachingCamera, 0.0);
         }
+
+        distFromCamera += stepSize;
     }
 
-    sumCol.a = sumCol.a * (1.0 / ALPHA_TARGET); // Scale the sumCol so that alpha of ALPHA_TARGET becomes 1.0
-    return clamp(sumCol, vec4<f32>(0.0), vec4<f32>(1.0));
+    accumulation += vec4(beer(materialTowardsCamera * (1.0 - BASE_TRANSMISSION)) * sky, 1.0);
+
+    return clamp(accumulation, vec4<f32>(0.0), vec4<f32>(1.0));
 }
 
 @fragment
