@@ -12,7 +12,6 @@ use std::f32::consts::FRAC_PI_2;
 const PLANET_RADIUS: f32 = 500_000.0;
 const POLE_HEIGHT: f32 = 1_000_000.0;
 const POLE_WIDTH: f32 = 10_000.0;
-const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration
@@ -160,7 +159,6 @@ fn update(
             Without<PoleMarker>,
         ),
     >,
-    mut gizmos: Gizmos,
 ) {
     let (mut camera_transform, mut world_coords) = match camera_query.single_mut() {
         Ok(res) => res,
@@ -239,15 +237,5 @@ fn update(
     sun_transform.rotation = Quat::from_rotation_arc(
         Vec3::NEG_Z,
         -sun_azimuth * desired_elevation_rad.cos() - camera_up * desired_elevation_rad.sin(),
-    );
-
-    // --- Gizmo Update ---
-    let sun_light_direction = sun_transform.forward();
-    let arrow_start = camera_transform.translation
-        + camera_transform.forward().as_vec3() * Vec3::new(10.0, 0.0, 10.0);
-    gizmos.arrow(
-        arrow_start,
-        arrow_start + sun_light_direction * 4.0,
-        bevy::color::palettes::css::ORANGE_RED,
     );
 }

@@ -1,5 +1,4 @@
 #![feature(portable_simd, default_field_values)]
-#![allow(dead_code)]
 
 use bevy::{
     pbr::{NotShadowCaster, light_consts::lux},

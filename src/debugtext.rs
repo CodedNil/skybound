@@ -11,7 +11,7 @@ pub struct DebugTextPlugin;
 
 impl Plugin for DebugTextPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(FrameTimeDiagnosticsPlugin::default())
+        app.add_plugins(FrameTimeDiagnosticsPlugin::new(3))
             .add_systems(Startup, spawn_text)
             .add_systems(Update, update)
             .init_resource::<FpsCounter>();
