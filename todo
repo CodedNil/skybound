@@ -7,18 +7,22 @@ Lightning in clouds https://www.shadertoy.com/view/WscyWB
 Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
 Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
 Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
+https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/
+
 
 use froxels with low resolution to send simple representations of lights or other data
 
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
 
 clouds:
+more samples as it nears t_max to blend into objects better
 better shapes for cumulus
 atmospherics - colour the sky and pass that through as ambient colour, distance fog so they fade out
 cloud colours, white-black and potentially also blue-purple edges
 add aur light from below with a blue tint
 render at half res then upscale
 use bluenoise texture instead of maths
+rainbows on clouds with the proper equation
 
 cumulonimbus clouds, huge with anvils
 

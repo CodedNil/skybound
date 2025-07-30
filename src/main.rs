@@ -53,6 +53,25 @@ fn setup(
         Transform::from_xyz(0.0, 4.0, 0.0),
     ));
 
+    // Sky cubes
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_length(3.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 100.0, 0.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_length(6.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 500.0, 0.0),
+    ));
+
+    // Pole down
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(3.0, 250.0, 3.0)))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, -125.0, 0.0),
+    ));
+
     // Sky
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
