@@ -1,4 +1,12 @@
-temporal reprojection
+Good example of god rays through clouds  https://www.shadertoy.com/view/ttcSD8
+Auroras and stars https://www.shadertoy.com/view/XtGGRt
+60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
+Best simple atmosphere with sunsets https://www.shadertoy.com/view/slSXRW
+Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
+Lightning in clouds https://www.shadertoy.com/view/WscyWB
+Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
+Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
+Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
 
 use froxels with low resolution to send simple representations of lights or other data
 
