@@ -4,10 +4,15 @@
 struct View {
     world_from_clip: mat4x4<f32>,
     world_position: vec3<f32>,
+    planet_rotation: vec4<f32>,
+    latitude: f32,
+    longitude: f32,
+    altitude: f32,
 };
 @group(0) @binding(1) var<uniform> globals: CloudsUniform;
 struct CloudsUniform {
     time: f32,
+    planet_radius: f32,
     sun_direction: vec3<f32>,
     sun_intensity: f32,
 }
@@ -130,21 +135,6 @@ fn fbm_3(pos: vec3<f32>, octaves: u32) -> f32 {
         freq_pos = freq_pos * M3;
     }
     return sum / NORMS[octaves - 1u];
-}
-
-// Sky shading
-fn render_sky(rd: vec3<f32>, sun_direction_dot: f32) -> vec3<f32> {
-    let elevation = 1.0 - dot(rd, vec3(0.0, 1.0, 0.0));
-    let centered = 1.0 - abs(1.0 - elevation);
-
-    let atmosphere_color = mix(AMBIENT_COLOR, SUN_COLOR, sun_direction_dot * 0.5);
-    let base = mix(pow(AMBIENT_COLOR, vec3(4.0)), atmosphere_color, pow(clamp(elevation, 0.0, 1.0), 0.5));
-    let haze = pow(centered + 0.02, 4.0) * (sun_direction_dot * 0.2 + 0.8);
-
-    let sky = mix(base, SUN_COLOR, clamp(haze, 0.0, 1.0));
-    let sun = pow(max((sun_direction_dot - 29.0 / 30.0) * 30.0 - 0.05, 0.0), 6.0);
-
-    return sky + vec3(sun);
 }
 
 // Fog turbulence and lightning calculations
@@ -308,9 +298,6 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     // Compute scattering angle (dot product between view direction and light direction)
     let scattering_angle = dot(rd, sun_dir);
 
-    // Render the sky
-    let sky = render_sky(rd, dot(rd, globals.sun_direction));
-
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
             break;
@@ -351,7 +338,6 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
 
             let step_color = cloud_sample.color;
 
-
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
             var light_step_size = LIGHT_STEP_SIZE;
@@ -389,10 +375,6 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     }
 
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-
-    // Add sky, taking into account t_max for distance fog effect
-    let sky_alpha_factor = smoothstep(FOG_START_DISTANCE, FOG_END_DISTANCE, t_max);
-    accumulation += vec4(sky * (1.0 - accumulation.a), sky_alpha_factor);
 
     return clamp(accumulation, vec4(0.0), vec4(1.0));
 }

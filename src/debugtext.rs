@@ -1,4 +1,4 @@
-use crate::world::{PLANET_RADIUS, WorldCoordinates};
+use crate::world::{CameraCoordinates, PLANET_RADIUS, WorldCoordinates};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -38,7 +38,8 @@ fn update(
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
     mut fps_state: ResMut<FpsCounter>,
-    coords_query: Query<&WorldCoordinates, With<Camera>>,
+    world_coords: Res<WorldCoordinates>,
+    camera_query: Query<(&Transform, &CameraCoordinates), With<Camera>>,
     mut display: Single<&mut Text, With<FpsCounterText>>,
 ) {
     let fps_res = diagnostics
@@ -52,9 +53,16 @@ fn update(
 
     let fps = fps_res.unwrap_or(0.0);
 
-    let (lat_deg, lon_deg, alt) = coords_query
+    let (lat_deg, lon_deg, alt) = camera_query
         .single()
-        .map(|wc| (wc.latitude, wc.longitude, wc.altitude))
+        .map(|(transform, camera_coords)| {
+            let planet_rotation = camera_coords.planet_rotation(&world_coords, transform);
+            (
+                camera_coords.latitude(planet_rotation, transform),
+                camera_coords.longitude(planet_rotation, transform),
+                camera_coords.altitude(transform),
+            )
+        })
         .unwrap_or((0.0, 0.0, 0.0));
 
     // Convert to radians then meters

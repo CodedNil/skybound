@@ -1,4 +1,4 @@
-use crate::world::SunLight;
+use crate::world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates};
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -34,8 +34,11 @@ impl Plugin for CloudsPlugin {
         };
         render_app
             .init_resource::<CloudRenderTexture>()
-            .init_resource::<CloudsGlobalUniformBuffer>()
-            .add_systems(ExtractSchedule, extract_clouds_global_uniform)
+            .init_resource::<CloudsGlobalUniforms>()
+            .add_systems(
+                ExtractSchedule,
+                (extract_clouds_global_uniform, extract_clouds_view_uniform),
+            )
             .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
             .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
             .add_systems(Render, manage_textures.in_set(RenderSystems::Queue))
@@ -78,19 +81,24 @@ impl Plugin for CloudsPlugin {
 #[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
 struct CloudsGlobalUniform {
     time: f32, // Time since startup
+    planet_radius: f32,
     sun_direction: Vec3,
     sun_intensity: f32,
 }
 
 #[derive(Resource, Default)]
-struct CloudsGlobalUniformBuffer {
-    buffer: UniformBuffer<CloudsGlobalUniform>,
+struct CloudsGlobalUniforms {
+    uniforms: UniformBuffer<CloudsGlobalUniform>,
 }
 
 #[derive(Clone, ShaderType)]
 struct CloudsViewUniform {
     world_from_clip: Mat4,
     world_position: Vec3,
+    planet_rotation: Vec4,
+    latitude: f32,
+    longitude: f32,
+    altitude: f32,
 }
 
 #[derive(Resource)]
@@ -118,9 +126,17 @@ struct CloudsViewUniformOffset {
 }
 
 #[derive(Resource, Default, ExtractResource, Clone)]
-struct ExtractedSunData {
+struct ExtractedGlobalData {
     direction: Vec3,
     intensity: f32,
+}
+
+#[derive(Resource, Default, ExtractResource, Clone)]
+struct ExtractedViewData {
+    planet_rotation: Vec4,
+    latitude: f32,
+    longitude: f32,
+    altitude: f32,
 }
 
 // --- Systems (Render World) ---
@@ -131,11 +147,44 @@ fn extract_clouds_global_uniform(
 ) {
     commands.insert_resource(**time);
     if let Ok((sun_transform, sun_light)) = sun_query.single() {
-        commands.insert_resource(ExtractedSunData {
+        commands.insert_resource(ExtractedGlobalData {
             direction: -sun_transform.forward().normalize(),
             intensity: sun_light.illuminance / lux::DIRECT_SUNLIGHT,
         });
     }
+}
+
+fn extract_clouds_view_uniform(
+    mut commands: Commands,
+    world_coords: Extract<Res<WorldCoordinates>>,
+    camera_query: Extract<Query<(&Transform, &CameraCoordinates), With<Camera>>>,
+) {
+    if let Ok((camera_transform, camera_coordinates)) = camera_query.single() {
+        let planet_rotation = camera_coordinates.planet_rotation(&world_coords, camera_transform);
+        commands.insert_resource(ExtractedViewData {
+            planet_rotation: planet_rotation.into(),
+            latitude: camera_coordinates.latitude(planet_rotation, camera_transform),
+            longitude: camera_coordinates.longitude(planet_rotation, camera_transform),
+            altitude: camera_coordinates.altitude(camera_transform),
+        });
+    }
+}
+
+fn prepare_clouds_global_uniforms(
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    mut clouds_buffer: ResMut<CloudsGlobalUniforms>,
+    time: Res<Time>,
+    data: Res<ExtractedGlobalData>,
+) {
+    let buffer = clouds_buffer.uniforms.get_mut();
+    buffer.planet_radius = PLANET_RADIUS;
+    buffer.time = time.elapsed_secs_wrapped();
+    buffer.sun_direction = data.direction;
+    buffer.sun_intensity = data.intensity;
+    clouds_buffer
+        .uniforms
+        .write_buffer(&render_device, &render_queue);
 }
 
 fn prepare_clouds_view_uniforms(
@@ -144,6 +193,7 @@ fn prepare_clouds_view_uniforms(
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
     views: Query<(Entity, &ExtractedView)>,
+    data: Res<ExtractedViewData>,
 ) {
     let view_iter = views.iter();
     let view_count = view_iter.len();
@@ -157,33 +207,17 @@ fn prepare_clouds_view_uniforms(
     for (entity, extracted_view) in &views {
         let view_from_clip = extracted_view.clip_from_view.inverse();
         let world_from_view = extracted_view.world_from_view.to_matrix();
-
-        let view_uniforms = CloudsViewUniformOffset {
+        commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 world_from_clip: world_from_view * view_from_clip,
                 world_position: extracted_view.world_from_view.translation(),
+                planet_rotation: data.planet_rotation,
+                latitude: data.latitude,
+                longitude: data.longitude,
+                altitude: data.altitude,
             }),
-        };
-
-        commands.entity(entity).insert(view_uniforms);
+        });
     }
-}
-
-fn prepare_clouds_global_uniforms(
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    mut clouds_buffer: ResMut<CloudsGlobalUniformBuffer>,
-    time: Res<Time>,
-    sun: Res<ExtractedSunData>,
-) {
-    let buffer = clouds_buffer.buffer.get_mut();
-    buffer.time = time.elapsed_secs_wrapped();
-    buffer.sun_direction = sun.direction;
-    buffer.sun_intensity = sun.intensity;
-
-    clouds_buffer
-        .buffer
-        .write_buffer(&render_device, &render_queue);
 }
 
 #[derive(Resource, Default)]
@@ -280,10 +314,7 @@ impl ViewNode for VolumetricCloudsNode {
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            world
-                .resource::<CloudsGlobalUniformBuffer>()
-                .buffer
-                .binding(),
+            world.resource::<CloudsGlobalUniforms>().uniforms.binding(),
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
