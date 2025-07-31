@@ -3,7 +3,12 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<uniform> globals: Globals;
+@group(0) @binding(1) var<uniform> globals: CloudsUniform;
+struct CloudsUniform {
+    time: f32,
+    sun_direction: vec3<f32>,
+    sun_intensity: f32,
+}
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
 
@@ -21,7 +26,6 @@ const LIGHT_STEPS: i32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 3.0;
 
 // Lighting variables
-const LIGHT_DIRECTION: vec3<f32> = vec3(0.0, 0.89, 0.45);
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.25;
 const FOG_START_DISTANCE: f32 = 1000.0;
@@ -50,7 +54,7 @@ const FOG_TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 const FOG_FLASH_FREQUENCY: f32 = 0.1; // Chance of a flash per second per cell
 const FOG_FLASH_GRID: f32 = 1000.0; // Grid cell size
 const FOG_FLASH_POINTS: i32 = 4; // How many points per cell
-const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 10.0;
+const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 20.0;
 const FOG_FLASH_SCALE: f32 = 0.01;
 const FOG_FLASH_DURATION: f32 = 4.0; // Seconds
 const FOG_FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
@@ -121,16 +125,16 @@ fn fbm_3(pos: vec3<f32>, octaves: u32) -> f32 {
 }
 
 // Sky shading
-fn render_sky(rd: vec3<f32>, sun_direction: f32) -> vec3<f32> {
+fn render_sky(rd: vec3<f32>, sun_direction_dot: f32) -> vec3<f32> {
     let elevation = 1.0 - dot(rd, vec3(0.0, 1.0, 0.0));
     let centered = 1.0 - abs(1.0 - elevation);
 
-    let atmosphere_color = mix(AMBIENT_COLOR, SUN_COLOR, sun_direction * 0.5);
+    let atmosphere_color = mix(AMBIENT_COLOR, SUN_COLOR, sun_direction_dot * 0.5);
     let base = mix(pow(AMBIENT_COLOR, vec3(4.0)), atmosphere_color, pow(clamp(elevation, 0.0, 1.0), 0.5));
-    let haze = pow(centered + 0.02, 4.0) * (sun_direction * 0.2 + 0.8);
+    let haze = pow(centered + 0.02, 4.0) * (sun_direction_dot * 0.2 + 0.8);
 
     let sky = mix(base, SUN_COLOR, clamp(haze, 0.0, 1.0));
-    let sun = pow(max((sun_direction - 29.0 / 30.0) * 30.0 - 0.05, 0.0), 6.0);
+    let sun = pow(max((sun_direction_dot - 29.0 / 30.0) * 30.0 - 0.05, 0.0), 6.0);
 
     return sky + vec3(sun);
 }
@@ -154,36 +158,37 @@ fn fog_compute_turbulence(initial_pos: vec2<f32>) -> vec2<f32> {
 // Voronoi-style closest point calculation for fog
 fn fog_flash_emission(pos: vec3<f32>) -> vec3<f32> {
     let cell = floor(pos.xz / FOG_FLASH_GRID);
+    let t_block = floor(globals.time / FOG_FLASH_DURATION);
+    let in_dur = (globals.time - t_block * FOG_FLASH_DURATION) < FOG_FLASH_DURATION;
     var emission = vec3(0.0);
+
+    if (!in_dur) { return emission; }
+
+    let flicker_t = floor(globals.time * FOG_FLASH_FLICKER_SPEED);
 
     for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
         let nbr = cell + vec2<f32>(f32(x), f32(y));
-        let seed = dot(nbr, vec2(127.1, 311.7));
-        let t_block = floor(globals.time / FOG_FLASH_DURATION);
-        let in_dur = (globals.time - t_block * FOG_FLASH_DURATION) < FOG_FLASH_DURATION;
-        let flash_seed = seed + t_block;
+        let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
 
-        // Single per-cell flicker trigger
-        if (in_dur && hash_12(flash_seed + floor(globals.time * FOG_FLASH_FLICKER_SPEED)).x > 0.5
-                && hash_12(flash_seed).x <= FOG_FLASH_FREQUENCY) {
+        // Per-neighbour flicker trigger
+        if (hash_12(seed + flicker_t).x > 0.5 && hash_12(seed).x <= FOG_FLASH_FREQUENCY) {
+
             for (var k = 0; k < FOG_FLASH_POINTS; k++) {
                 let off_seed = seed + f32(k) * 17.0;
-                let base_hash = hash_12(off_seed);
-                let phase = globals.time * (FOG_FLASH_FLICKER_SPEED * 0.5) + 6.2831 * base_hash.x;
-                let offset = base_hash * 0.5 + 0.5 * sin(phase);
+                let h = hash_12(off_seed);
+                if (h.y <= 0.3) { continue; }
 
+                let phase = globals.time * (FOG_FLASH_FLICKER_SPEED * 0.5) + 6.2831 * h.x;
+                let offset = h * 0.5 + 0.5 * sin(phase);
                 let gp = (nbr + offset) * FOG_FLASH_GRID;
-                let pt = vec3(gp.x, -100.0, gp.y);
-                let d = length(pos - pt);
-
-                // Per-point flicker mask
-                if (hash_12(off_seed + floor(globals.time * FOG_FLASH_FLICKER_SPEED)).y > 0.3) {
-                    emission += exp(-d * FOG_FLASH_SCALE) * FOG_FLASH_COLOR;
-                }
+                // Smooth 2D fall-off
+                let d = distance(pos.xz, gp);
+                emission += exp(-d * FOG_FLASH_SCALE) * FOG_FLASH_COLOR;
             }
         }
     }}
+
     return emission;
 }
 
@@ -193,7 +198,7 @@ struct CloudSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_cloud(pos: vec3<f32>) -> CloudSample {
+fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     var sample: CloudSample;
     let altitude = pos.y;
 
@@ -204,18 +209,20 @@ fn sample_cloud(pos: vec3<f32>) -> CloudSample {
     if fog_density > 0.01 && pos.y > -250.0 {
         // Use turbulent position for density
         let turb_pos = fog_compute_turbulence(pos.xz * 0.05);
-        let fbm_value = fbm_3(vec3(turb_pos.x, pos.y * 0.05, turb_pos.y), 4);
+        let fbm_octaves = u32(round(mix(2.0, 4.0, smoothstep(1000.0, 0.0, dist))));
+        let fbm_value = fbm_3(vec3(turb_pos.x, pos.y * 0.05, turb_pos.y), fbm_octaves);
         fog_contribution = pow(fbm_value, 2.0) * fog_density + smoothstep(-50.0, -200.0, altitude);
 
         // Compute fog color based on turbulent flow
         fog_color = mix(FOG_COLOR_A, FOG_COLOR_B, fbm_value);
+        sample.emission += fog_contribution * fog_color * 0.05;
 
         // Apply artificial shadowing: darken towards black as altitude decreases
-        let shadow_factor = 1.0 - smoothstep(0.0, -50.0, altitude);
+        let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
         fog_color = mix(fog_color * 0.1, fog_color, shadow_factor);
 
         // Compute lightning emission using Voronoi grid
-        sample.emission = fog_flash_emission(pos) * fog_contribution;
+        sample.emission = fog_flash_emission(pos) * smoothstep(-10.0, -60.0, altitude) * fog_contribution;
     }
 
     // Low clouds starting at y=200
@@ -284,8 +291,9 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     var t = dither * STEP_SIZE_INSIDE;
     var steps_outside_cloud = 0;
 
-    let sun_direction = dot(rd, LIGHT_DIRECTION);
-    let sky = render_sky(rd, sun_direction);
+    let light_dir = globals.sun_direction;
+    let view_sun_dot = dot(rd, light_dir);
+    let sky = render_sky(rd, view_sun_dot);
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
@@ -293,13 +301,20 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
         }
 
         let pos = ro + rd * t;
-        let cloud_sample = sample_cloud(pos);
+        let cloud_sample = sample_cloud(pos, t);
         let step_density = cloud_sample.density;
 
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
         if t > STEP_DISTANCE_SCALING_START {
             step_scaler = 1.0 + (t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR;
+        }
+        // Reduce scaling when close to surfaces
+        let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
+        let distance_left = t_max - t;
+        if (distance_left < close_threshold) {
+            let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
+            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
         }
 
         // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
@@ -325,8 +340,8 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
             var density_sunwards = max(step_density, 0.0);
             var light_step_size = LIGHT_STEP_SIZE;
             for (var j: i32 = 1; j <= LIGHT_STEPS; j += 1) {
-                let light_offset = pos + LIGHT_DIRECTION * f32(j) * light_step_size;
-                density_sunwards += sample_cloud(light_offset).density * light_step_size;
+                let light_offset = pos + light_dir * f32(j) * light_step_size;
+                density_sunwards += sample_cloud(light_offset, t).density * light_step_size;
                 if density_sunwards >= 0.95 {
                     break;
                 }
@@ -336,7 +351,7 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
             let self_shadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
 
             // Final color with self-shadowing
-            let lit_color = mix(AMBIENT_COLOR, SUN_COLOR, self_shadow) * step_color + cloud_sample.emission;
+            let lit_color = mix(AMBIENT_COLOR, SUN_COLOR * globals.sun_intensity, self_shadow) * step_color + cloud_sample.emission;
 
             let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
             accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));

@@ -9,7 +9,7 @@ use bevy::{
 use std::f32::consts::FRAC_PI_2;
 
 // --- Constants ---
-const PLANET_RADIUS: f32 = 500_000.0;
+pub const PLANET_RADIUS: f32 = 500_000.0;
 const POLE_HEIGHT: f32 = 1_000_000.0;
 const POLE_WIDTH: f32 = 10_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
@@ -35,7 +35,7 @@ struct PoleMarker {
 }
 
 #[derive(Component)]
-struct SunLight;
+pub struct SunLight;
 
 #[derive(Resource, Default)]
 struct PlanetState {
@@ -79,13 +79,6 @@ fn setup(
 
     // Spawn the planet entity
     commands.spawn((
-        // Mesh3d(meshes.add(Sphere::new(PLANET_RADIUS).mesh().ico(76).unwrap())),
-        // MeshMaterial3d(materials.add(StandardMaterial {
-        //     base_color: Color::linear_rgb(0.0, 0.0, 0.0),
-        //     unlit: true,
-        //     cull_mode: None,
-        //     ..default()
-        // })),
         Transform {
             rotation: Quat::from_rotation_x(-FRAC_PI_2),
             translation: Vec3::new(0.0, -PLANET_RADIUS, 0.0),
@@ -151,7 +144,7 @@ fn update(
         (With<PoleMarker>, Without<Camera>, Without<Planet>),
     >,
     mut sun_query: Query<
-        &mut Transform,
+        (&mut Transform, &mut DirectionalLight),
         (
             With<SunLight>,
             Without<Camera>,
@@ -200,10 +193,17 @@ fn update(
     planet_state.last_camera_pos = Some(camera_transform.translation);
 
     // Compute camera’s latitude/longitude from the planet’s “up” vector
-    let planet_up = planet_transform.rotation.mul_vec3(Vec3::Y);
-    world_coords.latitude = planet_up.y.clamp(-1.0, 1.0).asin().to_degrees();
-    world_coords.longitude = planet_up.z.atan2(planet_up.x).to_degrees();
-    world_coords.altitude = camera_transform.translation.y;
+    let v = Vec3::new(0.0, camera_transform.translation.y + PLANET_RADIUS, 0.0);
+    let v_local = planet_transform.rotation.conjugate().mul_vec3(v);
+    let r = v_local.length();
+    world_coords.latitude = (v_local.y / r).clamp(-1.0, 1.0).asin().to_degrees();
+    // Handle pole case where x and z are near zero to avoid undefined atan2
+    world_coords.longitude = if v_local.x.abs() < f32::EPSILON && v_local.z.abs() < f32::EPSILON {
+        0.0
+    } else {
+        v_local.x.atan2(v_local.z).to_degrees()
+    };
+    world_coords.altitude = r - PLANET_RADIUS;
 
     // Snap each pole onto the sphere’s surface and orient it along the normal
     for (mut pole_tf, pole_marker) in &mut poles_query {
@@ -218,8 +218,9 @@ fn update(
     }
 
     // Rotate the sun light so it's coming from the closest pole
-    let mut sun_transform = sun_query.single_mut().unwrap();
+    let (mut sun_transform, mut sun_light) = sun_query.single_mut().unwrap();
 
+    let latitude_abs = (world_coords.latitude.abs() / 90.0).clamp(0.0, 1.0);
     let camera_up = (camera_transform.translation - planet_transform.translation).normalize();
     let pole_sign = (world_coords.latitude >= 0.0) as u8 as f32 * 2.0 - 1.0;
     let planet_pole_direction = planet_transform.rotation.mul_vec3(Vec3::Y) * pole_sign;
@@ -238,4 +239,5 @@ fn update(
         Vec3::NEG_Z,
         -sun_azimuth * desired_elevation_rad.cos() - camera_up * desired_elevation_rad.sin(),
     );
+    sun_light.illuminance = lux::DIRECT_SUNLIGHT * latitude_abs;
 }

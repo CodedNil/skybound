@@ -3,7 +3,6 @@ Auroras and stars https://www.shadertoy.com/view/XtGGRt
 60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/slSXRW
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
-Lightning in clouds https://www.shadertoy.com/view/WscyWB
 Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
 Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
 Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
@@ -15,7 +14,6 @@ use froxels with low resolution to send simple representations of lights or othe
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
 
 clouds:
-more samples as it nears t_max to blend into objects better
 better shapes for cumulus
 atmospherics - colour the sky and pass that through as ambient colour, distance fog so they fade out
 cloud colours, white-black and potentially also blue-purple edges

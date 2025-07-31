@@ -79,8 +79,8 @@ fn camera_controller(
 
         // Speed adjustment with scroll wheel
         for event in mouse_wheel_events.read() {
-            controller.speed += event.y * 0.1 * controller.speed;
-            controller.speed = controller.speed.clamp(0.1, 2500.0);
+            controller.speed += event.y * 0.3 * controller.speed;
+            controller.speed = controller.speed.clamp(0.1, 5000.0);
         }
     }
 }

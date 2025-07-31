@@ -14,7 +14,7 @@ mod debugtext;
 use crate::debugtext::DebugTextPlugin;
 mod camera;
 use crate::camera::CameraPlugin;
-mod world;
+pub mod world;
 use crate::world::WorldPlugin;
 
 fn main() {
@@ -70,6 +70,18 @@ fn setup(
         Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(3.0, 250.0, 3.0)))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, -125.0, 0.0),
+    ));
+
+    // Poles up
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(5.0, 1000.0, 5.0)))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(500.0, 500.0, 0.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(5.0, 1000.0, 5.0)))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(-500.0, 500.0, 0.0),
     ));
 
     // Sky

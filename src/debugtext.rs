@@ -1,4 +1,4 @@
-use crate::world::WorldCoordinates;
+use crate::world::{PLANET_RADIUS, WorldCoordinates};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -51,15 +51,29 @@ fn update(
     }
 
     let fps = fps_res.unwrap_or(0.0);
-    let (lat, lon, alt) = if let Ok(wc) = coords_query.single() {
-        (wc.latitude, wc.longitude, wc.altitude)
-    } else {
-        (0.0, 0.0, 0.0)
-    };
+
+    let (lat_deg, lon_deg, alt) = coords_query
+        .single()
+        .map(|wc| (wc.latitude, wc.longitude, wc.altitude))
+        .unwrap_or((0.0, 0.0, 0.0));
+
+    // Convert to radians then meters
+    let lat_rad = lat_deg.to_radians();
+    let lon_rad = lon_deg.to_radians();
+    let lat_m = PLANET_RADIUS * lat_rad;
+    let lon_m = PLANET_RADIUS * lon_rad * lat_rad.cos();
 
     display.0 = format!(
-        "FPS: {:.0}\nLatitude: {:+.2}\nLongitude: {:+.2}\nAltitude: {:+.2}m",
-        fps, lat, lon, alt
+        "FPS:  {fps:.0}\n\
+         Lat:  {lat_deg:+.2}° ({lat_m:+.0} m)\n\
+         Lon:  {lon_deg:+.2}° ({lon_m:+.0} m)\n\
+         Alt:  {alt:+.2} m",
+        fps = fps,
+        lat_deg = lat_deg,
+        lat_m = lat_m,
+        lon_deg = lon_deg,
+        lon_m = lon_m,
+        alt = alt,
     );
 }
 

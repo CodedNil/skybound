@@ -1,3 +1,4 @@
+use crate::world::SunLight;
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -5,10 +6,11 @@ use bevy::{
         prepass::ViewPrepassTextures,
     },
     ecs::query::QueryItem,
+    pbr::light_consts::lux,
     prelude::*,
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
-        globals::{GlobalsBuffer, GlobalsUniform},
+        Extract, Render, RenderApp, RenderStartup, RenderSystems,
+        extract_resource::ExtractResource,
         render_graph::{
             NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
@@ -18,7 +20,7 @@ use bevy::{
             },
             *,
         },
-        renderer::{RenderContext, RenderDevice},
+        renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ExtractedWindows, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
 };
@@ -32,9 +34,15 @@ impl Plugin for CloudsPlugin {
         };
         render_app
             .init_resource::<CloudRenderTexture>()
+            .init_resource::<CloudsUniformBuffer>()
+            .add_systems(ExtractSchedule, extract_clouds_uniform)
             .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
             .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
-            .add_systems(Render, manage_textures.in_set(RenderSystems::Queue));
+            .add_systems(Render, manage_textures.in_set(RenderSystems::Queue))
+            .add_systems(
+                Render,
+                prepare_clouds_buffer.in_set(RenderSystems::PrepareResources),
+            );
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<VolumetricCloudsNode>>(
@@ -45,9 +53,7 @@ impl Plugin for CloudsPlugin {
                 Core3d,
                 VolumetricCloudsCompositeLabel,
             )
-            // Clouds are rendered after the main 3D pass
             .add_render_graph_edges(Core3d, (Node3d::EndMainPass, VolumetricCloudsLabel))
-            // Compositing happens after clouds are rendered, before bloom
             .add_render_graph_edges(
                 Core3d,
                 (
@@ -59,7 +65,55 @@ impl Plugin for CloudsPlugin {
     }
 }
 
+// --- Uniform Definition ---
+#[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
+struct CloudsUniform {
+    time: f32, // Time since startup
+    sun_direction: Vec3,
+    sun_intensity: f32,
+}
+
+#[derive(Resource, Default)]
+struct CloudsUniformBuffer {
+    buffer: UniformBuffer<CloudsUniform>,
+}
+
+#[derive(Resource, Default, ExtractResource, Clone)]
+struct ExtractedSunData {
+    direction: Vec3,
+    intensity: f32,
+}
+
 // --- Systems (Render World) ---
+fn extract_clouds_uniform(
+    mut commands: Commands,
+    time: Extract<Res<Time>>,
+    sun_query: Extract<Query<(&Transform, &DirectionalLight), With<SunLight>>>,
+) {
+    commands.insert_resource(**time);
+    if let Ok((sun_transform, sun_light)) = sun_query.single() {
+        commands.insert_resource(ExtractedSunData {
+            direction: -sun_transform.forward().normalize(),
+            intensity: sun_light.illuminance / lux::DIRECT_SUNLIGHT,
+        });
+    }
+}
+
+fn prepare_clouds_buffer(
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    mut clouds_buffer: ResMut<CloudsUniformBuffer>,
+    sun: Res<ExtractedSunData>,
+) {
+    let buffer = clouds_buffer.buffer.get_mut();
+    buffer.sun_direction = sun.direction;
+    buffer.sun_intensity = sun.intensity;
+
+    clouds_buffer
+        .buffer
+        .write_buffer(&render_device, &render_queue);
+}
+
 #[derive(Resource, Default)]
 struct CloudRenderTexture {
     texture: Option<Texture>,
@@ -144,14 +198,14 @@ impl ViewNode for VolumetricCloudsNode {
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(globals_binding),
+            Some(uniforms_binding),
             Some(depth_view),
             Some(texture),
             Some(view),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
-            world.resource::<GlobalsBuffer>().buffer.binding(),
+            world.resource::<CloudsUniformBuffer>().buffer.binding(),
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
@@ -166,7 +220,7 @@ impl ViewNode for VolumetricCloudsNode {
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
                 view_binding.clone(),
-                globals_binding.clone(),
+                uniforms_binding,
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
             )),
@@ -235,9 +289,9 @@ fn setup_volumetric_clouds_pipeline(
             ShaderStages::FRAGMENT,
             (
                 uniform_buffer::<ViewUniform>(true), // View uniforms (camera projection, etc.)
-                uniform_buffer_sized(false, Some(GlobalsUniform::min_size())), // Global uniforms (time, etc.)
-                sampler(SamplerBindingType::Filtering),                        // Linear sampler
-                texture_depth_2d(), // Depth texture from prepass
+                uniform_buffer_sized(false, Some(CloudsUniform::min_size())),
+                sampler(SamplerBindingType::Filtering), // Linear sampler
+                texture_depth_2d(),                     // Depth texture from prepass
             ),
         ),
     );
