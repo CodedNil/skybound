@@ -36,9 +36,9 @@ const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.5;
 const AMBIENT_AUR_COLOR: vec3<f32> = AUR_COLOR * 0.2;
 
 const FOG_START_DISTANCE: f32 = 1000.0;
-const FOG_END_DISTANCE: f32 = 5000.0;
+const FOG_END_DISTANCE: f32 = 10000.0;
 
-const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
+const SHADOW_EXTINCTION: f32 = 2.0; // Higher = deeper core shadows
 
 // Cloud Material Parameters
 const BACK_SCATTERING: f32 = 1.0; // Backscattering
@@ -59,8 +59,8 @@ const FOG_TURB_FREQ: f32 = 0.4; // Initial turbulence frequency
 const FOG_TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 
 // Fog lightning parameters
-const FOG_FLASH_FREQUENCY: f32 = 0.1; // Chance of a flash per second per cell
-const FOG_FLASH_GRID: f32 = 1000.0; // Grid cell size
+const FOG_FLASH_FREQUENCY: f32 = 0.05; // Chance of a flash per second per cell
+const FOG_FLASH_GRID: f32 = 2000.0; // Grid cell size
 const FOG_FLASH_POINTS: i32 = 4; // How many points per cell
 const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 20.0;
 const FOG_FLASH_SCALE: f32 = 0.01;
@@ -216,7 +216,7 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     var fog_color = vec3(1.0);
     if fog_density > 0.01 && pos.y > -250.0 {
         // Use turbulent position for density
-        let turb_pos = fog_compute_turbulence(pos.xz * 0.05);
+        let turb_pos = fog_compute_turbulence(pos.xz * 0.01);
         let fbm_octaves = u32(round(mix(2.0, 4.0, smoothstep(1000.0, 0.0, dist))));
         let fbm_value = fbm_3(vec3(turb_pos.x, pos.y * 0.05, turb_pos.y), fbm_octaves);
         fog_contribution = pow(fbm_value, 2.0) * fog_density + smoothstep(-50.0, -200.0, altitude);
@@ -299,13 +299,16 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     var t = dither * STEP_SIZE_INSIDE;
     var steps_outside_cloud = 0;
 
-    // Render the sky
-    let sky = render_sky(rd, dot(rd, globals.sun_direction));
-
     // Get sun direction and intensity, mix between aur light (straight up) and sun
     let sun_dot = globals.sun_direction.y;
     let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
     let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
+
+    // Compute scattering angle (dot product between view direction and light direction)
+    let scattering_angle = dot(rd, sun_dir);
+
+    // Render the sky
+    let sky = render_sky(rd, dot(rd, globals.sun_direction));
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
@@ -359,16 +362,23 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
                 }
             }
 
-            let tau = clamp(density_sunwards, 0.0, 1.0);
-            let self_shadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
+            // Apply self shadowing
+            let tau = clamp(density_sunwards, 0.0, 1.0) * SHADOW_EXTINCTION;
 
             // Calculate sun and ambient colors based on sun intensity, and aur based on height
             let height_factor = max(smoothstep(5000.0, 100.0, pos.y), 0.15);
             let sun_color = mix(AUR_COLOR * height_factor, SUN_COLOR * globals.sun_intensity, sun_t);
             let ambient_color = mix(AMBIENT_AUR_COLOR * height_factor, AMBIENT_COLOR * globals.sun_intensity, sun_t);
 
-            // Final color with self-shadowing
-            let lit_color = mix(ambient_color, sun_color, self_shadow) * step_color + cloud_sample.emission;
+            // Apply transmission to sun and ambient light
+            let transmitted_sun = transmission(sun_color, tau);
+            let transmitted_ambient = transmission(ambient_color, tau * 0.5); // Ambient attenuated less
+
+            // Apply light scattering to sun light based on angle
+            let scattered_sun = light_scattering(sun_color, scattering_angle);
+
+            // Combine transmitted and scattered light, weighted by density
+            let lit_color = ((transmitted_sun + scattered_sun) * step_density + transmitted_ambient) * step_color + cloud_sample.emission;
 
             let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
             accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
