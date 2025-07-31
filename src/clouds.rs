@@ -21,7 +21,7 @@ use bevy::{
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
-        view::{ExtractedWindows, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
+        view::{ExtractedView, ExtractedWindows, ViewTarget},
     },
 };
 
@@ -34,14 +34,17 @@ impl Plugin for CloudsPlugin {
         };
         render_app
             .init_resource::<CloudRenderTexture>()
-            .init_resource::<CloudsUniformBuffer>()
-            .add_systems(ExtractSchedule, extract_clouds_uniform)
+            .init_resource::<CloudsGlobalUniformBuffer>()
+            .add_systems(ExtractSchedule, extract_clouds_global_uniform)
             .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
             .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
             .add_systems(Render, manage_textures.in_set(RenderSystems::Queue))
             .add_systems(
                 Render,
-                prepare_clouds_buffer.in_set(RenderSystems::PrepareResources),
+                (
+                    prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
+                    prepare_clouds_global_uniforms.in_set(RenderSystems::PrepareResources),
+                ),
             );
 
         render_app
@@ -63,19 +66,55 @@ impl Plugin for CloudsPlugin {
                 ),
             );
     }
+
+    fn finish(&self, app: &mut App) {
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app.init_resource::<CloudsViewUniforms>();
+        }
+    }
 }
 
 // --- Uniform Definition ---
 #[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
-struct CloudsUniform {
+struct CloudsGlobalUniform {
     time: f32, // Time since startup
     sun_direction: Vec3,
     sun_intensity: f32,
 }
 
 #[derive(Resource, Default)]
-struct CloudsUniformBuffer {
-    buffer: UniformBuffer<CloudsUniform>,
+struct CloudsGlobalUniformBuffer {
+    buffer: UniformBuffer<CloudsGlobalUniform>,
+}
+
+#[derive(Clone, ShaderType)]
+struct CloudsViewUniform {
+    world_from_clip: Mat4,
+    world_position: Vec3,
+}
+
+#[derive(Resource)]
+struct CloudsViewUniforms {
+    uniforms: DynamicUniformBuffer<CloudsViewUniform>,
+}
+
+impl FromWorld for CloudsViewUniforms {
+    fn from_world(world: &mut World) -> Self {
+        let mut uniforms = DynamicUniformBuffer::default();
+        uniforms.set_label(Some("view_uniforms_buffer"));
+
+        let render_device = world.resource::<RenderDevice>();
+        if render_device.limits().max_storage_buffers_per_shader_stage > 0 {
+            uniforms.add_usages(BufferUsages::STORAGE);
+        }
+
+        Self { uniforms }
+    }
+}
+
+#[derive(Component)]
+struct CloudsViewUniformOffset {
+    offset: u32,
 }
 
 #[derive(Resource, Default, ExtractResource, Clone)]
@@ -85,7 +124,7 @@ struct ExtractedSunData {
 }
 
 // --- Systems (Render World) ---
-fn extract_clouds_uniform(
+fn extract_clouds_global_uniform(
     mut commands: Commands,
     time: Extract<Res<Time>>,
     sun_query: Extract<Query<(&Transform, &DirectionalLight), With<SunLight>>>,
@@ -99,13 +138,46 @@ fn extract_clouds_uniform(
     }
 }
 
-fn prepare_clouds_buffer(
+fn prepare_clouds_view_uniforms(
+    mut commands: Commands,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    mut clouds_buffer: ResMut<CloudsUniformBuffer>,
+    mut view_uniforms: ResMut<CloudsViewUniforms>,
+    views: Query<(Entity, &ExtractedView)>,
+) {
+    let view_iter = views.iter();
+    let view_count = view_iter.len();
+    let Some(mut writer) =
+        view_uniforms
+            .uniforms
+            .get_writer(view_count, &render_device, &render_queue)
+    else {
+        return;
+    };
+    for (entity, extracted_view) in &views {
+        let view_from_clip = extracted_view.clip_from_view.inverse();
+        let world_from_view = extracted_view.world_from_view.to_matrix();
+
+        let view_uniforms = CloudsViewUniformOffset {
+            offset: writer.write(&CloudsViewUniform {
+                world_from_clip: world_from_view * view_from_clip,
+                world_position: extracted_view.world_from_view.translation(),
+            }),
+        };
+
+        commands.entity(entity).insert(view_uniforms);
+    }
+}
+
+fn prepare_clouds_global_uniforms(
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    mut clouds_buffer: ResMut<CloudsGlobalUniformBuffer>,
+    time: Res<Time>,
     sun: Res<ExtractedSunData>,
 ) {
     let buffer = clouds_buffer.buffer.get_mut();
+    buffer.time = time.elapsed_secs_wrapped();
     buffer.sun_direction = sun.direction;
     buffer.sun_intensity = sun.intensity;
 
@@ -181,7 +253,10 @@ struct VolumetricCloudsLabel;
 struct VolumetricCloudsNode;
 
 impl ViewNode for VolumetricCloudsNode {
-    type ViewQuery = (&'static ViewUniformOffset, &'static ViewPrepassTextures);
+    type ViewQuery = (
+        &'static CloudsViewUniformOffset,
+        &'static ViewPrepassTextures,
+    );
 
     fn run(
         &self,
@@ -204,8 +279,11 @@ impl ViewNode for VolumetricCloudsNode {
             Some(view),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
-            world.resource::<ViewUniforms>().uniforms.binding(),
-            world.resource::<CloudsUniformBuffer>().buffer.binding(),
+            world.resource::<CloudsViewUniforms>().uniforms.binding(),
+            world
+                .resource::<CloudsGlobalUniformBuffer>()
+                .buffer
+                .binding(),
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
@@ -288,8 +366,8 @@ fn setup_volumetric_clouds_pipeline(
         &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<ViewUniform>(true), // View uniforms (camera projection, etc.)
-                uniform_buffer_sized(false, Some(CloudsUniform::min_size())),
+                uniform_buffer::<CloudsViewUniform>(true), // View uniforms (camera projection, etc.)
+                uniform_buffer_sized(false, Some(CloudsGlobalUniform::min_size())),
                 sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_depth_2d(),                     // Depth texture from prepass
             ),

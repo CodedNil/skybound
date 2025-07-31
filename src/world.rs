@@ -15,7 +15,7 @@ const POLE_WIDTH: f32 = 10_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration
-const MIN_SUN_ELEVATION_DEG: f32 = -15.0;
+const MIN_SUN_ELEVATION_DEG: f32 = -90.0;
 const MAX_SUN_ELEVATION_DEG: f32 = 70.0;
 
 // --- Components ---

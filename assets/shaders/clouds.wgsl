@@ -1,8 +1,10 @@
-#import bevy_render::view::View
-#import bevy_render::globals::Globals
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 
 @group(0) @binding(0) var<uniform> view: View;
+struct View {
+    world_from_clip: mat4x4<f32>,
+    world_position: vec3<f32>,
+};
 @group(0) @binding(1) var<uniform> globals: CloudsUniform;
 struct CloudsUniform {
     time: f32,
@@ -27,9 +29,15 @@ const LIGHT_STEP_SIZE: f32 = 3.0;
 
 // Lighting variables
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
-const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.25;
+const MIN_SUN_DOT: f32 = sin(radians(-30.0)); // How far below the horizon before the switching to aur light
+const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
+const AUR_COLOR: vec3<f32> = vec3(0.2, 0.4, 1.0) * 0.15;
+const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.5;
+const AMBIENT_AUR_COLOR: vec3<f32> = AUR_COLOR * 0.2;
+
 const FOG_START_DISTANCE: f32 = 1000.0;
 const FOG_END_DISTANCE: f32 = 5000.0;
+
 const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
 
 // Cloud Material Parameters
@@ -56,7 +64,7 @@ const FOG_FLASH_GRID: f32 = 1000.0; // Grid cell size
 const FOG_FLASH_POINTS: i32 = 4; // How many points per cell
 const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 20.0;
 const FOG_FLASH_SCALE: f32 = 0.01;
-const FOG_FLASH_DURATION: f32 = 4.0; // Seconds
+const FOG_FLASH_DURATION: f32 = 2.0; // Seconds
 const FOG_FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
 
 // Simple noise functions for white noise
@@ -215,14 +223,14 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
 
         // Compute fog color based on turbulent flow
         fog_color = mix(FOG_COLOR_A, FOG_COLOR_B, fbm_value);
-        sample.emission += fog_contribution * fog_color * 0.05;
+        sample.emission = fog_contribution * fog_color * 0.5;
 
         // Apply artificial shadowing: darken towards black as altitude decreases
         let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
         fog_color = mix(fog_color * 0.1, fog_color, shadow_factor);
 
         // Compute lightning emission using Voronoi grid
-        sample.emission = fog_flash_emission(pos) * smoothstep(-10.0, -60.0, altitude) * fog_contribution;
+        sample.emission += fog_flash_emission(pos) * smoothstep(-10.0, -60.0, altitude) * fog_contribution;
     }
 
     // Low clouds starting at y=200
@@ -291,9 +299,13 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     var t = dither * STEP_SIZE_INSIDE;
     var steps_outside_cloud = 0;
 
-    let light_dir = globals.sun_direction;
-    let view_sun_dot = dot(rd, light_dir);
-    let sky = render_sky(rd, view_sun_dot);
+    // Render the sky
+    let sky = render_sky(rd, dot(rd, globals.sun_direction));
+
+    // Get sun direction and intensity, mix between aur light (straight up) and sun
+    let sun_dot = globals.sun_direction.y;
+    let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
+    let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
@@ -340,7 +352,7 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
             var density_sunwards = max(step_density, 0.0);
             var light_step_size = LIGHT_STEP_SIZE;
             for (var j: i32 = 1; j <= LIGHT_STEPS; j += 1) {
-                let light_offset = pos + light_dir * f32(j) * light_step_size;
+                let light_offset = pos + sun_dir * f32(j) * light_step_size;
                 density_sunwards += sample_cloud(light_offset, t).density * light_step_size;
                 if density_sunwards >= 0.95 {
                     break;
@@ -350,8 +362,13 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
             let tau = clamp(density_sunwards, 0.0, 1.0);
             let self_shadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
 
+            // Calculate sun and ambient colors based on sun intensity, and aur based on height
+            let height_factor = max(smoothstep(5000.0, 100.0, pos.y), 0.15);
+            let sun_color = mix(AUR_COLOR * height_factor, SUN_COLOR * globals.sun_intensity, sun_t);
+            let ambient_color = mix(AMBIENT_AUR_COLOR * height_factor, AMBIENT_COLOR * globals.sun_intensity, sun_t);
+
             // Final color with self-shadowing
-            let lit_color = mix(AMBIENT_COLOR, SUN_COLOR * globals.sun_intensity, self_shadow) * step_color + cloud_sample.emission;
+            let lit_color = mix(ambient_color, sun_color, self_shadow) * step_color + cloud_sample.emission;
 
             let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
             accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
@@ -363,8 +380,8 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
     // Add sky, taking into account t_max for distance fog effect
-    // let sky_alpha_factor = smoothstep(FOG_START_DISTANCE, FOG_END_DISTANCE, t_max);
-    // accumulation += vec4(beer(accumulation.a * (1.0 - BASE_TRANSMISSION)) * sky, sky_alpha_factor);
+    let sky_alpha_factor = smoothstep(FOG_START_DISTANCE, FOG_END_DISTANCE, t_max);
+    accumulation += vec4(sky * (1.0 - accumulation.a), sky_alpha_factor);
 
     return clamp(accumulation, vec4(0.0), vec4(1.0));
 }
