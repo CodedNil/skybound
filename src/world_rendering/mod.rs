@@ -32,6 +32,7 @@ impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
         load_shader_library!(app, "functions.wgsl");
         load_shader_library!(app, "aur_fog.wgsl");
+        load_shader_library!(app, "poles.wgsl");
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;

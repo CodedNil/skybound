@@ -1,6 +1,7 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import skybound::aur_fog::sample_fog
 #import skybound::functions::{fbm_3, blue_noise}
+#import skybound::poles::{render_poles}
 
 @group(0) @binding(0) var<uniform> view: View;
 struct View {
@@ -113,7 +114,11 @@ fn light_scattering(light: vec3<f32>, angle: f32) -> vec3<f32> {
 }
 
 // Raymarch through all the clouds
-fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
+@fragment
+fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+    let uv = in.uv;
+    let pix = in.position.xy;
+
     // Load depth and unproject to clip space
     let depth = textureSample(depth_texture, linear_sampler, uv);
     let ndc = vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth, 1.0);
@@ -141,6 +146,9 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
 
     // Compute scattering angle (dot product between view direction and light direction)
     let scattering_angle = dot(rd, sun_dir);
+
+    // Calculate cylinders to render for the poles, behind all clouds
+    let pole_color = render_poles(ro, rd, view.planet_rotation, view.world_position, globals.planet_radius);
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
@@ -219,14 +227,11 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     }
 
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
+    // Blend in poles behind clouds
+    accumulation = vec4(
+        accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
+        accumulation.a + pole_color.a * (1.0 - accumulation.a)
+    );
 
     return clamp(accumulation, vec4(0.0), vec4(1.0));
-}
-
-@fragment
-fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let uv = in.uv;
-    let pix = in.position.xy;
-
-    return raymarch(uv, pix);
 }

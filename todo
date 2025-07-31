@@ -26,6 +26,8 @@ cumulonimbus clouds, huge with anvils
 
 do the world rendering:
 better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
+dont render over world objects, and blend into the clouds
+
 atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
 aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go
 in the stars are patterns, basically a tapestry of the universes history created by the gods

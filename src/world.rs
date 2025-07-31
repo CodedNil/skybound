@@ -14,8 +14,6 @@ use std::f32::consts::FRAC_PI_2;
 // --- Constants ---
 pub const PLANET_RADIUS: f32 = 500_000.0;
 const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
-const POLE_HEIGHT: f32 = 1_000_000.0;
-const POLE_WIDTH: f32 = 10_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration
@@ -105,11 +103,6 @@ impl CameraCoordinates {
 }
 
 #[derive(Component)]
-struct PoleMarker {
-    is_north: bool,
-}
-
-#[derive(Component)]
 pub struct SunLight;
 
 // --- Plugin ---
@@ -123,11 +116,7 @@ impl Plugin for WorldPlugin {
 }
 
 // --- Systems ---
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn setup(mut commands: Commands) {
     // Camera
     commands.spawn((
         Camera3d::default(),
@@ -155,20 +144,6 @@ fn setup(
             yaw: 0.0,
             pitch: 0.0,
         },
-    ));
-
-    // Pole markers
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(POLE_WIDTH, POLE_HEIGHT))),
-        MeshMaterial3d(materials.add(Color::srgb(0.0, 0.5, 1.0))),
-        NotShadowCaster,
-        PoleMarker { is_north: true },
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(POLE_WIDTH, POLE_HEIGHT))),
-        MeshMaterial3d(materials.add(Color::srgb(1.0, 0.5, 0.0))),
-        NotShadowCaster,
-        PoleMarker { is_north: false },
     ));
 
     // Sun
@@ -208,10 +183,9 @@ fn setup(
 fn update(
     mut world_coords: ResMut<WorldCoordinates>,
     mut camera_query: Query<(&mut Transform, &mut CameraCoordinates), With<Camera>>,
-    mut poles_query: Query<(&mut Transform, &PoleMarker), (With<PoleMarker>, Without<Camera>)>,
     mut sun_query: Query<
         (&mut Transform, &mut DirectionalLight),
-        (With<SunLight>, Without<Camera>, Without<PoleMarker>),
+        (With<SunLight>, Without<Camera>),
     >,
 ) {
     let (mut camera_transform, mut camera_coords) = match camera_query.single_mut() {
@@ -247,14 +221,6 @@ fn update(
         -PLANET_RADIUS,
         camera_transform.translation.z,
     );
-
-    // --- Pole Positioning ---
-    for (mut pole_tf, pole_marker) in &mut poles_query {
-        let sign = if pole_marker.is_north { 1.0 } else { -1.0 };
-        let world_normal = effective_rotation.mul_vec3(Vec3::Y * sign).normalize();
-        pole_tf.translation = planet_center + world_normal * (PLANET_RADIUS + POLE_HEIGHT * 0.5);
-        pole_tf.rotation = Quat::from_rotation_arc(Vec3::Y, world_normal);
-    }
 
     // --- Sun Logic ---
     let (mut sun_transform, mut sun_light) = sun_query.single_mut().unwrap();
