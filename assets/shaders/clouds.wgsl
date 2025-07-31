@@ -47,11 +47,13 @@ const FOG_TURB_FREQ: f32 = 0.4; // Initial turbulence frequency
 const FOG_TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 
 // Fog lightning parameters
-const FOG_FLASH_FREQUENCY: f32 = 0.2; // Chance of a flash per second per cell
-const FOG_FLASH_GRID: f32 = 2000.0; // Grid cell size
-const FOG_FLASH_COLOR: vec3<f32> = vec3(0.8, 0.9, 1.0);
-const FOG_FLASH_DURATION: f32 = 6.0; // Seconds
-const FOG_FLASH_FLICKER_SPEED: f32 = 12.0; // Hz of the on/off cycles
+const FOG_FLASH_FREQUENCY: f32 = 0.1; // Chance of a flash per second per cell
+const FOG_FLASH_GRID: f32 = 1000.0; // Grid cell size
+const FOG_FLASH_POINTS: i32 = 4; // How many points per cell
+const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 10.0;
+const FOG_FLASH_SCALE: f32 = 0.01;
+const FOG_FLASH_DURATION: f32 = 4.0; // Seconds
+const FOG_FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
 
 // Simple noise functions for white noise
 fn hash_12(p: f32) -> vec2<f32> {
@@ -152,36 +154,38 @@ fn fog_compute_turbulence(initial_pos: vec2<f32>) -> vec2<f32> {
 // Voronoi-style closest point calculation for fog
 fn fog_flash_emission(pos: vec3<f32>) -> vec3<f32> {
     let cell = floor(pos.xz / FOG_FLASH_GRID);
-    var min_dist = 1e10;
-    var is_flashing = false;
+    var emission = vec3(0.0);
 
-    // Find closest flashing point across 3x3 grid
-    for (var i = -1.0; i <= 1.0; i = i + 1.0) {
-        for (var j = -1.0; j <= 1.0; j = j + 1.0) {
-            let neighbor = cell + vec2(i, j);
-            let seed = dot(neighbor, vec2(127.1, 311.7));
-            let flash_seed = seed + floor(globals.time / FOG_FLASH_DURATION);
-            let within_duration = (globals.time - floor(globals.time / FOG_FLASH_DURATION) * FOG_FLASH_DURATION) < FOG_FLASH_DURATION;
-            let flicker = hash_12(flash_seed + floor(globals.time * FOG_FLASH_FLICKER_SPEED)).x > 0.5;
-            if within_duration && flicker && hash_12(flash_seed).x <= FOG_FLASH_FREQUENCY {
-                let offset = hash_12(seed) * 0.5 + 0.5 * sin(globals.time * 0.1 + 6.2831 * hash_12(seed));
-                let point = vec3((neighbor + offset) * FOG_FLASH_GRID, -125.0);
-                let dist = length(pos - point);
-                if dist < min_dist {
-                    min_dist = dist;
-                    is_flashing = true;
+    for (var y = -1; y <= 1; y++) {
+    for (var x = -1; x <= 1; x++) {
+        let nbr = cell + vec2<f32>(f32(x), f32(y));
+        let seed = dot(nbr, vec2(127.1, 311.7));
+        let t_block = floor(globals.time / FOG_FLASH_DURATION);
+        let in_dur = (globals.time - t_block * FOG_FLASH_DURATION) < FOG_FLASH_DURATION;
+        let flash_seed = seed + t_block;
+
+        // Single per-cell flicker trigger
+        if (in_dur && hash_12(flash_seed + floor(globals.time * FOG_FLASH_FLICKER_SPEED)).x > 0.5
+                && hash_12(flash_seed).x <= FOG_FLASH_FREQUENCY) {
+            for (var k = 0; k < FOG_FLASH_POINTS; k++) {
+                let off_seed = seed + f32(k) * 17.0;
+                let base_hash = hash_12(off_seed);
+                let phase = globals.time * (FOG_FLASH_FLICKER_SPEED * 0.5) + 6.2831 * base_hash.x;
+                let offset = base_hash * 0.5 + 0.5 * sin(phase);
+
+                let gp = (nbr + offset) * FOG_FLASH_GRID;
+                let pt = vec3(gp.x, -100.0, gp.y);
+                let d = length(pos - pt);
+
+                // Per-point flicker mask
+                if (hash_12(off_seed + floor(globals.time * FOG_FLASH_FLICKER_SPEED)).y > 0.3) {
+                    emission += exp(-d * FOG_FLASH_SCALE) * FOG_FLASH_COLOR;
                 }
             }
         }
-    }
-
-    if !is_flashing {
-        return vec3(0.0);
-    }
-
-    return exp(-min_dist / 50.0) * FOG_FLASH_COLOR * 10.0;
+    }}
+    return emission;
 }
-
 
 // Cloud density and colour
 struct CloudSample {
@@ -284,7 +288,7 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
     let sky = render_sky(rd, sun_direction);
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_max || accumulation.a >= ALPHA_THRESHOLD {
+        if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
             break;
         }
 
