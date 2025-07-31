@@ -11,6 +11,7 @@ use bevy::{
     render::{
         Extract, Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::ExtractResource,
+        load_shader_library,
         render_graph::{
             NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
@@ -26,9 +27,12 @@ use bevy::{
 };
 
 // --- Plugin Definition ---
-pub struct CloudsPlugin;
-impl Plugin for CloudsPlugin {
+pub struct WorldRenderingPlugin;
+impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
+        load_shader_library!(app, "functions.wgsl");
+        load_shader_library!(app, "aur_fog.wgsl");
+
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
@@ -411,7 +415,7 @@ fn setup_volumetric_clouds_pipeline(
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
-            shader: asset_server.load("shaders/clouds.wgsl"), // Shader for cloud rendering
+            shader: asset_server.load("shaders/world_rendering.wgsl"), // Shader for cloud rendering
             targets: vec![Some(ColorTargetState {
                 format: TextureFormat::Rgba16Float,
                 blend: None,
@@ -535,7 +539,7 @@ fn setup_volumetric_clouds_composite_pipeline(
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
-            shader: asset_server.load("shaders/clouds_composite.wgsl"),
+            shader: asset_server.load("shaders/world_rendering_composite.wgsl"),
             targets: vec![Some(ColorTargetState {
                 format: TextureFormat::Rgba16Float,
                 blend: Some(BlendState::ALPHA_BLENDING),

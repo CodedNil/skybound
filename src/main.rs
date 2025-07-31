@@ -5,8 +5,8 @@ use bevy::{
     prelude::*,
 };
 
-mod clouds;
-use crate::clouds::CloudsPlugin;
+mod world_rendering;
+use crate::world_rendering::WorldRenderingPlugin;
 // mod wind;
 // use crate::wind::apply_wind_force;
 
@@ -25,7 +25,7 @@ fn main() {
         })
         .add_plugins((
             DefaultPlugins,
-            CloudsPlugin,
+            WorldRenderingPlugin,
             CameraPlugin,
             DebugTextPlugin,
             WorldPlugin,
