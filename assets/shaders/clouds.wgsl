@@ -27,7 +27,7 @@ const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.001; // How much to scale step size 
 const LIGHT_STEPS: i32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 3.0;
 
-// Lighting variables
+// Lighting Parameters
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 const MIN_SUN_DOT: f32 = sin(radians(-30.0)); // How far below the horizon before the switching to aur light
 const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
@@ -170,32 +170,33 @@ fn fog_flash_emission(pos: vec3<f32>) -> vec3<f32> {
     let in_dur = (globals.time - t_block * FOG_FLASH_DURATION) < FOG_FLASH_DURATION;
     var emission = vec3(0.0);
 
-    if (!in_dur) { return emission; }
+    if !in_dur { return emission; }
 
     let flicker_t = floor(globals.time * FOG_FLASH_FLICKER_SPEED);
 
     for (var y = -1; y <= 1; y++) {
-    for (var x = -1; x <= 1; x++) {
-        let nbr = cell + vec2<f32>(f32(x), f32(y));
-        let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
+        for (var x = -1; x <= 1; x++) {
+            let nbr = cell + vec2<f32>(f32(x), f32(y));
+            let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
 
-        // Per-neighbour flicker trigger
-        if (hash_12(seed + flicker_t).x > 0.5 && hash_12(seed).x <= FOG_FLASH_FREQUENCY) {
+            // Per-neighbour flicker trigger
+            if hash_12(seed + flicker_t).x > 0.5 && hash_12(seed).x <= FOG_FLASH_FREQUENCY {
 
-            for (var k = 0; k < FOG_FLASH_POINTS; k++) {
-                let off_seed = seed + f32(k) * 17.0;
-                let h = hash_12(off_seed);
-                if (h.y <= 0.3) { continue; }
+                for (var k = 0; k < FOG_FLASH_POINTS; k++) {
+                    let off_seed = seed + f32(k) * 17.0;
+                    let h = hash_12(off_seed);
+                    if h.y <= 0.3 { continue; }
 
-                let phase = globals.time * (FOG_FLASH_FLICKER_SPEED * 0.5) + 6.2831 * h.x;
-                let offset = h * 0.5 + 0.5 * sin(phase);
-                let gp = (nbr + offset) * FOG_FLASH_GRID;
-                // Smooth 2D fall-off
-                let d = distance(pos.xz, gp);
-                emission += exp(-d * FOG_FLASH_SCALE) * FOG_FLASH_COLOR;
+                    let phase = globals.time * (FOG_FLASH_FLICKER_SPEED * 0.5) + 6.2831 * h.x;
+                    let offset = h * 0.5 + 0.5 * sin(phase);
+                    let gp = (nbr + offset) * FOG_FLASH_GRID;
+                    // Smooth 2D fall-off
+                    let d = distance(pos.xz, gp);
+                    emission += exp(-d * FOG_FLASH_SCALE) * FOG_FLASH_COLOR;
+                }
             }
         }
-    }}
+    }
 
     return emission;
 }
@@ -327,7 +328,7 @@ fn raymarch(uv: vec2<f32>, pix: vec2<f32>) -> vec4<f32> {
         // Reduce scaling when close to surfaces
         let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
         let distance_left = t_max - t;
-        if (distance_left < close_threshold) {
+        if distance_left < close_threshold {
             let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
             step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
         }

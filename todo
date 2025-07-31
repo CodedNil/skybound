@@ -11,7 +11,7 @@ simple froxel shadowing, so i can do larger scale shadowing
 cpu side clouds_sample.rs which is a replica of the clouds density equation so i can do raymarches on cpu, from light source to froxel cell for example
 
 clouds:
-Good example of god rays through clouds  https://www.shadertoy.com/view/ttcSD8
+Good examples of god rays through clouds  https://www.shadertoy.com/view/ttcSD8 https://www.shadertoy.com/view/MstBWs
 60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
 Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
 Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
