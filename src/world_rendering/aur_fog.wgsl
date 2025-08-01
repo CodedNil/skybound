@@ -1,5 +1,5 @@
 #define_import_path skybound::aur_fog
-#import skybound::functions::{fbm_3, hash_12}
+#import skybound::functions::{hash12, value31, value_fbm31}
 
 // Turbulence parameters for fog
 const COLOR_A: vec3<f32> = vec3(0.3, 0.2, 0.8); // Deep blue
@@ -52,10 +52,10 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
             let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
 
             // Per-neighbour flicker trigger
-            if hash_12(seed + flicker_t).x > 0.5 && hash_12(seed).x <= FLASH_FREQUENCY {
+            if hash12(seed + flicker_t).x > 0.5 && hash12(seed).x <= FLASH_FREQUENCY {
                 for (var k = 0; k < FLASH_POINTS; k++) {
                     let off_seed = seed + f32(k) * 17.0;
-                    let h = hash_12(off_seed);
+                    let h = hash12(off_seed);
                     if h.y <= 0.3 { continue; }
 
                     let phase = time * (FLASH_FLICKER_SPEED * 0.5) + 6.2831 * h.x;
@@ -82,8 +82,8 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
     var sample: FogSample;
     if pos.y > 1000.0 { return sample; }
 
-    let height_noise = fbm_3(vec3(pos.xz * 0.0001, time * 0.2), 1);
-    let altitude = pos.y - height_noise * 1000.0;
+    let height_noise = value31(vec3(pos.xz * 0.0005, time * 0.4)) + 0.5;
+    let altitude = pos.y + height_noise * 400.0;
     let density = smoothstep(20.0, -100.0, altitude);
 
     if density > 0.0 {
@@ -91,12 +91,12 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
         let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
         let turb_pos = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
         let fbm_octaves = u32(round(mix(3.0, 5.0, smoothstep(10000.0, 1000.0, dist))));
-        let fbm_value = fbm_3(vec3(turb_pos.x, altitude * 0.05, turb_pos.y), fbm_octaves);
+        let fbm_value = value_fbm31(vec3(turb_pos.x, altitude * 0.01, turb_pos.y), fbm_octaves);
         sample.contribution = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
 
         if sample.contribution > 0.0 {
             // Compute fog color based on turbulent flow, with a larger scale noise for color variation
-            let color_noise = fbm_3(vec3(pos.xz * 0.0001, 0.0), 3);
+            let color_noise = value_fbm31(vec3(pos.xz * 0.0001, 0.0), 3);
             sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
             sample.emission = sample.contribution * sample.color * 6.0;
 

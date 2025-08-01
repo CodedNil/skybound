@@ -1,5 +1,5 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::functions::{fbm_3, blue_noise}
+#import skybound::functions::{value_fbm31, blue_noise}
 #import skybound::aur_fog::sample_fog
 #import skybound::sky::{render_sky}
 #import skybound::poles::{render_poles}
@@ -77,7 +77,7 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     var cloud_contribution = 0.0;
 
     if low_gradient > 0.01 {
-        let base_noise = fbm_3(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
+        let base_noise = value_fbm31(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
         cloud_contribution = clamp(base_noise * 0.1, 0.0, 1.0) * low_gradient;
     }
 
@@ -127,7 +127,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let world_pos3 = world_pos4.xyz / world_pos4.w;
 
     // Ray origin & dir
-    let ro = vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
+    let ro = view.world_position; //vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
     let rd_vec = world_pos3 - ro;
     let t_max = length(rd_vec);
     let rd = rd_vec / t_max;
