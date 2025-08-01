@@ -1,10 +1,11 @@
 atmosphere:
 Auroras and stars https://www.shadertoy.com/view/XtGGRt
-Best simple atmosphere with sunsets https://www.shadertoy.com/view/slSXRW
+Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 
-Align the bevy sunset so its at about latitude 10 degrees, when you can slightly see the pole beam coming up
-Align the manual sunset for clouds with that, and overlay it slightly
+the sky goes green just after sunset
+too bright at night
+sun halo is on both sides, not just around the sun
 
 froxels:
 pass lights emission

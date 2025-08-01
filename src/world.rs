@@ -3,19 +3,19 @@ use bevy::{
     anti_aliasing::taa::TemporalAntiAliasing,
     camera::Exposure,
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
-    pbr::{Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, light_consts::lux},
+    pbr::{CascadeShadowConfigBuilder, light_consts::lux},
     prelude::*,
 };
 use std::f32::consts::FRAC_PI_2;
 
 // --- Constants ---
 pub const PLANET_RADIUS: f32 = 500_000.0;
-const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration
-const MIN_SUN_ELEVATION_DEG: f32 = -8.0;
-const MAX_SUN_ELEVATION_DEG: f32 = 70.0;
+const SUNSET_LATITUDE_DEG: f32 = 6.0; // The latitude at which the sun sets
+const MIN_SUN_ELEVATION_DEG: f32 = -17.0; // The sun elevation at sunset latitude
+const MAX_SUN_ELEVATION_DEG: f32 = 70.0; // The maximum sun elevation angle
 
 // --- Components ---
 #[derive(Resource)]
@@ -25,7 +25,7 @@ pub struct WorldCoordinates {
 impl Default for WorldCoordinates {
     fn default() -> Self {
         Self {
-            planet_rotation: Quat::from_rotation_x(-FRAC_PI_2 * 0.2),
+            planet_rotation: Quat::from_rotation_x(-FRAC_PI_2),
         }
     }
 }
@@ -121,16 +121,6 @@ fn setup(mut commands: Commands) {
         Msaa::Off,
         TemporalAntiAliasing::default(),
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
-        Atmosphere {
-            bottom_radius: PLANET_RADIUS,
-            top_radius: PLANET_RADIUS + ATMOSPHERE_HEIGHT,
-            ..Atmosphere::EARTH
-        },
-        AtmosphereSettings {
-            aerial_view_lut_size: UVec3::new(256, 256, 256),
-            aerial_view_lut_samples: 4,
-            ..default()
-        },
         Exposure::SUNLIGHT,
         Bloom::NATURAL,
         DepthPrepass,
@@ -225,7 +215,9 @@ fn update(
     // Get the current latitude for sun calculations.
     let planet_rotation = camera_coords.planet_rotation(&world_coords, &camera_transform);
     let current_latitude = camera_coords.latitude(planet_rotation, &camera_transform);
-    let latitude_abs = ((current_latitude.abs() - 20.0) / 70.0).clamp(0.0, 1.0);
+    let latitude_abs = ((current_latitude.abs() - SUNSET_LATITUDE_DEG)
+        / (90.0 - SUNSET_LATITUDE_DEG))
+        .clamp(0.0, 1.0);
 
     let camera_up = (camera_transform.translation - planet_center).normalize();
     let pole_sign = if current_latitude >= 0.0 { 1.0 } else { -1.0 };
