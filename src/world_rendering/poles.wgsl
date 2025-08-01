@@ -30,8 +30,8 @@ fn intersect_cylinder(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, axis: vec
     return t0;
 }
 
-fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, world_position: vec3<f32>, planet_radius: f32) -> vec4<f32> {
-    let center = world_position - vec3<f32>(0.0, planet_radius, 0.0);
+fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, planet_radius: f32) -> vec4<f32> {
+    let center = ro - vec3<f32>(0.0, planet_radius, 0.0);
 
     // Rotate the Y‐axis by the planet’s quaternion to get the pole‐axis
     let axis = normalize(quat_rotate(planet_rot, vec3<f32>(0.0, 1.0, 0.0)));

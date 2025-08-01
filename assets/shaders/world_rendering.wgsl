@@ -11,6 +11,8 @@ struct View {
     planet_rotation: vec4<f32>,
     latitude: f32,
     longitude: f32,
+    latitude_meters: f32,
+    longitude_meters: f32,
     altitude: f32,
 };
 @group(0) @binding(1) var<uniform> globals: Globals;
@@ -27,14 +29,14 @@ struct Globals {
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
 const MAX_STEPS: i32 = 512;
-const STEP_SIZE_INSIDE: f32 = 4.0;
-const STEP_SIZE_OUTSIDE: f32 = 12.0;
+const STEP_SIZE_INSIDE: f32 = 8.0;
+const STEP_SIZE_OUTSIDE: f32 = 30.0;
 
-const STEP_DISTANCE_SCALING_START: f32 = 100.0; // Distance from camera to start scaling step size
-const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0005; // How much to scale step size by distance
+const STEP_DISTANCE_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
+const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0003; // How much to scale step size by distance
 
-const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: array<f32, LIGHT_STEPS> = array<f32, LIGHT_STEPS>(3.0, 4.0, 7.0, 10.0, 15.0, 20.0);
+const LIGHT_STEPS: u32 = 4; // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE: array<f32, 6> = array<f32, 6>(6.0, 10.0, 16.0, 24.0, 36.0, 48.0);
 
 // Lighting Parameters
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
@@ -125,7 +127,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let world_pos3 = world_pos4.xyz / world_pos4.w;
 
     // Ray origin & dir
-    let ro = view.world_position;
+    let ro = vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
     let rd_vec = world_pos3 - ro;
     let t_max = length(rd_vec);
     let rd = rd_vec / t_max;
@@ -148,7 +150,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let scattering_angle = dot(rd, sun_dir);
 
     // Calculate cylinders to render for the poles, behind all clouds
-    let pole_color = render_poles(ro, rd, view.planet_rotation, view.world_position, globals.planet_radius);
+    let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
 
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {

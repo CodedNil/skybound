@@ -53,23 +53,21 @@ fn update(
 
     let fps = fps_res.unwrap_or(0.0);
 
-    let (lat_deg, lon_deg, alt) = camera_query
+    let (lat_deg, lon_deg, lat_m, lon_m, alt) = camera_query
         .single()
         .map(|(transform, camera_coords)| {
             let planet_rotation = camera_coords.planet_rotation(&world_coords, transform);
+            let latitude_rad = camera_coords.latitude(planet_rotation, transform);
+            let longitude_rad = camera_coords.longitude(planet_rotation, transform);
             (
-                camera_coords.latitude(planet_rotation, transform),
-                camera_coords.longitude(planet_rotation, transform),
+                latitude_rad.to_degrees(),
+                longitude_rad.to_degrees(),
+                camera_coords.latitude_meters(latitude_rad),
+                camera_coords.longitude_meters(latitude_rad, longitude_rad),
                 camera_coords.altitude(transform),
             )
         })
-        .unwrap_or((0.0, 0.0, 0.0));
-
-    // Convert to radians then meters
-    let lat_rad = lat_deg.to_radians();
-    let lon_rad = lon_deg.to_radians();
-    let lat_m = PLANET_RADIUS * lat_rad;
-    let lon_m = PLANET_RADIUS * lon_rad * lat_rad.cos();
+        .unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0));
 
     display.0 = format!(
         "FPS:  {fps:.0}\n\

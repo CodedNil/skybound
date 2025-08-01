@@ -104,6 +104,8 @@ struct CloudsViewUniform {
     planet_rotation: Vec4,
     latitude: f32,
     longitude: f32,
+    latitude_meters: f32,
+    longitude_meters: f32,
     altitude: f32,
 }
 
@@ -142,6 +144,8 @@ struct ExtractedViewData {
     planet_rotation: Vec4,
     latitude: f32,
     longitude: f32,
+    latitude_meters: f32,
+    longitude_meters: f32,
     altitude: f32,
 }
 
@@ -167,10 +171,16 @@ fn extract_clouds_view_uniform(
 ) {
     if let Ok((camera_transform, camera_coordinates)) = camera_query.single() {
         let planet_rotation = camera_coordinates.planet_rotation(&world_coords, camera_transform);
+        let latitude = camera_coordinates.latitude(planet_rotation, camera_transform);
+        let longitude = camera_coordinates.longitude(planet_rotation, camera_transform);
+        let latitude_meters = camera_coordinates.latitude_meters(latitude);
+        let longitude_meters = camera_coordinates.longitude_meters(longitude, latitude);
         commands.insert_resource(ExtractedViewData {
             planet_rotation: planet_rotation.into(),
-            latitude: camera_coordinates.latitude(planet_rotation, camera_transform),
-            longitude: camera_coordinates.longitude(planet_rotation, camera_transform),
+            latitude: latitude,
+            longitude: longitude,
+            latitude_meters: latitude_meters,
+            longitude_meters: longitude_meters,
             altitude: camera_coordinates.altitude(camera_transform),
         });
     }
@@ -220,6 +230,8 @@ fn prepare_clouds_view_uniforms(
                 planet_rotation: data.planet_rotation,
                 latitude: data.latitude,
                 longitude: data.longitude,
+                latitude_meters: data.latitude_meters,
+                longitude_meters: data.longitude_meters,
                 altitude: data.altitude,
             }),
         });

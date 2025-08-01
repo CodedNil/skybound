@@ -86,7 +86,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
     let altitude = pos.y - height_noise * 1000.0;
     let density = smoothstep(20.0, -100.0, altitude);
 
-    if density > 0.01 {
+    if density > 0.0 {
         // Use turbulent position for density
         let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
         let turb_pos = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
@@ -94,17 +94,19 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
         let fbm_value = fbm_3(vec3(turb_pos.x, altitude * 0.05, turb_pos.y), fbm_octaves);
         sample.contribution = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
 
-        // Compute fog color based on turbulent flow, with a larger scale noise for color variation
-        let color_noise = fbm_3(vec3(pos.xz * 0.0001, 0.0), 3);
-        sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
-        sample.emission = sample.contribution * sample.color * 6.0;
+        if sample.contribution > 0.0 {
+            // Compute fog color based on turbulent flow, with a larger scale noise for color variation
+            let color_noise = fbm_3(vec3(pos.xz * 0.0001, 0.0), 3);
+            sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
+            sample.emission = sample.contribution * sample.color * 6.0;
 
-        // Apply artificial shadowing: darken towards black as altitude decreases
-        let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
-        sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
+            // Apply artificial shadowing: darken towards black as altitude decreases
+            let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
+            sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
-        // Compute lightning emission using Voronoi grid
-        sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.contribution;
+            // Compute lightning emission using Voronoi grid
+            sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.contribution;
+        }
     }
 
     return sample;

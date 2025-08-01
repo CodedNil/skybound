@@ -33,7 +33,7 @@ impl WorldCoordinates {
     /// Calculates the latitude of the world's origin (0,0,0).
     pub fn latitude(&self) -> f32 {
         let v_local = self.planet_rotation.conjugate().mul_vec3(Vec3::Y);
-        v_local.y.clamp(-1.0, 1.0).asin().to_degrees()
+        v_local.y.clamp(-1.0, 1.0).asin()
     }
 
     /// Calculates the longitude of the world's origin (0,0,0).
@@ -42,7 +42,7 @@ impl WorldCoordinates {
         if v_local.x.abs() < f32::EPSILON && v_local.z.abs() < f32::EPSILON {
             0.0
         } else {
-            v_local.x.atan2(v_local.z).to_degrees()
+            v_local.x.atan2(v_local.z)
         }
     }
 }
@@ -74,23 +74,33 @@ impl CameraCoordinates {
         offset_rotation * world_coords.planet_rotation
     }
 
-    /// Calculates the camera's current latitude in degrees.
+    /// Calculates the camera's current latitude in radians.
     pub fn latitude(&self, planet_rotation: Quat, camera_transform: &Transform) -> f32 {
         let v = Vec3::new(0.0, camera_transform.translation.y + PLANET_RADIUS, 0.0);
         let v_local = planet_rotation.conjugate().mul_vec3(v);
         let r = v_local.length();
-        (v_local.y / r).clamp(-1.0, 1.0).asin().to_degrees()
+        (v_local.y / r).clamp(-1.0, 1.0).asin()
     }
 
-    /// Calculates the camera's current longitude in degrees.
+    /// Calculates the camera's current latitude in meters.
+    pub fn latitude_meters(&self, latitude_rad: f32) -> f32 {
+        latitude_rad * PLANET_RADIUS
+    }
+
+    /// Calculates the camera's current longitude in radians.
     pub fn longitude(&self, planet_rotation: Quat, camera_transform: &Transform) -> f32 {
         let v = Vec3::new(0.0, camera_transform.translation.y + PLANET_RADIUS, 0.0);
         let v_local = planet_rotation.conjugate().mul_vec3(v);
         if v_local.x.abs() < f32::EPSILON && v_local.z.abs() < f32::EPSILON {
             0.0
         } else {
-            v_local.x.atan2(v_local.z).to_degrees()
+            v_local.x.atan2(v_local.z)
         }
+    }
+
+    /// Calculates the camera's current longitude in meters.
+    pub fn longitude_meters(&self, longitude_rad: f32, latitude_rad: f32) -> f32 {
+        longitude_rad * PLANET_RADIUS * latitude_rad.cos()
     }
 
     /// Calculates the camera's current altitude in meters.
@@ -215,7 +225,7 @@ fn update(
     // Get the current latitude for sun calculations.
     let planet_rotation = camera_coords.planet_rotation(&world_coords, &camera_transform);
     let current_latitude = camera_coords.latitude(planet_rotation, &camera_transform);
-    let latitude_abs = ((current_latitude.abs() - SUNSET_LATITUDE_DEG)
+    let latitude_abs = ((current_latitude.abs().to_degrees() - SUNSET_LATITUDE_DEG)
         / (90.0 - SUNSET_LATITUDE_DEG))
         .clamp(0.0, 1.0);
 
