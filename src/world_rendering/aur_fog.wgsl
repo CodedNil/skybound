@@ -15,7 +15,7 @@ const FOG_TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 const FOG_FLASH_FREQUENCY: f32 = 0.05; // Chance of a flash per second per cell
 const FOG_FLASH_GRID: f32 = 2000.0; // Grid cell size
 const FOG_FLASH_POINTS: i32 = 4; // How many points per cell
-const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 20.0;
+const FOG_FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 30.0;
 const FOG_FLASH_SCALE: f32 = 0.01;
 const FOG_FLASH_DURATION: f32 = 2.0; // Seconds
 const FOG_FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
@@ -49,12 +49,11 @@ fn fog_flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
 
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            let nbr = cell + vec2<f32>(f32(x), f32(y));
+            let nbr = cell + vec2(f32(x), f32(y));
             let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
 
             // Per-neighbour flicker trigger
             if hash_12(seed + flicker_t).x > 0.5 && hash_12(seed).x <= FOG_FLASH_FREQUENCY {
-
                 for (var k = 0; k < FOG_FLASH_POINTS; k++) {
                     let off_seed = seed + f32(k) * 17.0;
                     let h = hash_12(off_seed);
@@ -89,13 +88,13 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
     if fog_density > 0.01 && pos.y > -250.0 {
         // Use turbulent position for density
         let turb_pos = fog_compute_turbulence(pos.xz * 0.01, time);
-        let fbm_octaves = u32(round(mix(2.0, 4.0, smoothstep(1000.0, 0.0, dist))));
+        let fbm_octaves = u32(round(mix(2.0, 5.0, smoothstep(10000.0, 1000.0, dist))));
         let fbm_value = fbm_3(vec3(turb_pos.x, pos.y * 0.05, turb_pos.y), fbm_octaves);
         sample.contribution = pow(fbm_value, 2.0) * fog_density + smoothstep(-50.0, -200.0, altitude);
 
         // Compute fog color based on turbulent flow
-        sample.color = mix(FOG_COLOR_A, FOG_COLOR_B, fbm_value);
-        sample.emission = sample.contribution * sample.color * 0.5;
+        sample.color = mix(FOG_COLOR_A, FOG_COLOR_B, fbm_value * 0.6);
+        sample.emission = sample.contribution * sample.color * 6.0;
 
         // Apply artificial shadowing: darken towards black as altitude decreases
         let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);

@@ -26,8 +26,8 @@ struct Globals {
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
 const MAX_STEPS: i32 = 512;
-const STEP_SIZE_INSIDE: f32 = 3.0;
-const STEP_SIZE_OUTSIDE: f32 = 10.0;
+const STEP_SIZE_INSIDE: f32 = 4.0;
+const STEP_SIZE_OUTSIDE: f32 = 12.0;
 
 const STEP_DISTANCE_SCALING_START: f32 = 100.0; // Distance from camera to start scaling step size
 const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0005; // How much to scale step size by distance
@@ -37,9 +37,9 @@ const LIGHT_STEP_SIZE: f32 = 3.0;
 
 // Lighting Parameters
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
-const MIN_SUN_DOT: f32 = sin(radians(-30.0)); // How far below the horizon before the switching to aur light
+const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
 const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
-const AUR_COLOR: vec3<f32> = vec3(0.2, 0.4, 1.0) * 0.15;
+const AUR_COLOR: vec3<f32> = vec3(0.3, 0.2, 0.8) * 0.15;
 const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.5;
 const AMBIENT_AUR_COLOR: vec3<f32> = AUR_COLOR * 0.2;
 
@@ -56,6 +56,13 @@ const TRANSMISSION_SCATTERING: f32 = 1.0; // Transmission Scattering
 const TRANSMISSION_FALLOFF: f32 = 2.0; // Transmission falloff
 const BASE_TRANSMISSION: f32 = 0.1; // Light that doesn't get scattered at all
 
+// Rayleigh Scattering Parameters
+const PI: f32 = 3.14159265;
+const K_RAYLEIGH: f32 = 0.005;
+const K_R4PI: f32 = K_RAYLEIGH * 4.0 * PI;
+const K_LAMBDA: vec3<f32> = vec3(0.65, 0.57, 0.475); // Wavelength factors
+const K_SCALE_DEPTH: f32 = 0.25;
+
 // Cloud density and colour
 struct CloudSample {
     density: f32,
@@ -68,24 +75,21 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
 
     // Thick aur fog below 0m
     let fog_sample = sample_fog(pos, dist, globals.time);
+    sample.emission = fog_sample.emission;
 
     // Low clouds starting at y=200
-    let low_gradient = smoothstep(200.0, 300.0, altitude) * smoothstep(800.0, 700.0, altitude);
+    let low_gradient = smoothstep(800.0, 1200.0, altitude) * smoothstep(6000.0, 5000.0, altitude);
     var cloud_contribution = 0.0;
 
     if low_gradient > 0.01 {
-        let low_type = smoothstep(200.0, 500.0, altitude) * smoothstep(3000.0, 2000.0, altitude) * (1.0 + 0.5 * sin(altitude * 0.002));
-        let base_noise = fbm_3(pos * 0.01 + vec3(0.0, globals.time * 0.02, 0.0), 6);
-        let shaped_noise = base_noise * low_type;
-        cloud_contribution = shaped_noise * low_gradient;
+        let base_noise = fbm_3(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
+        cloud_contribution = clamp(base_noise * 0.1, 0.0, 1.0) * low_gradient;
     }
 
-    let total_density = fog_sample.contribution + cloud_contribution;
-    sample.density = total_density;
+    sample.density = fog_sample.contribution + cloud_contribution;
 
-    if total_density > 0.0 {
-        let cloud_color = vec3(1.0); // White for clouds
-        sample.color = (fog_sample.color * fog_sample.contribution + cloud_color * cloud_contribution) / total_density;
+    if sample.density > 0.0 {
+        sample.color = (fog_sample.color * fog_sample.contribution + cloud_contribution) / sample.density;
     } else {
         sample.color = vec3(1.0);
     }
@@ -111,6 +115,57 @@ fn light_scattering(light: vec3<f32>, angle: f32) -> vec3<f32> {
     ratio = ratio * (1.0 - OMNI_SCATTERING) + OMNI_SCATTERING;
 
     return light * ratio * (1.0 - BASE_TRANSMISSION);
+}
+
+// Simple sky shading
+fn rayleigh_phase(cos2: f32) -> f32 {
+    return 0.75 * (1.0 + cos2);
+}
+
+fn sky_color(rd: vec3<f32>, sun_dir: vec3<f32>) -> vec3<f32> {
+    let sun_dot = sun_dir.y; // Sun elevation
+    let elevation = rd.y; // Ray elevation, normalized
+    let view_sun_dot = dot(rd, sun_dir); // Cosine of angle between view and sun
+    let view_sun_dot2 = view_sun_dot * view_sun_dot; // For phase function
+    let t = (elevation + 1.0) / 2.0; // Gradient from horizon to zenith [0, 1]
+
+    // Base colors
+    let day_horizon = vec3(0.7, 0.8, 1.0); // Light blue
+    let day_zenith = vec3(0.2, 0.4, 0.8); // Deep blue
+    let sunset_horizon = vec3(1.0, 0.5, 0.0); // Orange
+    let sunset_zenith = vec3(0.2, 0.0, 0.4); // Purple
+    let night_horizon = vec3(0.0, 0.0, 0.1); // Dark blue
+    let night_zenith = vec3(0.0, 0.0, 0.0); // Black
+
+    // Smooth transitions
+    let day_to_sunset = smoothstep(-0.1, 0.1, sun_dot); // Day (1) to sunset (0)
+    let sunset_to_night = smoothstep(-0.3, -0.1, sun_dot); // Sunset (1) to night (0)
+
+    // Blend horizon and zenith colors
+    let horizon_color = mix(
+        mix(night_horizon, sunset_horizon, sunset_to_night),
+        day_horizon,
+        day_to_sunset
+    );
+    let zenith_color = mix(
+        mix(night_zenith, sunset_zenith, sunset_to_night),
+        day_zenith,
+        day_to_sunset
+    );
+
+    // Rayleigh-like phase for sky scattering
+    let rayleigh_phase = 0.75 * (1.0 + view_sun_dot2); // Simplified from Shadertoy
+
+    // Base sky gradient
+    let sky_col = mix(horizon_color, zenith_color, t) * rayleigh_phase;
+
+    // Sun-side orange during sunset
+    let sunset_factor = 1.0 - day_to_sunset; // Stronger during sunset
+    let sun_proximity = smoothstep(0.8, 1.0, view_sun_dot); // Near sun
+    let sunset_glow = vec3(1.0, 0.6, 0.2) * sun_proximity * sunset_factor * 0.5 * globals.sun_intensity;
+    let sky_with_glow = sky_col + sunset_glow;
+
+    return clamp(sky_with_glow, vec3(0.0), vec3(1.0));
 }
 
 // Raymarch through all the clouds
@@ -201,13 +256,22 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
                 }
             }
 
-            // Apply self shadowing
+            // Calcuate self shadowing
             let tau = clamp(density_sunwards, 0.0, 1.0) * SHADOW_EXTINCTION;
 
-            // Calculate sun and ambient colors based on sun intensity, and aur based on height
-            let height_factor = max(smoothstep(5000.0, 100.0, pos.y), 0.15);
+            // Compute sky color for the current view direction
+            let sky_col = sky_color(rd, globals.sun_direction);
+
+            // Height factor for reducing aur light
+            let height_factor = max(smoothstep(15000.0, 100.0, pos.y), 0.15);
+
+            // Blend between aur and sun, modulated by sky color
             let sun_color = mix(AUR_COLOR * height_factor, SUN_COLOR * globals.sun_intensity, sun_t);
-            let ambient_color = mix(AMBIENT_AUR_COLOR * height_factor, AMBIENT_COLOR * globals.sun_intensity, sun_t);
+            let sky_sun_blend = mix(sky_col, vec3(1.0), sun_t); // Full sky color at sunset, white at day
+            let sun_color_with_sky = sun_color * sky_sun_blend;
+
+            // Blend between sky based ambient and aur based on sun height, always using a little aur light
+            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 20.0) + mix(AMBIENT_AUR_COLOR * height_factor, sky_col, max(sun_t - 0.2, 0.0));
 
             // Apply transmission to sun and ambient light
             let transmitted_sun = transmission(sun_color, tau);
@@ -217,7 +281,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             let scattered_sun = light_scattering(sun_color, scattering_angle);
 
             // Combine transmitted and scattered light, weighted by density
-            let lit_color = ((transmitted_sun + scattered_sun) * step_density + transmitted_ambient) * step_color + cloud_sample.emission;
+            var lit_color = ((transmitted_sun + scattered_sun) * step_density + transmitted_ambient) * step_color + cloud_sample.emission;
 
             let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
             accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
@@ -227,11 +291,21 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
 
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-    // Blend in poles behind clouds
-    accumulation = vec4(
-        accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
-        accumulation.a + pole_color.a * (1.0 - accumulation.a)
-    );
+
+    if depth <= 0.001 {
+        // Blend in poles behind clouds
+        accumulation = vec4(
+            accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
+            accumulation.a + pole_color.a * (1.0 - accumulation.a)
+        );
+
+        // Add a small amount of our sky color over the bevy sky
+        // let sky_col = sky_color(rd, globals.sun_direction);
+        // accumulation = vec4(
+        //     accumulation.rgb + sky_col * 0.8 * (1.0 - accumulation.a),
+        //     accumulation.a + 0.8 * (1.0 - accumulation.a)
+        // );
+    }
 
     return clamp(accumulation, vec4(0.0), vec4(1.0));
 }

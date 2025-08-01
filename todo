@@ -3,6 +3,9 @@ Auroras and stars https://www.shadertoy.com/view/XtGGRt
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/slSXRW
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 
+Align the bevy sunset so its at about latitude 10 degrees, when you can slightly see the pole beam coming up
+Align the manual sunset for clouds with that, and overlay it slightly
+
 froxels:
 pass lights emission
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
@@ -18,8 +21,8 @@ Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricC
 Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
 https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/
 
+use lat and long for position instead of camera pos to avoid snapping issues
 better shapes for cumulus
-add aur light from below with a blue tint
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils

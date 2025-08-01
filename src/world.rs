@@ -3,10 +3,7 @@ use bevy::{
     anti_aliasing::taa::TemporalAntiAliasing,
     camera::Exposure,
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
-    pbr::{
-        Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, NotShadowCaster,
-        light_consts::lux,
-    },
+    pbr::{Atmosphere, AtmosphereSettings, CascadeShadowConfigBuilder, light_consts::lux},
     prelude::*,
 };
 use std::f32::consts::FRAC_PI_2;
@@ -17,7 +14,7 @@ const ATMOSPHERE_HEIGHT: f32 = 100_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration
-const MIN_SUN_ELEVATION_DEG: f32 = -90.0;
+const MIN_SUN_ELEVATION_DEG: f32 = -8.0;
 const MAX_SUN_ELEVATION_DEG: f32 = 70.0;
 
 // --- Components ---
@@ -228,7 +225,7 @@ fn update(
     // Get the current latitude for sun calculations.
     let planet_rotation = camera_coords.planet_rotation(&world_coords, &camera_transform);
     let current_latitude = camera_coords.latitude(planet_rotation, &camera_transform);
-    let latitude_abs = (current_latitude.abs() / 90.0).clamp(0.0, 1.0);
+    let latitude_abs = ((current_latitude.abs() - 20.0) / 70.0).clamp(0.0, 1.0);
 
     let camera_up = (camera_transform.translation - planet_center).normalize();
     let pole_sign = if current_latitude >= 0.0 { 1.0 } else { -1.0 };
