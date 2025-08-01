@@ -81,10 +81,10 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     let low_gradient = smoothstep(800.0, 1200.0, altitude) * smoothstep(6000.0, 5000.0, altitude);
     var cloud_contribution = 0.0;
 
-    if low_gradient > 0.01 {
-        let base_noise = fbm_3(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
-        cloud_contribution = clamp(base_noise * 0.1, 0.0, 1.0) * low_gradient;
-    }
+    // if low_gradient > 0.01 {
+    //     let base_noise = fbm_3(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
+    //     cloud_contribution = clamp(base_noise * 0.1, 0.0, 1.0) * low_gradient;
+    // }
 
     sample.density = fog_sample.contribution + cloud_contribution;
 
@@ -292,7 +292,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
-    if depth <= 0.001 {
+    if depth <= 0.00001 {
         // Blend in poles behind clouds
         accumulation = vec4(
             accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
