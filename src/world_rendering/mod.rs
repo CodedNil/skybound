@@ -30,10 +30,10 @@ use bevy::{
 pub struct WorldRenderingPlugin;
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
-        load_shader_library!(app, "functions.wgsl");
-        load_shader_library!(app, "sky.wgsl");
-        load_shader_library!(app, "aur_fog.wgsl");
-        load_shader_library!(app, "poles.wgsl");
+        load_shader_library!(app, "shaders/functions.wgsl");
+        load_shader_library!(app, "shaders/sky.wgsl");
+        load_shader_library!(app, "shaders/aur_fog.wgsl");
+        load_shader_library!(app, "shaders/poles.wgsl");
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
