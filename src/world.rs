@@ -25,7 +25,7 @@ pub struct WorldCoordinates {
 impl Default for WorldCoordinates {
     fn default() -> Self {
         Self {
-            planet_rotation: Quat::from_rotation_x(-FRAC_PI_2),
+            planet_rotation: Quat::from_rotation_x(-FRAC_PI_2 * 0.5),
         }
     }
 }

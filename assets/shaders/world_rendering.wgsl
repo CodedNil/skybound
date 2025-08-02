@@ -1,5 +1,5 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::functions::{value_fbm31, blue_noise}
+#import skybound::functions::{value_fbm31, perlin_fbm31, worley31, worley_fbm31, blue_noise}
 #import skybound::aur_fog::sample_fog
 #import skybound::sky::{render_sky}
 #import skybound::poles::{render_poles}
@@ -73,12 +73,20 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     sample.emission = fog_sample.emission;
 
     // Low clouds starting at y=200
-    let low_gradient = smoothstep(800.0, 1200.0, altitude) * smoothstep(20000.0, 19000.0, altitude);
+    let low_gradient = smoothstep(800.0, 1000.0, altitude) * smoothstep(20000.0, 19000.0, altitude);
     var cloud_contribution = 0.0;
 
     if low_gradient > 0.01 {
-        let base_noise = value_fbm31(pos * 0.001 + vec3(0.0, globals.time * 0.02, 0.0), 6) - 0.2;
-        cloud_contribution = clamp(base_noise * 0.1, 0.0, 1.0) * low_gradient;
+        // Height gradient and coverage
+        let height_weight = smoothstep(4000.0, 1000.0, altitude) + smoothstep(8800.0, 9000.0, altitude) * smoothstep(12000.0, 9000.0, altitude);
+        let coverage = 0.7; // Adjust between 0 and 1 for desired cloud density
+
+        // Get noise
+        let worley = worley_fbm31(vec3(pos.xz * 0.0005 + vec2(globals.time * 0.02, 0.0), 0.0)) * height_weight;
+        if worley > 0.0 {
+            let perlin = perlin_fbm31(pos * 0.002 + vec3(globals.time * 0.1, 0.0, 0.0), 5) + 1.0;
+            cloud_contribution = clamp(perlin * worley - coverage, 0.0, 1.0) * height_weight * low_gradient * 0.2;
+        }
     }
 
     sample.density = fog_sample.contribution + cloud_contribution;
@@ -145,6 +153,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     // Compute sky color for the current view direction
     let sky_col = render_sky(rd, globals.sun_direction);
+    let sky_col_inv = render_sky(-rd, globals.sun_direction);
 
     // Compute scattering angle (dot product between view direction and light direction)
     let scattering_angle = dot(rd, sun_dir);
@@ -210,13 +219,13 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             let tau = clamp(density_sunwards, 0.0, 1.0) * SHADOW_EXTINCTION;
 
             // Height factor for reducing aur light
-            let height_factor = max(smoothstep(15000.0, 100.0, pos.y), 0.15);
+            let height_factor = max(smoothstep(15000.0, 1000.0, pos.y), 0.15);
 
             // Blend between aur and sun, modulated by sky color
             let sun_color = SUN_COLOR * globals.sun_intensity * 10.0;
 
             // Blend between sky based ambient and aur based on sun height, always using a little aur light
-            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 20.0) + sky_col;
+            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 50.0) + sky_col_inv;
 
             // Apply transmission to sun and ambient light
             let transmitted_sun = transmission(sun_color, tau);
