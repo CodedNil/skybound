@@ -1,8 +1,9 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::functions::{value_fbm31, perlin_fbm31, worley31, worley_fbm31, blue_noise}
+#import skybound::functions::blue_noise
+#import skybound::clouds::sample_clouds
 #import skybound::aur_fog::sample_fog
-#import skybound::sky::{render_sky}
-#import skybound::poles::{render_poles}
+#import skybound::sky::render_sky
+#import skybound::poles::render_poles
 
 @group(0) @binding(0) var<uniform> view: View;
 struct View {
@@ -24,6 +25,9 @@ struct Globals {
 }
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
+
+@group(0) @binding(4) var perlinworley_texture: texture_3d<f32>;
+@group(0) @binding(5) var perlinworley_sampler: sampler;
 
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
@@ -66,33 +70,17 @@ struct CloudSample {
 }
 fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     var sample: CloudSample;
-    let altitude = pos.y;
 
     // Thick aur fog below 0m
     let fog_sample = sample_fog(pos, dist, globals.time);
     sample.emission = fog_sample.emission;
 
-    // Low clouds starting at y=200
-    let low_gradient = smoothstep(800.0, 1000.0, altitude) * smoothstep(20000.0, 19000.0, altitude);
-    var cloud_contribution = 0.0;
+    // Sample our clouds
+    let clouds_sample = sample_clouds(pos, dist, globals.time);
 
-    if low_gradient > 0.01 {
-        // Height gradient and coverage
-        let height_weight = smoothstep(4000.0, 1000.0, altitude) + smoothstep(8800.0, 9000.0, altitude) * smoothstep(12000.0, 9000.0, altitude);
-        let coverage = 0.7; // Adjust between 0 and 1 for desired cloud density
-
-        // Get noise
-        let worley = worley_fbm31(vec3(pos.xz * 0.0005 + vec2(globals.time * 0.02, 0.0), 0.0)) * height_weight;
-        if worley > 0.0 {
-            let perlin = perlin_fbm31(pos * 0.002 + vec3(globals.time * 0.1, 0.0, 0.0), 5) + 1.0;
-            cloud_contribution = clamp(perlin * worley - coverage, 0.0, 1.0) * height_weight * low_gradient * 0.2;
-        }
-    }
-
-    sample.density = fog_sample.contribution + cloud_contribution;
-
+    sample.density = fog_sample.contribution + clouds_sample;
     if sample.density > 0.0 {
-        sample.color = (fog_sample.color * fog_sample.contribution + cloud_contribution) / sample.density;
+        sample.color = (fog_sample.color * fog_sample.contribution + clouds_sample) / sample.density;
     } else {
         sample.color = vec3(1.0);
     }

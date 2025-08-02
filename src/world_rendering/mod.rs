@@ -1,4 +1,9 @@
-use crate::world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates};
+mod perlinworley;
+
+use crate::{
+    world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates},
+    world_rendering::perlinworley::{PerlinWorleyTextureHandle, setup_perlinworley_texture},
+};
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -10,18 +15,21 @@ use bevy::{
     prelude::*,
     render::{
         Extract, Render, RenderApp, RenderStartup, RenderSystems,
-        extract_resource::ExtractResource,
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
         load_shader_library,
+        render_asset::RenderAssets,
         render_graph::{
             NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{
-                sampler, texture_2d, texture_depth_2d, uniform_buffer, uniform_buffer_sized,
+                sampler, texture_2d, texture_3d, texture_depth_2d, uniform_buffer,
+                uniform_buffer_sized,
             },
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
+        texture::GpuImage,
         view::{ExtractedView, ExtractedWindows, ViewTarget},
     },
 };
@@ -32,8 +40,12 @@ impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
         load_shader_library!(app, "shaders/functions.wgsl");
         load_shader_library!(app, "shaders/sky.wgsl");
+        load_shader_library!(app, "shaders/clouds.wgsl");
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
+
+        app.add_plugins((ExtractResourcePlugin::<PerlinWorleyTextureHandle>::default(),))
+            .add_systems(Startup, setup_perlinworley_texture);
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
@@ -320,6 +332,8 @@ impl ViewNode for VolumetricCloudsNode {
         let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
+        let gpu_images = world.resource::<RenderAssets<GpuImage>>();
+        let noise_texture_handle = world.resource::<PerlinWorleyTextureHandle>();
 
         // Ensure the intermediate data is ready
         let (
@@ -329,6 +343,7 @@ impl ViewNode for VolumetricCloudsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
+            Some(noise_gpu_image),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -336,6 +351,7 @@ impl ViewNode for VolumetricCloudsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
+            gpu_images.get(&noise_texture_handle.handle),
         )
         else {
             return Ok(());
@@ -350,6 +366,8 @@ impl ViewNode for VolumetricCloudsNode {
                 uniforms_binding,
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
+                &noise_gpu_image.texture_view,
+                &noise_gpu_image.sampler,
             )),
         );
 
@@ -419,6 +437,8 @@ fn setup_volumetric_clouds_pipeline(
                 uniform_buffer_sized(false, Some(CloudsGlobalUniform::min_size())),
                 sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_depth_2d(),                     // Depth texture from prepass
+                texture_3d(TextureSampleType::Float { filterable: true }), // Noise texture
+                sampler(SamplerBindingType::Filtering), // Noise sampler
             ),
         ),
     );

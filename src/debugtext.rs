@@ -1,4 +1,4 @@
-use crate::world::{CameraCoordinates, PLANET_RADIUS, WorldCoordinates};
+use crate::world::{CameraCoordinates, WorldCoordinates};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,

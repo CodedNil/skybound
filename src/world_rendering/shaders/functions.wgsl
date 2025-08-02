@@ -1,6 +1,12 @@
 #define_import_path skybound::functions
 
 // Many hash functions https://www.shadertoy.com/view/XlGcRh
+// https://github.com/johanhelsing/noisy_bevy/blob/main/assets/noisy_bevy.wgsl
+
+// Remap a range
+fn remap(x: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
+    return (((x - a) / (b - a)) * (d - c)) + c;
+}
 
 // White noise hash: f32 → f32 [0,1]
 fn hash11(p: f32) -> f32 {
@@ -33,9 +39,20 @@ fn hash3i1(p: vec3<i32>) -> f32 {
     return -1.0 + 2.0 * f32(n & 0x0fffffff) * HASH_MULTIPLIER;
 }
 
-// White noise hash: vec3 → vec3 [-1,1]
-const UI3: vec3<u32> = vec3<u32>(1597334673u, 3812015801u, 2798796415u);
+// White noise integer hash: vec2 → vec2 [-1,1]
+const UI2_1: vec2<u32> = vec2<u32>(1597334673u, 3812015801u);
+const UI2_2: vec2<u32> = vec2<u32>(362436069u, 521288629u);
 const UIF: f32 = 1.0 / f32(0xffffffffu);
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    let pi_i: vec2<i32> = vec2<i32>(floor(p));
+    var pi_u: vec2<u32> = vec2<u32>(pi_i) * UI2_1;
+    let h: u32 = pi_u.x ^ pi_u.y;
+    var qi_u: vec2<u32>  = vec2<u32>(h) * UI2_2;
+    return (vec2<f32>(qi_u) * UIF) * 2.0 - 1.0;
+}
+
+// White noise integer hash: vec3 → vec3 [-1,1]
+const UI3: vec3<u32> = vec3<u32>(1597334673u, 3812015801u, 2798796415u);
 fn hash33(p: vec3<f32>) -> vec3<f32> {
     var qi: vec3<u32> = vec3<u32>(vec3<i32>(p)) * UI3;
     var q2: vec3<u32> = vec3<u32>(qi.x ^ qi.y ^ qi.z) * UI3;
@@ -75,7 +92,7 @@ fn value31(p: vec3<f32>) -> f32 {
     );
 }
 
-// Perlin tiled noise: vec3 f32 → f32 [-1,1]
+// Perlin noise: vec3 → f32 [-1,1]
 fn perlin31(p: vec3<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -110,24 +127,43 @@ fn perlin31(p: vec3<f32>) -> f32 {
     return mix(nxy0, nxy1, u.z);
 }
 
-// Cellular noise: vec3<f32>, f32 → f32 [0,1]
+// Cellular noise: vec2 → f32 [0,1]
+fn worley21(p: vec2<f32>) -> f32 {
+    let cell: vec2<f32> = floor(p);
+    let fractal: vec2<f32> = p - cell;
+    var min_dist: f32 = 1e10;
+
+    // Search the 3×3 neighborhood
+    for (var x = -1.0; x <= 1.0; x += 1.0) {
+        for (var y = -1.0; y <= 1.0; y += 1.0) {
+            let offset: vec2<f32> = vec2<f32>(x, y);
+            let point: vec2<f32> = hash22(cell + offset) * 0.5 + 0.5 + offset;
+            let dist: f32 = length(fractal - point);
+            min_dist = min(min_dist, dist);
+        }
+    }
+
+    return 1.0 - min_dist;
+}
+
+// Cellular noise: vec3 → f32 [0,1]
 fn worley31(p: vec3<f32>) -> f32 {
-    let id: vec3<f32> = floor(p);
-    let frac: vec3<f32> = fract(p);
+    let cell: vec3<f32> = floor(p);
+    let fractal: vec3<f32> = p - cell;
     var min_dist: f32 = 1e4;
 
     for (var x = -1.0; x <= 1.0; x += 1.0) {
         for (var y = -1.0; y <= 1.0; y += 1.0) {
             for (var z = -1.0; z <= 1.0; z += 1.0) {
                 let offset: vec3<f32> = vec3<f32>(x, y, z);
-                let point: vec3<f32> = hash33(id + offset) * 0.5 + 0.5 + offset;
-                let dist: f32 = length(frac - point);
-                min_dist = min(min_dist, dist);
+                let point: vec3<f32> = hash33(cell + offset) * 0.5 + 0.5 + offset;
+                let dist = fractal - point;
+                min_dist = min(min_dist, dot(dist, dist));
             }
         }
     }
 
-    return 1.0 - min_dist * min_dist; // Square distance for smoother output
+    return 1.0 - min_dist;
 }
 
 // Fractional Brownian motion: vec3 → f32 [-1,1]
@@ -140,7 +176,7 @@ const MAX_OCT: u32 = 6u;
 const WEIGHTS: array<f32, MAX_OCT> = array<f32, MAX_OCT>(0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625);
 const NORMS: array<f32, MAX_OCT> = array<f32, MAX_OCT>(1.0, 0.75, 0.875, 0.9375, 0.96875, 0.984375);
 
-// Value-FBM combined: vec3<f32> u32 → f32 [-1,1]
+// Value-FBM combined: vec3 u32 → f32 [-1,1]
 fn value_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
     var sum = 0.0;
     var pos = p;
@@ -151,8 +187,7 @@ fn value_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
     return sum / NORMS[octaves - 1u];
 }
 
-// Perlin-FBM combined: vec3<f32> u32 → f32 [-1,1]
-const AMPLITUDE_DECAY: f32 = exp2(-0.85);
+// Perlin-FBM combined: vec3 u32 → f32 [-1,1]
 fn perlin_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
     var sum = 0.0;
     var pos = p;
@@ -163,7 +198,12 @@ fn perlin_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
     return sum / NORMS[octaves - 1u];
 }
 
-// Worley-FBM combined: vec3<f32> → f32 [0,1]
+// Worley-FBM combined: vec2 → f32 [0,1]
+fn worley_fbm21(p: vec2<f32>) -> f32 {
+    return worley21(p) * 0.625 + worley21(p * 2.0) * 0.25 + worley21(p * 4.0) * 0.125;
+}
+
+// Worley-FBM combined: vec3 → f32 [0,1]
 fn worley_fbm31(p: vec3<f32>) -> f32 {
     return worley31(p) * 0.625 + worley31(p * 2.0) * 0.25 + worley31(p * 4.0) * 0.125;
 }
