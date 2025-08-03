@@ -1,8 +1,8 @@
-mod perlinworley;
+mod perlin_worley_compute;
 
 use crate::{
     world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates},
-    world_rendering::perlinworley::{PerlinWorleyTextureHandle, setup_perlinworley_texture},
+    world_rendering::perlin_worley_compute::{PerlinWorleyPlugin, PerlinWorleyTexture},
 };
 use bevy::{
     core_pipeline::{
@@ -15,7 +15,7 @@ use bevy::{
     prelude::*,
     render::{
         Extract, Render, RenderApp, RenderStartup, RenderSystems,
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
+        extract_resource::ExtractResource,
         load_shader_library,
         render_asset::RenderAssets,
         render_graph::{
@@ -44,8 +44,7 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
 
-        app.add_plugins((ExtractResourcePlugin::<PerlinWorleyTextureHandle>::default(),))
-            .add_systems(Startup, setup_perlinworley_texture);
+        app.add_plugins(PerlinWorleyPlugin);
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
@@ -333,7 +332,7 @@ impl ViewNode for VolumetricCloudsNode {
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
-        let noise_texture_handle = world.resource::<PerlinWorleyTextureHandle>();
+        let noise_texture_handle = world.resource::<PerlinWorleyTexture>();
 
         // Ensure the intermediate data is ready
         let (
