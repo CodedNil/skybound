@@ -132,9 +132,12 @@ fn perlin31(p: vec3<f32>) -> f32 {
     return mix(nxy0, nxy1, u.z);
 }
 fn perlin31_tiled(p: vec3<f32>, freq: f32) -> f32 {
+    // Grid
     let i = floor(p);
     let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f); // Cubic interpolation
+
+    // Quintic interpolant
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
     let g000 = hash33(i);
     let g100 = hash33(mod3(i + vec3<f32>(1.0, 0.0, 0.0), freq));
@@ -205,7 +208,7 @@ fn worley31(p: vec3<f32>) -> f32 {
 }
 fn worley31_tiled(p: vec3<f32>, freq: f32) -> f32 {
     let cell: vec3<f32> = floor(p);
-    let fractal: vec3<f32> = p - cell;
+    let fractal: vec3<f32> = fract(p);
     var min_dist: f32 = 1e4;
 
     for (var x = -1.0; x <= 1.0; x += 1.0) {

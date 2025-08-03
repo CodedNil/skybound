@@ -2,14 +2,12 @@
 
 @group(0) @binding(0) var output: texture_storage_3d<rgba32float, write>;
 
-const RESOLUTION = 128u;
+const RESOLUTION_XZ: f32 = 1024.0;
+const RESOLUTION_Y: f32 = 128.0;
 
 @compute @workgroup_size(4, 4, 4)
 fn generate_noise(@builtin(global_invocation_id) id: vec3<u32>) {
-    if (id.x >= RESOLUTION || id.y >= RESOLUTION || id.z >= RESOLUTION) {
-        return;
-    }
-    let pos = vec3<f32>(id) / f32(RESOLUTION);
+    let pos = vec3<f32>(id) / vec3<f32>(RESOLUTION_XZ, RESOLUTION_XZ, RESOLUTION_Y);
 
     let freq = 4.0;
 
