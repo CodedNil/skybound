@@ -2,7 +2,13 @@ use bevy::math::Vec3;
 use orx_parallel::*;
 
 // FBM Perlin Noise
-pub fn worley_octave_3d(width: usize, height: usize, depth: usize, res: usize) -> Vec<f32> {
+pub fn worley_octave_3d(
+    width: usize,
+    height: usize,
+    depth: usize,
+    res: usize,
+    pow: f32,
+) -> Vec<f32> {
     // Generate three octaves of noise
     worley_3d(width, height, depth, res)
         .iter()
@@ -10,7 +16,7 @@ pub fn worley_octave_3d(width: usize, height: usize, depth: usize, res: usize) -
         .zip(worley_3d(width, height, depth, res * 4).iter())
         .map(|((&o1, &o2), &o3)| {
             let combined_value = o1 * 0.625 + o2 * 0.25 + o3 * 0.125;
-            combined_value.powf(0.5)
+            combined_value.powf(pow)
         })
         .collect()
 }

@@ -31,7 +31,8 @@ pub fn perlin_image_3d(
             let v = fbm_3d(pos, octaves, base_freq);
 
             // map from [-1..1] to [0..1]
-            v * 0.5 + 0.5
+            // v * 0.5 + 0.5
+            v
         })
         .collect()
 }

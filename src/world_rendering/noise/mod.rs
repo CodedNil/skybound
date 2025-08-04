@@ -20,52 +20,68 @@ pub struct NoiseTextures {
     pub turbulence: Handle<Image>,
 }
 
+const IMAGE_SAMPLER: ImageSamplerDescriptor = ImageSamplerDescriptor {
+    address_mode_u: ImageAddressMode::Repeat,
+    address_mode_v: ImageAddressMode::Repeat,
+    address_mode_w: ImageAddressMode::Repeat,
+    mag_filter: ImageFilterMode::Linear,
+    min_filter: ImageFilterMode::Linear,
+    mipmap_filter: ImageFilterMode::Linear,
+    lod_min_clamp: 0.0,
+    lod_max_clamp: 32.0,
+    compare: None,
+    anisotropy_clamp: 1,
+    border_color: None,
+    label: None,
+};
+
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let start = std::time::Instant::now();
+
+    // Save the first depth layer of each noise map using image crate as a png image in assets/textures
+    let save_noise_layer = |data: &[f32], filename: &str, size: usize| {
+        RgbaImage::from_raw(
+            size as u32,
+            size as u32,
+            (&data[0..(size * size)])
+                .iter()
+                .flat_map(|&v| {
+                    let val = (v * 255.0) as u8;
+                    [val, val, val, 255]
+                })
+                .collect(),
+        )
+        .unwrap()
+        .save(&Path::new("assets/textures").join(filename))
+        .unwrap();
+    };
+
     let base_texture = {
         let size = 128;
 
         // Generate base Perlin noise and Worley noise at increasing frequencies
-        let start = std::time::Instant::now();
-        let perlin = spread(&perlin::perlin_image_3d(size, size, size, 5, 4.0));
-        let worley1 = spread(&worley::worley_octave_3d(size, size, size, 12));
-        let worley2 = spread(&worley::worley_octave_3d(size, size, size, 12));
-        let worley3 = spread(&worley::worley_octave_3d(size, size, size, 18));
-        let worley4 = spread(&worley::worley_octave_3d(size, size, size, 24));
-        println!("Noise generation took: {:?}", start.elapsed());
+        let worley_pow = 0.5;
+        let perlin = spread(&perlin::perlin_image_3d(size, size, size, 5, 8.0));
+        let worley1 = worley::worley_octave_3d(size, size, size, 6, worley_pow);
+        let worley2 = spread(&worley::worley_octave_3d(size, size, size, 12, worley_pow));
+        let worley3 = spread(&worley::worley_octave_3d(size, size, size, 18, worley_pow));
+        let worley4 = spread(&worley::worley_octave_3d(size, size, size, 24, worley_pow));
 
         // Generate Perlin-Worley noise
         let perlin_worley: Vec<f32> = perlin
             .iter()
             .zip(worley1)
-            .map(|(&v1, v2)| {
-                let v1 = v1 as f32;
-                let v2 = v2 as f32;
-                let c = v1.clamp(v2, 1.0);
-                map_range(c, 0.0, 1.0, v2, 1.0)
+            .map(|(&perlin, worley1)| {
+                let perlin = perlin as f32;
+                let worley1 = worley1 as f32;
+                map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worley1, 1.0)
             })
             .collect();
 
-        // Save the first depth layer of each noise map using image crate as a png image in assets/textures
-        let save_noise_layer = |data: &[f32], filename: &str| {
-            RgbaImage::from_raw(
-                size as u32,
-                size as u32,
-                (&data[0..(size * size)])
-                    .iter()
-                    .flat_map(|&v| {
-                        let val = (v * 255.0) as u8;
-                        [val, val, val, 255]
-                    })
-                    .collect(),
-            )
-            .unwrap()
-            .save(&Path::new("assets/textures").join(filename))
-            .unwrap();
-        };
-        save_noise_layer(&perlin, "perlinworley.png");
-        save_noise_layer(&worley2, "worley1.png");
-        save_noise_layer(&worley3, "worley2.png");
-        save_noise_layer(&worley4, "worley3.png");
+        save_noise_layer(&perlin, "base_perlinworley.png", size);
+        save_noise_layer(&worley2, "base_worley1.png", size);
+        save_noise_layer(&worley3, "base_worley2.png", size);
+        save_noise_layer(&worley4, "base_worley3.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<f32> = (0..perlin.len())
@@ -83,23 +99,50 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             TextureFormat::Rgba32Float,
             RenderAssetUsages::RENDER_WORLD,
         );
-        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-            address_mode_u: ImageAddressMode::Repeat,
-            address_mode_v: ImageAddressMode::Repeat,
-            address_mode_w: ImageAddressMode::Repeat,
-            mag_filter: ImageFilterMode::Linear,
-            min_filter: ImageFilterMode::Linear,
-            mipmap_filter: ImageFilterMode::Linear,
-            ..default()
-        });
+        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
         image
     };
 
-    let handle = images.add(base_texture);
+    let detail_texture = {
+        let size = 32;
+
+        // Generate Worley noise at increasing frequencies
+        let worley_pow = 0.6;
+        let worley1 = worley::worley_octave_3d(size, size, size, 5, worley_pow);
+        let worley2 = worley::worley_octave_3d(size, size, size, 6, worley_pow);
+        let worley3 = worley::worley_octave_3d(size, size, size, 7, worley_pow);
+
+        save_noise_layer(&worley1, "detail_worley1.png", size);
+        save_noise_layer(&worley2, "detail_worley2.png", size);
+        save_noise_layer(&worley3, "detail_worley3.png", size);
+
+        // Interleave the noise into RGBA floats
+        let flat_data: Vec<f32> = (0..worley1.len())
+            .flat_map(|i| [worley1[i], worley2[i], worley3[i], 1.0])
+            .collect();
+        let data_u8 = bytemuck::cast_slice(&flat_data);
+        let mut image = Image::new(
+            Extent3d {
+                width: size as u32,
+                height: size as u32,
+                depth_or_array_layers: size as u32,
+            },
+            TextureDimension::D3,
+            data_u8.to_vec(),
+            TextureFormat::Rgba32Float,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
+        image
+    };
+
+    println!("Noise generation took: {:?}", start.elapsed());
+    let base_handle = images.add(base_texture);
+    let detail_handle = images.add(detail_texture);
     commands.insert_resource(NoiseTextures {
-        base: handle.clone(),
-        detail: handle.clone(),
-        turbulence: handle,
+        base: base_handle.clone(),
+        detail: detail_handle,
+        turbulence: base_handle,
     });
 }
 
