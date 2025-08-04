@@ -20,8 +20,7 @@ use bevy::{
     shader::PipelineCacheError,
 };
 
-const RESOLUTION_XZ: u32 = 1024;
-const RESOLUTION_Y: u32 = 128;
+const RESOLUTION: u32 = 128;
 const SHADER_ASSET_PATH: &str = "shaders/perlin_worley_compute.wgsl";
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
@@ -30,8 +29,6 @@ struct PerlinWorleyLabel;
 pub struct PerlinWorleyPlugin;
 impl Plugin for PerlinWorleyPlugin {
     fn build(&self, app: &mut App) {
-        load_shader_library!(app, "shaders/functions.wgsl");
-
         app.add_systems(Startup, setup_perlinworley_texture)
             .add_plugins(ExtractResourcePlugin::<PerlinWorleyTexture>::default());
 
@@ -64,14 +61,14 @@ struct PerlinWorleyBindGroup(BindGroup);
 
 fn setup_perlinworley_texture(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let bytes_per_pixel = 16;
-    let total_bytes = (RESOLUTION_XZ * RESOLUTION_XZ * RESOLUTION_Y * bytes_per_pixel) as usize;
+    let total_bytes = (RESOLUTION * RESOLUTION * RESOLUTION * bytes_per_pixel) as usize;
     let data = vec![0u8; total_bytes];
 
     let mut image = Image::new(
         Extent3d {
-            width: RESOLUTION_XZ,
-            height: RESOLUTION_XZ,
-            depth_or_array_layers: RESOLUTION_Y,
+            width: RESOLUTION,
+            height: RESOLUTION,
+            depth_or_array_layers: RESOLUTION,
         },
         TextureDimension::D3,
         data,
@@ -116,7 +113,7 @@ fn init_perlinworley_pipeline(
         label: Some("perlin_worley_compute".into()),
         layout: vec![layout.clone()],
         shader: asset_server.load(SHADER_ASSET_PATH),
-        entry_point: Some("generate_noise".into()),
+        entry_point: Some("generate_cloud_base".into()),
         ..default()
     });
 
@@ -209,7 +206,7 @@ impl render_graph::Node for PerlinWorleyComputeNode {
 
         pass.set_bind_group(0, &bind_group.0, &[]);
         pass.set_pipeline(init_pipeline);
-        let groups = RESOLUTION_XZ / 4;
+        let groups = RESOLUTION / 4;
         pass.dispatch_workgroups(groups, groups, groups);
 
         Ok(())

@@ -16,8 +16,8 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32) -> f32 {
     var sample: f32;
 
     // Height gradient
-    let low_altitude = smoothstep(1800.0, 2000.0, altitude) * smoothstep(5000.0, 2500.0, altitude);
-    let high_altitude = smoothstep(18800.0, 19000.0, altitude) * smoothstep(21000.0, 19500.0, altitude);
+    let low_altitude = smoothstep(1400.0, 1500.0, altitude) * smoothstep(2500.0, 1600.0, altitude);
+    let high_altitude = smoothstep(7800.0, 8000.0, altitude) * smoothstep(8500.0, 8000.0, altitude);
     let height_weight = clamp(low_altitude + high_altitude, 0.0, 1.0);
     if height_weight <= 0.0 { return sample; }
 

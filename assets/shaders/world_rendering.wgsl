@@ -111,142 +111,159 @@ fn light_scattering(light: vec3<f32>, angle: f32) -> vec3<f32> {
 // Raymarch through all the clouds
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let uv = in.uv;
-    let pix = in.position.xy;
+    // let uv = in.uv;
+    // let pix = in.position.xy;
 
-    // Load depth and unproject to clip space
-    let depth = textureSample(depth_texture, linear_sampler, uv);
-    let ndc = vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth, 1.0);
+    // // Load depth and unproject to clip space
+    // let depth = textureSample(depth_texture, linear_sampler, uv);
+    // let ndc = vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth, 1.0);
 
-    // Reconstruct world‑space pos
-    let world_pos4 = view.world_from_clip * ndc;
-    let world_pos3 = world_pos4.xyz / world_pos4.w;
+    // // Reconstruct world‑space pos
+    // let world_pos4 = view.world_from_clip * ndc;
+    // let world_pos3 = world_pos4.xyz / world_pos4.w;
 
-    // Ray origin & dir
-    let ro = view.world_position; //vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
-    let rd_vec = world_pos3 - ro;
-    let t_max = length(rd_vec);
-    let rd = rd_vec / t_max;
+    // // Ray origin & dir
+    // let ro = view.world_position; //vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
+    // let rd_vec = world_pos3 - ro;
+    // let t_max = length(rd_vec);
+    // let rd = rd_vec / t_max;
 
-    let dither = fract(blue_noise(pix));
+    // let dither = fract(blue_noise(pix));
 
-    var accumulation = vec4(0.0);
-    var t = dither * STEP_SIZE_INSIDE;
-    var steps_outside_cloud = 0;
+    // var accumulation = vec4(0.0);
+    // var t = dither * STEP_SIZE_INSIDE;
+    // var steps_outside_cloud = 0;
 
-    // Get sun direction and intensity, mix between aur light (straight up) and sun
-    let sun_dot = globals.sun_direction.y;
-    let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
-    let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
+    // // Get sun direction and intensity, mix between aur light (straight up) and sun
+    // let sun_dot = globals.sun_direction.y;
+    // let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
+    // let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
 
-    // Compute sky color for the current view direction
-    let sky_col = render_sky(rd, globals.sun_direction);
-    let sky_col_inv = render_sky(-rd, globals.sun_direction);
+    // // Compute sky color for the current view direction
+    // let sky_col = render_sky(rd, globals.sun_direction);
+    // let sky_col_inv = render_sky(-rd, globals.sun_direction);
 
-    // Compute scattering angle (dot product between view direction and light direction)
-    let scattering_angle = dot(rd, sun_dir);
+    // // Compute scattering angle (dot product between view direction and light direction)
+    // let scattering_angle = dot(rd, sun_dir);
 
-    // Calculate cylinders to render for the poles, behind all clouds
-    let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
+    // // Calculate cylinders to render for the poles, behind all clouds
+    // let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
 
-    for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
-            break;
-        }
+    // for (var i = 0; i < MAX_STEPS; i += 1) {
+    //     if t >= t_max || accumulation.a >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
+    //         break;
+    //     }
 
-        let pos = ro + rd * t;
-        let cloud_sample = sample_cloud(pos, t);
-        let step_density = cloud_sample.density;
+    //     let pos = ro + rd * t;
+    //     let cloud_sample = sample_cloud(pos, t);
+    //     let step_density = cloud_sample.density;
 
-        // Scale step size based on distance from camera
-        var step_scaler = 1.0;
-        if t > STEP_DISTANCE_SCALING_START {
-            step_scaler = 1.0 + (t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR;
-        }
-        // Reduce scaling when close to surfaces
-        let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
-        let distance_left = t_max - t;
-        if distance_left < close_threshold {
-            let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
-            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
-        }
+    //     // Scale step size based on distance from camera
+    //     var step_scaler = 1.0;
+    //     if t > STEP_DISTANCE_SCALING_START {
+    //         step_scaler = 1.0 + (t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR;
+    //     }
+    //     // Reduce scaling when close to surfaces
+    //     let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
+    //     let distance_left = t_max - t;
+    //     if distance_left < close_threshold {
+    //         let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
+    //         step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
+    //     }
 
-        // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
-        if step_density > 0.0 {
-            if steps_outside_cloud != 0 {
-                // First step into the cloud;
-                steps_outside_cloud = 0;
-                t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * step_scaler, 0.0);
-                continue;
-            }
-        } else {
-            steps_outside_cloud += 1;
-        }
+    //     // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
+    //     if step_density > 0.0 {
+    //         if steps_outside_cloud != 0 {
+    //             // First step into the cloud;
+    //             steps_outside_cloud = 0;
+    //             t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * step_scaler, 0.0);
+    //             continue;
+    //         }
+    //     } else {
+    //         steps_outside_cloud += 1;
+    //     }
 
-        var step = STEP_SIZE_OUTSIDE * step_scaler;
-        if step_density > 0.0 {
-            step = STEP_SIZE_INSIDE * step_scaler;
+    //     var step = STEP_SIZE_OUTSIDE * step_scaler;
+    //     if step_density > 0.0 {
+    //         step = STEP_SIZE_INSIDE * step_scaler;
 
-            let step_color = cloud_sample.color;
+    //         let step_color = cloud_sample.color;
 
-            // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
-            var lightmarch_distance = 0.0;
-            for (var j: u32 = 1; j <= LIGHT_STEPS; j++) {
-                var light_step_size = LIGHT_STEP_SIZE[j];
-                lightmarch_distance += light_step_size;
+    //         // Lightmarching for self-shadowing
+    //         var density_sunwards = max(step_density, 0.0);
+    //         var lightmarch_distance = 0.0;
+    //         for (var j: u32 = 1; j <= LIGHT_STEPS; j++) {
+    //             var light_step_size = LIGHT_STEP_SIZE[j];
+    //             lightmarch_distance += light_step_size;
 
-                let light_offset = pos + sun_dir * lightmarch_distance;
-                density_sunwards += sample_cloud(light_offset, t).density * lightmarch_distance;
-                if density_sunwards >= 0.95 {
-                    break;
-                }
-            }
+    //             let light_offset = pos + sun_dir * lightmarch_distance;
+    //             density_sunwards += sample_cloud(light_offset, t).density * lightmarch_distance;
+    //             if density_sunwards >= 0.95 {
+    //                 break;
+    //             }
+    //         }
 
-            // Calcuate self shadowing
-            let tau = clamp(density_sunwards, 0.0, 1.0) * SHADOW_EXTINCTION;
+    //         // Calcuate self shadowing
+    //         let tau = clamp(density_sunwards, 0.0, 1.0) * SHADOW_EXTINCTION;
 
-            // Height factor for reducing aur light
-            let height_factor = max(smoothstep(15000.0, 1000.0, pos.y), 0.15);
+    //         // Height factor for reducing aur light
+    //         let height_factor = max(smoothstep(15000.0, 1000.0, pos.y), 0.15);
 
-            // Blend between aur and sun, modulated by sky color
-            let sun_color = SUN_COLOR * globals.sun_intensity * 10.0;
+    //         // Blend between aur and sun, modulated by sky color
+    //         let sun_color = SUN_COLOR * globals.sun_intensity * 10.0;
 
-            // Blend between sky based ambient and aur based on sun height, always using a little aur light
-            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 50.0) + sky_col_inv;
+    //         // Blend between sky based ambient and aur based on sun height, always using a little aur light
+    //         let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 50.0) + sky_col_inv;
 
-            // Apply transmission to sun and ambient light
-            let transmitted_sun = transmission(sun_color, tau);
-            let transmitted_ambient = transmission(ambient_color, tau * 0.5); // Ambient attenuated less
+    //         // Apply transmission to sun and ambient light
+    //         let transmitted_sun = transmission(sun_color, tau);
+    //         let transmitted_ambient = transmission(ambient_color, tau * 0.5); // Ambient attenuated less
 
-            // Apply light scattering to sun light based on angle
-            let scattered_sun = light_scattering(sun_color, scattering_angle);
+    //         // Apply light scattering to sun light based on angle
+    //         let scattered_sun = light_scattering(sun_color, scattering_angle);
 
-            // Combine transmitted and scattered light, weighted by density
-            var lit_color = ((transmitted_sun + scattered_sun) * step_density + transmitted_ambient) * step_color + cloud_sample.emission;
+    //         // Combine transmitted and scattered light, weighted by density
+    //         var lit_color = ((transmitted_sun + scattered_sun) * step_density + transmitted_ambient) * step_color + cloud_sample.emission;
 
-            let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
-            accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
-        }
+    //         let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
+    //         accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
+    //     }
 
-        t += step;
+    //     t += step;
+    // }
+
+    // accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
+
+    // if depth <= 0.00001 {
+    //     // Blend in poles behind clouds
+    //     accumulation = vec4(
+    //         accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
+    //         accumulation.a + pole_color.a * (1.0 - accumulation.a)
+    //     );
+
+    //     // Add our sky in the background
+    //     accumulation = vec4(
+    //         accumulation.rgb + sky_col * (1.0 - accumulation.a),
+    //         1.0
+    //     );
+    // }
+
+    // return clamp(accumulation, vec4(0.0), vec4(1.0));
+
+    let uv = in.uv - globals.time * 0.02;
+
+    let texture = textureSample(perlinworley_texture, perlinworley_sampler, vec3<f32>(uv.x, uv.y, 0.0));
+
+    var col = vec3(0.0);
+    if in.uv.x < 0.25 {
+        col = vec3(texture.r);
+    } else if in.uv.x < 0.5 {
+        col = vec3(texture.g);
+    } else if in.uv.x < 0.75 {
+        col = vec3(texture.b);
+    } else {
+        col = vec3(texture.a);
     }
 
-    accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-
-    if depth <= 0.00001 {
-        // Blend in poles behind clouds
-        accumulation = vec4(
-            accumulation.rgb + pole_color.rgb * pole_color.a * (1.0 - accumulation.a),
-            accumulation.a + pole_color.a * (1.0 - accumulation.a)
-        );
-
-        // Add our sky in the background
-        accumulation = vec4(
-            accumulation.rgb + sky_col * (1.0 - accumulation.a),
-            1.0
-        );
-    }
-
-    return clamp(accumulation, vec4(0.0), vec4(1.0));
+    return vec4(col, 1.0);
 }

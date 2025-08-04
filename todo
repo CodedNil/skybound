@@ -22,6 +22,12 @@ Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricC
 Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
 https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/
 
+Horizon zero dawn https://drive.google.com/file/d/1G0Iy8QUybKMKU7Ax-ooxdfXJR-ysmDVv/view
+
+have layers of clouds, define them in a const array, each has a height so there can be thin layers and different layer variables, each also has a different wind direction (though probably shouldn't drastically switch, slow rotations)
+could maybe do simple shadowing using the layers above with very coarse read at a single depth of it, then offset with light direction
+vary the layers each with a perlin noise heightmap, each has a different offset so sometimes layers can overlap
+
 better shapes for cumulus
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation

@@ -101,7 +101,9 @@ fn value31(p: vec3<f32>) -> f32 {
 fn perlin31(p: vec3<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f); // Cubic interpolation
+
+    // Quintic interpolant
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
 
     let g000 = hash33(i);
     let g100 = hash33(i + vec3<f32>(1.0, 0.0, 0.0));
@@ -111,42 +113,6 @@ fn perlin31(p: vec3<f32>) -> f32 {
     let g101 = hash33(i + vec3<f32>(1.0, 0.0, 1.0));
     let g011 = hash33(i + vec3<f32>(0.0, 1.0, 1.0));
     let g111 = hash33(i + vec3<f32>(1.0, 1.0, 1.0));
-
-    let n000 = dot(g000, f);
-    let n100 = dot(g100, f - vec3<f32>(1.0, 0.0, 0.0));
-    let n010 = dot(g010, f - vec3<f32>(0.0, 1.0, 0.0));
-    let n110 = dot(g110, f - vec3<f32>(1.0, 1.0, 0.0));
-    let n001 = dot(g001, f - vec3<f32>(0.0, 0.0, 1.0));
-    let n101 = dot(g101, f - vec3<f32>(1.0, 0.0, 1.0));
-    let n011 = dot(g011, f - vec3<f32>(0.0, 1.0, 1.0));
-    let n111 = dot(g111, f - vec3<f32>(1.0, 1.0, 1.0));
-
-    let nx00 = mix(n000, n100, u.x);
-    let nx10 = mix(n010, n110, u.x);
-    let nx01 = mix(n001, n101, u.x);
-    let nx11 = mix(n011, n111, u.x);
-
-    let nxy0 = mix(nx00, nx10, u.y);
-    let nxy1 = mix(nx01, nx11, u.y);
-
-    return mix(nxy0, nxy1, u.z);
-}
-fn perlin31_tiled(p: vec3<f32>, freq: f32) -> f32 {
-    // Grid
-    let i = floor(p);
-    let f = fract(p);
-
-    // Quintic interpolant
-    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-
-    let g000 = hash33(i);
-    let g100 = hash33(mod3(i + vec3<f32>(1.0, 0.0, 0.0), freq));
-    let g010 = hash33(mod3(i + vec3<f32>(0.0, 1.0, 0.0), freq));
-    let g110 = hash33(mod3(i + vec3<f32>(1.0, 1.0, 0.0), freq));
-    let g001 = hash33(mod3(i + vec3<f32>(0.0, 0.0, 1.0), freq));
-    let g101 = hash33(mod3(i + vec3<f32>(1.0, 0.0, 1.0), freq));
-    let g011 = hash33(mod3(i + vec3<f32>(0.0, 1.0, 1.0), freq));
-    let g111 = hash33(mod3(i + vec3<f32>(1.0, 1.0, 1.0), freq));
 
     let n000 = dot(g000, f);
     let n100 = dot(g100, f - vec3<f32>(1.0, 0.0, 0.0));
@@ -206,24 +172,6 @@ fn worley31(p: vec3<f32>) -> f32 {
 
     return 1.0 - min_dist;
 }
-fn worley31_tiled(p: vec3<f32>, freq: f32) -> f32 {
-    let cell: vec3<f32> = floor(p);
-    let fractal: vec3<f32> = fract(p);
-    var min_dist: f32 = 1e4;
-
-    for (var x = -1.0; x <= 1.0; x += 1.0) {
-        for (var y = -1.0; y <= 1.0; y += 1.0) {
-            for (var z = -1.0; z <= 1.0; z += 1.0) {
-                let offset: vec3<f32> = vec3<f32>(x, y, z);
-                let point: vec3<f32> = hash33(mod3(cell + offset, freq)) * 0.5 + 0.5 + offset;
-                let dist = fractal - point;
-                min_dist = min(min_dist, dot(dist, dist));
-            }
-        }
-    }
-
-    return 1.0 - min_dist;
-}
 
 // Fractional Brownian motion: vec3 → f32 [-1,1]
 const M3: mat3x3<f32> = mat3x3<f32>(
@@ -256,25 +204,8 @@ fn perlin_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
     }
     return sum / NORMS[octaves - 1u];
 }
-const G = exp2(-0.85);
-fn perlin_fbm31_tiled(p: vec3<f32>, freq: f32, octaves: u32) -> f32 {
-    var noise = 0.0;
-    var freqm = freq;
-    var amp = 1.0;
-    for (var i = 0u; i < octaves; i++) {
-        noise += amp * perlin31_tiled(p * freqm, freqm);
-        freqm *= 2.0;
-        amp *= G;
-    }
-    return noise;
-}
 
 // Worley-FBM combined: vec3 → f32 [0,1]
 fn worley_fbm31(p: vec3<f32>) -> f32 {
     return worley31(p) * 0.625 + worley31(p * 2.0) * 0.25 + worley31(p * 4.0) * 0.125;
-}
-fn worley_fbm31_tiled(p: vec3<f32>, freq: f32) -> f32 {
-    return worley31_tiled(p * freq, freq) * 0.625 +
-        worley31_tiled(p * freq * 2.0, freq * 2.0) * 0.25 +
-        worley31_tiled(p * freq * 4.0, freq * 4.0) * 0.125;
 }
