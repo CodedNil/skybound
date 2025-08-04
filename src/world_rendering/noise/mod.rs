@@ -1,8 +1,6 @@
 mod perlin;
 mod worley;
 
-use std::path::Path;
-
 use bevy::{
     asset::RenderAssetUsages,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
@@ -11,9 +9,9 @@ use bevy::{
         extract_resource::ExtractResource,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
     },
-    tasks::ComputeTaskPool,
 };
 use image::RgbaImage;
+use std::path::Path;
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct NoiseTextures {
@@ -27,24 +25,19 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let size = 128;
 
         // Generate base Perlin noise and Worley noise at increasing frequencies
-        let noise_data = ComputeTaskPool::get().scope(|scope| {
-            scope.spawn(async move { spread(&perlin::perlin_image_3d(size, size, size, 5, 8)) });
-            scope.spawn(async move { spread(&worley::worley_octave_3d(size, size, size, 3)) });
-            scope.spawn(async move { spread(&worley::worley_octave_3d(size, size, size, 6)) });
-            scope.spawn(async move { spread(&worley::worley_octave_3d(size, size, size, 12)) });
-            scope.spawn(async move { spread(&worley::worley_octave_3d(size, size, size, 24)) });
-        });
-        let perlin = &noise_data[0];
-        let worley1 = &noise_data[1];
-        let worley2 = &noise_data[2];
-        let worley3 = &noise_data[3];
-        let worley4 = &noise_data[4];
+        let start = std::time::Instant::now();
+        let perlin = spread(&perlin::perlin_image_3d(size, size, size, 5, 4.0));
+        let worley1 = spread(&worley::worley_octave_3d(size, size, size, 12));
+        let worley2 = spread(&worley::worley_octave_3d(size, size, size, 12));
+        let worley3 = spread(&worley::worley_octave_3d(size, size, size, 18));
+        let worley4 = spread(&worley::worley_octave_3d(size, size, size, 24));
+        println!("Noise generation took: {:?}", start.elapsed());
 
         // Generate Perlin-Worley noise
         let perlin_worley: Vec<f32> = perlin
             .iter()
             .zip(worley1)
-            .map(|(&v1, &v2)| {
+            .map(|(&v1, v2)| {
                 let v1 = v1 as f32;
                 let v2 = v2 as f32;
                 let c = v1.clamp(v2, 1.0);
@@ -53,7 +46,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             .collect();
 
         // Save the first depth layer of each noise map using image crate as a png image in assets/textures
-        let save_noise_layer = |data: &Vec<f32>, filename: &str| {
+        let save_noise_layer = |data: &[f32], filename: &str| {
             RgbaImage::from_raw(
                 size as u32,
                 size as u32,
@@ -69,10 +62,10 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             .save(&Path::new("assets/textures").join(filename))
             .unwrap();
         };
-        save_noise_layer(&perlin_worley, "perlinworley.png");
-        save_noise_layer(worley2, "worley1.png");
-        save_noise_layer(worley3, "worley2.png");
-        save_noise_layer(worley4, "worley3.png");
+        save_noise_layer(&perlin, "perlinworley.png");
+        save_noise_layer(&worley2, "worley1.png");
+        save_noise_layer(&worley3, "worley2.png");
+        save_noise_layer(&worley4, "worley3.png");
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<f32> = (0..perlin.len())

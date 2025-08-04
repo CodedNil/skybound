@@ -1,5 +1,5 @@
-use bevy::prelude::*;
-use rand::Rng;
+use bevy::math::Vec3;
+use orx_parallel::*;
 
 // FBM Perlin Noise
 pub fn worley_octave_3d(width: usize, height: usize, depth: usize, res: usize) -> Vec<f32> {
@@ -10,84 +10,68 @@ pub fn worley_octave_3d(width: usize, height: usize, depth: usize, res: usize) -
         .zip(worley_3d(width, height, depth, res * 4).iter())
         .map(|((&o1, &o2), &o3)| {
             let combined_value = o1 * 0.625 + o2 * 0.25 + o3 * 0.125;
-            combined_value.powf(0.3)
+            combined_value.powf(0.5)
         })
         .collect()
 }
 
 /// Generate 3D Worley (cellular) noise.
-pub fn worley_3d(width: usize, height: usize, depth: usize, res: usize) -> Vec<f32> {
-    // Determine the size of each cell
-    let cell_size = Vec3::new(
-        width as f32 / res as f32,
-        height as f32 / res as f32,
-        depth as f32 / res as f32,
+pub fn worley_3d(width: usize, height: usize, depth: usize, freq: usize) -> Vec<f32> {
+    // size of a cell in world‐space
+    let inv_cell = Vec3::new(
+        freq as f32 / width as f32,
+        freq as f32 / height as f32,
+        freq as f32 / depth as f32,
     );
+    let tile = freq as i32;
+    let plane = width * height;
+    let total = plane * depth;
 
-    // Generate one random point per cell
-    let mut rng = rand::rng();
-    let mut points = Vec::with_capacity(res * res * res);
-    for z in 0..res {
-        for y in 0..res {
-            for x in 0..res {
-                let base = Vec3::new(x as f32, y as f32, z as f32) * cell_size;
-                let jitter = Vec3::new(
-                    rng.random_range(0.0..cell_size.x),
-                    rng.random_range(0.0..cell_size.y),
-                    rng.random_range(0.0..cell_size.z),
-                );
-                points.push(base + jitter);
-            }
-        }
-    }
+    // Flatten the 3D loops into one big parallel iterator
+    (0..total)
+        .into_par()
+        .map(|i| {
+            // Unravel i -> (x,y,z)
+            let z = i / plane;
+            let rem = i % plane;
+            let y = rem / width;
+            let x = rem % width;
 
-    let mut max_dist = 0.0f32;
-    let mut distances: Vec<f32> = Vec::with_capacity(width * height * depth);
+            // Point in (0..freq) space
+            let p = (Vec3::new(x as f32, y as f32, z as f32) + Vec3::splat(0.5)) * inv_cell;
+            let cell = p.floor();
+            let frac = p - cell;
+            let ci = cell.x as i32;
+            let cj = cell.y as i32;
+            let ck = cell.z as i32;
 
-    // Calculate the shortest distance for each voxel
-    for z in 0..depth {
-        for y in 0..height {
-            for x in 0..width {
-                let center = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                let cell = (center / cell_size).floor().as_ivec3();
+            // Search the 3×3×3 neighborhood for the closest feature-point
+            let mut best_d2 = f32::MAX;
+            for dz in -1..=1 {
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let nx = (ci + dx).rem_euclid(tile) as u32;
+                        let ny = (cj + dy).rem_euclid(tile) as u32;
+                        let nz = (ck + dz).rem_euclid(tile) as u32;
 
-                // Search the 3x3x3 neighborhood of cells
-                let mut min_d = f32::MAX;
-                for dx in -1..=1 {
-                    for dy in -1..=1 {
-                        for dz in -1..=1 {
-                            let off = IVec3::new(dx, dy, dz);
-                            let neigh = (cell + off).rem_euclid(IVec3::splat(res as i32));
-                            let idx = (neigh.x
-                                + neigh.y * res as i32
-                                + neigh.z * res as i32 * res as i32)
-                                as usize;
+                        // Very cheap hash → three pseudo-random offsets in [0,1)
+                        let mut h = nx.wrapping_mul(73856093)
+                            ^ ny.wrapping_mul(19349669)
+                            ^ nz.wrapping_mul(83492791);
+                        h ^= (h >> 13) ^ (h << 17);
+                        let fx = ((h & 0xFF) as f32) / 255.0;
+                        let fy = (((h >> 8) & 0xFF) as f32) / 255.0;
+                        let fz = (((h >> 16) & 0xFF) as f32) / 255.0;
 
-                            let wrap = IVec3::new(
-                                (cell.x + dx).div_euclid(res as i32),
-                                (cell.y + dy).div_euclid(res as i32),
-                                (cell.z + dz).div_euclid(res as i32),
-                            );
-                            let world_off = Vec3::new(
-                                wrap.x as f32 * width as f32,
-                                wrap.y as f32 * height as f32,
-                                wrap.z as f32 * depth as f32,
-                            );
-                            let p = points[idx] + world_off;
-                            min_d = min_d.min((p - center).length());
-                        }
+                        let ft = Vec3::new(fx + dx as f32, fy + dy as f32, fz + dz as f32);
+                        let d2 = (ft - frac).dot(ft - frac);
+                        best_d2 = best_d2.min(d2);
                     }
                 }
-
-                max_dist = max_dist.max(min_d);
-                distances.push(min_d);
             }
-        }
-    }
 
-    // Normalize and invert the distances
-    distances
-        .into_iter()
-        .map(|d| 1.0 - (d / max_dist).clamp(0.0, 1.0))
+            // Final distance→[1..0] value
+            (1.0 - best_d2.sqrt()).clamp(0.0, 1.0)
+        })
         .collect()
 }
