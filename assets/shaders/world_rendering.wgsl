@@ -27,7 +27,6 @@ struct Globals {
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
 
 @group(0) @binding(4) var perlinworley_texture: texture_3d<f32>;
-@group(0) @binding(5) var perlinworley_sampler: sampler;
 
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
@@ -252,7 +251,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     let uv = in.uv - globals.time * 0.02;
 
-    let texture = textureSample(perlinworley_texture, perlinworley_sampler, vec3<f32>(uv.x, uv.y, 0.0));
+    let texture = textureSample(perlinworley_texture, linear_sampler, vec3<f32>(uv.x, uv.y, 0.0));
 
     var col = vec3(0.0);
     if in.uv.x < 0.25 {

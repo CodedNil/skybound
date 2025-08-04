@@ -1,11 +1,11 @@
 #define_import_path skybound::clouds
 #import skybound::functions::{remap, perlin_fbm31, worley_fbm21}
 
+@group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(4) var noise_texture: texture_3d<f32>;
-@group(0) @binding(5) var noise_sampler: sampler;
 
 fn sample_texture(pos: vec3<f32>) -> vec4<f32> {
-    return textureSample(noise_texture, noise_sampler, vec3<f32>(pos.x, pos.z, pos.y * 0.125));
+    return textureSample(noise_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y * 0.125));
 }
 
 const COVERAGE = 0.5; // Adjust between 0 and 1 for desired cloud density

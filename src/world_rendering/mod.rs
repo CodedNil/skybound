@@ -1,9 +1,6 @@
-mod perlin_worley_compute;
+mod noise;
 
-use crate::{
-    world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates},
-    world_rendering::perlin_worley_compute::{PerlinWorleyPlugin, PerlinWorleyTexture},
-};
+use crate::world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates};
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -15,7 +12,7 @@ use bevy::{
     prelude::*,
     render::{
         Extract, Render, RenderApp, RenderStartup, RenderSystems,
-        extract_resource::ExtractResource,
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
         load_shader_library,
         render_asset::RenderAssets,
         render_graph::{
@@ -44,7 +41,8 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
 
-        app.add_plugins(PerlinWorleyPlugin);
+        app.add_plugins((ExtractResourcePlugin::<noise::NoiseTextures>::default(),))
+            .add_systems(Startup, noise::setup_noise_textures);
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
@@ -332,7 +330,7 @@ impl ViewNode for VolumetricCloudsNode {
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
-        let noise_texture_handle = world.resource::<PerlinWorleyTexture>();
+        let noise_texture_handle = world.resource::<noise::NoiseTextures>();
 
         // Ensure the intermediate data is ready
         let (
@@ -342,7 +340,7 @@ impl ViewNode for VolumetricCloudsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
-            Some(noise_gpu_image),
+            Some(base_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -350,7 +348,7 @@ impl ViewNode for VolumetricCloudsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
-            gpu_images.get(&noise_texture_handle.handle),
+            gpu_images.get(&noise_texture_handle.base),
         )
         else {
             return Ok(());
@@ -365,8 +363,7 @@ impl ViewNode for VolumetricCloudsNode {
                 uniforms_binding,
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
-                &noise_gpu_image.texture_view,
-                &noise_gpu_image.sampler,
+                &base_noise.texture_view,
             )),
         );
 
@@ -421,6 +418,9 @@ fn setup_volumetric_clouds_pipeline(
 ) {
     // Create a linear sampler for the volumetric clouds
     let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::Repeat,
+        address_mode_v: AddressMode::Repeat,
+        address_mode_w: AddressMode::Repeat,
         mag_filter: FilterMode::Linear,
         min_filter: FilterMode::Linear,
         ..default()
@@ -437,7 +437,6 @@ fn setup_volumetric_clouds_pipeline(
                 sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_depth_2d(),                     // Depth texture from prepass
                 texture_3d(TextureSampleType::Float { filterable: true }), // Noise texture
-                sampler(SamplerBindingType::Filtering), // Noise sampler
             ),
         ),
     );
