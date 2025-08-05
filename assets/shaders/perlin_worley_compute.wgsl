@@ -22,7 +22,7 @@ fn generate_cloud_base(@builtin(global_invocation_id) id: vec3<u32>) {
     // Perlin-Worley noise
     let perlin_worley: f32 = mix(worley1, 1.0, clamp(perlin, worley1, 1.0));
 
-    let color = vec4<f32>(perlin, worley2, worley3, worley4);
+    let color = vec4<f32>(perlin_worley, worley2, worley3, worley4);
     textureStore(output, vec3<i32>(id), color);
 }
 

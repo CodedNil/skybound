@@ -8,7 +8,7 @@ pub fn worley_octave_3d(
     depth: usize,
     res: usize,
     pow: f32,
-) -> Vec<f32> {
+) -> Vec<u8> {
     // Generate three octaves of noise
     worley_3d(width, height, depth, res)
         .iter()
@@ -18,6 +18,7 @@ pub fn worley_octave_3d(
             let combined_value = o1 * 0.625 + o2 * 0.25 + o3 * 0.125;
             combined_value.powf(pow)
         })
+        .map(|v| (v * 255.0).round() as u8)
         .collect()
 }
 

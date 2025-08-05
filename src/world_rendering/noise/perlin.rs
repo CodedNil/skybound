@@ -8,7 +8,7 @@ pub fn perlin_image_3d(
     depth: usize,
     octaves: usize,
     base_freq: f32,
-) -> Vec<f32> {
+) -> Vec<u8> {
     let total_voxels = width * height * depth;
     (0..total_voxels)
         .par()
@@ -28,24 +28,49 @@ pub fn perlin_image_3d(
             );
 
             // compute fractal‐brownian motion
-            let v = fbm_3d(pos, octaves, base_freq);
+            let v = fbm3(pos, octaves, base_freq);
 
-            // map from [-1..1] to [0..1]
-            // v * 0.5 + 0.5
-            v
+            // map from [-1..1] to [0..255]
+            ((v * 0.5 + 0.5) * 255.0).round() as u8
+        })
+        .collect()
+}
+
+// Generate a 2D Perlin Noise Texture
+pub fn perlin_image_2d(width: usize, height: usize, octaves: usize, base_freq: f32) -> Vec<u8> {
+    let total_voxels = width * height;
+    (0..total_voxels)
+        .par()
+        .map(|i| {
+            // unravel i → (x,y)
+            let y = i / width;
+            let x = i % width;
+
+            // normalized coordinates in [0..1]
+            let pos = Vec3::new(
+                x as f32 / (width - 1) as f32,
+                y as f32 / (height - 1) as f32,
+                0.0,
+            );
+
+            // compute fractal‐brownian motion
+            let v = fbm3(pos, octaves, base_freq);
+
+            // map from [-1..1] to [0..255]
+            ((v * 0.5 + 0.5) * 255.0).round() as u8
         })
         .collect()
 }
 
 // FBM Perlin Noise
-fn fbm_3d(pos: Vec3, octaves: usize, mut freq: f32) -> f32 {
+fn fbm3(pos: Vec3, octaves: usize, mut freq: f32) -> f32 {
     let gain = 2.0_f32.powf(-0.85);
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
 
     for _ in 0..octaves {
-        total += perlin_3d(pos * freq, freq) * amp;
+        total += perlin3(pos * freq, freq) * amp;
         norm += amp;
         amp *= gain;
         freq *= 2.0;
@@ -65,7 +90,7 @@ const OFF: [Vec3; 8] = [
     Vec3::new(0.0, 1.0, 1.0),
     Vec3::new(1.0, 1.0, 1.0),
 ];
-fn perlin_3d(pos: Vec3, period: f32) -> f32 {
+fn perlin3(pos: Vec3, period: f32) -> f32 {
     // Cell corner + local coords
     let p = pos.floor();
     let w = pos.fract();
@@ -104,32 +129,23 @@ fn perlin_3d(pos: Vec3, period: f32) -> f32 {
     lerp(y0, y1, u.z)
 }
 
-/// Hash a Vec3→Vec3 gradient in [-1,1]
+// Simple 3D→3D hash to get a pseudo‐random gradient in [-1..1]
 const UI3: UVec3 = UVec3::new(1597334673, 3812015801, 2798796415);
 const UIF: f32 = 1.0 / (u32::MAX as f32);
 fn hash33(p: Vec3) -> Vec3 {
-    // floor→integer coords
     let ip = UVec3::new(p.x as u32, p.y as u32, p.z as u32);
-
-    // first multiply by big primes:
     let q = UVec3::new(
         ip.x.wrapping_mul(UI3.x),
         ip.y.wrapping_mul(UI3.y),
         ip.z.wrapping_mul(UI3.z),
     );
-
-    // xor them together:
     let r = q.x ^ q.y ^ q.z;
-
-    // one more multiply
     let q2 = UVec3::new(
         r.wrapping_mul(UI3.x),
         r.wrapping_mul(UI3.y),
         r.wrapping_mul(UI3.z),
     );
-
     // scale into [0..1], then remap to [-1..1]
     let f = Vec3::new(q2.x as f32, q2.y as f32, q2.z as f32) * UIF;
-
     2.0 * f - Vec3::ONE
 }
