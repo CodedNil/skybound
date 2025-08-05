@@ -73,18 +73,20 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
     var sample: CloudSample;
 
     // Thick aur fog below 0m
-    let fog_sample = sample_fog(pos, dist, globals.time);
-    sample.emission = fog_sample.emission;
+    // let fog_sample = sample_fog(pos, dist, globals.time);
+    // sample.emission = fog_sample.emission;
 
     // Sample our clouds
     let clouds_sample = sample_clouds(pos, dist, globals.time, linear_sampler);
 
-    sample.density = fog_sample.contribution + clouds_sample;
-    if sample.density > 0.0 {
-        sample.color = (fog_sample.color * fog_sample.contribution + clouds_sample) / sample.density;
-    } else {
-        sample.color = vec3(1.0);
-    }
+    // sample.density = fog_sample.contribution + clouds_sample;
+    // if sample.density > 0.0 {
+    //     sample.color = (fog_sample.color * fog_sample.contribution + clouds_sample) / sample.density;
+    // } else {
+    //     sample.color = vec3(1.0);
+    // }
+    sample.density = clouds_sample;
+    sample.color = vec3(1.0);
 
     return sample;
 }

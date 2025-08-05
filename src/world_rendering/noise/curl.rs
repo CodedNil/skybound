@@ -24,18 +24,15 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8
 
             // Calculate the 6 noise values using a clean, vector-based syntax
             let pos = Vec3::new(x_f, y_f, 0.0);
-            let noise_x_plus =
-                perlin_fbm3(pos + Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_x_plus = perlin_fbm3(pos + Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_x_minus =
-                perlin_fbm3(pos - Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
-            let noise_y_plus =
-                perlin_fbm3(pos + Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+                perlin_fbm3(pos - Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+            let noise_y_plus = perlin_fbm3(pos + Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_y_minus =
-                perlin_fbm3(pos - Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
-            let noise_z_plus =
-                perlin_fbm3(pos + Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+                perlin_fbm3(pos - Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+            let noise_z_plus = perlin_fbm3(pos + Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_z_minus =
-                perlin_fbm3(pos - Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+                perlin_fbm3(pos - Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
 
             // Calculate approximate partial derivatives.
             let d_noise_dx = (noise_x_plus - noise_x_minus) / (2.0 * EPSILON);
