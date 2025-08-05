@@ -33,12 +33,12 @@ struct Globals {
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
-const MAX_STEPS: i32 = 512;
+const MAX_STEPS: i32 = 2048;
 const STEP_SIZE_INSIDE: f32 = 8.0;
 const STEP_SIZE_OUTSIDE: f32 = 30.0;
 
 const STEP_DISTANCE_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
-const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0003; // How much to scale step size by distance
+const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0001; // How much to scale step size by distance, larger means larger steps
 
 const LIGHT_STEPS: u32 = 4; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: array<f32, 6> = array<f32, 6>(6.0, 10.0, 16.0, 24.0, 36.0, 48.0);
@@ -51,7 +51,7 @@ const AMBIENT_COLOR: vec3<f32> = vec3(0.7, 0.8, 1.0) * 0.5;
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.3, 0.2, 0.8) * 0.05;
 
 const FOG_START_DISTANCE: f32 = 1000.0;
-const FOG_END_DISTANCE: f32 = 100000.0;
+const FOG_END_DISTANCE: f32 = 200000.0;
 
 const SHADOW_EXTINCTION: f32 = 2.0; // Higher = deeper core shadows
 
@@ -92,6 +92,11 @@ fn sample_cloud(pos: vec3<f32>, dist: f32) -> CloudSample {
 }
 
 // Lighting Functions
+const K: f32 = 0.0795774715459;
+fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
+	return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
+}
+
 fn beer(material_amount: f32) -> f32 {
     return exp(-material_amount);
 }
@@ -143,8 +148,16 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
 
     // Compute sky color for the current view direction
-    let sky_col = render_sky(rd, globals.sun_direction);
-    let sky_col_inv = render_sky(-rd, globals.sun_direction);
+    let sky_col = render_sky(rd, globals.sun_direction, view.altitude);
+
+    // Stack multiple phase functions to emulate some backscattering
+    let cos_theta = dot(globals.sun_direction, rd);
+	let phase = max(max(henyey_greenstein(cos_theta, 0.6), henyey_greenstein(cos_theta, (0.4 - 1.4 * globals.sun_direction.y))), henyey_greenstein(cos_theta, -0.2));
+
+	// Precalculate sun and ambient colors
+	let atmosphere_sun = render_sky(rd, globals.sun_direction, view.altitude) * length(rd) * 0.1;
+	let atmosphere_ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), globals.sun_direction, view.altitude);
+	let atmosphere_ground = render_sky(normalize(vec3<f32>(1.0, -1.0, 0.0)), globals.sun_direction, view.altitude);
 
     // Compute scattering angle (dot product between view direction and light direction)
     let scattering_angle = dot(rd, sun_dir);
@@ -216,7 +229,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
             let sun_color = SUN_COLOR * globals.sun_intensity * 10.0;
 
             // Blend between sky based ambient and aur based on sun height, always using a little aur light
-            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 50.0) + sky_col_inv;
+            let ambient_color = (AMBIENT_AUR_COLOR * height_factor * 50.0) + sky_col;
 
             // Apply transmission to sun and ambient light
             let transmitted_sun = transmission(sun_color, tau);

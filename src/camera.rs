@@ -55,7 +55,7 @@ fn camera_controller(
             * controller.speed
             * time.delta_secs()
             * (if keyboard_input.pressed(KeyCode::ShiftLeft) {
-                4.0
+                10.0
             } else {
                 1.0
             });
@@ -79,7 +79,7 @@ fn camera_controller(
 
         // Speed adjustment with scroll wheel
         for event in mouse_wheel_events.read() {
-            controller.speed += event.y * 0.3 * controller.speed;
+            controller.speed += event.y * 0.5 * controller.speed;
             controller.speed = controller.speed.clamp(0.1, 5000.0);
         }
     }
