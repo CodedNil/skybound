@@ -1,36 +1,83 @@
-use crate::world_rendering::noise::perlin::perlin_2d;
+use crate::world_rendering::noise::perlin::perlin_fbm3;
+use bevy::math::Vec3;
+use orx_parallel::*;
 
 /// Computes the 2D curl magnitude of a scalar field
-pub fn curl_image_2d(width: usize, height: usize, res: usize) -> Vec<u8> {
-    let perlin: Vec<u8> = perlin_2d(width, height, res, 1.0);
+const EPSILON: f32 = 0.001;
+const SCALE: f32 = 0.005;
+const OCTAVES: usize = 5;
+const FREQUENCY: f32 = 2.0;
+const GAIN: f32 = 0.4;
+const GAMMA: f32 = 1.2;
+pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let total_pixels = width * height;
 
-    // Compute raw curl magnitudes
-    let mut mags = Vec::with_capacity(width * height);
-    let mut max_mag = 0.0f32;
+    let curl_values: Vec<Vec3> = (0..total_pixels)
+        .par()
+        .map(|i| {
+            let x = i % width;
+            let y = i / width;
 
-    for y in 0..height {
-        let y_plus = (y + 1) % height;
-        let y_minus = (y + height - 1) % height;
-        for x in 0..width {
-            let x_plus = (x + 1) % width;
-            let x_minus = (x + width - 1) % width;
+            // Map pixel coordinates to noise space
+            let x_f = (x as f32) * SCALE;
+            let y_f = (y as f32) * SCALE;
 
-            // Central differences, normalized to [0..1]
-            let dy = (perlin[y_plus * width + x] as f32 - perlin[y_minus * width + x] as f32) * 0.5
-                / 255.0;
-            let dx = (perlin[y * width + x_plus] as f32 - perlin[y * width + x_minus] as f32) * 0.5
-                / 255.0;
+            // Calculate the 6 noise values using a clean, vector-based syntax
+            let pos = Vec3::new(x_f, y_f, 0.0);
+            let noise_x_plus =
+                perlin_fbm3(pos + Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_x_minus =
+                perlin_fbm3(pos - Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_y_plus =
+                perlin_fbm3(pos + Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_y_minus =
+                perlin_fbm3(pos - Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_z_plus =
+                perlin_fbm3(pos + Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
+            let noise_z_minus =
+                perlin_fbm3(pos - Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, false);
 
-            let mag = (dy * dy + dx * dx).sqrt();
-            if mag > max_mag {
-                max_mag = mag;
-            }
-            mags.push(mag);
-        }
+            // Calculate approximate partial derivatives.
+            let d_noise_dx = (noise_x_plus - noise_x_minus) / (2.0 * EPSILON);
+            let d_noise_dy = (noise_y_plus - noise_y_minus) / (2.0 * EPSILON);
+            let d_noise_dz = (noise_z_plus - noise_z_minus) / (2.0 * EPSILON);
+
+            // Calculate the curl components.
+            let curl_x = d_noise_dy - d_noise_dz;
+            let curl_y = d_noise_dx + d_noise_dy;
+            let curl_z = d_noise_dz - d_noise_dx;
+            Vec3::new(curl_x, curl_y, curl_z)
+        })
+        .collect();
+
+    // Find the maximum absolute value among all curl components
+    let max_curl_magnitude = curl_values.iter().fold(0.0f32, |acc, v| {
+        acc.max(v.x.abs().max(v.y.abs()).max(v.z.abs()))
+    });
+    let max_curl_magnitude = if max_curl_magnitude == 0.0 {
+        1.0 // Avoid division by zero
+    } else {
+        max_curl_magnitude
+    };
+
+    // Second pass: normalize and map the values to u8
+    let mut r_data = Vec::with_capacity(total_pixels as usize);
+    let mut g_data = Vec::with_capacity(total_pixels as usize);
+    let mut b_data = Vec::with_capacity(total_pixels as usize);
+    for curl_vec in curl_values {
+        // Normalize the curl components to the range [-1, 1]
+        let normalized = curl_vec / max_curl_magnitude;
+
+        // Normalize the values from the range [-1, 1] to [0, 255]
+        let normalise_value = |v: f32| -> u8 {
+            let v_mapped = v * 0.5 + 0.5;
+            let v_gamma = v_mapped.powf(GAMMA);
+            (v_gamma * 255.0).clamp(0.0, 255.0).round() as u8
+        };
+        r_data.push(normalise_value(normalized.x));
+        g_data.push(normalise_value(normalized.y));
+        b_data.push(normalise_value(normalized.z));
     }
 
-    // Normalize to [0..255]
-    mags.into_iter()
-        .map(|m| (m / max_mag * 255.0).round() as u8)
-        .collect()
+    (r_data, g_data, b_data)
 }

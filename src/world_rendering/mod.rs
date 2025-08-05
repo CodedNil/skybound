@@ -341,6 +341,8 @@ impl ViewNode for VolumetricCloudsNode {
             Some(texture),
             Some(view),
             Some(base_noise),
+            Some(detail_noise),
+            Some(turbulence_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -349,6 +351,8 @@ impl ViewNode for VolumetricCloudsNode {
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
             gpu_images.get(&noise_texture_handle.base),
+            gpu_images.get(&noise_texture_handle.detail),
+            gpu_images.get(&noise_texture_handle.turbulence),
         )
         else {
             return Ok(());
@@ -364,6 +368,8 @@ impl ViewNode for VolumetricCloudsNode {
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
                 &base_noise.texture_view,
+                &detail_noise.texture_view,
+                &turbulence_noise.texture_view,
             )),
         );
 
@@ -437,7 +443,9 @@ fn setup_volumetric_clouds_pipeline(
                 uniform_buffer_sized(false, Some(CloudsGlobalUniform::min_size())),
                 sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_depth_2d(),                     // Depth texture from prepass
-                texture_3d(TextureSampleType::Float { filterable: true }), // Noise texture
+                texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
+                texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
             ),
         ),
     );

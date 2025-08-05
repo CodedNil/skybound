@@ -2,7 +2,7 @@ mod curl;
 mod perlin;
 mod worley;
 
-use crate::world_rendering::noise::{curl::curl_image_2d, perlin::perlin_3d, worley::worley_3d};
+use crate::world_rendering::noise::{curl::curl_2d_texture, perlin::perlin_3d, worley::worley_3d};
 use bevy::{
     asset::RenderAssetUsages,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
@@ -60,7 +60,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
         // Generate base Perlin noise and Worley noise at increasing frequencies
         let worley_pow = 0.5;
-        let perlin = spread(&perlin_3d(size, size, size, 5, 8.0));
+        let perlin = spread(&perlin_3d(size, size, size, 5, 7.0, 0.7));
         let worley1 = worley_3d(size, size, size, 6, worley_pow);
         let worley2 = spread(&worley_3d(size, size, size, 12, worley_pow));
         let worley3 = spread(&worley_3d(size, size, size, 18, worley_pow));
@@ -77,16 +77,15 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             })
             .collect();
 
-        save_noise_layer(&perlin, "base_perlinworley.png", size);
-        save_noise_layer(&worley2, "base_worley1.png", size);
-        save_noise_layer(&worley3, "base_worley2.png", size);
-        save_noise_layer(&worley4, "base_worley3.png", size);
+        save_noise_layer(&perlin, "perlinworley.png", size);
+        save_noise_layer(&worley2, "worley1.png", size);
+        save_noise_layer(&worley3, "worley2.png", size);
+        save_noise_layer(&worley4, "worley3.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..perlin.len())
             .flat_map(|i| [perlin_worley[i], worley2[i], worley3[i], worley4[i]])
             .collect();
-        let data_u8 = bytemuck::cast_slice(&flat_data);
         let mut image = Image::new(
             Extent3d {
                 width: size as u32,
@@ -94,7 +93,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
                 depth_or_array_layers: size as u32,
             },
             TextureDimension::D3,
-            data_u8.to_vec(),
+            bytemuck::cast_slice(&flat_data).to_vec(),
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::RENDER_WORLD,
         );
@@ -111,15 +110,14 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let worley2 = worley_3d(size, size, size, 6, worley_pow);
         let worley3 = worley_3d(size, size, size, 7, worley_pow);
 
-        save_noise_layer(&worley1, "detail_worley1.png", size);
-        save_noise_layer(&worley2, "detail_worley2.png", size);
-        save_noise_layer(&worley3, "detail_worley3.png", size);
+        save_noise_layer(&worley1, "detail1.png", size);
+        save_noise_layer(&worley2, "detail2.png", size);
+        save_noise_layer(&worley3, "detail3.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..worley1.len())
             .flat_map(|i| [worley1[i], worley2[i], worley3[i], 255])
             .collect();
-        let data_u8 = bytemuck::cast_slice(&flat_data);
         let mut image = Image::new(
             Extent3d {
                 width: size as u32,
@@ -127,7 +125,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
                 depth_or_array_layers: size as u32,
             },
             TextureDimension::D3,
-            data_u8.to_vec(),
+            bytemuck::cast_slice(&flat_data).to_vec(),
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::RENDER_WORLD,
         );
@@ -139,19 +137,16 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let size = 128;
 
         // Generate Curl noise at increasing octaves
-        let curl1 = curl_image_2d(size, size, 5);
-        let curl2 = curl_image_2d(size, size, 6);
-        let curl3 = curl_image_2d(size, size, 7);
+        let (curl1, curl2, curl3) = curl_2d_texture(size, size);
 
-        save_noise_layer(&curl1, "turbulence_curl1.png", size);
-        save_noise_layer(&curl2, "turbulence_curl2.png", size);
-        save_noise_layer(&curl3, "turbulence_curl3.png", size);
+        save_noise_layer(&curl1, "curl1.png", size);
+        save_noise_layer(&curl2, "curl2.png", size);
+        save_noise_layer(&curl3, "curl3.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..curl1.len())
             .flat_map(|i| [curl1[i], curl2[i], curl3[i], 255])
             .collect();
-        let data_u8 = bytemuck::cast_slice(&flat_data);
         let mut image = Image::new(
             Extent3d {
                 width: size as u32,
@@ -159,7 +154,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
                 depth_or_array_layers: 1,
             },
             TextureDimension::D2,
-            data_u8.to_vec(),
+            bytemuck::cast_slice(&flat_data).to_vec(),
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::RENDER_WORLD,
         );

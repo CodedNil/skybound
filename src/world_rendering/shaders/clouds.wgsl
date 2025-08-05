@@ -1,17 +1,18 @@
 #define_import_path skybound::clouds
 #import skybound::functions::{remap, perlin_fbm31, worley_fbm21}
 
-@group(0) @binding(2) var linear_sampler: sampler;
-@group(0) @binding(4) var noise_texture: texture_3d<f32>;
+@group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
+@group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
+@group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
 
-fn sample_texture(pos: vec3<f32>) -> vec4<f32> {
-    return textureSample(noise_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y * 0.125));
+fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {
+    return textureSample(cloud_base_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y * 0.125));
 }
 
 const COVERAGE = 0.5; // Adjust between 0 and 1 for desired cloud density
 
 /// Sample from the clouds
-fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32) -> f32 {
+fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
     let altitude = pos.y;
     var sample: f32;
 
@@ -22,11 +23,11 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32) -> f32 {
     if height_weight <= 0.0 { return sample; }
 
     let scaled_pos = pos * 0.00001;
-    let perlin_worley = mix(-0.5, 0.5, sample_texture(scaled_pos * 0.5 - vec3(time * 0.0018)).r);
+    let perlin_worley = mix(-0.5, 0.5, sample_texture(scaled_pos * 0.5 - vec3(time * 0.0018), linear_sampler).r);
 
-    let wfbm = (sample_texture(scaled_pos).g + perlin_worley) *
-        		 sample_texture(scaled_pos + vec3(time * 0.001)).b *
-                 sample_texture(scaled_pos + vec3(time * 0.002)).a;
+    let wfbm = (sample_texture(scaled_pos, linear_sampler).g + perlin_worley) *
+        		 sample_texture(scaled_pos + vec3(time * 0.001), linear_sampler).b *
+                 sample_texture(scaled_pos + vec3(time * 0.002), linear_sampler).a;
 
     sample = remap(wfbm * height_weight, 0.4, 1.0, 0.0, 1.0);
 
