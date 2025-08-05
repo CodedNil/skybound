@@ -2,9 +2,7 @@ mod curl;
 mod perlin;
 mod worley;
 
-use crate::world_rendering::noise::{
-    curl::curl_image_2d, perlin::perlin_image_3d, worley::worley_octave_3d,
-};
+use crate::world_rendering::noise::{curl::curl_image_2d, perlin::perlin_3d, worley::worley_3d};
 use bevy::{
     asset::RenderAssetUsages,
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
@@ -62,11 +60,11 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
         // Generate base Perlin noise and Worley noise at increasing frequencies
         let worley_pow = 0.5;
-        let perlin = spread(&perlin_image_3d(size, size, size, 5, 8.0));
-        let worley1 = worley::worley_octave_3d(size, size, size, 6, worley_pow);
-        let worley2 = spread(&worley_octave_3d(size, size, size, 12, worley_pow));
-        let worley3 = spread(&worley_octave_3d(size, size, size, 18, worley_pow));
-        let worley4 = spread(&worley_octave_3d(size, size, size, 24, worley_pow));
+        let perlin = spread(&perlin_3d(size, size, size, 5, 8.0));
+        let worley1 = worley_3d(size, size, size, 6, worley_pow);
+        let worley2 = spread(&worley_3d(size, size, size, 12, worley_pow));
+        let worley3 = spread(&worley_3d(size, size, size, 18, worley_pow));
+        let worley4 = spread(&worley_3d(size, size, size, 24, worley_pow));
 
         // Generate Perlin-Worley noise
         let perlin_worley: Vec<u8> = perlin
@@ -109,9 +107,9 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
         // Generate Worley noise at increasing frequencies
         let worley_pow = 0.6;
-        let worley1 = worley_octave_3d(size, size, size, 5, worley_pow);
-        let worley2 = worley_octave_3d(size, size, size, 6, worley_pow);
-        let worley3 = worley_octave_3d(size, size, size, 7, worley_pow);
+        let worley1 = worley_3d(size, size, size, 5, worley_pow);
+        let worley2 = worley_3d(size, size, size, 6, worley_pow);
+        let worley3 = worley_3d(size, size, size, 7, worley_pow);
 
         save_noise_layer(&worley1, "detail_worley1.png", size);
         save_noise_layer(&worley2, "detail_worley2.png", size);

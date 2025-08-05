@@ -2,7 +2,7 @@ use bevy::math::{UVec3, Vec3};
 use orx_parallel::*;
 
 // Generate a 3D Perlin Noise Texture
-pub fn perlin_image_3d(
+pub fn perlin_3d(
     width: usize,
     height: usize,
     depth: usize,
@@ -37,7 +37,7 @@ pub fn perlin_image_3d(
 }
 
 // Generate a 2D Perlin Noise Texture
-pub fn perlin_image_2d(width: usize, height: usize, octaves: usize, base_freq: f32) -> Vec<u8> {
+pub fn perlin_2d(width: usize, height: usize, octaves: usize, base_freq: f32) -> Vec<u8> {
     let total_voxels = width * height;
     (0..total_voxels)
         .par()

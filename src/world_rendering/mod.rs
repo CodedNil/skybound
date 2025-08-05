@@ -372,6 +372,7 @@ impl ViewNode for VolumetricCloudsNode {
             label: Some("volumetric_clouds_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: view, // Render to our intermediate cloud texture
+                depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
                     load: LoadOp::Clear(Default::default()), // Clear the texture before drawing
@@ -519,6 +520,7 @@ impl ViewNode for VolumetricCloudsCompositeNode {
             label: Some("volumetric_clouds_composite_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: post_process.destination, // Render to the main view target
+                depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
                     load: LoadOp::Load,

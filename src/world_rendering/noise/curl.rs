@@ -1,8 +1,8 @@
-use crate::world_rendering::noise::perlin::perlin_image_2d;
+use crate::world_rendering::noise::perlin::perlin_2d;
 
 /// Computes the 2D curl magnitude of a scalar field
 pub fn curl_image_2d(width: usize, height: usize, res: usize) -> Vec<u8> {
-    let perlin: Vec<u8> = perlin_image_2d(width, height, res, 1.0);
+    let perlin: Vec<u8> = perlin_2d(width, height, res, 1.0);
 
     // Compute raw curl magnitudes
     let mut mags = Vec::with_capacity(width * height);
