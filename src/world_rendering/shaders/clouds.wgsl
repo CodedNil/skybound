@@ -16,8 +16,8 @@ const DETAIL_NOISE_SCALE: f32 = 0.001;
 const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(0.008, -0.008, 0.0); // Details move faster
 
 // Cloud scales
-const CLOUDS_BOTTOM_HEIGHT: f32 = 1000.0;
-const CLOUDS_TOP_HEIGHT: f32 = 8000.0;
+const CLOUDS_BOTTOM_HEIGHT: f32 = 1500.0;
+const CLOUDS_TOP_HEIGHT: f32 = 40000.0;
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
@@ -27,13 +27,19 @@ fn get_height_fraction(altitude: f32) -> f32 {
 fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sampler: sampler) -> f32 {
     let altitude = pos.y;
 
-    // Height gradient
+    // --- Height Gradient ---
     let gradient_low = vec4<f32>(1500.0, 1650.0, 2500.0, 3000.0);
     let gradient_high = vec4<f32>(6500.0, 6650.0, 7000.0, 7500.0);
-    let height_fraction = get_height_fraction(altitude); // How high through the total cloud height we are
-    let height_gradient = smoothstep(gradient_low.x, gradient_low.y, altitude) - smoothstep(gradient_low.z, gradient_low.w, altitude) + smoothstep(gradient_high.x, gradient_high.y, altitude) - smoothstep(gradient_high.z, gradient_high.w, altitude);
-    let coverage = remap(COVERAGE, 0.0, 1.0, 1.0, 0.4);
-    if height_gradient <= 0.0 { return 0.0; }
+    var gradient = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    if altitude >= gradient_low.x && altitude <= gradient_low.w {
+        gradient = gradient_low;
+    } else if altitude >= gradient_high.x && altitude <= gradient_high.w {
+        gradient = gradient_high;
+    } else {
+        return 0.0;
+    }
+    let height_gradient = smoothstep(gradient.x, gradient.y, altitude) - smoothstep(gradient.z, gradient.w, altitude);
+    let height_fraction = smoothstep(gradient.x, gradient.w, altitude);
 
     // --- Base Cloud Shape ---
     let time_vec = time * WIND_DIRECTION_BASE;
@@ -45,8 +51,10 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 	base_cloud = remap(base_cloud * height_gradient, 1.0 - COVERAGE, 1.0, 0.0, 1.0);
 	base_cloud *= COVERAGE;
 
+	if base_cloud <= 0.0 { return 0.0; }
+
 	// --- High Frequency Detail with Curl Distortion (TODO) ---
-	if !fast {
+	// if !fast {
     	// let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
         // let detail_curl_distortion = vec3(motion_sample.r, 0.0, motion_sample.g) * CURL_STRENGTH;
         let detail_time_vec = time * WIND_DIRECTION_DETAIL;
@@ -56,9 +64,9 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
     	var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
     	hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
     	base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
-	}
+	// }
 
-	return pow(clamp(base_cloud, 0.0, 1.0), (1.0 - height_fraction) * 0.8 + 0.5);
+	return clamp(base_cloud, 0.0, 1.0);
 }
 
 fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {

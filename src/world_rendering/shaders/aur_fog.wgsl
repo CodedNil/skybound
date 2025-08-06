@@ -1,5 +1,7 @@
 #define_import_path skybound::aur_fog
-#import skybound::functions::{hash12, perlin_fbm31, value_fbm31}
+#import skybound::functions::hash12
+
+@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
 // Turbulence parameters for fog
 const COLOR_A: vec3<f32> = vec3(0.3, 0.2, 0.8); // Deep blue
@@ -14,7 +16,7 @@ const TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 const FLASH_FREQUENCY: f32 = 0.05; // Chance of a flash per second per cell
 const FLASH_GRID: f32 = 5000.0; // Grid cell size
 const FLASH_POINTS: i32 = 4; // How many points per cell
-const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 20.0;
+const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 0.05;
 const FLASH_SCALE: f32 = 0.002;
 const FLASH_DURATION: f32 = 2.0; // Seconds
 const FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
@@ -78,27 +80,26 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
     if pos.y > 1000.0 { return sample; }
 
-    let height_noise = perlin_fbm31(vec3(pos.xz * 0.0005, time * 0.4), 2) + 0.5;
-    let altitude = pos.y + height_noise * 400.0;
+    let height_noise = sample_texture(vec3(pos.xz * 0.00004, time * 0.1), linear_sampler).r;
+    let altitude = pos.y + height_noise * 800.0;
     let density = smoothstep(20.0, -100.0, altitude);
     if density <= 0.0 { return sample; }
 
     // Use turbulent position for density
     let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
-    let turb_pos = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-    let fbm_octaves = u32(round(mix(3.0, 5.0, smoothstep(10000.0, 1000.0, dist))));
-    let fbm_value = value_fbm31(vec3(turb_pos.x, altitude * 0.01, turb_pos.y), fbm_octaves);
+    let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
+    let fbm_value = sample_texture(vec3(turb_pos.x, turb_pos.y, altitude * 0.01) * 0.1, linear_sampler).g;
     sample.contribution = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
     if sample.contribution <= 0.0 { return sample; }
 
     // Compute fog color based on turbulent flow, with a larger scale noise for color variation
-    let color_noise = value_fbm31(vec3(pos.xz * 0.0001, 0.0), 3);
+    let color_noise = sample_texture(vec3(pos.xz * 0.0001, 0.0), linear_sampler).b;
     sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
-    sample.emission = sample.contribution * sample.color * 6.0;
+    sample.emission = sample.contribution * smoothstep(-5.0, -100.0, altitude) * sample.color * 0.001;
 
     // Apply artificial shadowing: darken towards black as altitude decreases
     let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
@@ -108,4 +109,8 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32) -> FogSample {
     sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.contribution;
 
     return sample;
+}
+
+fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
+    return textureSample(fog_noise_texture, linear_sampler, pos).rgb;
 }

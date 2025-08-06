@@ -7,37 +7,41 @@ pub fn perlin_3d(
     height: usize,
     depth: usize,
     octaves: usize,
-    base_freq: f32,
+    gain: f32,
+    freq: f32,
     pow: f32,
 ) -> Vec<u8> {
     let total_voxels = width * height * depth;
     (0..total_voxels)
         .par()
         .map(|i| {
-            // unravel i into x,y,z
-            let xy_plane = height * depth;
-            let x = i / xy_plane;
-            let rem = i % xy_plane;
-            let y = rem / depth;
-            let z = rem % depth;
+            // Unravel i into x,y,z
+            let x = i / (height * depth);
+            let y = (i / depth) % height;
+            let z = i % depth;
 
-            // normalized coordinates in [0..1]
+            // Normalize coordinates in [0..1]
             let pos = Vec3::new(
                 x as f32 / (width - 1) as f32,
                 y as f32 / (height - 1) as f32,
-                z as f32 / (depth - 1) as f32,
+                if depth == 1 {
+                    0.0
+                } else {
+                    z as f32 / (depth - 1) as f32
+                },
             );
 
-            // compute fractal‐brownian motion
-            let v = perlin_fbm3(pos, octaves, base_freq, 2.0_f32.powf(-0.85), true);
+            // Compute fractal‐brownian motion
+            let v = perlin_fbm3(pos, octaves, freq, gain, true);
 
-            // map from [-1..1] to [0..255]
+            // Map from [-1..1] to [0..255]
             ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
         })
         .collect()
 }
 
 // FBM Perlin Noise
+#[inline(always)]
 pub fn perlin_fbm3(pos: Vec3, octaves: usize, mut freq: f32, gain: f32, tile: bool) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
@@ -64,6 +68,7 @@ const OFF: [Vec3; 8] = [
     Vec3::new(0.0, 1.0, 1.0),
     Vec3::new(1.0, 1.0, 1.0),
 ];
+#[inline(always)]
 pub fn perlin3(pos: Vec3, period: f32, tile: bool) -> f32 {
     // Cell corner + local coords
     let p = pos.floor();
@@ -76,19 +81,12 @@ pub fn perlin3(pos: Vec3, period: f32, tile: bool) -> f32 {
     let mut dots = [0.0; 8];
     for (idx, &off) in OFF.iter().enumerate() {
         // Tile the integer cell coordinates so that noise is periodic at 'period'
-        let (x, y, z) = if tile {
-            (
-                (p.x + off.x).rem_euclid(period) as usize,
-                (p.y + off.y).rem_euclid(period) as usize,
-                (p.z + off.z).rem_euclid(period) as usize,
-            )
+        let coords = if tile {
+            (p + off).rem_euclid(Vec3::splat(period))
         } else {
-            (
-                (p.x + off.x) as usize,
-                (p.y + off.y) as usize,
-                (p.z + off.z) as usize,
-            )
+            p + off
         };
+        let (x, y, z) = (coords.x as usize, coords.y as usize, coords.z as usize);
 
         // Permutation table lookups to get the gradient index
         let hash = P[P[P[x % 256] as usize + y % 256] as usize + z % 256];

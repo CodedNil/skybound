@@ -26,6 +26,7 @@ pub fn worley_3d(width: usize, height: usize, depth: usize, res: usize, pow: f32
 }
 
 /// Generate 3D Worley (cellular) noise.
+#[inline(always)]
 fn worley3(
     x: usize,
     y: usize,

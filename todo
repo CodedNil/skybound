@@ -2,8 +2,10 @@ atmosphere:
 Auroras and stars https://www.shadertoy.com/view/XtGGRt
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
+https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 
 too bright at night
+
 
 froxels:
 pass lights emission
@@ -12,6 +14,7 @@ colour the sky and pass that through as ambient colour, distance fog so they fad
 simple froxel shadowing, so i can do larger scale shadowing
 cpu side clouds_sample.rs which is a replica of the clouds density equation so i can do raymarches on cpu, from light source to froxel cell for example
 
+
 clouds:
 Good examples of god rays through clouds  https://www.shadertoy.com/view/ttcSD8 https://www.shadertoy.com/view/MstBWs
 60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
@@ -19,8 +22,10 @@ Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.c
 Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
 Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
 https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/
-
 Horizon zero dawn https://drive.google.com/file/d/1G0Iy8QUybKMKU7Ax-ooxdfXJR-ysmDVv/view
+https://github.com/clayjohn/godot-volumetric-cloud-demo
+https://github.com/AmanSachan1/Meteoros
+https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-textures/main.go
 
 have layers of clouds, define them in a const array, each has a height so there can be thin layers and different layer variables, each also has a different wind direction (though probably shouldn't drastically switch, slow rotations)
 could maybe do simple shadowing using the layers above with very coarse read at a single depth of it, then offset with light direction
@@ -32,9 +37,15 @@ use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils
 
+
 do the world rendering:
 better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
 blend into the clouds
+
+
+aur fog:
+do a initial simple raymarch to the heightmap texture, get the depth of entry of the fog, then we can precisely start raytracing from there
+show aur fog much further into the distance than clouds
 
 
 misc:

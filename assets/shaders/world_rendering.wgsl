@@ -29,16 +29,17 @@ struct Globals {
 @group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
 @group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
-const MAX_STEPS: i32 = 2048;
-const STEP_SIZE_INSIDE: f32 = 4.0;
-const STEP_SIZE_OUTSIDE: f32 = 24.0;
+const MAX_STEPS: i32 = 512;
+const STEP_SIZE_INSIDE: f32 = 8.0;
+const STEP_SIZE_OUTSIDE: f32 = 18.0;
 
 const STEP_DISTANCE_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
-const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.0001; // How much to scale step size by distance, larger means larger steps
+const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.001; // How much to scale step size by distance, larger means larger steps
 
 const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 30.0;
@@ -47,7 +48,7 @@ const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0
 // Lighting Parameters
 const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
 const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
-const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.3, 0.2, 0.8) * 0.05;
+const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const DENSITY: f32 = 0.05; // Base density for lighting
 const SILVER_SPREAD: f32 = 0.1;
 const SILVER_INTENSITY: f32 = 1.0;
@@ -66,10 +67,10 @@ fn sample_volume(pos: vec3<f32>, dist: f32, fast: bool) -> CloudSample {
 
     // Thick aur fog below 0m
     if !fast {
-        // let fog_sample = sample_fog(pos, dist, globals.time);
-        // sample.density = fog_sample.contribution;
-        // sample.color = fog_sample.color;
-        // sample.emission = fog_sample.emission;
+        let fog_sample = sample_fog(pos, dist, globals.time, linear_sampler);
+        sample.density = fog_sample.contribution;
+        sample.color = fog_sample.color;
+        sample.emission = fog_sample.emission;
     }
 
     // Sample our clouds
@@ -125,7 +126,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 	let sky_col = render_sky(rd, sun_dir, view.altitude);
 	let atmosphere_sun = render_sky(sun_dir, sun_dir, view.altitude) * 0.1;
 	let atmosphere_ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, view.altitude);
-	let atmosphere_ground = render_sky(normalize(vec3<f32>(1.0, -1.0, 0.0)), sun_dir, view.altitude);
+	// let atmosphere_ground = render_sky(normalize(vec3<f32>(1.0, -1.0, 0.0)), sun_dir, view.altitude);
+	let atmosphere_ground = AMBIENT_AUR_COLOR * 100.0;
 
     // Phase functions for silver and back scattering
     let cos_theta = dot(sun_dir, rd);
@@ -145,7 +147,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
         if t > STEP_DISTANCE_SCALING_START {
-            step_scaler = 1.0 + min((t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR, 2.0);
+            step_scaler = 1.0 + min((t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR, 16.0);
         }
         // Reduce scaling when close to surfaces
         let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
@@ -196,19 +198,19 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 			let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
 			let beers_total = max(beers, beers2);
 
-			// Compute in-scatter probability
+			// Compute in-scattering
 			let height_fraction = get_height_fraction(pos.y);
-			let exponent = remap(height_fraction, 0.3, 0.85, 0.5, 2.0);
-            let depth_probability = 0.1 + pow(step_density, 2.0 * exponent);
-            let vertical_probability = pow(remap(height_fraction, 0.07, 0.14, 0.1, 1.0), 0.8);
-            let in_scatter_prob = depth_probability * vertical_probability;
+			let aur_ambient = mix(atmosphere_ground, vec3(1.0), pow(height_fraction, 0.15));
+            let ambient = aur_ambient * DENSITY * mix(atmosphere_ambient, vec3(1.0), 0.4) * (sun_dir.y);
+            let in_scattering = (ambient + beers_total * atmosphere_sun * phase) * cloud_sample.color;
 
-            let ambient = mix(atmosphere_ground, vec3(1.0), height_fraction) * DENSITY * mix(atmosphere_ambient, vec3(1.0), 0.4) * (sun_dir.y);
-            let in_scattering = ambient * in_scatter_prob + beers_total * atmosphere_sun * phase;
+            // Compute emission, using clouds emission then adding aur color if low altitude
+            let aur_emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005;
+            let emission = (cloud_sample.emission + aur_emission) * step;
 
 			let alpha_step = (1.0 - step_transmittance);
 			acc_alpha += alpha_step * (1.0 - acc_alpha);
-			acc_color += in_scattering * transmittance * alpha_step;
+			acc_color += in_scattering * transmittance * alpha_step + emission;
         }
 
         t += step;
