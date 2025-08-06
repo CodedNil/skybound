@@ -3,9 +3,7 @@ Auroras and stars https://www.shadertoy.com/view/XtGGRt
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 
-the sky goes green just after sunset
 too bright at night
-sun halo is on both sides, not just around the sun
 
 froxels:
 pass lights emission
@@ -27,6 +25,7 @@ Horizon zero dawn https://drive.google.com/file/d/1G0Iy8QUybKMKU7Ax-ooxdfXJR-ysm
 have layers of clouds, define them in a const array, each has a height so there can be thin layers and different layer variables, each also has a different wind direction (though probably shouldn't drastically switch, slow rotations)
 could maybe do simple shadowing using the layers above with very coarse read at a single depth of it, then offset with light direction
 vary the layers each with a perlin noise heightmap, each has a different offset so sometimes layers can overlap
+add a horizon curve by slightly reducing sampled altitude the further horizontally away from camera
 
 better shapes for cumulus
 use bluenoise texture instead of maths
