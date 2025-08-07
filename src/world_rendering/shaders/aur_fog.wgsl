@@ -3,10 +3,6 @@
 
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
-const MAX_STEPS: u32 = 128;
-const EPSILON: f32 = 0.1;
-const MAX_DIST: f32 = 10000000.0;
-
 // Turbulence parameters for fog
 const COLOR_A: vec3<f32> = vec3(0.6, 0.4, 1.0);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
@@ -25,6 +21,23 @@ const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 0.05;
 const FLASH_SCALE: f32 = 0.002;
 const FLASH_DURATION: f32 = 2.0; // Seconds
 const FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
+
+// Raymarcher Parameters
+const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
+
+const RAYMARCH_START_HEIGHT: f32 = 0.0;
+const MAX_STEPS: i32 = 512;
+const STEP_SIZE: f32 = 32.0;
+const FAST_RENDER_DISTANCE: f32 = 5000000.0; // How far to render before switching to fast mode
+
+const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE: f32 = 30.0;
+const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
+
+// Lighting Parameters
+const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
+const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
+
 
 // Fog turbulence and lightning calculations
 fn compute_turbulence(initial_pos: vec2<f32>, iters: f32, time: f32) -> vec2<f32> {
@@ -81,91 +94,114 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
 
 /// Sample from the fog
 struct FogSample {
-    contribution: f32,
+    fog_height: f32,
+    density: f32,
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, fast: bool, very_fast: bool, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
-    if pos.y > 1000.0 { return sample; }
+    if pos.y > 0.0 { return sample; }
 
     let height_noise = sample_height(pos.xz, time, linear_sampler);
+    sample.fog_height = height_noise;
     let altitude = pos.y - height_noise;
-    let density = smoothstep(20.0, -100.0, altitude);
+    let density = smoothstep(0.0, -100.0, altitude);
     if density <= 0.0 { return sample; }
 
     // Use turbulent position for density
-    let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
-    let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-    let fbm_value = sample_texture(vec3(turb_pos.x, turb_pos.y, altitude * 0.01) * 0.1, linear_sampler).g;
-    sample.contribution = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
-    if sample.contribution <= 0.0 { return sample; }
+    var fbm_value: f32;
+    if very_fast {
+        sample.density = 1.0;
+    } else {
+        let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
+        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
+        fbm_value = sample_texture(vec3(turb_pos.x, turb_pos.y, altitude * 0.01) * 0.1, linear_sampler).g;
+        sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
+    }
+    if sample.density <= 0.0 { return sample; }
+    if fast { return sample; }
 
     // Compute fog color based on turbulent flow, with a larger scale noise for color variation
     let color_noise = sample_texture(vec3(pos.xz * 0.0001, 0.0), linear_sampler).b;
-    sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
-    sample.emission = sample.contribution * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.001;
+    if very_fast {
+        sample.color = mix(COLOR_A, COLOR_B, color_noise);
+    } else {
+        sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
+    }
+    sample.emission = sample.density * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.001;
 
     // Apply artificial shadowing: darken towards black as altitude decreases
     let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
     // Compute lightning emission using Voronoi grid
-    sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.contribution;
+    sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.density;
 
     return sample;
 }
 
 
-struct FogResult {
-    dist: f32, // The distance to the fog's surface
-    within: bool, // True if the ray's origin is below the fog height
-    normal: vec3<f32>, // The normal vector of the fog surface at the intersection
-}
-fn raymarch_fog(ro: vec3<f32>, rd: vec3<f32>, time: f32, linear_sampler: sampler) -> FogResult {
-    var result: FogResult;
-    result.dist = -1.0;
-    result.within = false;
-    var t: f32 = 0.0;
+fn render_fog(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+    if ro.y > RAYMARCH_START_HEIGHT && rd.y > 0.0 { return vec4<f32>(0.0); } // Early exit if ray will never enter the fog
 
-    for (var i = 0u; i < MAX_STEPS; i++) {
+    // Start raymarching at y=RAYMARCH_START_HEIGHT intersection if above y=0, else at camera
+    var t = select(0.0, (RAYMARCH_START_HEIGHT - ro.y) / rd.y, ro.y > RAYMARCH_START_HEIGHT) + dither * STEP_SIZE;
+    // var t = dither * STEP_SIZE;
+    var t_end = t_max;
+
+    // Accumulation variables
+    var accumulation = vec4(0.0);
+
+    // Start raymarching
+    for (var i = 0; i < MAX_STEPS; i += 1) {
+        if t >= t_end || accumulation.a >= ALPHA_THRESHOLD { break; }
+
+        // Reduce scaling when close to surfaces
+        var step_scaler = 1.0;
+        let close_threshold = STEP_SIZE * step_scaler;
+        let distance_left = t_max - t;
+        if distance_left < close_threshold {
+            let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
+            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
+        }
+        var step = STEP_SIZE * step_scaler;
+
+        // Sample the fog
         let pos = ro + rd * t;
+        let fog_sample = sample_fog(pos, t, time, false, t > FAST_RENDER_DISTANCE, linear_sampler);
+        let step_density = fog_sample.density;
 
-        // Get height of fog here
-        let h = sample_height(pos.xz, time, linear_sampler);
-        if t <= EPSILON && ro.y < h {
-            result.within = true;
-        }
-        let d_vert = pos.y - h;
-        if (d_vert < EPSILON) {
-        result.dist = t;
-            break;
+        if step_density > 0.0 {
+            // Lightmarching for self-shadowing
+            var density_sunwards = max(step_density, 0.0);
+            var lightmarch_pos = pos;
+            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+                lightmarch_pos += (sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
+                density_sunwards += sample_fog(lightmarch_pos, t, time, true, false, linear_sampler).density;
+            }
+            // Take a single distant sample
+            lightmarch_pos += sun_dir * LIGHT_STEP_SIZE * 18.0;
+            density_sunwards += pow(sample_fog(lightmarch_pos, t, time, true, false, linear_sampler).density, 1.5);
+
+            // Calculate shadowing
+            let tau = clamp(density_sunwards, 0.0, 1.0);
+            let self_shadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
+
+            // Final color with self-shadowing
+            let lit_color = mix(COLOR_A, SUN_COLOR, self_shadow) * fog_sample.color + fog_sample.emission;
+            let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
+            accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
         }
 
-        // Convert vertical distance into a step along the ray
-        let step = d_vert / max(abs(rd.y), 0.001);
         t += step;
-        if (t > MAX_DIST) { break; }
+
+        // if pos.y > RAYMARCH_START_HEIGHT { break; } // End early if we're above the fog
     }
 
-    // Get the intersection point
-    let p_intersect = ro + rd * t;
+    accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
-    // Calculate the normal of the surface using finite differences
-    let eps = vec2<f32>(0.2, 0.0);
-    let h = sample_height(p_intersect.xz, time, linear_sampler);
-    let hx = sample_height(p_intersect.xz + eps.xy, time, linear_sampler);
-    let hz = sample_height(p_intersect.xz + eps.yx, time, linear_sampler);
-    let normal_at_intersect = normalize(vec3<f32>((h - hx) / eps.x, eps.x, (h - hz) / eps.x));
-    result.normal = normal_at_intersect;
-
-    return result;
-}
-
-fn shade_fog(result: FogResult, ro: vec3<f32>, rd: vec3<f32>, time: f32, linear_sampler: sampler) -> vec3<f32> {
-    let light_dir = normalize(vec3<f32>(0.5, 0.8, -0.5));
-    let diffuse = max(0.0, dot(result.normal, light_dir));
-    return COLOR_A * (diffuse * 0.7);
+    return clamp(accumulation, vec4(0.0), vec4(1.0));
 }
 
 fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {

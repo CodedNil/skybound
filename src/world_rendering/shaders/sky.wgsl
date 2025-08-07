@@ -21,7 +21,6 @@ const MIE_CONST: vec3<f32> = vec3<f32>(1.8399918514433978E14, 2.7798023919660528
 // Earth Shadow Hack Constants
 const CUTOFF_ANGLE: f32 = 1.6110731556870734; // pi / 1.95
 const STEEPNESS: f32 = 1.5;
-const EE_SUN_ENERGY: f32 = 1000.0; // Three.js EE constant for sun intensity
 const SUN_ANGULAR_DIAMETER_COS: f32 = 0.999956676946448443553574619906976478926848692; // 66 arc seconds -> degrees, and the cosine of that
 
 // Precomputed Constants
@@ -34,7 +33,7 @@ const ONE_OVER_FOUR_PI: f32 = 1.0 / (4.0 * PI);
 
 fn sun_intensity(zenith_angle_cos: f32) -> f32 {
     let clamped_zenith_angle_cos: f32 = clamp(zenith_angle_cos, -1.0, 1.0);
-    return EE_SUN_ENERGY * max(0.0, 1.0 - pow(E, -((CUTOFF_ANGLE - acos(clamped_zenith_angle_cos)) / STEEPNESS)));
+    return SUN_ENERGY * max(0.0, 1.0 - pow(E, -((CUTOFF_ANGLE - acos(clamped_zenith_angle_cos)) / STEEPNESS)));
 }
 
 fn total_mie(t: f32) -> vec3<f32> {

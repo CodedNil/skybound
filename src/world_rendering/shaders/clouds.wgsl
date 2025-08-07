@@ -25,8 +25,8 @@ const CLOUDS_TOP_HEIGHT: f32 = 40000.0;
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
 const MAX_STEPS: i32 = 512;
-const STEP_SIZE_INSIDE: f32 = 8.0;
-const STEP_SIZE_OUTSIDE: f32 = 18.0;
+const STEP_SIZE_INSIDE: f32 = 12.0;
+const STEP_SIZE_OUTSIDE: f32 = 24.0;
 
 const STEP_DISTANCE_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
 const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.001; // How much to scale step size by distance, larger means larger steps
@@ -41,8 +41,8 @@ const DENSITY: f32 = 0.05; // Base density for lighting
 const SILVER_SPREAD: f32 = 0.1;
 const SILVER_INTENSITY: f32 = 1.0;
 
-const FOG_START_DISTANCE: f32 = 1000.0;
-const FOG_END_DISTANCE: f32 = 200000.0;
+const FADE_START_DISTANCE: f32 = 1000.0;
+const FADE_END_DISTANCE: f32 = 200000.0;
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
@@ -109,14 +109,25 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 	return clamp(base_cloud, 0.0, 1.0);
 }
 
-fn raymarch_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
-    var acc_color = vec3(0.0);
-    var acc_alpha = 0.0;
-    var transmittance = 1.0;
+fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+    // Determine raymarch start and end distances
     var t = dither * STEP_SIZE_INSIDE;
-    var steps_outside_cloud = 0;
+    var t_end = t_max;
+    let start_intersect = intersect_cloud_start(ro, rd);
+    if (ro.y < CLOUDS_BOTTOM_HEIGHT) {
+        // Camera below clouds, start raymarching at intersection if valid
+        t += max(start_intersect, 0.0);
+        t_end = min(t_end, FADE_END_DISTANCE);
+    } else {
+        // Camera above clouds, start at 0 and end at intersection if valid
+        t_end = min(t_end, select(FADE_END_DISTANCE, start_intersect, start_intersect > 0.0));
+    }
+    if t >= t_end {
+        return vec4<f32>(0.0);
+    }
 
 	// Precalculate sun, sky and ambient colors
+	let sky_col = render_sky(rd, sun_dir, ro.y);
 	let atmosphere_sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
 	let atmosphere_ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
 	let atmosphere_ground = AMBIENT_AUR_COLOR * 100.0;
@@ -128,8 +139,15 @@ fn raymarch_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32,
     let hg_back = henyey_greenstein(cos_theta, -0.1);
     let phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
+    // Accumulation variables
+    var acc_color = vec3(0.0);
+    var acc_alpha = 0.0;
+    var transmittance = 1.0;
+    var steps_outside_cloud = 0;
+
+    // Start raymarching
     for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_max || acc_alpha >= ALPHA_THRESHOLD || t >= FOG_END_DISTANCE {
+        if t >= t_end || acc_alpha >= ALPHA_THRESHOLD || t >= FADE_END_DISTANCE {
             break;
         }
 
@@ -167,7 +185,7 @@ fn raymarch_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32,
             step = STEP_SIZE_INSIDE * step_scaler;
 
             let step_transmittance = exp(-DENSITY * step_density * step);
-            transmittance *= step_transmittance;
+            let alpha_step = (1.0 - step_transmittance);
 
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
@@ -195,9 +213,10 @@ fn raymarch_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32,
             // Compute emission, aur color if low altitude
             let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step;
 
-			let alpha_step = (1.0 - step_transmittance);
 			acc_alpha += alpha_step * (1.0 - acc_alpha);
 			acc_color += in_scattering * transmittance * alpha_step + emission;
+
+			transmittance *= step_transmittance;
         }
 
         t += step;

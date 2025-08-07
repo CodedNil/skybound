@@ -1,7 +1,7 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import skybound::functions::{ blue_noise}
-#import skybound::clouds::{raymarch_clouds}
-#import skybound::aur_fog::{raymarch_fog, shade_fog}
+#import skybound::clouds::{render_clouds}
+#import skybound::aur_fog::render_fog
 #import skybound::sky::render_sky
 #import skybound::poles::render_poles
 
@@ -67,25 +67,44 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Render out the world poles
     let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
 
-    // Sample depth to the fog
-    let fog_result = raymarch_fog(ro, rd, globals.time, linear_sampler);
+    // Start accumulation volumetric color
+    var acc_color: vec3<f32> = vec3<f32>(0.0);
+    var acc_alpha: f32 = 0.0;
 
-    // Sample the clouds
-    let cloud_color: vec4<f32> = raymarch_clouds(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
-    var acc_color = cloud_color.rgb;
-    var acc_alpha = cloud_color.a;
+    if ro.y > 20.0 {
+        // Sample the clouds
+        let cloud_color: vec4<f32> = render_clouds(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+        acc_color = cloud_color.rgb;
+        acc_alpha = cloud_color.a;
+
+        if acc_alpha < 1.0 {
+            // Blend in the fog
+            let fog_color: vec4<f32> = render_fog(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+            if fog_color.a > 0.0 {
+                acc_color += fog_color.rgb * (1.0 - acc_alpha);
+                acc_alpha += fog_color.a * (1.0 - acc_alpha);
+            }
+        }
+    } else {
+        // Sample the fog first
+        let fog_color: vec4<f32> = render_fog(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+        acc_color = fog_color.rgb;
+        acc_alpha = fog_color.a;
+
+        if acc_alpha < 1.0 {
+            // Blend in the clouds
+            let cloud_color: vec4<f32> = render_clouds(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+            if cloud_color.a > 0.0 {
+                acc_color += cloud_color.rgb * (1.0 - acc_alpha);
+                acc_alpha += cloud_color.a * (1.0 - acc_alpha);
+            }
+        }
+    }
 
     if depth <= 0.00001 {
         // Blend in poles behind clouds
         acc_color += pole_color.rgb * pole_color.a * (1.0 - acc_alpha);
         acc_alpha += pole_color.a * (1.0 - acc_alpha);
-
-        // Blend in the fog
-        if fog_result.dist > 0.0 {
-            let fog_color = shade_fog(fog_result, ro, rd, globals.time, linear_sampler);
-            acc_color += fog_color * (1.0 - acc_alpha);
-            acc_alpha += 1.0 - acc_alpha;
-        }
 
         // Add our sky in the background
         acc_color += vec3(sky_col * (1.0 - acc_alpha));

@@ -3,7 +3,6 @@ Auroras and stars https://www.shadertoy.com/view/XtGGRt
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
-
 too bright at night
 
 
@@ -32,6 +31,7 @@ could maybe do simple shadowing using the layers above with very coarse read at 
 vary the layers each with a perlin noise heightmap, each has a different offset so sometimes layers can overlap
 add a horizon curve by slightly reducing sampled altitude the further horizontally away from camera
 
+fade out clouds with distance
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
@@ -43,8 +43,8 @@ blend into the clouds
 
 
 aur fog:
-do a initial simple raymarch to the heightmap texture, get the depth of entry of the fog, then we can precisely start raytracing from there
-show aur fog much further into the distance than clouds
+
+give fog shadows from the clouds
 
 
 misc:
