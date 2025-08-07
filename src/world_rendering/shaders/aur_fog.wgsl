@@ -1,5 +1,6 @@
 #define_import_path skybound::aur_fog
 #import skybound::functions::hash12
+#import skybound::sky::AtmosphereColors
 
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
@@ -17,7 +18,7 @@ const TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
 const FLASH_FREQUENCY: f32 = 0.05; // Chance of a flash per second per cell
 const FLASH_GRID: f32 = 5000.0; // Grid cell size
 const FLASH_POINTS: i32 = 4; // How many points per cell
-const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 0.05;
+const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 2.0;
 const FLASH_SCALE: f32 = 0.002;
 const FLASH_DURATION: f32 = 2.0; // Seconds
 const FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
@@ -37,6 +38,7 @@ const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0
 // Lighting Parameters
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
+const DENSITY: f32 = 0.05; // Base density for lighting
 
 
 // Fog turbulence and lightning calculations
@@ -129,7 +131,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, fast: bool, very_fast: bool,
     } else {
         sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
     }
-    sample.emission = sample.density * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.001;
+    sample.emission = sample.density * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.1;
 
     // Apply artificial shadowing: darken towards black as altitude decreases
     let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
@@ -142,7 +144,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, fast: bool, very_fast: bool,
 }
 
 
-fn render_fog(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     if ro.y > RAYMARCH_START_HEIGHT && rd.y > 0.0 { return vec4<f32>(0.0); } // Early exit if ray will never enter the fog
 
     // Start raymarching at y=RAYMARCH_START_HEIGHT intersection if above y=0, else at camera
@@ -151,11 +153,13 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dith
     var t_end = t_max;
 
     // Accumulation variables
-    var accumulation = vec4(0.0);
+    var acc_color = vec3(0.0);
+    var acc_alpha = 0.0;
+    var transmittance = 1.0;
 
     // Start raymarching
     for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_end || accumulation.a >= ALPHA_THRESHOLD { break; }
+        if t >= t_end || acc_alpha >= ALPHA_THRESHOLD { break; }
 
         // Reduce scaling when close to surfaces
         var step_scaler = 1.0;
@@ -173,6 +177,9 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dith
         let step_density = fog_sample.density;
 
         if step_density > 0.0 {
+            let step_transmittance = exp(-DENSITY * step_density * step);
+            let alpha_step = (1.0 - step_transmittance);
+
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos;
@@ -184,24 +191,29 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dith
             lightmarch_pos += sun_dir * LIGHT_STEP_SIZE * 18.0;
             density_sunwards += pow(sample_fog(lightmarch_pos, t, time, true, false, linear_sampler).density, 1.5);
 
-            // Calculate shadowing
-            let tau = clamp(density_sunwards, 0.0, 1.0);
-            let self_shadow = exp(-SHADOW_EXTINCTION * tau); // Inner shadow darkening, with Beer function
+            // Captures the direct lighting from the sun
+			let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
+			let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+			let beers_total = max(beers, beers2);
 
-            // Final color with self-shadowing
-            let lit_color = mix(COLOR_A, SUN_COLOR, self_shadow) * fog_sample.color + fog_sample.emission;
-            let step_alpha = clamp(step_density * 0.4 * step, 0.0, 1.0);
-            accumulation += vec4(lit_color * step_alpha * (1.0 - accumulation.a), step_alpha * (1.0 - accumulation.a));
+			// Compute in-scattering
+            let ambient = atmosphere_colors.ground * DENSITY * mix(atmosphere_colors.ambient, vec3(1.0), 0.4) * (sun_dir.y);
+            let in_scattering = ambient + beers_total * atmosphere_colors.sun * atmosphere_colors.phase;
+
+			acc_alpha += alpha_step * (1.0 - acc_alpha);
+			acc_color += in_scattering * transmittance * alpha_step * fog_sample.color + fog_sample.emission;
+
+			transmittance *= step_transmittance;
         }
 
         t += step;
 
-        // if pos.y > RAYMARCH_START_HEIGHT { break; } // End early if we're above the fog
+        if pos.y > RAYMARCH_START_HEIGHT { break; } // End early if we're above the fog
     }
 
-    accumulation.a = min(accumulation.a * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
+    acc_alpha = min(acc_alpha * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
-    return clamp(accumulation, vec4(0.0), vec4(1.0));
+    return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
 }
 
 fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {

@@ -1,6 +1,6 @@
 #define_import_path skybound::clouds
 #import skybound::functions::{remap}
-#import skybound::sky::render_sky
+#import skybound::sky::AtmosphereColors
 
 @group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
@@ -37,21 +37,13 @@ const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0
 
 // Lighting Parameters
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
-const DENSITY: f32 = 0.05; // Base density for lighting
-const SILVER_SPREAD: f32 = 0.1;
-const SILVER_INTENSITY: f32 = 1.0;
-
+const DENSITY: f32 = 0.05;
 const FADE_START_DISTANCE: f32 = 1000.0;
 const FADE_END_DISTANCE: f32 = 200000.0;
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
 	return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
-}
-
-const K: f32 = 0.0795774715459;
-fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
-	return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
 }
 
 const PLANE_NORMAL: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
@@ -109,7 +101,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 	return clamp(base_cloud, 0.0, 1.0);
 }
 
-fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     // Determine raymarch start and end distances
     var t = dither * STEP_SIZE_INSIDE;
     var t_end = t_max;
@@ -125,19 +117,6 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, d
     if t >= t_end {
         return vec4<f32>(0.0);
     }
-
-	// Precalculate sun, sky and ambient colors
-	let sky_col = render_sky(rd, sun_dir, ro.y);
-	let atmosphere_sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
-	let atmosphere_ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
-	let atmosphere_ground = AMBIENT_AUR_COLOR * 100.0;
-
-    // Phase functions for silver and back scattering
-    let cos_theta = dot(sun_dir, rd);
-    let hg_forward = henyey_greenstein(cos_theta, 0.6);
-    let hg_silver = henyey_greenstein(cos_theta, 0.99 - SILVER_SPREAD) * SILVER_INTENSITY;
-    let hg_back = henyey_greenstein(cos_theta, -0.1);
-    let phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Accumulation variables
     var acc_color = vec3(0.0);
@@ -206,9 +185,9 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, sun_dir: vec3<f32>, t_max: f32, d
 
 			// Compute in-scattering
 			let height_fraction = get_height_fraction(pos.y);
-			let aur_ambient = mix(atmosphere_ground, vec3(1.0), pow(height_fraction, 0.15));
-            let ambient = aur_ambient * DENSITY * mix(atmosphere_ambient, vec3(1.0), 0.4) * (sun_dir.y);
-            let in_scattering = ambient + beers_total * atmosphere_sun * phase;
+			let aur_ambient = mix(atmosphere_colors.ground, vec3(1.0), pow(height_fraction, 0.15));
+            let ambient = aur_ambient * DENSITY * mix(atmosphere_colors.ambient, vec3(1.0), 0.4) * (sun_dir.y);
+            let in_scattering = ambient + beers_total * atmosphere_colors.sun * atmosphere_colors.phase;
 
             // Compute emission, aur color if low altitude
             let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step;

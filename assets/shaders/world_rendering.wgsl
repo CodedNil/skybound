@@ -2,7 +2,7 @@
 #import skybound::functions::{ blue_noise}
 #import skybound::clouds::{render_clouds}
 #import skybound::aur_fog::render_fog
-#import skybound::sky::render_sky
+#import skybound::sky::{AtmosphereColors, render_sky}
 #import skybound::poles::render_poles
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -34,7 +34,15 @@ struct Globals {
 // Lighting Parameters
 const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
 const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
+const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
+const SILVER_SPREAD: f32 = 0.1;
+const SILVER_INTENSITY: f32 = 0.01;
 
+
+const K: f32 = 0.0795774715459;
+fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
+	return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
+}
 
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
@@ -62,7 +70,18 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
 
 	// Precalculate sun, sky and ambient colors
-	let sky_col = render_sky(rd, sun_dir, ro.y);
+	var atmosphere_colors: AtmosphereColors;
+	atmosphere_colors.sky = render_sky(rd, sun_dir, ro.y);
+	atmosphere_colors.sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
+	atmosphere_colors.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
+	atmosphere_colors.ground = AMBIENT_AUR_COLOR * 100.0;
+
+	// Phase functions for silver and back scattering
+    let cos_theta = dot(sun_dir, rd);
+    let hg_forward = henyey_greenstein(cos_theta, 0.4);
+    let hg_silver = henyey_greenstein(cos_theta, 0.99 - SILVER_SPREAD) * SILVER_INTENSITY;
+    let hg_back = henyey_greenstein(cos_theta, -0.05);
+    atmosphere_colors.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Render out the world poles
     let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
@@ -73,13 +92,13 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     if ro.y > 20.0 {
         // Sample the clouds
-        let cloud_color: vec4<f32> = render_clouds(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+        let cloud_color: vec4<f32> = render_clouds(ro, rd, atmosphere_colors, sun_dir, t_max, dither, globals.time, linear_sampler);
         acc_color = cloud_color.rgb;
         acc_alpha = cloud_color.a;
 
         if acc_alpha < 1.0 {
             // Blend in the fog
-            let fog_color: vec4<f32> = render_fog(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+            let fog_color: vec4<f32> = render_fog(ro, rd, atmosphere_colors, sun_dir, t_max, dither, globals.time, linear_sampler);
             if fog_color.a > 0.0 {
                 acc_color += fog_color.rgb * (1.0 - acc_alpha);
                 acc_alpha += fog_color.a * (1.0 - acc_alpha);
@@ -87,13 +106,13 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         }
     } else {
         // Sample the fog first
-        let fog_color: vec4<f32> = render_fog(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+        let fog_color: vec4<f32> = render_fog(ro, rd, atmosphere_colors, sun_dir, t_max, dither, globals.time, linear_sampler);
         acc_color = fog_color.rgb;
         acc_alpha = fog_color.a;
 
         if acc_alpha < 1.0 {
             // Blend in the clouds
-            let cloud_color: vec4<f32> = render_clouds(ro, rd, sun_dir, t_max, dither, globals.time, linear_sampler);
+            let cloud_color: vec4<f32> = render_clouds(ro, rd, atmosphere_colors, sun_dir, t_max, dither, globals.time, linear_sampler);
             if cloud_color.a > 0.0 {
                 acc_color += cloud_color.rgb * (1.0 - acc_alpha);
                 acc_alpha += cloud_color.a * (1.0 - acc_alpha);
@@ -107,7 +126,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         acc_alpha += pole_color.a * (1.0 - acc_alpha);
 
         // Add our sky in the background
-        acc_color += vec3(sky_col * (1.0 - acc_alpha));
+        acc_color += vec3(atmosphere_colors.sky * (1.0 - acc_alpha));
         acc_alpha = 1.0;
     }
 

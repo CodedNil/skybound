@@ -31,6 +31,14 @@ const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 const ONE_OVER_FOUR_PI: f32 = 1.0 / (4.0 * PI);
 
 
+struct AtmosphereColors {
+    sky: vec3<f32>,
+    sun: vec3<f32>,
+    ambient: vec3<f32>,
+    ground: vec3<f32>,
+    phase: f32,
+}
+
 fn sun_intensity(zenith_angle_cos: f32) -> f32 {
     let clamped_zenith_angle_cos: f32 = clamp(zenith_angle_cos, -1.0, 1.0);
     return SUN_ENERGY * max(0.0, 1.0 - pow(E, -((CUTOFF_ANGLE - acos(clamped_zenith_angle_cos)) / STEEPNESS)));
