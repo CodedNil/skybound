@@ -65,6 +65,18 @@ fn setup(
         Transform::from_xyz(0.0, 500.0, 0.0),
     ));
 
+    // Plane proportions
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(75.0, 10.0, 10.0)))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 1000.0, 0.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(6.0, 1.0, 65.0)))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+        Transform::from_xyz(0.0, 1000.0, 0.0),
+    ));
+
     // Pole down
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(3.0, 1000.0, 3.0)))),

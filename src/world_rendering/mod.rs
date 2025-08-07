@@ -186,10 +186,10 @@ fn extract_clouds_view_uniform(
         let longitude_meters = camera_coordinates.longitude_meters(longitude, latitude);
         commands.insert_resource(ExtractedViewData {
             planet_rotation: planet_rotation.into(),
-            latitude: latitude,
-            longitude: longitude,
-            latitude_meters: latitude_meters,
-            longitude_meters: longitude_meters,
+            latitude,
+            longitude,
+            latitude_meters,
+            longitude_meters,
             altitude: camera_coordinates.altitude(camera_transform),
         });
     }

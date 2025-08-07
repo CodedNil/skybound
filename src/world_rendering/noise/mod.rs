@@ -171,7 +171,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let size_y = 128;
 
         // Generate Simplex noise at increasing octaves
-        let fog1 = spread(&simplex_3d(size, size, size_y, 6, 0.1, 6.0, 1.0)); // The fogs heightmap
+        let fog1 = spread(&simplex_3d(size, size, size_y, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
         let fog2 = spread(&simplex_3d(size, size, size_y, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
         let fog3 = spread(&simplex_3d(size, size, size_y, 5, 0.4, 6.0, 1.0)); // The fogs color pattern
 

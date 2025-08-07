@@ -83,7 +83,7 @@ impl CameraCoordinates {
     }
 
     /// Calculates the camera's current latitude in meters.
-    pub fn latitude_meters(&self, latitude_rad: f32) -> f32 {
+    pub const fn latitude_meters(&self, latitude_rad: f32) -> f32 {
         latitude_rad * PLANET_RADIUS
     }
 
@@ -104,7 +104,7 @@ impl CameraCoordinates {
     }
 
     /// Calculates the camera's current altitude in meters.
-    pub fn altitude(&self, camera_transform: &Transform) -> f32 {
+    pub const fn altitude(&self, camera_transform: &Transform) -> f32 {
         camera_transform.translation.y
     }
 }
@@ -185,9 +185,8 @@ fn update(
         (With<SunLight>, Without<Camera>),
     >,
 ) {
-    let (mut camera_transform, mut camera_coords) = match camera_query.single_mut() {
-        Ok(res) => res,
-        Err(_) => return,
+    let Ok((mut camera_transform, mut camera_coords)) = camera_query.single_mut() else {
+        return;
     };
 
     // --- Camera Snapping Logic ---

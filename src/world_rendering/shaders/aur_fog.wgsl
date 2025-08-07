@@ -3,9 +3,14 @@
 
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
+const MAX_STEPS: u32 = 128;
+const EPSILON: f32 = 0.1;
+const MAX_DIST: f32 = 10000000.0;
+
 // Turbulence parameters for fog
-const COLOR_A: vec3<f32> = vec3(0.3, 0.2, 0.8); // Deep blue
-const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6); // Deep purple
+const COLOR_A: vec3<f32> = vec3(0.6, 0.4, 1.0);
+const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
+const COLOR_C: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
 const TURB_AMP: f32 = 0.6; // Turbulence amplitude
 const TURB_SPEED: f32 = 0.5; // Turbulence speed
@@ -29,9 +34,9 @@ fn compute_turbulence(initial_pos: vec2<f32>, iters: f32, time: f32) -> vec2<f32
     for (var i = 0.0; i < iters; i += 1.0) {
         // Compute phase using rotated y-coordinate, time, and iteration offset
         let phase = freq * (pos * rot).y + TURB_SPEED * time + i;
-        pos = pos + TURB_AMP * rot[0] * sin(phase) / freq; // Add perpendicular sine offset
-        rot = rot * ROTATION_MATRIX; // Rotate for next iteration
-        freq = freq * TURB_EXP; // Increase frequency
+        pos += TURB_AMP * rot[0] * sin(phase) / freq; // Add perpendicular sine offset
+        rot *= ROTATION_MATRIX; // Rotate for next iteration
+        freq *= TURB_EXP; // Increase frequency
     }
 
     return pos;
@@ -84,8 +89,8 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> 
     var sample: FogSample;
     if pos.y > 1000.0 { return sample; }
 
-    let height_noise = sample_texture(vec3(pos.xz * 0.00004, time * 0.1), linear_sampler).r;
-    let altitude = pos.y + height_noise * 800.0;
+    let height_noise = sample_height(pos.xz, time, linear_sampler);
+    let altitude = pos.y - height_noise;
     let density = smoothstep(20.0, -100.0, altitude);
     if density <= 0.0 { return sample; }
 
@@ -99,7 +104,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> 
     // Compute fog color based on turbulent flow, with a larger scale noise for color variation
     let color_noise = sample_texture(vec3(pos.xz * 0.0001, 0.0), linear_sampler).b;
     sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
-    sample.emission = sample.contribution * smoothstep(-5.0, -100.0, altitude) * sample.color * 0.001;
+    sample.emission = sample.contribution * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.001;
 
     // Apply artificial shadowing: darken towards black as altitude decreases
     let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
@@ -109,6 +114,62 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> 
     sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.contribution;
 
     return sample;
+}
+
+
+struct FogResult {
+    dist: f32, // The distance to the fog's surface
+    within: bool, // True if the ray's origin is below the fog height
+    normal: vec3<f32>, // The normal vector of the fog surface at the intersection
+}
+fn raymarch_fog(ro: vec3<f32>, rd: vec3<f32>, time: f32, linear_sampler: sampler) -> FogResult {
+    var result: FogResult;
+    result.dist = -1.0;
+    result.within = false;
+    var t: f32 = 0.0;
+
+    for (var i = 0u; i < MAX_STEPS; i++) {
+        let pos = ro + rd * t;
+
+        // Get height of fog here
+        let h = sample_height(pos.xz, time, linear_sampler);
+        if t <= EPSILON && ro.y < h {
+            result.within = true;
+        }
+        let d_vert = pos.y - h;
+        if (d_vert < EPSILON) {
+        result.dist = t;
+            break;
+        }
+
+        // Convert vertical distance into a step along the ray
+        let step = d_vert / max(abs(rd.y), 0.001);
+        t += step;
+        if (t > MAX_DIST) { break; }
+    }
+
+    // Get the intersection point
+    let p_intersect = ro + rd * t;
+
+    // Calculate the normal of the surface using finite differences
+    let eps = vec2<f32>(0.2, 0.0);
+    let h = sample_height(p_intersect.xz, time, linear_sampler);
+    let hx = sample_height(p_intersect.xz + eps.xy, time, linear_sampler);
+    let hz = sample_height(p_intersect.xz + eps.yx, time, linear_sampler);
+    let normal_at_intersect = normalize(vec3<f32>((h - hx) / eps.x, eps.x, (h - hz) / eps.x));
+    result.normal = normal_at_intersect;
+
+    return result;
+}
+
+fn shade_fog(result: FogResult, ro: vec3<f32>, rd: vec3<f32>, time: f32, linear_sampler: sampler) -> vec3<f32> {
+    let light_dir = normalize(vec3<f32>(0.5, 0.8, -0.5));
+    let diffuse = max(0.0, dot(result.normal, light_dir));
+    return COLOR_A * (diffuse * 0.7);
+}
+
+fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {
+    return sample_texture(vec3<f32>(pos * 0.00004, time * 0.03), linear_sampler).r * -100.0;
 }
 
 fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
