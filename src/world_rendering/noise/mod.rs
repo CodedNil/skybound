@@ -177,13 +177,17 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         // Generate Simplex noise at increasing octaves
         let fog1 = spread(&perlin_3d(size, size, size, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
         let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
+        let fog3 = spread(&worley_3d(size, size, size, 1, 1.0)); // Worley noise for flash points
+        let fog4 = spread(&worley_3d(size, size, size, 4, 1.0)); // Higher frequency Worley noise for flash movement
 
         save_noise_layer(&fog1, "fog1.png", size);
         save_noise_layer(&fog2, "fog2.png", size);
+        save_noise_layer(&fog3, "fog3.png", size);
+        save_noise_layer(&fog4, "fog4.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..fog1.len())
-            .flat_map(|i| [fog1[i], fog2[i], 0, 0])
+            .flat_map(|i| [fog1[i], fog2[i], fog3[i], fog4[i]])
             .collect();
         let mut image = Image::new(
             Extent3d {

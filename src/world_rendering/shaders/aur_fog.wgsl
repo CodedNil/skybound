@@ -1,99 +1,127 @@
 #define_import_path skybound::aur_fog
-#import skybound::functions::hash12
+#import skybound::functions::{mod1, hash12, hash13}
 #import skybound::sky::AtmosphereColors
 
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
-// Turbulence parameters for fog
+// Colours
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
-const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
-const TURB_AMP: f32 = 0.6; // Turbulence amplitude
-const TURB_SPEED: f32 = 0.5; // Turbulence speed
-const TURB_FREQ: f32 = 0.4; // Initial turbulence frequency
-const TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
-
-// Fog lightning parameters
-const FLASH_FREQUENCY: f32 = 0.05; // Chance of a flash per second per cell
-const FLASH_GRID: f32 = 5000.0; // Grid cell size
-const FLASH_POINTS: i32 = 4; // How many points per cell
-const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 2.0;
-const FLASH_SCALE: f32 = 0.002;
-const FLASH_DURATION: f32 = 2.0; // Seconds
-const FLASH_FLICKER_SPEED: f32 = 20.0; // Hz of the on/off cycles
+const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
+const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
+const DENSITY: f32 = 0.05; // Base density for lighting
 
 const RAYMARCH_START_HEIGHT: f32 = 0.0;
 const MAX_STEPS: i32 = 512;
 const STEP_SIZE: f32 = 48.0;
-const FAST_RENDER_DISTANCE: f32 = 500000.0; // How far to render before switching to fast mode
+const FAST_RENDER_START: f32 = 20000.0; // Distance to begin fading to fast mode
+const FAST_RENDER_END: f32 = 100000.0; // Distance to switch to fast mode
 
 const STEP_SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const STEP_SCALING_END: f32 = 50000.0; // Distance from camera to use max step size
-const STEP_SCALING_MAX: f32 = 3.0; // Maximum scaling factor to increase by
+const STEP_SCALING_MAX: f32 = 4.0; // Maximum scaling factor to increase by
 
-const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
+const LIGHT_STEPS: u32 = 2; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 30.0;
 const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
 
-// Lighting Parameters
-const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
-const DENSITY: f32 = 0.05; // Base density for lighting
 
-
-// Fog turbulence and lightning calculations
-fn compute_turbulence(initial_pos: vec2<f32>, iters: f32, time: f32) -> vec2<f32> {
+// Fog turbulence calculations
+const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
+const TURB_ROTS: array<mat2x2<f32>, 8> = array<mat2x2<f32>,8>(
+    mat2x2<f32>(vec2<f32>( 0.600, -0.800), vec2<f32>( 0.800,  0.600)),
+    mat2x2<f32>(vec2<f32>(-0.280, -0.960), vec2<f32>( 0.960, -0.280)),
+    mat2x2<f32>(vec2<f32>(-0.936, -0.352), vec2<f32>( 0.352, -0.936)),
+    mat2x2<f32>(vec2<f32>(-0.843,  0.538), vec2<f32>(-0.538, -0.843)),
+    mat2x2<f32>(vec2<f32>(-0.076,  0.997), vec2<f32>(-0.997, -0.076)),
+    mat2x2<f32>(vec2<f32>( 0.752,  0.659), vec2<f32>(-0.659,  0.752)),
+    mat2x2<f32>(vec2<f32>( 0.978, -0.206), vec2<f32>( 0.206,  0.978)),
+    mat2x2<f32>(vec2<f32>( 0.422, -0.907), vec2<f32>( 0.907,  0.422))
+);
+const TURB_AMP: f32 = 0.6; // Turbulence amplitude
+const TURB_SPEED: f32 = 0.5; // Turbulence speed
+const TURB_FREQ: f32 = 0.4; // Initial turbulence frequency
+const TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
+fn compute_turbulence(initial_pos: vec2<f32>, iters: i32, time: f32) -> vec2<f32> {
     var pos = initial_pos;
     var freq = TURB_FREQ;
-    var rot = ROTATION_MATRIX;
-    for (var i = 0.0; i < iters; i += 1.0) {
+    for (var i = 0; i < iters; i++) {
         // Compute phase using rotated y-coordinate, time, and iteration offset
-        let phase = freq * (pos * rot).y + TURB_SPEED * time + i;
+        let rot = TURB_ROTS[i];
+        let phase = freq * (pos * rot).y + TURB_SPEED * time + f32(i);
         pos += TURB_AMP * rot[0] * sin(phase) / freq; // Add perpendicular sine offset
-        rot *= ROTATION_MATRIX; // Rotate for next iteration
         freq *= TURB_EXP; // Increase frequency
     }
 
     return pos;
 }
 
-// Voronoi-style closest point calculation for fog
+// Use Poisson disk sampling to create lightning flashes in a grid
+const FLASH_GRID: f32 = 10000.0; // Grid cell size
+const FLASH_FREQUENCY: f32 = 0.02; // Chance per cell per second
+const FLASH_DURATION_MIN: f32 = 2.0; // Seconds per cycle
+const FLASH_DURATION_MAX: f32 = 8.0; // Seconds per cycle
+const FLASH_FLICKER: f32 = 8.0; // Hz on/off
+const FLASH_SCALE: f32 = 0.002; // Fall-off
+
+const POISSON_SAMPLES: u32 = 4u;
+const POISSON_OFFSETS: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
+    vec2<f32>(0.0000, 0.5000), vec2<f32>(0.3621, 0.3536), vec2<f32>(0.4755, 0.1545), vec2<f32>(0.2939, -0.1545),
+    vec2<f32>(0.0955, -0.4045), vec2<f32>(-0.0955, -0.4045), vec2<f32>(-0.2939, -0.1545), vec2<f32>(-0.4755, 0.1545),
+    vec2<f32>(-0.3621, 0.3536), vec2<f32>(-0.0000, 0.0000), vec2<f32>(0.1545, 0.4755), vec2<f32>(0.4045, 0.0955),
+    vec2<f32>(0.4045, -0.0955), vec2<f32>(0.1545, -0.4755), vec2<f32>(-0.1545, -0.4755), vec2<f32>(-0.4045, -0.0955)
+);
+const CELL_OFFSETS: array<vec2<f32>, 9> = array<vec2<f32>,9>(
+    vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(-1.0, 0.0),
+    vec2<f32>(0.0, 1.0), vec2<f32>(0.0, -1.0), vec2<f32>(1.0, 1.0),
+    vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, -1.0)
+);
 fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
-    let cell = floor(pos.xz / FLASH_GRID);
-    let t_block = floor(time / FLASH_DURATION);
-    let in_dur = (time - t_block * FLASH_DURATION) < FLASH_DURATION;
-    var emission = vec3(0.0);
+    // Cell coords and fractional part
+    let uv = pos.xz / FLASH_GRID;
+    let cell = floor(uv);
+    var total = vec3<f32>(0.0);
 
-    if !in_dur { return emission; }
+    // For each of the 9 cells around pos
+    for (var c = 0u; c < 9u; c++) {
+        let cell_pos = cell + CELL_OFFSETS[c];
+        let seed = dot(cell_pos, vec2<f32>(127.1, 311.7));
 
-    let flicker_t = floor(time * FLASH_FLICKER_SPEED);
+        // Check if this cell's flash is currently active
+        let period = 1.0 / FLASH_FREQUENCY;
+        let h = hash12(seed);
+        let start_time = h.x * period;
+        let tmod = mod1(time - start_time, period);
+        let duration_jitter = mix(FLASH_DURATION_MIN, FLASH_DURATION_MAX, h.y);
+        if (tmod > duration_jitter) { continue; }
 
-    for (var y = -1; y <= 1; y++) {
-        for (var x = -1; x <= 1; x++) {
-            let nbr = cell + vec2(f32(x), f32(y));
-            let seed = dot(nbr, vec2(127.1, 311.7)) + t_block;
+        // Poisson-disc points
+        for (var i = 0u; i < POISSON_SAMPLES; i++) {
+            // Per-point randoms
+            let h = hash13(seed + f32(i) * 17.0);
+            let offset = h.x; // Random phase offset
+            let rate = mix(0.8, 1.2, h.y); // Small flicker-rate jitter
+            let flash_scale_jitter = mix(0.5, 3.0, h.z); // Use h.z to vary the scale
 
-            // Per-neighbour flicker trigger
-            if hash12(seed + flicker_t).x > 0.5 && hash12(seed).x <= FLASH_FREQUENCY {
-                for (var k = 0; k < FLASH_POINTS; k++) {
-                    let off_seed = seed + f32(k) * 17.0;
-                    let h = hash12(off_seed);
-                    if h.y <= 0.3 { continue; }
+            // Apply individual flicker
+            let flicker_time = time * FLASH_FLICKER * rate + offset * 100.0;
+            let on = step(fract(flicker_time), 0.5); // ON half the time
+            if (on < 0.5) { continue; }
 
-                    let phase = time * (FLASH_FLICKER_SPEED * 0.5) + 6.2831 * h.x;
-                    let offset = h * 0.5 + 0.5 * sin(phase);
-                    let gp = (nbr + offset) * FLASH_GRID;
-                    // Smooth 2D fall-off
-                    let d = distance(pos.xz, gp);
-                    emission += exp(-d * FLASH_SCALE) * FLASH_COLOR;
-                }
-            }
+            // Calculate the position of the poisson disc point
+            let jit = POISSON_OFFSETS[i] * h.x;
+            let gp = (cell_pos + jit) * FLASH_GRID;
+
+            let d = distance(pos.xz, gp);
+            let scaled_distance = d * FLASH_SCALE * flash_scale_jitter;
+            total += exp(-scaled_distance) * FLASH_COLOR;
         }
     }
 
-    return emission;
+    return total;
 }
 
 /// Sample from the fog
@@ -103,7 +131,7 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: bool, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: f32, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
     if pos.y > 0.0 { return sample; }
 
@@ -114,14 +142,14 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: bo
     if density <= 0.0 { return sample; }
 
     // Use turbulent position for density
-    var fbm_value: f32;
-    if density >= 1.0 {
+    var fbm_value: f32 = -1.0;
+    if fast >= 1.0 || density >= 1.0 {
         sample.density = 1.0;
     } else {
-        let turb_iters = round(mix(4.0, 8.0, smoothstep(20000.0, 1000.0, dist)));
+        let turb_iters = i32(round(mix(2.0, 6.0, smoothstep(50000.0, 1000.0, dist))));
         let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-        fbm_value = sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0;
-        sample.density = abs(pow(fbm_value, 2.0) * density) + smoothstep(-50.0, -1000.0, altitude);
+        fbm_value = mix(sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0, fbm_value, fast);
+        sample.density = min(pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude) + fast, 1.0);
     }
     if only_density || sample.density <= 0.0 { return sample; }
 
@@ -131,11 +159,11 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: bo
     let shadow_factor = 1.0 - smoothstep(-30.0, -500.0, altitude);
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
+    // Add emission from the fog color and lightning flashes
     sample.emission = sample.density * smoothstep(-100.0, -500.0, altitude) * sample.color * 0.5;
-
-    // Compute lightning emission using Voronoi grid
-    if !fast {
-        sample.emission += flash_emission(pos, time) * smoothstep(-20.0, -100.0, altitude) * sample.density;
+    if fast <= 1.0 {
+        let flash = flash_emission(pos, time);
+        sample.emission += flash * smoothstep(-300.0, -500.0, altitude) * sample.density * (1.0 - fast);
     }
 
     return sample;
@@ -174,8 +202,8 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
         var step = STEP_SIZE * step_scaler;
 
         // Sample the fog
-        let pos = ro + rd * t;
-        let fog_sample = sample_fog(pos, t, time, false, t > FAST_RENDER_DISTANCE, linear_sampler);
+        let pos = ro + rd * (t + dither * step);
+        let fog_sample = sample_fog(pos, t, time, false, smoothstep(FAST_RENDER_START, FAST_RENDER_END, t), linear_sampler);
         let step_density = fog_sample.density;
 
         if step_density > 0.0 {
@@ -187,11 +215,8 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
                 lightmarch_pos += (sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_fog(lightmarch_pos, t, time, true, false, linear_sampler).density;
+                density_sunwards += sample_fog(lightmarch_pos, t, time, true, 0.0, linear_sampler).density;
             }
-            // Take a single distant sample
-            lightmarch_pos += sun_dir * LIGHT_STEP_SIZE * 18.0;
-            density_sunwards += pow(sample_fog(lightmarch_pos, t, time, true, false, linear_sampler).density, 1.5);
 
             // Captures the direct lighting from the sun
 			let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);

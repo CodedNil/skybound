@@ -8,7 +8,10 @@ fn remap(x: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
     return (((x - a) / (b - a)) * (d - c)) + c;
 }
 
-// Modulo function: vec3, f32 → vec3
+// Modulo functions
+fn mod1(x: f32, y: f32) -> f32 {
+    return x - y * floor(x / y);
+}
 fn mod3(x: vec3<f32>, y: f32) -> vec3<f32> {
     return x - floor(x / y) * y;
 }
@@ -26,6 +29,13 @@ fn hash12(p: f32) -> vec2<f32> {
     var v: vec2<f32> = fract(vec2<f32>(p) * vec2<f32>(0.1031, 0.1030));
     v += dot(v, v.yx + 33.33);
     return fract((v.x + v.y) * v);
+}
+
+// White noise hash: f32 → vec3 [0,1]
+fn hash13(p: f32) -> vec3<f32> {
+    var v: vec3<f32> = fract(vec3<f32>(p) * vec3<f32>(0.1031, 0.1030, 0.1029));
+    v += dot(v, v.yxz + 33.33);
+    return fract((v.x + v.y + v.z) * v);
 }
 
 // White noise hash: vec2 → f32 [0,1]
