@@ -1,4 +1,4 @@
-use bevy::math::{IVec2, IVec3, Vec2, Vec3};
+use bevy::math::{IVec3, Vec3A};
 use orx_parallel::*;
 
 // Generate a 3D Simplex Noise Texture
@@ -10,45 +10,44 @@ pub fn simplex_3d(
     gain: f32,
     freq: f32,
     pow: f32,
+    tiled: bool,
 ) -> Vec<u8> {
-    let total_voxels = width * height * depth;
-    (0..total_voxels)
+    (0..depth)
         .par()
-        .map(|i| {
-            // Unravel i into x,y,z
-            let x = i / (height * depth);
-            let y = (i / depth) % height;
-            let z = i % depth;
+        .flat_map(|z| {
+            let mut slice = Vec::with_capacity(width * height);
+            for y in 0..height {
+                for x in 0..width {
+                    let pos = Vec3A::new(
+                        x as f32 / width as f32,
+                        y as f32 / height as f32,
+                        z as f32 / depth as f32,
+                    );
 
-            // Normalized coordinates in [0..1]
-            let pos = Vec3::new(
-                x as f32 / (width - 1) as f32,
-                y as f32 / (height - 1) as f32,
-                z as f32 / (depth - 1) as f32,
-            );
+                    // Compute fractal‐brownian motion
+                    let v = simplex_fbm3(pos, octaves, freq, gain, tiled);
 
-            // Compute fractal‐brownian motion
-            let v = if depth == 1 {
-                simplex_fbm2(pos.truncate(), octaves, freq, gain)
-            } else {
-                simplex_fbm3(pos, octaves, freq, gain, true)
-            };
-
-            // Map from [-1..1] to [0..255]
-            ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
+                    // Map from [-1..1] to [0..255]
+                    slice.push(((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8);
+                }
+            }
+            slice
         })
         .collect()
 }
 
 // FBM Simplex Noise
-#[inline(always)]
-pub fn simplex_fbm3(pos: Vec3, octaves: usize, mut freq: f32, gain: f32, tile: bool) -> f32 {
+fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, tiled: bool) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
 
     for _ in 0..octaves {
-        total += simplex3(pos * freq, freq, tile) * amp;
+        if tiled {
+            total += simplex3_seamless(pos * freq, freq) * amp;
+        } else {
+            total += simplex3(pos * freq) * amp;
+        }
         norm += amp;
         amp *= gain;
         freq *= 2.0;
@@ -57,73 +56,52 @@ pub fn simplex_fbm3(pos: Vec3, octaves: usize, mut freq: f32, gain: f32, tile: b
     total / norm
 }
 
-#[inline(always)]
-pub fn simplex_fbm2(pos: Vec2, octaves: usize, mut freq: f32, gain: f32) -> f32 {
-    let mut total = 0.0;
-    let mut amp = 1.0;
-    let mut norm = 0.0;
+fn simplex3_seamless(pos: Vec3A, period: f32) -> f32 {
+    let x = pos.x % period;
+    let y = pos.y % period;
+    let z = pos.z % period;
 
-    for _ in 0..octaves {
-        total += simplex2(pos * freq) * amp;
-        norm += amp;
-        amp *= gain;
-        freq *= 2.0;
-    }
+    let fx = x / period;
+    let fy = y / period;
+    let fz = z / period;
 
-    total / norm
+    let p000 = simplex3(pos);
+    let p100 = simplex3(pos - Vec3A::new(period, 0.0, 0.0));
+    let p010 = simplex3(pos - Vec3A::new(0.0, period, 0.0));
+    let p110 = simplex3(pos - Vec3A::new(period, period, 0.0));
+
+    let p001 = simplex3(pos - Vec3A::new(0.0, 0.0, period));
+    let p101 = simplex3(pos - Vec3A::new(period, 0.0, period));
+    let p011 = simplex3(pos - Vec3A::new(0.0, period, period));
+    let p111 = simplex3(pos - Vec3A::new(period, period, period));
+
+    let wx = fx;
+    let wy = fy;
+    let wz = fz;
+
+    let w000 = (1.0 - wx) * (1.0 - wy) * (1.0 - wz);
+    let w100 = wx * (1.0 - wy) * (1.0 - wz);
+    let w010 = (1.0 - wx) * wy * (1.0 - wz);
+    let w110 = wx * wy * (1.0 - wz);
+
+    let w001 = (1.0 - wx) * (1.0 - wy) * wz;
+    let w101 = wx * (1.0 - wy) * wz;
+    let w011 = (1.0 - wx) * wy * wz;
+    let w111 = wx * wy * wz;
+
+    p000 * w000
+        + p100 * w100
+        + p010 * w010
+        + p110 * w110
+        + p001 * w001
+        + p101 * w101
+        + p011 * w011
+        + p111 * w111
 }
 
 // https://github.com/Razaekel/noise-rs/blob/develop/src/core/super_simplex.rs
-
-const TO_REAL_CONSTANT_2D: f32 = -0.211_324_865_405_187; // (1 / sqrt(2 + 1) - 1) / 2
-const TO_SIMPLEX_CONSTANT_2D: f32 = 0.366_025_403_784_439; // (sqrt(2 + 1) - 1) / 2
 const TO_SIMPLEX_CONSTANT_3D: f32 = -2.0 / 3.0;
-
-const NORM_CONSTANT_2D: f32 = 1.0 / 0.054_282_952_886_616_23;
 const NORM_CONSTANT_3D: f32 = 1.0 / 0.086_766_400_165_536_9;
-
-#[rustfmt::skip]
-const LATTICE_LOOKUP_2D: [(IVec2, Vec2); 4 * 8] = [
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(-1, 0), Vec2::new(0.788_675_134_594_813, -0.211_324_865_405_187)),
-    (IVec2::new(0, -1), Vec2::new(-0.211_324_865_405_187, 0.788_675_134_594_813)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(0, 1), Vec2::new(0.211_324_865_405_187, -0.788_675_134_594_813)),
-    (IVec2::new(1, 0), Vec2::new(-0.788_675_134_594_813, 0.211_324_865_405_187)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(1, 0), Vec2::new(-0.788_675_134_594_813, 0.211_324_865_405_187)),
-    (IVec2::new(0, -1), Vec2::new(-0.211_324_865_405_187, 0.788_675_134_594_813)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(2, 1), Vec2::new(-1.366_025_403_784_439, -0.366_025_403_784_439)),
-    (IVec2::new(1, 0), Vec2::new(-0.788_675_134_594_813, 0.211_324_865_405_187)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(-1, 0), Vec2::new(0.788_675_134_594_813, -0.211_324_865_405_187)),
-    (IVec2::new(0, 1), Vec2::new(0.211_324_865_405_187, -0.788_675_134_594_813)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(0, 1), Vec2::new(0.211_324_865_405_187, -0.788_675_134_594_813)),
-    (IVec2::new(1, 2), Vec2::new(-0.366_025_403_784_439, -1.366_025_403_784_439)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(1, 0), Vec2::new(-0.788_675_134_594_813, 0.211_324_865_405_187)),
-    (IVec2::new(0, 1), Vec2::new(0.211_324_865_405_187, -0.788_675_134_594_813)),
-
-    (IVec2::new(0, 0), Vec2::new(0.0, 0.0)),
-    (IVec2::new(1, 1), Vec2::new(-0.577_350_269_189_626, -0.577_350_269_189_626)),
-    (IVec2::new(2, 1), Vec2::new(-1.366_025_403_784_439, -0.366_025_403_784_439)),
-    (IVec2::new(1, 2), Vec2::new(-0.366_025_403_784_439, -1.366_025_403_784_439)),
-];
 
 #[rustfmt::skip]
 const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
@@ -145,48 +123,7 @@ const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
     IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
 ];
 
-#[inline(always)]
-pub fn simplex2(point: Vec2) -> f32 {
-    // Transform point from real space to simplex space
-    let to_simplex_offset = (point.x + point.y) * TO_SIMPLEX_CONSTANT_2D;
-    let simplex_point = point + to_simplex_offset;
-
-    // Get base point of simplex and barycentric coordinates in simplex space
-    let simplex_base_point_i = simplex_point.floor().as_ivec2();
-    let simplex_base_point = simplex_base_point_i.as_vec2();
-    let simplex_rel_coords = simplex_point - simplex_base_point;
-
-    // Create index to lookup table from barycentric coordinates
-    let region_sum = (simplex_rel_coords.x + simplex_rel_coords.y).floor();
-    let index = ((region_sum >= 1.0) as usize) << 2
-        | ((simplex_rel_coords.x - simplex_rel_coords.y * 0.5 + 1.0 - region_sum * 0.5 >= 1.0)
-            as usize)
-            << 3
-        | ((simplex_rel_coords.y - simplex_rel_coords.x * 0.5 + 1.0 - region_sum * 0.5 >= 1.0)
-            as usize)
-            << 4;
-
-    // Transform barycentric coordinates to real space
-    let to_real_offset = (simplex_rel_coords.x + simplex_rel_coords.y) * TO_REAL_CONSTANT_2D;
-    let real_rel_coords = simplex_rel_coords + to_real_offset;
-
-    let mut value = 0.0;
-
-    for lattice_lookup in &LATTICE_LOOKUP_2D[index..index + 4] {
-        let dpos = real_rel_coords + lattice_lookup.1;
-        let attn = (2.0 / 3.0) - dpos.length_squared();
-        if attn > 0.0 {
-            let lattice_point = simplex_base_point_i + lattice_lookup.0;
-            let gradient = Vec2::from(grad2(hash2(lattice_point)));
-            value += attn.powi(4) * gradient.dot(dpos);
-        }
-    }
-
-    value * NORM_CONSTANT_2D
-}
-
-#[inline(always)]
-pub fn simplex3(point: Vec3, period: f32, tile: bool) -> f32 {
+fn simplex3(point: Vec3A) -> f32 {
     // Transform point from real space to simplex space
     let to_simplex_offset = (point.x + point.y + point.z) * TO_SIMPLEX_CONSTANT_3D;
     let simplex_point = -(point + to_simplex_offset);
@@ -194,10 +131,10 @@ pub fn simplex3(point: Vec3, period: f32, tile: bool) -> f32 {
 
     // Get base point of simplex and barycentric coordinates in simplex space
     let simplex_base_point_i = simplex_point.floor().as_ivec3();
-    let simplex_base_point = simplex_base_point_i.as_vec3();
+    let simplex_base_point = simplex_base_point_i.as_vec3a();
     let simplex_rel_coords = simplex_point - simplex_base_point;
     let second_simplex_base_point_i = second_simplex_point.floor().as_ivec3();
-    let second_simplex_base_point = second_simplex_base_point_i.as_vec3();
+    let second_simplex_base_point = second_simplex_base_point_i.as_vec3a();
     let second_simplex_rel_coords = second_simplex_point - second_simplex_base_point;
 
     // Create indices to lookup table from barycentric coordinates
@@ -231,24 +168,22 @@ pub fn simplex3(point: Vec3, period: f32, tile: bool) -> f32 {
 
     // Sum contributions from first lattice
     for &lattice_lookup in &LATTICE_LOOKUP_3D[index..index + 4] {
-        let dpos = simplex_rel_coords - lattice_lookup.as_vec3();
+        let dpos = simplex_rel_coords - lattice_lookup.as_vec3a();
         let attn = 0.75 - dpos.length_squared();
         if attn > 0.0 {
-            // Tile the integer cell coordinates so that noise is periodic at 'period'
             let lattice_point = simplex_base_point_i + lattice_lookup;
-            let gradient = Vec3::from(grad3(hash3(lattice_point)));
+            let gradient = Vec3A::from(grad3(hash3(lattice_point)));
             value += attn.powi(4) * gradient.dot(dpos);
         }
     }
 
     // Sum contributions from second lattice
     for &lattice_lookup in &LATTICE_LOOKUP_3D[second_index..second_index + 4] {
-        let dpos = second_simplex_rel_coords - lattice_lookup.as_vec3();
+        let dpos = second_simplex_rel_coords - lattice_lookup.as_vec3a();
         let attn = 0.75 - dpos.length_squared();
         if attn > 0.0 {
-            // Tile the integer cell coordinates so that noise is periodic at 'period'
             let lattice_point = second_simplex_base_point_i + lattice_lookup;
-            let gradient = Vec3::from(grad3(hash3(lattice_point)));
+            let gradient = Vec3A::from(grad3(hash3(lattice_point)));
             value += attn.powi(4) * gradient.dot(dpos);
         }
     }
@@ -257,27 +192,6 @@ pub fn simplex3(point: Vec3, period: f32, tile: bool) -> f32 {
 }
 
 #[rustfmt::skip]
-#[inline(always)]
-fn grad2(index: usize) -> [f32; 2] {
-    // Vectors are combinations of -1, 0, and 1
-    // Precompute the normalized element
-    const DIAG : f32 = core::f32::consts::FRAC_1_SQRT_2;
-
-    match index % 8 {
-        0 => [  1.0,   0.0],
-        1 => [ -1.0,   0.0],
-        2 => [  0.0,   1.0],
-        3 => [  0.0,  -1.0],
-        4 => [ DIAG,  DIAG],
-        5 => [-DIAG,  DIAG],
-        6 => [ DIAG, -DIAG],
-        7 => [-DIAG, -DIAG],
-        _ => panic!("Attempt to access gradient {} of 8", index % 8),
-    }
-}
-
-#[rustfmt::skip]
-#[inline(always)]
 fn grad3(index: usize) -> [f32; 3] {
     // Vectors are combinations of -1, 0, and 1
     // Precompute the normalized elements
@@ -310,20 +224,8 @@ fn grad3(index: usize) -> [f32; 3] {
     }
 }
 
-// 2D hashing function
-#[inline(always)]
-fn hash2(p: IVec2) -> usize {
-    let mut n: i32 = p.x * 3 + p.y * 113;
-    n = ((n << 13) ^ n)
-        .wrapping_mul(n.wrapping_mul(n).wrapping_mul(15731).wrapping_add(789221))
-        .wrapping_add(1376312589);
-
-    ((n & 0x0fffffff) as f32 * HASH_MULTIPLIER * 255.0) as usize
-}
-
 // 3D hashing function
 const HASH_MULTIPLIER: f32 = 1.0 / (0x0fffffff as f32);
-#[inline(always)]
 fn hash3(p: IVec3) -> usize {
     let mut n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
     n = ((n << 13) ^ n)

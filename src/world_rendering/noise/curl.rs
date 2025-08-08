@@ -1,5 +1,5 @@
 use crate::world_rendering::noise::perlin::perlin_fbm3;
-use bevy::math::Vec3;
+use bevy::math::Vec3A;
 use orx_parallel::*;
 
 /// Computes the 2D curl magnitude of a scalar field
@@ -12,7 +12,7 @@ const GAMMA: f32 = 1.2;
 pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let total_pixels = width * height;
 
-    let curl_values: Vec<Vec3> = (0..total_pixels)
+    let curl_values: Vec<Vec3A> = (0..total_pixels)
         .par()
         .map(|i| {
             let x = i % width;
@@ -23,16 +23,19 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8
             let y_f = (y as f32) * SCALE;
 
             // Calculate the 6 noise values using a clean, vector-based syntax
-            let pos = Vec3::new(x_f, y_f, 0.0);
-            let noise_x_plus = perlin_fbm3(pos + Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+            let pos = Vec3A::new(x_f, y_f, 0.0);
+            let noise_x_plus =
+                perlin_fbm3(pos + Vec3A::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_x_minus =
-                perlin_fbm3(pos - Vec3::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
-            let noise_y_plus = perlin_fbm3(pos + Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+                perlin_fbm3(pos - Vec3A::X * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+            let noise_y_plus =
+                perlin_fbm3(pos + Vec3A::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_y_minus =
-                perlin_fbm3(pos - Vec3::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
-            let noise_z_plus = perlin_fbm3(pos + Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+                perlin_fbm3(pos - Vec3A::Y * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+            let noise_z_plus =
+                perlin_fbm3(pos + Vec3A::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
             let noise_z_minus =
-                perlin_fbm3(pos - Vec3::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
+                perlin_fbm3(pos - Vec3A::Z * EPSILON, OCTAVES, FREQUENCY, GAIN, true);
 
             // Calculate approximate partial derivatives.
             let d_noise_dx = (noise_x_plus - noise_x_minus) / (2.0 * EPSILON);
@@ -43,7 +46,7 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8
             let curl_x = d_noise_dy - d_noise_dz;
             let curl_y = d_noise_dx + d_noise_dy;
             let curl_z = d_noise_dz - d_noise_dx;
-            Vec3::new(curl_x, curl_y, curl_z)
+            Vec3A::new(curl_x, curl_y, curl_z)
         })
         .collect();
 

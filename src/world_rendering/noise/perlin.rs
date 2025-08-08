@@ -1,4 +1,4 @@
-use bevy::math::Vec3;
+use bevy::math::Vec3A;
 use orx_parallel::*;
 
 // Generate a 3D Perlin Noise Texture
@@ -11,38 +11,32 @@ pub fn perlin_3d(
     freq: f32,
     pow: f32,
 ) -> Vec<u8> {
-    let total_voxels = width * height * depth;
-    (0..total_voxels)
+    (0..depth)
         .par()
-        .map(|i| {
-            // Unravel i into x,y,z
-            let x = i / (height * depth);
-            let y = (i / depth) % height;
-            let z = i % depth;
+        .flat_map(|z| {
+            let mut slice = Vec::with_capacity(width * height);
+            for y in 0..height {
+                for x in 0..width {
+                    let pos = Vec3A::new(
+                        x as f32 / width as f32,
+                        y as f32 / height as f32,
+                        z as f32 / depth as f32,
+                    );
 
-            // Normalize coordinates in [0..1]
-            let pos = Vec3::new(
-                x as f32 / (width - 1) as f32,
-                y as f32 / (height - 1) as f32,
-                if depth == 1 {
-                    0.0
-                } else {
-                    z as f32 / (depth - 1) as f32
-                },
-            );
+                    // Compute fractal‐brownian motion
+                    let v = perlin_fbm3(pos, octaves, freq, gain, true);
 
-            // Compute fractal‐brownian motion
-            let v = perlin_fbm3(pos, octaves, freq, gain, true);
-
-            // Map from [-1..1] to [0..255]
-            ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
+                    // Map from [-1..1] to [0..255]
+                    slice.push(((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8);
+                }
+            }
+            slice
         })
         .collect()
 }
 
 // FBM Perlin Noise
-#[inline(always)]
-pub fn perlin_fbm3(pos: Vec3, octaves: usize, mut freq: f32, gain: f32, tile: bool) -> f32 {
+pub fn perlin_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, tile: bool) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
@@ -58,18 +52,17 @@ pub fn perlin_fbm3(pos: Vec3, octaves: usize, mut freq: f32, gain: f32, tile: bo
 }
 
 // Single‐frequency Perlin
-const OFF: [Vec3; 8] = [
-    Vec3::new(0.0, 0.0, 0.0),
-    Vec3::new(1.0, 0.0, 0.0),
-    Vec3::new(0.0, 1.0, 0.0),
-    Vec3::new(1.0, 1.0, 0.0),
-    Vec3::new(0.0, 0.0, 1.0),
-    Vec3::new(1.0, 0.0, 1.0),
-    Vec3::new(0.0, 1.0, 1.0),
-    Vec3::new(1.0, 1.0, 1.0),
+const OFF: [Vec3A; 8] = [
+    Vec3A::new(0.0, 0.0, 0.0),
+    Vec3A::new(1.0, 0.0, 0.0),
+    Vec3A::new(0.0, 1.0, 0.0),
+    Vec3A::new(1.0, 1.0, 0.0),
+    Vec3A::new(0.0, 0.0, 1.0),
+    Vec3A::new(1.0, 0.0, 1.0),
+    Vec3A::new(0.0, 1.0, 1.0),
+    Vec3A::new(1.0, 1.0, 1.0),
 ];
-#[inline(always)]
-pub fn perlin3(pos: Vec3, period: f32, tile: bool) -> f32 {
+fn perlin3(pos: Vec3A, period: f32, tile: bool) -> f32 {
     // Cell corner + local coords
     let p = pos.floor();
     let w = pos.fract();
@@ -82,7 +75,7 @@ pub fn perlin3(pos: Vec3, period: f32, tile: bool) -> f32 {
     for (idx, &off) in OFF.iter().enumerate() {
         // Tile the integer cell coordinates so that noise is periodic at 'period'
         let coords = if tile {
-            (p + off).rem_euclid(Vec3::splat(period))
+            (p + off).rem_euclid(Vec3A::splat(period))
         } else {
             p + off
         };
@@ -142,21 +135,21 @@ const P: [u8; 512] = {
 };
 
 // Standard gradient vectors for 3D noise
-const GRADIENTS: [Vec3; 16] = [
-    Vec3::new(1.0, 1.0, 0.0),
-    Vec3::new(-1.0, 1.0, 0.0),
-    Vec3::new(1.0, -1.0, 0.0),
-    Vec3::new(-1.0, -1.0, 0.0),
-    Vec3::new(1.0, 0.0, 1.0),
-    Vec3::new(-1.0, 0.0, 1.0),
-    Vec3::new(1.0, 0.0, -1.0),
-    Vec3::new(-1.0, 0.0, -1.0),
-    Vec3::new(0.0, 1.0, 1.0),
-    Vec3::new(0.0, -1.0, 1.0),
-    Vec3::new(0.0, 1.0, -1.0),
-    Vec3::new(0.0, -1.0, -1.0),
-    Vec3::new(1.0, 1.0, 0.0),
-    Vec3::new(-1.0, 1.0, 0.0),
-    Vec3::new(0.0, -1.0, 1.0),
-    Vec3::new(0.0, -1.0, -1.0),
+const GRADIENTS: [Vec3A; 16] = [
+    Vec3A::new(1.0, 1.0, 0.0),
+    Vec3A::new(-1.0, 1.0, 0.0),
+    Vec3A::new(1.0, -1.0, 0.0),
+    Vec3A::new(-1.0, -1.0, 0.0),
+    Vec3A::new(1.0, 0.0, 1.0),
+    Vec3A::new(-1.0, 0.0, 1.0),
+    Vec3A::new(1.0, 0.0, -1.0),
+    Vec3A::new(-1.0, 0.0, -1.0),
+    Vec3A::new(0.0, 1.0, 1.0),
+    Vec3A::new(0.0, -1.0, 1.0),
+    Vec3A::new(0.0, 1.0, -1.0),
+    Vec3A::new(0.0, -1.0, -1.0),
+    Vec3A::new(1.0, 1.0, 0.0),
+    Vec3A::new(-1.0, 1.0, 0.0),
+    Vec3A::new(0.0, -1.0, 1.0),
+    Vec3A::new(0.0, -1.0, -1.0),
 ];

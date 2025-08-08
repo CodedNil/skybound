@@ -168,12 +168,11 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
     let fog_texture = {
         let size = 128;
-        let size_y = 128;
 
         // Generate Simplex noise at increasing octaves
-        let fog1 = spread(&simplex_3d(size, size, size_y, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
-        let fog2 = spread(&simplex_3d(size, size, size_y, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
-        let fog3 = spread(&simplex_3d(size, size, size_y, 5, 0.4, 6.0, 1.0)); // The fogs color pattern
+        let fog1 = spread(&simplex_3d(size, size, size, 6, 0.1, 18.0, 1.0, true)); // The fogs heightmap
+        let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0, false)); // The fine noise for the fog
+        let fog3 = spread(&simplex_3d(size, size, size, 5, 0.5, 6.0, 1.0, false)); // The fogs color pattern
 
         save_noise_layer(&fog1, "fog1.png", size);
         save_noise_layer(&fog2, "fog2.png", size);
@@ -187,7 +186,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             Extent3d {
                 width: size as u32,
                 height: size as u32,
-                depth_or_array_layers: size_y as u32,
+                depth_or_array_layers: size as u32,
             },
             TextureDimension::D3,
             bytemuck::cast_slice(&flat_data).to_vec(),
