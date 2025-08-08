@@ -11,26 +11,28 @@ pub fn perlin_3d(
     freq: f32,
     pow: f32,
 ) -> Vec<u8> {
-    (0..depth)
+    (0..(width * height * depth))
         .par()
-        .flat_map(|z| {
-            let mut slice = Vec::with_capacity(width * height);
-            for y in 0..height {
-                for x in 0..width {
-                    let pos = Vec3A::new(
-                        x as f32 / width as f32,
-                        y as f32 / height as f32,
-                        z as f32 / depth as f32,
-                    );
+        .map(|i| {
+            // Unravel i into x,y,z
+            let xy_plane = height * depth;
+            let x = i / xy_plane;
+            let rem = i % xy_plane;
+            let y = rem / depth;
+            let z = rem % depth;
 
-                    // Compute fractal‐brownian motion
-                    let v = perlin_fbm3(pos, octaves, freq, gain, true);
+            // Normalized coordinates in [0..1]
+            let pos = Vec3A::new(
+                x as f32 / (width - 1) as f32,
+                y as f32 / (height - 1) as f32,
+                z as f32 / (depth - 1) as f32,
+            );
 
-                    // Map from [-1..1] to [0..255]
-                    slice.push(((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8);
-                }
-            }
-            slice
+            // Compute fractal‐brownian motion
+            let v = perlin_fbm3(pos, octaves, freq, gain, true);
+
+            // Map from [-1..1] to [0..255]
+            ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
         })
         .collect()
 }

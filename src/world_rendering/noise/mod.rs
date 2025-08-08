@@ -1,10 +1,15 @@
 mod curl;
 mod perlin;
 mod simplex;
+mod utils;
 mod worley;
 
 use crate::world_rendering::noise::{
-    curl::curl_2d_texture, perlin::perlin_3d, simplex::simplex_3d, worley::worley_3d,
+    curl::curl_2d_texture,
+    perlin::perlin_3d,
+    simplex::simplex_3d,
+    utils::{map_range, spread},
+    worley::worley_3d,
 };
 use bevy::{
     asset::RenderAssetUsages,
@@ -170,17 +175,15 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let size = 128;
 
         // Generate Simplex noise at increasing octaves
-        let fog1 = spread(&simplex_3d(size, size, size, 6, 0.1, 18.0, 1.0, true)); // The fogs heightmap
-        let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0, false)); // The fine noise for the fog
-        let fog3 = spread(&simplex_3d(size, size, size, 5, 0.5, 6.0, 1.0, false)); // The fogs color pattern
+        let fog1 = spread(&perlin_3d(size, size, size, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
+        let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
 
         save_noise_layer(&fog1, "fog1.png", size);
         save_noise_layer(&fog2, "fog2.png", size);
-        save_noise_layer(&fog3, "fog3.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..fog1.len())
-            .flat_map(|i| [fog1[i], fog2[i], fog3[i], 255])
+            .flat_map(|i| [fog1[i], fog2[i], 0, 0])
             .collect();
         let mut image = Image::new(
             Extent3d {
@@ -204,31 +207,4 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         turbulence: images.add(turbulence_texture),
         fog: images.add(fog_texture),
     });
-}
-
-/// Stretch contrast: map [min, max] → [0,255].
-fn spread(image: &[u8]) -> Vec<u8> {
-    let mut minv: u8 = 255;
-    let mut maxv: u8 = 0;
-    for &v in image {
-        minv = minv.min(v);
-        maxv = maxv.max(v);
-    }
-    image
-        .iter()
-        .map(|&v| {
-            map_range(v as f32, minv as f32, maxv as f32, 0.0, 255.0)
-                .clamp(0.0, 255.0)
-                .round() as u8
-        })
-        .collect()
-}
-
-/// Linearly map a value `x` in range [in_min..in_max] to [out_min..out_max].
-#[inline]
-fn map_range(val: f32, smin: f32, smax: f32, dmin: f32, dmax: f32) -> f32 {
-    if (smax - smin).abs() < std::f32::EPSILON {
-        return dmax;
-    }
-    (val - smin) / (smax - smin) * (dmax - dmin) + dmin
 }

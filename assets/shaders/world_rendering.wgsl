@@ -90,7 +90,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     var acc_color: vec3<f32> = vec3<f32>(0.0);
     var acc_alpha: f32 = 0.0;
 
-    if ro.y > 20.0 {
+    if ro.y > 1000.0 {
         // Sample the clouds
         let cloud_color: vec4<f32> = render_clouds(ro, rd, atmosphere_colors, sun_dir, t_max, dither, globals.time, linear_sampler);
         acc_color = cloud_color.rgb;

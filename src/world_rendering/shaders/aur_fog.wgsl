@@ -5,9 +5,8 @@
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
 // Turbulence parameters for fog
-const COLOR_A: vec3<f32> = vec3(0.6, 0.4, 1.0);
+const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
-const COLOR_C: vec3<f32> = vec3(0.0, 0.0, 1.0);
 const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
 const TURB_AMP: f32 = 0.6; // Turbulence amplitude
 const TURB_SPEED: f32 = 0.5; // Turbulence speed
@@ -28,8 +27,12 @@ const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
 const RAYMARCH_START_HEIGHT: f32 = 0.0;
 const MAX_STEPS: i32 = 512;
-const STEP_SIZE: f32 = 32.0;
-const FAST_RENDER_DISTANCE: f32 = 5000000.0; // How far to render before switching to fast mode
+const STEP_SIZE: f32 = 48.0;
+const FAST_RENDER_DISTANCE: f32 = 500000.0; // How far to render before switching to fast mode
+
+const STEP_SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
+const STEP_SCALING_END: f32 = 50000.0; // Distance from camera to use max step size
+const STEP_SCALING_MAX: f32 = 3.0; // Maximum scaling factor to increase by
 
 const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 30.0;
@@ -37,7 +40,6 @@ const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0
 
 // Lighting Parameters
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
-const SHADOW_EXTINCTION: f32 = 5.0; // Higher = deeper core shadows
 const DENSITY: f32 = 0.05; // Base density for lighting
 
 
@@ -101,44 +103,40 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, fast: bool, very_fast: bool, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: bool, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
     if pos.y > 0.0 { return sample; }
 
     let height_noise = sample_height(pos.xz, time, linear_sampler);
     sample.fog_height = height_noise;
     let altitude = pos.y - height_noise;
-    let density = smoothstep(0.0, -100.0, altitude);
+    let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
 
     // Use turbulent position for density
     var fbm_value: f32;
-    if very_fast {
+    if density >= 1.0 {
         sample.density = 1.0;
     } else {
-        let turb_iters = round(mix(4.0, 8.0, smoothstep(10000.0, 1000.0, dist)));
+        let turb_iters = round(mix(4.0, 8.0, smoothstep(20000.0, 1000.0, dist)));
         let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-        fbm_value = sample_texture(vec3(turb_pos.x, turb_pos.y, altitude * 0.01) * 0.1, linear_sampler).g;
-        sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -200.0, altitude);
+        fbm_value = sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0;
+        sample.density = abs(pow(fbm_value, 2.0) * density) + smoothstep(-50.0, -1000.0, altitude);
     }
-    if sample.density <= 0.0 { return sample; }
-    if fast { return sample; }
+    if only_density || sample.density <= 0.0 { return sample; }
 
-    // Compute fog color based on turbulent flow, with a larger scale noise for color variation
-    let color_noise = sample_texture(vec3(pos.xz * 0.0001, 0.0), linear_sampler).b;
-    if very_fast {
-        sample.color = mix(COLOR_A, COLOR_B, color_noise);
-    } else {
-        sample.color = mix(COLOR_A, COLOR_B, fbm_value * 0.4 + color_noise * 0.6);
-    }
-    sample.emission = sample.density * smoothstep(-5.0, -100.0, altitude) * COLOR_C * 0.1;
-
+    // Compute fog color based on turbulent flow
+    sample.color = mix(COLOR_A, COLOR_B, fbm_value);
     // Apply artificial shadowing: darken towards black as altitude decreases
-    let shadow_factor = 1.0 - smoothstep(0.0, -100.0, altitude);
+    let shadow_factor = 1.0 - smoothstep(-30.0, -500.0, altitude);
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
+    sample.emission = sample.density * smoothstep(-100.0, -500.0, altitude) * sample.color * 0.5;
+
     // Compute lightning emission using Voronoi grid
-    sample.emission += flash_emission(pos, time) * smoothstep(-5.0, -100.0, altitude) * sample.density;
+    if !fast {
+        sample.emission += flash_emission(pos, time) * smoothstep(-20.0, -100.0, altitude) * sample.density;
+    }
 
     return sample;
 }
@@ -161,8 +159,12 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
     for (var i = 0; i < MAX_STEPS; i += 1) {
         if t >= t_end || acc_alpha >= ALPHA_THRESHOLD { break; }
 
-        // Reduce scaling when close to surfaces
+        // Scale step size based on distance from camera
         var step_scaler = 1.0;
+        if t > STEP_SCALING_START {
+            step_scaler = 1.0 + smoothstep(STEP_SCALING_START, STEP_SCALING_END, t) * STEP_SCALING_MAX;
+        }
+        // Reduce scaling when close to surfaces
         let close_threshold = STEP_SIZE * step_scaler;
         let distance_left = t_max - t;
         if distance_left < close_threshold {
@@ -217,9 +219,9 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
 }
 
 fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {
-    return sample_texture(vec3<f32>(pos * 0.00004, time * 0.03), linear_sampler).r * -100.0;
+    return sample_texture(vec3<f32>(pos * 0.00004, time * 0.01), linear_sampler).r * -300.0;
 }
 
-fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(fog_noise_texture, linear_sampler, pos).rgb;
+fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec2<f32> {
+    return textureSample(fog_noise_texture, linear_sampler, pos).rg;
 }

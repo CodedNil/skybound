@@ -10,93 +10,47 @@ pub fn simplex_3d(
     gain: f32,
     freq: f32,
     pow: f32,
-    tiled: bool,
 ) -> Vec<u8> {
-    (0..depth)
+    (0..(width * height * depth))
         .par()
-        .flat_map(|z| {
-            let mut slice = Vec::with_capacity(width * height);
-            for y in 0..height {
-                for x in 0..width {
-                    let pos = Vec3A::new(
-                        x as f32 / width as f32,
-                        y as f32 / height as f32,
-                        z as f32 / depth as f32,
-                    );
+        .map(|i| {
+            // Unravel i into x,y,z
+            let xy_plane = height * depth;
+            let x = i / xy_plane;
+            let rem = i % xy_plane;
+            let y = rem / depth;
+            let z = rem % depth;
 
-                    // Compute fractal‐brownian motion
-                    let v = simplex_fbm3(pos, octaves, freq, gain, tiled);
+            // Normalized coordinates in [0..1]
+            let pos = Vec3A::new(
+                x as f32 / width as f32,
+                y as f32 / height as f32,
+                z as f32 / depth as f32,
+            );
 
-                    // Map from [-1..1] to [0..255]
-                    slice.push(((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8);
-                }
-            }
-            slice
+            // Compute fractal‐brownian motion
+            let v = simplex_fbm3(pos, octaves, freq, gain);
+
+            // Map from [-1..1] to [0..255]
+            ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
         })
         .collect()
 }
 
 // FBM Simplex Noise
-fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, tiled: bool) -> f32 {
+fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
 
     for _ in 0..octaves {
-        if tiled {
-            total += simplex3_seamless(pos * freq, freq) * amp;
-        } else {
-            total += simplex3(pos * freq) * amp;
-        }
+        total += simplex3(pos * freq) * amp;
         norm += amp;
         amp *= gain;
         freq *= 2.0;
     }
 
     total / norm
-}
-
-fn simplex3_seamless(pos: Vec3A, period: f32) -> f32 {
-    let x = pos.x % period;
-    let y = pos.y % period;
-    let z = pos.z % period;
-
-    let fx = x / period;
-    let fy = y / period;
-    let fz = z / period;
-
-    let p000 = simplex3(pos);
-    let p100 = simplex3(pos - Vec3A::new(period, 0.0, 0.0));
-    let p010 = simplex3(pos - Vec3A::new(0.0, period, 0.0));
-    let p110 = simplex3(pos - Vec3A::new(period, period, 0.0));
-
-    let p001 = simplex3(pos - Vec3A::new(0.0, 0.0, period));
-    let p101 = simplex3(pos - Vec3A::new(period, 0.0, period));
-    let p011 = simplex3(pos - Vec3A::new(0.0, period, period));
-    let p111 = simplex3(pos - Vec3A::new(period, period, period));
-
-    let wx = fx;
-    let wy = fy;
-    let wz = fz;
-
-    let w000 = (1.0 - wx) * (1.0 - wy) * (1.0 - wz);
-    let w100 = wx * (1.0 - wy) * (1.0 - wz);
-    let w010 = (1.0 - wx) * wy * (1.0 - wz);
-    let w110 = wx * wy * (1.0 - wz);
-
-    let w001 = (1.0 - wx) * (1.0 - wy) * wz;
-    let w101 = wx * (1.0 - wy) * wz;
-    let w011 = (1.0 - wx) * wy * wz;
-    let w111 = wx * wy * wz;
-
-    p000 * w000
-        + p100 * w100
-        + p010 * w010
-        + p110 * w110
-        + p001 * w001
-        + p101 * w101
-        + p011 * w011
-        + p111 * w111
 }
 
 // https://github.com/Razaekel/noise-rs/blob/develop/src/core/super_simplex.rs

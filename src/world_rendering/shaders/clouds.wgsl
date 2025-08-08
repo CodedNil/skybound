@@ -28,15 +28,16 @@ const MAX_STEPS: i32 = 512;
 const STEP_SIZE_INSIDE: f32 = 12.0;
 const STEP_SIZE_OUTSIDE: f32 = 24.0;
 
-const STEP_DISTANCE_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
-const STEP_DISTANCE_SCALING_FACTOR: f32 = 0.001; // How much to scale step size by distance, larger means larger steps
+const STEP_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
+const STEP_SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
+const STEP_SCALING_MAX: f32 = 16.0; // Maximum scaling factor to increase by
 
 const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 30.0;
 const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
 
 // Lighting Parameters
-const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
+const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const DENSITY: f32 = 0.05;
 const FADE_START_DISTANCE: f32 = 1000.0;
 const FADE_END_DISTANCE: f32 = 200000.0;
@@ -86,17 +87,15 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 	if base_cloud <= 0.0 { return 0.0; }
 
 	// --- High Frequency Detail with Curl Distortion (TODO) ---
-	// if !fast {
-    	// let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
-        // let detail_curl_distortion = vec3(motion_sample.r, 0.0, motion_sample.g) * CURL_STRENGTH;
-        let detail_time_vec = time * WIND_DIRECTION_DETAIL;
-        let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec;
+   	// let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
+    // let detail_curl_distortion = vec3(motion_sample.r, 0.0, motion_sample.g) * CURL_STRENGTH;
+    let detail_time_vec = time * WIND_DIRECTION_DETAIL;
+    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec;
 
-    	let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
-    	var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
-    	hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
-    	base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
-	// }
+   	let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
+   	var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
+   	hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
+   	base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
 
 	return clamp(base_cloud, 0.0, 1.0);
 }
@@ -132,8 +131,8 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColo
 
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
-        if t > STEP_DISTANCE_SCALING_START {
-            step_scaler = 1.0 + min((t - STEP_DISTANCE_SCALING_START) * STEP_DISTANCE_SCALING_FACTOR, 16.0);
+        if t > STEP_SCALING_START {
+            step_scaler = 1.0 + smoothstep(STEP_SCALING_START, STEP_SCALING_END, t) * STEP_SCALING_MAX;
         }
         // Reduce scaling when close to surfaces
         let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
