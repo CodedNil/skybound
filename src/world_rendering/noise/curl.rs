@@ -9,7 +9,7 @@ const OCTAVES: usize = 5;
 const FREQUENCY: f32 = 2.0;
 const GAIN: f32 = 0.4;
 const GAMMA: f32 = 1.2;
-pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let total_pixels = width * height;
 
     let curl_values: Vec<Vec3A> = (0..total_pixels)
@@ -69,10 +69,9 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<u8>, Vec<u8>, Vec<u8
         let normalized = curl_vec / max_curl_magnitude;
 
         // Normalize the values from the range [-1, 1] to [0, 255]
-        let normalise_value = |v: f32| -> u8 {
+        let normalise_value = |v: f32| -> f32 {
             let v_mapped = v * 0.5 + 0.5;
-            let v_gamma = v_mapped.powf(GAMMA);
-            (v_gamma * 255.0).clamp(0.0, 255.0).round() as u8
+            v_mapped.powf(GAMMA)
         };
         r_data.push(normalise_value(normalized.x));
         g_data.push(normalise_value(normalized.y));

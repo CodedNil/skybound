@@ -343,6 +343,7 @@ impl ViewNode for VolumetricCloudsNode {
             Some(base_noise),
             Some(detail_noise),
             Some(turbulence_noise),
+            Some(weather_noise),
             Some(fog_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
@@ -354,6 +355,7 @@ impl ViewNode for VolumetricCloudsNode {
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
+            gpu_images.get(&noise_texture_handle.weather),
             gpu_images.get(&noise_texture_handle.fog),
         )
         else {
@@ -372,6 +374,7 @@ impl ViewNode for VolumetricCloudsNode {
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
+                &weather_noise.texture_view,
                 &fog_noise.texture_view,
             )),
         );
@@ -449,6 +452,7 @@ fn setup_volumetric_clouds_pipeline(
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
             ),
         ),

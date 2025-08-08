@@ -3,36 +3,33 @@ use orx_parallel::*;
 
 // Generate a 3D Simplex Noise Texture
 pub fn simplex_3d(
-    width: usize,
-    height: usize,
+    size: usize,
     depth: usize,
     octaves: usize,
     gain: f32,
     freq: f32,
-    pow: f32,
-) -> Vec<u8> {
-    (0..(width * height * depth))
+    gamma: f32,
+) -> Vec<f32> {
+    (0..(size * size * depth))
         .par()
         .map(|i| {
             // Unravel i into x,y,z
-            let xy_plane = height * depth;
-            let x = i / xy_plane;
-            let rem = i % xy_plane;
-            let y = rem / depth;
-            let z = rem % depth;
+            let x = i % size;
+            let y = (i / size) % size;
+            let z = i / (size * size);
 
             // Normalized coordinates in [0..1]
             let pos = Vec3A::new(
-                x as f32 / width as f32,
-                y as f32 / height as f32,
+                x as f32 / size as f32,
+                y as f32 / size as f32,
                 z as f32 / depth as f32,
             );
 
             // Compute fractal‐brownian motion
             let v = simplex_fbm3(pos, octaves, freq, gain);
 
-            // Map from [-1..1] to [0..255]
-            ((v * 0.5 + 0.5).powf(pow) * 255.0).round() as u8
+            // Map from [-1..1] to [0..1]
+            (v * 0.5 + 0.5).powf(gamma)
         })
         .collect()
 }

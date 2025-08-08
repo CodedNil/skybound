@@ -2,7 +2,7 @@
 #import skybound::functions::{mod1, hash12, hash13}
 #import skybound::sky::AtmosphereColors
 
-@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
+@group(0) @binding(8) var fog_noise_texture: texture_3d<f32>;
 
 // Colours
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
@@ -263,6 +263,6 @@ fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {
     return sample_texture(vec3<f32>(pos * 0.00004, time * 0.01), linear_sampler).r * -300.0;
 }
 
-fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {
-    return textureSample(fog_noise_texture, linear_sampler, pos);
+fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec2<f32> {
+    return textureSample(fog_noise_texture, linear_sampler, pos).rg;
 }

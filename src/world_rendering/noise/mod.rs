@@ -8,195 +8,130 @@ use crate::world_rendering::noise::{
     curl::curl_2d_texture,
     perlin::perlin_3d,
     simplex::simplex_3d,
-    utils::{map_range, spread},
-    worley::worley_3d,
+    utils::{create_noise_image, interleave_channels, map_range, save_noise_layer, spread},
+    worley::{worley_3d, worley_3d_fbm},
 };
 use bevy::{
-    asset::RenderAssetUsages,
-    image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
     prelude::*,
-    render::{
-        extract_resource::ExtractResource,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
-    },
+    render::{extract_resource::ExtractResource, render_resource::TextureFormat},
 };
-use image::RgbaImage;
-use std::path::Path;
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct NoiseTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
     pub turbulence: Handle<Image>,
+    pub weather: Handle<Image>,
     pub fog: Handle<Image>,
 }
-
-const IMAGE_SAMPLER: ImageSamplerDescriptor = ImageSamplerDescriptor {
-    address_mode_u: ImageAddressMode::Repeat,
-    address_mode_v: ImageAddressMode::Repeat,
-    address_mode_w: ImageAddressMode::Repeat,
-    mag_filter: ImageFilterMode::Linear,
-    min_filter: ImageFilterMode::Linear,
-    mipmap_filter: ImageFilterMode::Linear,
-    lod_min_clamp: 0.0,
-    lod_max_clamp: 32.0,
-    compare: None,
-    anisotropy_clamp: 1,
-    border_color: None,
-    label: None,
-};
 
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let start = std::time::Instant::now();
 
-    // Save the first depth layer of each noise map using image crate as a png image in assets/textures
-    let save_noise_layer = |data: &[u8], filename: &str, size: usize| {
-        RgbaImage::from_raw(
-            size as u32,
-            size as u32,
-            (&data[0..(size * size)])
-                .iter()
-                .flat_map(|&val| [val, val, val, 255])
-                .collect(),
-        )
-        .unwrap()
-        .save(&Path::new("assets/textures").join(filename))
-        .unwrap();
-    };
-
     let base_texture = {
+        let start = std::time::Instant::now();
         let size = 128;
 
-        // Generate base Perlin noise and Worley noise at increasing frequencies
-        let worley_pow = 0.5;
-        let perlin = spread(&perlin_3d(size, size, size, 5, 0.55, 7.0, 0.7));
-        let worley1 = worley_3d(size, size, size, 6.0, worley_pow);
-        let worley2 = spread(&worley_3d(size, size, size, 12.0, worley_pow));
-        let worley3 = spread(&worley_3d(size, size, size, 18.0, worley_pow));
-        let worley4 = spread(&worley_3d(size, size, size, 24.0, worley_pow));
-
-        // Generate Perlin-Worley noise
-        let perlin_worley: Vec<u8> = perlin
+        let gamma = 0.5;
+        let perlinworley = spread(&perlin_3d(size, size, 5, 0.5, 7.0, 0.7))
             .iter()
-            .zip(worley1)
-            .map(|(&perlin, worley1)| {
-                let perlin = perlin as f32 / 255.0;
-                let worley1 = worley1 as f32 / 255.0;
-                (map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worley1, 1.0) * 255.0).round() as u8
-            })
-            .collect();
+            .zip(worley_3d_fbm(size, size, 6.0, gamma))
+            .map(|(&perlin, worley1)| map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worley1, 1.0))
+            .collect::<Vec<f32>>();
+        let worley1 = spread(&worley_3d_fbm(size, size, 12.0, gamma));
+        let worley2 = spread(&worley_3d_fbm(size, size, 18.0, gamma));
+        let worley3 = spread(&worley_3d_fbm(size, size, 24.0, gamma));
 
-        save_noise_layer(&perlin, "perlinworley.png", size);
-        save_noise_layer(&worley2, "worley1.png", size);
-        save_noise_layer(&worley3, "worley2.png", size);
-        save_noise_layer(&worley4, "worley3.png", size);
+        save_noise_layer(&perlinworley, "perlinworley.png", size);
+        save_noise_layer(&worley1, "worley1.png", size);
+        save_noise_layer(&worley2, "worley2.png", size);
+        save_noise_layer(&worley3, "worley3.png", size);
 
-        // Interleave the noise into RGBA floats
-        let flat_data: Vec<u8> = (0..perlin.len())
-            .flat_map(|i| [perlin_worley[i], worley2[i], worley3[i], worley4[i]])
-            .collect();
-        let mut image = Image::new(
-            Extent3d {
-                width: size as u32,
-                height: size as u32,
-                depth_or_array_layers: size as u32,
-            },
-            TextureDimension::D3,
-            bytemuck::cast_slice(&flat_data).to_vec(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
+        let flat_data = interleave_channels([perlinworley, worley1, worley2, worley3]);
+        let image = create_noise_image(size, size, TextureFormat::Rgba8Unorm, flat_data);
+        println!("Base texture generation took: {:?}", start.elapsed());
         image
     };
 
     let detail_texture = {
+        let start = std::time::Instant::now();
         let size = 32;
 
-        // Generate Worley noise at increasing frequencies
-        let worley_pow = 0.6;
-        let worley1 = worley_3d(size, size, size, 5.0, worley_pow);
-        let worley2 = worley_3d(size, size, size, 6.0, worley_pow);
-        let worley3 = worley_3d(size, size, size, 7.0, worley_pow);
+        let gamma = 0.6;
+        let detail1 = worley_3d_fbm(size, size, 5.0, gamma);
+        let detail2 = worley_3d_fbm(size, size, 6.0, gamma);
+        let detail3 = worley_3d_fbm(size, size, 7.0, gamma);
 
-        save_noise_layer(&worley1, "detail1.png", size);
-        save_noise_layer(&worley2, "detail2.png", size);
-        save_noise_layer(&worley3, "detail3.png", size);
+        save_noise_layer(&detail1, "detail1.png", size);
+        save_noise_layer(&detail2, "detail2.png", size);
+        save_noise_layer(&detail3, "detail3.png", size);
 
-        // Interleave the noise into RGBA floats
-        let flat_data: Vec<u8> = (0..worley1.len())
-            .flat_map(|i| [worley1[i], worley2[i], worley3[i], 255])
-            .collect();
-        let mut image = Image::new(
-            Extent3d {
-                width: size as u32,
-                height: size as u32,
-                depth_or_array_layers: size as u32,
-            },
-            TextureDimension::D3,
-            bytemuck::cast_slice(&flat_data).to_vec(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
+        let flat_data =
+            interleave_channels([detail1, detail2, detail3, vec![0.0; size * size * size]]);
+        let image = create_noise_image(size, size, TextureFormat::Rgba8Unorm, flat_data);
+        println!("Detail texture generation took: {:?}", start.elapsed());
         image
     };
 
     let turbulence_texture = {
+        let start = std::time::Instant::now();
         let size = 128;
 
-        // Generate Curl noise at increasing octaves
         let (curl1, curl2, curl3) = curl_2d_texture(size, size);
 
         save_noise_layer(&curl1, "curl1.png", size);
         save_noise_layer(&curl2, "curl2.png", size);
         save_noise_layer(&curl3, "curl3.png", size);
 
-        // Interleave the noise into RGBA floats
-        let flat_data: Vec<u8> = (0..curl1.len())
-            .flat_map(|i| [curl1[i], curl2[i], curl3[i], 0])
-            .collect();
-        let mut image = Image::new(
-            Extent3d {
-                width: size as u32,
-                height: size as u32,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            bytemuck::cast_slice(&flat_data).to_vec(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
+        let flat_data = interleave_channels([curl1, curl2, curl3, vec![0.0; size * size * size]]);
+        let image = create_noise_image(size, 1, TextureFormat::Rgba8Unorm, flat_data);
+        println!("Turbulence texture generation took: {:?}", start.elapsed());
+        image
+    };
+
+    let weather_texture = {
+        let start = std::time::Instant::now();
+        let size = 512;
+
+        let weather1 = spread(&perlin_3d(size, 1, 5, 0.45, 5.0, 2.0))
+            .iter()
+            .map(|&x| x * 1.1 - 0.1)
+            .collect::<Vec<f32>>();
+        let weather2 = spread(&worley_3d_fbm(size, 1, 8.0, 0.4))
+            .iter()
+            .zip(spread(&perlin_3d(size, 1, 5, 0.8, 8.0, 1.0)).iter())
+            .map(|(&a, &b)| (a * 1.7 - 0.5) + b * 0.1)
+            .collect::<Vec<f32>>();
+        let weather3 = spread(&perlin_3d(size, 1, 1, 0.8, 4.0, 0.5))
+            .iter()
+            .zip(spread(&worley_3d(size, 1, 4.0, 1.0)).iter())
+            .map(|(&a, &b)| (a * 1.2 - 0.2) - b * 0.1)
+            .collect::<Vec<f32>>();
+
+        save_noise_layer(&weather1, "weather1.png", size);
+        save_noise_layer(&weather2, "weather2.png", size);
+        save_noise_layer(&weather3, "weather3.png", size);
+
+        let flat_data =
+            interleave_channels([weather1, weather2, weather3, vec![0.0; size * size * size]]);
+        let image = create_noise_image(size, 1, TextureFormat::Rgba8Unorm, flat_data);
+        println!("Weather texture generation took: {:?}", start.elapsed());
         image
     };
 
     let fog_texture = {
+        let start = std::time::Instant::now();
         let size = 128;
 
-        // Generate Simplex noise at increasing octaves
-        let fog1 = spread(&perlin_3d(size, size, size, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
-        let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
+        let fog1 = spread(&perlin_3d(size, size, 6, 0.1, 18.0, 1.0));
+        let fog2 = spread(&simplex_3d(size, size, 12, 0.4, 6.0, 1.0));
 
         save_noise_layer(&fog1, "fog1.png", size);
         save_noise_layer(&fog2, "fog2.png", size);
 
-        // Interleave the noise into RGBA floats
-        let flat_data: Vec<u8> = (0..fog1.len())
-            .flat_map(|i| [fog1[i], fog2[i], 0, 0])
-            .collect();
-        let mut image = Image::new(
-            Extent3d {
-                width: size as u32,
-                height: size as u32,
-                depth_or_array_layers: size as u32,
-            },
-            TextureDimension::D3,
-            bytemuck::cast_slice(&flat_data).to_vec(),
-            TextureFormat::Rgba8Unorm,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
+        let flat_data = interleave_channels([fog1, fog2]);
+        let image = create_noise_image(size, size, TextureFormat::Rg8Unorm, flat_data);
+        println!("Fog texture generation took: {:?}", start.elapsed());
         image
     };
 
@@ -205,6 +140,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         base: images.add(base_texture),
         detail: images.add(detail_texture),
         turbulence: images.add(turbulence_texture),
+        weather: images.add(weather_texture),
         fog: images.add(fog_texture),
     });
 }

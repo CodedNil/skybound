@@ -26,11 +26,6 @@ struct Globals {
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
 
-@group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
-
 // Lighting Parameters
 const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
 const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);

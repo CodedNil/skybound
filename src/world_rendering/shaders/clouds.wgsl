@@ -5,6 +5,7 @@
 @group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
 @group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(7) var cloud_weather_texture: texture_2d<f32>;
 
 const COVERAGE: f32 = 0.25; // Overall cloud coverage
 

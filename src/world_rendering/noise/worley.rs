@@ -2,24 +2,19 @@ use bevy::math::Vec3A;
 use orx_parallel::*;
 
 // FBM Worley Noise
-pub fn worley_3d(width: usize, height: usize, depth: usize, freq: f32, pow: f32) -> Vec<u8> {
-    let total_size = width * height * depth;
-    let plane = width * height;
-
-    // Generate three octaves of noise
-    (0..total_size)
+pub fn worley_3d_fbm(size: usize, depth: usize, freq: f32, gamma: f32) -> Vec<f32> {
+    (0..(size * size * depth))
         .par()
         .map(|i| {
             // Unravel i -> (x,y,z)
-            let z = i / plane;
-            let rem = i % plane;
-            let y = rem / width;
-            let x = rem % width;
+            let x = i % size;
+            let y = (i / size) % size;
+            let z = i / (size * size);
 
             // Normalized coordinates in [0..1]
             let pos = Vec3A::new(
-                x as f32 / width as f32,
-                y as f32 / height as f32,
+                x as f32 / size as f32,
+                y as f32 / size as f32,
                 z as f32 / depth as f32,
             );
 
@@ -27,14 +22,34 @@ pub fn worley_3d(width: usize, height: usize, depth: usize, freq: f32, pow: f32)
             let o2 = worley3(pos, freq * 2.0);
             let o3 = worley3(pos, freq * 4.0);
 
-            let combined_value = o1 * 0.625 + o2 * 0.25 + o3 * 0.125;
-            (combined_value.powf(pow) * 255.0).round() as u8
+            (o1 * 0.625 + o2 * 0.25 + o3 * 0.125).powf(gamma)
+        })
+        .collect()
+}
+
+// FBM Worley Noise
+pub fn worley_3d(size: usize, depth: usize, freq: f32, gamma: f32) -> Vec<f32> {
+    (0..(size * size * depth))
+        .par()
+        .map(|i| {
+            // Unravel i -> (x,y,z)
+            let x = i % size;
+            let y = (i / size) % size;
+            let z = i / (size * size);
+
+            // Normalized coordinates in [0..1]
+            let pos = Vec3A::new(
+                x as f32 / size as f32,
+                y as f32 / size as f32,
+                z as f32 / depth as f32,
+            );
+
+            worley3(pos, freq).powf(gamma)
         })
         .collect()
 }
 
 /// Generate 3D Worley (cellular) noise.
-#[inline(always)]
 fn worley3(pos: Vec3A, freq: f32) -> f32 {
     let tile = freq as i32;
 
