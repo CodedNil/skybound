@@ -1,7 +1,8 @@
+use bevy::math::Vec3A;
 use orx_parallel::*;
 
 // FBM Worley Noise
-pub fn worley_3d(width: usize, height: usize, depth: usize, res: usize, pow: f32) -> Vec<u8> {
+pub fn worley_3d(width: usize, height: usize, depth: usize, freq: f32, pow: f32) -> Vec<u8> {
     let total_size = width * height * depth;
     let plane = width * height;
 
@@ -15,9 +16,16 @@ pub fn worley_3d(width: usize, height: usize, depth: usize, res: usize, pow: f32
             let y = rem / width;
             let x = rem % width;
 
-            let o1 = worley3(x, y, z, width, height, depth, res);
-            let o2 = worley3(x, y, z, width, height, depth, res * 2);
-            let o3 = worley3(x, y, z, width, height, depth, res * 4);
+            // Normalized coordinates in [0..1]
+            let pos = Vec3A::new(
+                x as f32 / width as f32,
+                y as f32 / height as f32,
+                z as f32 / depth as f32,
+            );
+
+            let o1 = worley3(pos, freq);
+            let o2 = worley3(pos, freq * 2.0);
+            let o3 = worley3(pos, freq * 4.0);
 
             let combined_value = o1 * 0.625 + o2 * 0.25 + o3 * 0.125;
             (combined_value.powf(pow) * 255.0).round() as u8
@@ -27,25 +35,13 @@ pub fn worley_3d(width: usize, height: usize, depth: usize, res: usize, pow: f32
 
 /// Generate 3D Worley (cellular) noise.
 #[inline(always)]
-fn worley3(
-    x: usize,
-    y: usize,
-    z: usize,
-    width: usize,
-    height: usize,
-    depth: usize,
-    freq: usize,
-) -> f32 {
-    // Size of a cell in world‐space
-    let inv_x = freq as f32 / width as f32;
-    let inv_y = freq as f32 / height as f32;
-    let inv_z = freq as f32 / depth as f32;
+fn worley3(pos: Vec3A, freq: f32) -> f32 {
     let tile = freq as i32;
 
     // Point in cell‐space
-    let fx0 = (x as f32 + 0.5) * inv_x;
-    let fy0 = (y as f32 + 0.5) * inv_y;
-    let fz0 = (z as f32 + 0.5) * inv_z;
+    let fx0 = pos.x * freq;
+    let fy0 = pos.y * freq;
+    let fz0 = pos.z * freq;
 
     // Cell corner
     let cx = fx0.floor() as i32;

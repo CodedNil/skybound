@@ -24,13 +24,13 @@ const CLOUDS_TOP_HEIGHT: f32 = 40000.0;
 // Raymarcher Parameters
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 
-const MAX_STEPS: i32 = 512;
+const MAX_STEPS: i32 = 2048;
 const STEP_SIZE_INSIDE: f32 = 12.0;
 const STEP_SIZE_OUTSIDE: f32 = 24.0;
 
 const STEP_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
 const STEP_SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
-const STEP_SCALING_MAX: f32 = 16.0; // Maximum scaling factor to increase by
+const STEP_SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
 
 const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 30.0;

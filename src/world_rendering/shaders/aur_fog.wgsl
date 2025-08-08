@@ -16,9 +16,9 @@ const DENSITY: f32 = 0.05; // Base density for lighting
 
 const RAYMARCH_START_HEIGHT: f32 = 0.0;
 const MAX_STEPS: i32 = 512;
-const STEP_SIZE: f32 = 48.0;
-const FAST_RENDER_START: f32 = 20000.0; // Distance to begin fading to fast mode
-const FAST_RENDER_END: f32 = 100000.0; // Distance to switch to fast mode
+const STEP_SIZE: f32 = 32.0;
+const FAST_RENDER_START: f32 = 4800000.0; // Distance to begin fading to fast mode
+const FAST_RENDER_END: f32 = 5000000.0; // Distance to switch to fast mode
 
 const STEP_SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const STEP_SCALING_END: f32 = 50000.0; // Distance from camera to use max step size
@@ -61,10 +61,10 @@ fn compute_turbulence(initial_pos: vec2<f32>, iters: i32, time: f32) -> vec2<f32
 
 // Use Poisson disk sampling to create lightning flashes in a grid
 const FLASH_GRID: f32 = 10000.0; // Grid cell size
-const FLASH_FREQUENCY: f32 = 0.02; // Chance per cell per second
-const FLASH_DURATION_MIN: f32 = 2.0; // Seconds per cycle
-const FLASH_DURATION_MAX: f32 = 8.0; // Seconds per cycle
-const FLASH_FLICKER: f32 = 8.0; // Hz on/off
+const FLASH_FREQUENCY: f32 = 0.05; // Chance per cell per second
+const FLASH_DURATION_MIN: f32 = 1.0; // Seconds per cycle
+const FLASH_DURATION_MAX: f32 = 4.0; // Seconds per cycle
+const FLASH_FLICKER: f32 = 120.0; // Hz on/off
 const FLASH_SCALE: f32 = 0.002; // Fall-off
 
 const POISSON_SAMPLES: u32 = 4u;
@@ -84,6 +84,7 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
     let uv = pos.xz / FLASH_GRID;
     let cell = floor(uv);
     var total = vec3<f32>(0.0);
+    let max_effective_dist = 1.0 / (FLASH_SCALE * 0.1); // Max possible scale
 
     // For each of the 9 cells around pos
     for (var c = 0u; c < 9u; c++) {
@@ -92,11 +93,14 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
 
         // Check if this cell's flash is currently active
         let period = 1.0 / FLASH_FREQUENCY;
-        let h = hash12(seed);
-        let start_time = h.x * period;
+        let h_cell = hash12(seed);
+        let start_time = h_cell.x * period;
         let tmod = mod1(time - start_time, period);
-        let duration_jitter = mix(FLASH_DURATION_MIN, FLASH_DURATION_MAX, h.y);
+        let duration_jitter = mix(FLASH_DURATION_MIN, FLASH_DURATION_MAX, h_cell.y);
         if (tmod > duration_jitter) { continue; }
+
+        // Normalised flash life progress [0..1]
+        let life = clamp(tmod / duration_jitter, 0.0, 1.0);
 
         // Poisson-disc points
         for (var i = 0u; i < POISSON_SAMPLES; i++) {
@@ -104,20 +108,32 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
             let h = hash13(seed + f32(i) * 17.0);
             let offset = h.x; // Random phase offset
             let rate = mix(0.8, 1.2, h.y); // Small flicker-rate jitter
-            let flash_scale_jitter = mix(0.5, 3.0, h.z); // Use h.z to vary the scale
 
-            // Apply individual flicker
-            let flicker_time = time * FLASH_FLICKER * rate + offset * 100.0;
-            let on = step(fract(flicker_time), 0.5); // ON half the time
-            if (on < 0.5) { continue; }
-
-            // Calculate the position of the poisson disc point
-            let jit = POISSON_OFFSETS[i] * h.x;
+            // Calculate the position of the poisson disc point with subtle motion
+            let motion = vec2<f32>(
+                sin(time * 0.5 + h.x * 10.0),
+                cos(time * 0.4 + h.y * 9.0)
+            ) * 0.3;
+            let jit = POISSON_OFFSETS[i] + motion;
             let gp = (cell_pos + jit) * FLASH_GRID;
 
+            // Distance fall-off
             let d = distance(pos.xz, gp);
-            let scaled_distance = d * FLASH_SCALE * flash_scale_jitter;
-            total += exp(-scaled_distance) * FLASH_COLOR;
+            if (d > max_effective_dist) { continue; }
+
+            // Animate scale
+            let base_scale = mix(0.5, 3.0, h.z);
+            let pulse = 0.5 + 0.5 * sin(life * 3.14159);
+            let scaled_distance = d * FLASH_SCALE * base_scale * pulse;
+
+            // Fade in/out
+            let fade = smoothstep(0.0, 0.1, life) * (1.0 - smoothstep(0.9, 1.0, life));
+
+            // Subtle flicker
+            let flicker_time = time * FLASH_FLICKER * rate + offset * 100.0;
+            let flicker = mix(0.8, 1.0, step(0.5, fract(flicker_time)));
+
+            total += exp(-scaled_distance) * FLASH_COLOR * fade * flicker;
         }
     }
 
@@ -160,10 +176,10 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: f3
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
     // Add emission from the fog color and lightning flashes
-    sample.emission = sample.density * smoothstep(-100.0, -500.0, altitude) * sample.color * 0.5;
+    let emission_amount = smoothstep(-200.0, -1000.0, altitude);
+    sample.emission = (sample.color * 0.5 + FLASH_COLOR * 0.5) * emission_amount * sample.density;
     if fast <= 1.0 {
-        let flash = flash_emission(pos, time);
-        sample.emission += flash * smoothstep(-300.0, -500.0, altitude) * sample.density * (1.0 - fast);
+        sample.emission += flash_emission(pos, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
     }
 
     return sample;
@@ -247,6 +263,6 @@ fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {
     return sample_texture(vec3<f32>(pos * 0.00004, time * 0.01), linear_sampler).r * -300.0;
 }
 
-fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec2<f32> {
-    return textureSample(fog_noise_texture, linear_sampler, pos).rg;
+fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {
+    return textureSample(fog_noise_texture, linear_sampler, pos);
 }

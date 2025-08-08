@@ -70,10 +70,10 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         // Generate base Perlin noise and Worley noise at increasing frequencies
         let worley_pow = 0.5;
         let perlin = spread(&perlin_3d(size, size, size, 5, 0.55, 7.0, 0.7));
-        let worley1 = worley_3d(size, size, size, 6, worley_pow);
-        let worley2 = spread(&worley_3d(size, size, size, 12, worley_pow));
-        let worley3 = spread(&worley_3d(size, size, size, 18, worley_pow));
-        let worley4 = spread(&worley_3d(size, size, size, 24, worley_pow));
+        let worley1 = worley_3d(size, size, size, 6.0, worley_pow);
+        let worley2 = spread(&worley_3d(size, size, size, 12.0, worley_pow));
+        let worley3 = spread(&worley_3d(size, size, size, 18.0, worley_pow));
+        let worley4 = spread(&worley_3d(size, size, size, 24.0, worley_pow));
 
         // Generate Perlin-Worley noise
         let perlin_worley: Vec<u8> = perlin
@@ -115,9 +115,9 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
         // Generate Worley noise at increasing frequencies
         let worley_pow = 0.6;
-        let worley1 = worley_3d(size, size, size, 5, worley_pow);
-        let worley2 = worley_3d(size, size, size, 6, worley_pow);
-        let worley3 = worley_3d(size, size, size, 7, worley_pow);
+        let worley1 = worley_3d(size, size, size, 5.0, worley_pow);
+        let worley2 = worley_3d(size, size, size, 6.0, worley_pow);
+        let worley3 = worley_3d(size, size, size, 7.0, worley_pow);
 
         save_noise_layer(&worley1, "detail1.png", size);
         save_noise_layer(&worley2, "detail2.png", size);
@@ -154,7 +154,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..curl1.len())
-            .flat_map(|i| [curl1[i], curl2[i], curl3[i], 255])
+            .flat_map(|i| [curl1[i], curl2[i], curl3[i], 0])
             .collect();
         let mut image = Image::new(
             Extent3d {
@@ -177,17 +177,13 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         // Generate Simplex noise at increasing octaves
         let fog1 = spread(&perlin_3d(size, size, size, 6, 0.1, 18.0, 1.0)); // The fogs heightmap
         let fog2 = spread(&simplex_3d(size, size, size, 12, 0.4, 6.0, 1.0)); // The fine noise for the fog
-        let fog3 = spread(&worley_3d(size, size, size, 1, 1.0)); // Worley noise for flash points
-        let fog4 = spread(&worley_3d(size, size, size, 4, 1.0)); // Higher frequency Worley noise for flash movement
 
         save_noise_layer(&fog1, "fog1.png", size);
         save_noise_layer(&fog2, "fog2.png", size);
-        save_noise_layer(&fog3, "fog3.png", size);
-        save_noise_layer(&fog4, "fog4.png", size);
 
         // Interleave the noise into RGBA floats
         let flat_data: Vec<u8> = (0..fog1.len())
-            .flat_map(|i| [fog1[i], fog2[i], fog3[i], fog4[i]])
+            .flat_map(|i| [fog1[i], fog2[i], 0, 0])
             .collect();
         let mut image = Image::new(
             Extent3d {
