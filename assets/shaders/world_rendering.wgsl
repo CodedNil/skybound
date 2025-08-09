@@ -83,7 +83,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Render out the world poles
-    let pole_color = render_poles(ro, rd, view.planet_rotation, globals.planet_radius);
+    let pole_color = render_poles(ro, rd, view.planet_rotation, atmosphere.planet_center, globals.planet_radius);
 
     // Start accumulation volumetric color
     var acc_color: vec3<f32> = vec3<f32>(0.0);

@@ -1,5 +1,5 @@
 #define_import_path skybound::clouds
-#import skybound::functions::{remap}
+#import skybound::functions::{remap, intersect_sphere}
 #import skybound::sky::AtmosphereData
 
 @group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;

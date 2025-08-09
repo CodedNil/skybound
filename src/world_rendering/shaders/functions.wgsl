@@ -219,3 +219,19 @@ fn perlin_fbm31(p: vec3<f32>, octaves: u32) -> f32 {
 fn worley_fbm31(p: vec3<f32>) -> f32 {
     return worley31(p) * 0.625 + worley31(p * 2.0) * 0.25 + worley31(p * 4.0) * 0.125;
 }
+
+// Ray intersection of a sphere, outputs distance to the intersection point or -1.0
+fn intersect_sphere(ro: vec3<f32>, rd: vec3<f32>, radius: f32) -> f32 {
+    let a = dot(rd, rd);
+    let b = 2.0 * dot(rd, ro);
+    let c = dot(ro, ro) - (radius * radius);
+    let disc = (b * b) - 4.0 * a * c;
+    if disc < 0.0 { return -1.0; }
+    let d = sqrt(disc);
+    let t0 = (-b - d) / (2.0 * a);
+    let t1 = (-b + d) / (2.0 * a);
+    // Return nearest positive intersection (entry), or the positive exit if inside
+    if t0 > 0.0 { return t0; }
+    if t1 > 0.0 { return t1; }
+    return -1.0;
+}

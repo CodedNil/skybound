@@ -1,5 +1,5 @@
 #define_import_path skybound::aur_fog
-#import skybound::functions::{mod1, hash12, hash13}
+#import skybound::functions::{mod1, hash12, hash13, intersect_sphere}
 #import skybound::sky::AtmosphereData
 
 @group(0) @binding(8) var fog_noise_texture: texture_3d<f32>;
@@ -14,11 +14,9 @@ const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
-const RAYMARCH_START_HEIGHT: f32 = 0.0;
+const FOG_START_HEIGHT: f32 = 0.0;
 const MAX_STEPS: i32 = 512;
 const STEP_SIZE: f32 = 32.0;
-const FAST_RENDER_START: f32 = 4800000.0; // Distance to begin fading to fast mode
-const FAST_RENDER_END: f32 = 5000000.0; // Distance to switch to fast mode
 
 const STEP_SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const STEP_SCALING_END: f32 = 50000.0; // Distance from camera to use max step size
@@ -79,9 +77,9 @@ const CELL_OFFSETS: array<vec2<f32>, 9> = array<vec2<f32>,9>(
     vec2<f32>(0.0, 1.0), vec2<f32>(0.0, -1.0), vec2<f32>(1.0, 1.0),
     vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, -1.0)
 );
-fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
+fn flash_emission(pos: vec2<f32>, time: f32) -> vec3<f32> {
     // Cell coords and fractional part
-    let uv = pos.xz / FLASH_GRID;
+    let uv = pos / FLASH_GRID;
     let cell = floor(uv);
     var total = vec3<f32>(0.0);
     let max_effective_dist = 1.0 / (FLASH_SCALE * 0.1); // Max possible scale
@@ -118,7 +116,7 @@ fn flash_emission(pos: vec3<f32>, time: f32) -> vec3<f32> {
             let gp = (cell_pos + jit) * FLASH_GRID;
 
             // Distance fall-off
-            let d = distance(pos.xz, gp);
+            let d = distance(pos, gp);
             if (d > max_effective_dist) { continue; }
 
             // Animate scale
@@ -147,25 +145,27 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: f32, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, planet_center: vec3<f32>, planet_radius: f32, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
-    if pos.y > 0.0 { return sample; }
+
+    var altitude = distance(pos, planet_center) - planet_radius;
+    if altitude > FOG_START_HEIGHT { return sample; }
 
     let height_noise = sample_height(pos.xz, time, linear_sampler);
     sample.fog_height = height_noise;
-    let altitude = pos.y - height_noise;
+    altitude -= height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
 
     // Use turbulent position for density
     var fbm_value: f32 = -1.0;
-    if fast >= 1.0 || density >= 1.0 {
+    if density >= 1.0 {
         sample.density = 1.0;
     } else {
         let turb_iters = i32(round(mix(2.0, 6.0, smoothstep(50000.0, 1000.0, dist))));
         let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-        fbm_value = mix(sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0, fbm_value, fast);
-        sample.density = min(pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude) + fast, 1.0);
+        fbm_value = sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0;
+        sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
     if only_density || sample.density <= 0.0 { return sample; }
 
@@ -178,20 +178,31 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: f3
     // Add emission from the fog color and lightning flashes
     let emission_amount = smoothstep(-200.0, -1000.0, altitude);
     sample.emission = (sample.color * 0.5 + FLASH_COLOR * 0.5) * emission_amount * sample.density;
-    if fast <= 1.0 {
-        sample.emission += flash_emission(pos, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
-    }
+    sample.emission += flash_emission(pos.xz, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
 
     return sample;
 }
 
 fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
-    if ro.y > RAYMARCH_START_HEIGHT && rd.y > 0.0 { return vec4<f32>(0.0); } // Early exit if ray will never enter the fog
+    let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
+	let shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + FOG_START_HEIGHT);
 
-    // Start raymarching at y=RAYMARCH_START_HEIGHT intersection if above y=0, else at camera
-    var t = select(0.0, (RAYMARCH_START_HEIGHT - ro.y) / rd.y, ro.y > RAYMARCH_START_HEIGHT) + dither * STEP_SIZE;
-    // var t = dither * STEP_SIZE;
-    var t_end = t_max;
+    var t: f32;
+    var t_end: f32;
+    if ro.y > FOG_START_HEIGHT {
+        // We are above the fog, only raymarch if the intersects the sphere, start at the shell_dist
+        if shell_dist <= 0.0 { return vec4<f32>(0.0); }
+        t = shell_dist + dither * STEP_SIZE;
+        t_end = t_max;
+    } else {
+        // We are inside the fog, start raymarching at the camera and end at the shell_dist
+        t = dither * STEP_SIZE;
+        if shell_dist <= 0.0 {
+            t_end = t_max;
+        } else {
+            t_end = min(shell_dist, t_max);
+        }
+    }
 
     // Accumulation variables
     var acc_color = vec3(0.0);
@@ -218,7 +229,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
 
         // Sample the fog
         let pos = ro + rd * (t + dither * step);
-        let fog_sample = sample_fog(pos, t, time, false, smoothstep(FAST_RENDER_START, FAST_RENDER_END, t), linear_sampler);
+        let fog_sample = sample_fog(pos, atmosphere.planet_center, atmosphere.planet_radius, t, time, false, linear_sampler);
         let step_density = fog_sample.density;
 
         if step_density > 0.0 {
@@ -230,7 +241,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
                 lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_fog(lightmarch_pos, t, time, true, 0.0, linear_sampler).density;
+                density_sunwards += sample_fog(lightmarch_pos, atmosphere.planet_center, atmosphere.planet_radius, t, time, true, linear_sampler).density;
             }
 
             // Captures the direct lighting from the sun
@@ -249,8 +260,6 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
         }
 
         t += step;
-
-        if pos.y > RAYMARCH_START_HEIGHT { break; } // End early if we're above the fog
     }
 
     acc_alpha = min(acc_alpha * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0

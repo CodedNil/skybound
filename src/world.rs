@@ -9,7 +9,7 @@ use bevy::{
 use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
-pub const PLANET_RADIUS: f32 = 500_000.0;
+pub const PLANET_RADIUS: f32 = 1_000_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // Sun Angle Configuration

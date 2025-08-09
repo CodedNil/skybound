@@ -30,7 +30,7 @@ fn intersect_cylinder(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, axis: vec
     return t0;
 }
 
-fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, planet_radius: f32) -> vec4<f32> {
+fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, planet_center: vec3<f32>, planet_radius: f32) -> vec4<f32> {
     let center = ro - vec3<f32>(0.0, planet_radius, 0.0);
 
     // Rotate the Y‐axis by the planet’s quaternion to get the pole‐axis
@@ -43,7 +43,7 @@ fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, planet_radi
 
     // Clamp to above horizon only
     let p = ro + rd * t;
-    if p.y < 0.0 {
+    if length(p - planet_center) < planet_radius {
         return vec4<f32>(0.0);
     }
 
