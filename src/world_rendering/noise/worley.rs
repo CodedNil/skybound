@@ -99,9 +99,10 @@ const NEIGHBOURS: [(i32, i32, i32); 27] = {
 
 #[inline(always)]
 fn hash3(nx: u32, ny: u32, nz: u32) -> (f32, f32, f32) {
-    let mut h = nx.wrapping_mul(73856093) ^ ny.wrapping_mul(19349669) ^ nz.wrapping_mul(83492791);
+    let mut h =
+        nx.wrapping_mul(73_856_093) ^ ny.wrapping_mul(19_349_669) ^ nz.wrapping_mul(83_492_791);
     h ^= h >> 13;
-    h = h.wrapping_mul(0x85ebca6b); // Murmur-like mix
+    h = h.wrapping_mul(2_246_822_507); // Murmur-like mix
 
     let ox = (h & 0xFF) as f32 * (1.0 / 255.0);
     let oy = ((h >> 8) & 0xFF) as f32 * (1.0 / 255.0);

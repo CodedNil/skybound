@@ -31,6 +31,24 @@ image = "0.25.6"
 rayon = "1.10.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+must_use_candidate = "allow"
+type_complexity = "allow"
+suboptimal_flops = "allow"
+needless_pass_by_value = "allow"
+similar_names = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_truncation = "allow"
+many_single_char_names = "allow"
+inline_always = "allow"
+
 [profile.dev]
 opt-level = 1
 

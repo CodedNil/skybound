@@ -6,7 +6,7 @@ use bevy::{
     pbr::{CascadeShadowConfigBuilder, light_consts::lux},
     prelude::*,
 };
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
 pub const PLANET_RADIUS: f32 = 500_000.0;
@@ -20,29 +20,28 @@ const MAX_SUN_ELEVATION_DEG: f32 = 70.0; // The maximum sun elevation angle
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldCoordinates {
-    pub planet_rotation: Quat,
     pub camera_offset: Vec3,
     last_camera_pos: Option<Vec3>,
 }
 impl Default for WorldCoordinates {
     fn default() -> Self {
+        let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Y * PLANET_RADIUS);
         Self {
-            planet_rotation: Quat::from_rotation_x(-FRAC_PI_2 * 0.5),
-            camera_offset: Vec3::ZERO,
+            camera_offset: Vec3::new(offset.x, 0.0, offset.z),
             last_camera_pos: None,
         }
     }
 }
 impl WorldCoordinates {
-    /// Calculates the latitude of the world's origin (0,0,0).
-    pub fn latitude(&self) -> f32 {
-        let v_local = self.planet_rotation.conjugate().mul_vec3(Vec3::Y);
+    /// Calculates the latitude at a given position.
+    pub fn latitude(&self, pos: Vec3) -> f32 {
+        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Y);
         v_local.y.clamp(-1.0, 1.0).asin()
     }
 
-    /// Calculates the longitude of the world's origin (0,0,0).
-    pub fn longitude(&self) -> f32 {
-        let v_local = self.planet_rotation.conjugate().mul_vec3(Vec3::Y);
+    /// Calculates the longitude at a given position.
+    pub fn longitude(&self, pos: Vec3) -> f32 {
+        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Y);
         if v_local.x.abs() < f32::EPSILON && v_local.z.abs() < f32::EPSILON {
             0.0
         } else {
@@ -62,10 +61,9 @@ impl WorldCoordinates {
         }
     }
 
-    /// Calculates the effective rotation of the planet by combining the global base rotation with the transient rotation from the camera's current position.
-    pub fn planet_rotation(&self, camera_transform: &Transform) -> Quat {
-        let offset_rotation = Self::rotation_from_translation(camera_transform.translation);
-        offset_rotation * self.planet_rotation
+    /// Calculates the effective rotation of the planet at a given position.
+    pub fn planet_rotation(&self, pos: Vec3) -> Quat {
+        Self::rotation_from_translation(self.camera_offset + pos)
     }
 }
 
@@ -136,12 +134,6 @@ fn update(
     if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD
         || camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD
     {
-        // Calculate the rotation from the distance traveled before snapping.
-        let snap_rotation =
-            WorldCoordinates::rotation_from_translation(camera_transform.translation);
-        // Apply this rotation to the global world coordinates.
-        world_coords.planet_rotation = snap_rotation * world_coords.planet_rotation;
-
         // Reset the camera's position to the origin, first storing the offset.
         world_coords.camera_offset += Vec3::new(
             camera_transform.translation.x,
@@ -156,31 +148,23 @@ fn update(
     }
 
     // --- Planet and Object Positioning ---
-    // The visual rotation is the combination of the base global rotation and the camera's current offset.
-    let effective_rotation = world_coords.planet_rotation(&camera_transform);
+    let effective_rotation = world_coords.planet_rotation(camera_transform.translation);
 
     // The planet's center is always directly below the camera's XZ position, creating a "treadmill" effect.
-    let planet_center = Vec3::new(
-        camera_transform.translation.x,
-        -PLANET_RADIUS,
-        camera_transform.translation.z,
-    );
-
     // --- Sun Logic ---
     let (mut sun_transform, mut sun_light) = sun_query.single_mut().unwrap();
 
     // Get the current latitude for sun calculations.
-    let current_latitude = world_coords.latitude();
+    let current_latitude = world_coords.latitude(camera_transform.translation);
     let latitude_abs = ((current_latitude.abs().to_degrees() - SUNSET_LATITUDE_DEG)
         / (90.0 - SUNSET_LATITUDE_DEG))
         .clamp(0.0, 1.0);
 
-    let camera_up = (camera_transform.translation - planet_center).normalize();
     let pole_sign = if current_latitude >= 0.0 { 1.0 } else { -1.0 };
     let planet_pole_direction = effective_rotation.mul_vec3(Vec3::Y) * pole_sign;
 
-    let sun_azimuth = (planet_pole_direction - camera_up * planet_pole_direction.dot(camera_up))
-        .normalize_or((Vec3::X - camera_up * Vec3::X.dot(camera_up)).normalize());
+    let sun_azimuth = (planet_pole_direction - Vec3::Y * planet_pole_direction.dot(Vec3::Y))
+        .normalize_or((Vec3::X - Vec3::Y * Vec3::X.dot(Vec3::Y)).normalize());
 
     let desired_elevation_rad = (MIN_SUN_ELEVATION_DEG
         + (MAX_SUN_ELEVATION_DEG - MIN_SUN_ELEVATION_DEG) * latitude_abs)
@@ -188,7 +172,7 @@ fn update(
 
     sun_transform.rotation = Quat::from_rotation_arc(
         Vec3::NEG_Z,
-        -sun_azimuth * desired_elevation_rad.cos() - camera_up * desired_elevation_rad.sin(),
+        -sun_azimuth * desired_elevation_rad.cos() - Vec3::Y * desired_elevation_rad.sin(),
     );
     sun_light.illuminance = lux::DIRECT_SUNLIGHT * latitude_abs;
 

@@ -19,11 +19,17 @@ use bevy::{
             NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
+            AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendState,
+            BufferUsages, CachedRenderPipelineId, ColorTargetState, ColorWrites,
+            DynamicUniformBuffer, Extent3d, FilterMode, FragmentState, LoadOp, Operations,
+            PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
+            ShaderType, StoreOp, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+            TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, UniformBuffer,
             binding_types::{
                 sampler, texture_2d, texture_3d, texture_depth_2d, uniform_buffer,
                 uniform_buffer_sized,
             },
-            *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -175,11 +181,10 @@ fn extract_clouds_view_uniform(
     camera_query: Extract<Query<&Transform, With<Camera>>>,
 ) {
     if let Ok(camera_transform) = camera_query.single() {
-        let planet_rotation = world_coords.planet_rotation(camera_transform);
         commands.insert_resource(ExtractedViewData {
-            planet_rotation: planet_rotation.into(),
-            latitude: world_coords.latitude(),
-            longitude: world_coords.longitude(),
+            planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
+            latitude: world_coords.latitude(camera_transform.translation),
+            longitude: world_coords.longitude(camera_transform.translation),
             camera_offset: world_coords.camera_offset,
         });
     }
@@ -371,11 +376,11 @@ impl ViewNode for VolumetricCloudsNode {
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("volumetric_clouds_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: view, // Render to our intermediate cloud texture
+                view, // Render to our intermediate cloud texture
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
-                    load: LoadOp::Clear(Default::default()), // Clear the texture before drawing
+                    load: LoadOp::Clear(default()), // Clear the texture before drawing
                     store: StoreOp::Store,
                 },
             })],

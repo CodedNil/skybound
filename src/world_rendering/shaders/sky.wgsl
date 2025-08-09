@@ -31,7 +31,10 @@ const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 const ONE_OVER_FOUR_PI: f32 = 1.0 / (4.0 * PI);
 
 
-struct AtmosphereColors {
+struct AtmosphereData {
+    planet_radius: f32,
+    planet_center: vec3<f32>,
+    sun_dir: vec3<f32>,
     sky: vec3<f32>,
     sun: vec3<f32>,
     ambient: vec3<f32>,

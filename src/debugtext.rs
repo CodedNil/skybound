@@ -1,6 +1,6 @@
 use crate::world::WorldCoordinates;
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
 use std::time::Duration;
@@ -44,7 +44,7 @@ fn update(
 ) {
     let fps_res = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
-        .and_then(|d| d.average());
+        .and_then(Diagnostic::average);
 
     let should_update = fps_state.timer.tick(time.delta()).just_finished();
     if !should_update {
@@ -57,19 +57,22 @@ fn update(
         .single()
         .map(|camera_transform| {
             (
-                world_coords.latitude().to_degrees(),
-                world_coords.longitude().to_degrees(),
+                world_coords
+                    .latitude(camera_transform.translation)
+                    .to_degrees(),
+                world_coords
+                    .longitude(camera_transform.translation)
+                    .to_degrees(),
                 camera_transform.translation.y,
             )
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
     display.0 = format!(
-        "FPS: {:.0}\n\
-         Lat: {:+.2}\n\
-         Lon: {:+.2}\n\
-         Alt: {:+.2}m",
-        fps, lat_deg, lon_deg, alt,
+        "FPS: {fps:.0}\n\
+         Lat: {lat_deg:+.2}\n\
+         Lon: {lon_deg:+.2}\n\
+         Alt: {alt:+.2}m",
     );
 }
 

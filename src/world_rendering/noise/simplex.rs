@@ -52,7 +52,7 @@ fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32) -> f32 {
 
 // https://github.com/Razaekel/noise-rs/blob/develop/src/core/super_simplex.rs
 const TO_SIMPLEX_CONSTANT_3D: f32 = -2.0 / 3.0;
-const NORM_CONSTANT_3D: f32 = 1.0 / 0.086_766_400_165_536_9;
+const NORM_CONSTANT_3D: f32 = 1.0 / 0.086_766_4;
 
 #[rustfmt::skip]
 const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
@@ -89,31 +89,35 @@ fn simplex3(point: Vec3A) -> f32 {
     let second_simplex_rel_coords = second_simplex_point - second_simplex_base_point;
 
     // Create indices to lookup table from barycentric coordinates
-    let index = ((simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 1.5)
-        as usize)
-        << 2
-        | ((-simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 0.5) as usize)
-            << 3
-        | ((simplex_rel_coords.x - simplex_rel_coords.y + simplex_rel_coords.z >= 0.5) as usize)
-            << 4
-        | ((simplex_rel_coords.x + simplex_rel_coords.y - simplex_rel_coords.z >= 0.5) as usize)
-            << 5;
-    let second_index = ((second_simplex_rel_coords.x
-        + second_simplex_rel_coords.y
-        + second_simplex_rel_coords.z
-        >= 1.5) as usize)
-        << 2
-        | ((-second_simplex_rel_coords.x
-            + second_simplex_rel_coords.y
-            + second_simplex_rel_coords.z
-            >= 0.5) as usize)
-            << 3
-        | ((second_simplex_rel_coords.x - second_simplex_rel_coords.y + second_simplex_rel_coords.z
-            >= 0.5) as usize)
-            << 4
-        | ((second_simplex_rel_coords.x + second_simplex_rel_coords.y - second_simplex_rel_coords.z
-            >= 0.5) as usize)
-            << 5;
+    let index =
+        usize::from(simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 1.5) << 2
+            | usize::from(
+                -simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 0.5,
+            ) << 3
+            | usize::from(
+                simplex_rel_coords.x - simplex_rel_coords.y + simplex_rel_coords.z >= 0.5,
+            ) << 4
+            | usize::from(
+                simplex_rel_coords.x + simplex_rel_coords.y - simplex_rel_coords.z >= 0.5,
+            ) << 5;
+    let second_index = usize::from(
+        second_simplex_rel_coords.x + second_simplex_rel_coords.y + second_simplex_rel_coords.z
+            >= 1.5,
+    ) << 2
+        | usize::from(
+            -second_simplex_rel_coords.x
+                + second_simplex_rel_coords.y
+                + second_simplex_rel_coords.z
+                >= 0.5,
+        ) << 3
+        | usize::from(
+            second_simplex_rel_coords.x - second_simplex_rel_coords.y + second_simplex_rel_coords.z
+                >= 0.5,
+        ) << 4
+        | usize::from(
+            second_simplex_rel_coords.x + second_simplex_rel_coords.y - second_simplex_rel_coords.z
+                >= 0.5,
+        ) << 5;
 
     let mut value = 0.0;
 
@@ -147,7 +151,7 @@ fn grad3(index: usize) -> [f32; 3] {
     // Vectors are combinations of -1, 0, and 1
     // Precompute the normalized elements
     const DIAG : f32 = core::f32::consts::FRAC_1_SQRT_2;
-    const DIAG2 : f32 = 0.577_350_269_189_625_8;
+    const DIAG2 : f32 = 0.577_350_26;
 
     match index % 32 {
         // 12 edges repeated twice then 8 corners
@@ -176,11 +180,11 @@ fn grad3(index: usize) -> [f32; 3] {
 }
 
 // 3D hashing function
-const HASH_MULTIPLIER: f32 = 1.0 / (0x0fffffff as f32);
+const HASH_MULTIPLIER: f32 = 1.0 / 268_435_455.0;
 fn hash3(p: IVec3) -> usize {
     let mut n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
     n = ((n << 13) ^ n)
-        .wrapping_mul(n.wrapping_mul(n).wrapping_mul(15731).wrapping_add(789221))
-        .wrapping_add(1376312589);
-    ((n & 0x0fffffff) as f32 * HASH_MULTIPLIER * 255.0) as usize
+        .wrapping_mul(n.wrapping_mul(n).wrapping_mul(15731).wrapping_add(789_221))
+        .wrapping_add(1_376_312_589);
+    ((n & 268_435_455) as f32 * HASH_MULTIPLIER * 255.0) as usize
 }

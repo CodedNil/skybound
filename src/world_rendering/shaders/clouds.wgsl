@@ -1,6 +1,6 @@
 #define_import_path skybound::clouds
 #import skybound::functions::{remap}
-#import skybound::sky::AtmosphereColors
+#import skybound::sky::AtmosphereData
 
 @group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
@@ -112,7 +112,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 	return clamp(base_cloud, 0.0, 1.0);
 }
 
-fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     // Determine raymarch start and end distances
     var t = dither * STEP_SIZE_INSIDE;
     var t_end = t_max;
@@ -181,11 +181,11 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColo
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
+                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
                 density_sunwards += sample_clouds(lightmarch_pos, t, time, true, linear_sampler);
             }
             // Take a single distant sample
-            lightmarch_pos += sun_dir * LIGHT_STEP_SIZE * 18.0;
+            lightmarch_pos += atmosphere.sun_dir * LIGHT_STEP_SIZE * 18.0;
             let lheight_fraction = get_height_fraction(lightmarch_pos.y);
             density_sunwards += pow(sample_clouds(lightmarch_pos, t, time, true, linear_sampler), (1.0 - lheight_fraction) * 0.8 + 0.5);
 
@@ -196,9 +196,9 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColo
 
 			// Compute in-scattering
 			let height_fraction = get_height_fraction(pos.y);
-			let aur_ambient = mix(atmosphere_colors.ground, vec3(1.0), pow(height_fraction, 0.5));
-            let ambient = aur_ambient * DENSITY * mix(atmosphere_colors.ambient, vec3(1.0), 0.4) * (sun_dir.y);
-            let in_scattering = ambient + beers_total * atmosphere_colors.sun * atmosphere_colors.phase;
+			let aur_ambient = mix(atmosphere.ground, vec3(1.0), pow(height_fraction, 0.5));
+            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
+            let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
             // Compute emission, aur color if low altitude
             let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step;

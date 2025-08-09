@@ -21,20 +21,20 @@ pub fn spread(image: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// Linearly map a value `x` in range [in_min..in_max] to [out_min..out_max].
+/// Linearly map a value `x` in range [`in_min..in_max`] to [`out_min..out_max`].
 pub fn map_range(val: f32, smin: f32, smax: f32, dmin: f32, dmax: f32) -> f32 {
-    if (smax - smin).abs() < std::f32::EPSILON {
+    if (smax - smin).abs() < f32::EPSILON {
         return dmax;
     }
     (val - smin) / (smax - smin) * (dmax - dmin) + dmin
 }
 
-/// Converts a slice of f32 noise data into an RgbaImage and saves it.
+/// Converts a slice of f32 noise data into an `RgbaImage` and saves it.
 pub fn save_noise_layer(data: &[f32], filename: &str, size: usize) {
     RgbaImage::from_raw(
         size as u32,
         size as u32,
-        (&data[0..(size * size)])
+        data[0..(size * size)]
             .iter()
             .flat_map(|&val| {
                 let val = (val * 255.0).round() as u8;
@@ -52,9 +52,9 @@ pub fn interleave_channels<const N: usize>(noise_data: [Vec<f32>; N]) -> Vec<u8>
     (0..noise_data[0].len())
         .flat_map(|i| {
             let mut channels = Vec::with_capacity(N);
-            for j in 0..N {
+            (0..N).for_each(|j| {
                 channels.push((noise_data[j][i] * 255.0).round() as u8);
-            }
+            });
             channels
         })
         .collect()
@@ -90,14 +90,12 @@ pub fn load_or_generate_texture<F>(
 where
     F: FnOnce() -> Vec<u8>,
 {
-    let path = format!("assets/textures/{}.bin", path);
-    let data = if let Ok(data) = fs::read(&path) {
-        data
-    } else {
+    let path = format!("assets/textures/{path}.bin");
+    let data = fs::read(&path).unwrap_or_else(|_| {
         let data = generate_fn();
         save_texture_bin(&path, &data).unwrap();
         data
-    };
+    });
 
     let mut image = Image::new(
         Extent3d {

@@ -1,6 +1,6 @@
 #define_import_path skybound::aur_fog
 #import skybound::functions::{mod1, hash12, hash13}
-#import skybound::sky::AtmosphereColors
+#import skybound::sky::AtmosphereData
 
 @group(0) @binding(8) var fog_noise_texture: texture_3d<f32>;
 
@@ -185,8 +185,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, fast: f3
     return sample;
 }
 
-
-fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors, sun_dir: vec3<f32>, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     if ro.y > RAYMARCH_START_HEIGHT && rd.y > 0.0 { return vec4<f32>(0.0); } // Early exit if ray will never enter the fog
 
     // Start raymarching at y=RAYMARCH_START_HEIGHT intersection if above y=0, else at camera
@@ -230,7 +229,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
+                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
                 density_sunwards += sample_fog(lightmarch_pos, t, time, true, 0.0, linear_sampler).density;
             }
 
@@ -240,8 +239,8 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColors,
 			let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
-            let ambient = atmosphere_colors.ground * DENSITY * mix(atmosphere_colors.ambient, vec3(1.0), 0.4) * (sun_dir.y);
-            let in_scattering = ambient + beers_total * atmosphere_colors.sun * atmosphere_colors.phase;
+            let ambient = atmosphere.ground * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
+            let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
 			acc_alpha += alpha_step * (1.0 - acc_alpha);
 			acc_color += in_scattering * transmittance * alpha_step * fog_sample.color + fog_sample.emission;

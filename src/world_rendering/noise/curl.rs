@@ -61,9 +61,9 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<f32>, Vec<f32>, Vec<
     };
 
     // Second pass: normalize and map the values to u8
-    let mut r_data = Vec::with_capacity(total_pixels as usize);
-    let mut g_data = Vec::with_capacity(total_pixels as usize);
-    let mut b_data = Vec::with_capacity(total_pixels as usize);
+    let mut r_data = Vec::with_capacity(total_pixels);
+    let mut g_data = Vec::with_capacity(total_pixels);
+    let mut b_data = Vec::with_capacity(total_pixels);
     for curl_vec in curl_values {
         // Normalize the curl components to the range [-1, 1]
         let normalized = curl_vec / max_curl_magnitude;

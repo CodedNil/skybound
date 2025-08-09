@@ -4,6 +4,7 @@ Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 too bright at night
+set the sun_dir correctly in the cpu side, blended into going straight up with aur color
 
 
 froxels:
