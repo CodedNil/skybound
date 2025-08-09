@@ -6,10 +6,13 @@ mod worley;
 
 use crate::world_rendering::noise::{
     curl::curl_2d_texture,
-    perlin::perlin_3d,
+    perlin::{perlin_3d, perlin3},
     simplex::simplex_3d,
-    utils::{create_noise_image, interleave_channels, map_range, save_noise_layer, spread},
-    worley::{worley_3d, worley_3d_fbm},
+    utils::{
+        create_noise_image, generate_noise_3d, interleave_channels, map_range, noise_fbm,
+        save_noise_layer, spread,
+    },
+    worley::worley_3d,
 };
 use bevy::{
     prelude::*,
@@ -32,15 +35,16 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let start = std::time::Instant::now();
         let size = 128;
 
+        let worleya = worley_3d(size, size, 6.0, 0.5, true);
+        let perlinworley = spread(&generate_noise_3d(size, size, |i, pos| {
+            let perlin = noise_fbm(pos, 5, 0.5, 7.0, |pos, freq| perlin3(pos, freq, true));
+            let perlin = (perlin * 0.5 + 0.5).powf(0.7);
+            map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worleya[i], 1.0)
+        }));
         let gamma = 0.5;
-        let perlinworley = spread(&perlin_3d(size, size, 5, 0.5, 7.0, 0.7))
-            .iter()
-            .zip(worley_3d_fbm(size, size, 6.0, gamma))
-            .map(|(&perlin, worley1)| map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worley1, 1.0))
-            .collect::<Vec<f32>>();
-        let worley1 = spread(&worley_3d_fbm(size, size, 12.0, gamma));
-        let worley2 = spread(&worley_3d_fbm(size, size, 18.0, gamma));
-        let worley3 = spread(&worley_3d_fbm(size, size, 24.0, gamma));
+        let worley1 = spread(&worley_3d(size, size, 12.0, gamma, true));
+        let worley2 = spread(&worley_3d(size, size, 18.0, gamma, true));
+        let worley3 = spread(&worley_3d(size, size, 24.0, gamma, true));
 
         save_noise_layer(&perlinworley, "perlinworley.png", size);
         save_noise_layer(&worley1, "worley1.png", size);
@@ -58,9 +62,9 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         let size = 32;
 
         let gamma = 0.6;
-        let detail1 = worley_3d_fbm(size, size, 5.0, gamma);
-        let detail2 = worley_3d_fbm(size, size, 6.0, gamma);
-        let detail3 = worley_3d_fbm(size, size, 7.0, gamma);
+        let detail1 = worley_3d(size, size, 5.0, gamma, true);
+        let detail2 = worley_3d(size, size, 6.0, gamma, true);
+        let detail3 = worley_3d(size, size, 7.0, gamma, true);
 
         save_noise_layer(&detail1, "detail1.png", size);
         save_noise_layer(&detail2, "detail2.png", size);
@@ -97,14 +101,14 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             .iter()
             .map(|&x| x * 1.1 - 0.1)
             .collect::<Vec<f32>>();
-        let weather2 = spread(&worley_3d_fbm(size, 1, 8.0, 0.4))
+        let weather2 = spread(&worley_3d(size, 1, 8.0, 0.4, true))
             .iter()
             .zip(spread(&perlin_3d(size, 1, 5, 0.8, 8.0, 1.0)).iter())
             .map(|(&a, &b)| (a * 1.7 - 0.5) + b * 0.1)
             .collect::<Vec<f32>>();
         let weather3 = spread(&perlin_3d(size, 1, 1, 0.8, 4.0, 0.5))
             .iter()
-            .zip(spread(&worley_3d(size, 1, 4.0, 1.0)).iter())
+            .zip(spread(&worley_3d(size, 1, 4.0, 1.0, false)).iter())
             .map(|(&a, &b)| (a * 1.2 - 0.2) - b * 0.1)
             .collect::<Vec<f32>>();
 

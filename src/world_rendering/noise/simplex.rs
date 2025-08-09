@@ -1,5 +1,5 @@
 use bevy::math::{IVec3, Vec3A};
-use orx_parallel::*;
+use rayon::prelude::*;
 
 // Generate a 3D Simplex Noise Texture
 pub fn simplex_3d(
@@ -11,7 +11,7 @@ pub fn simplex_3d(
     gamma: f32,
 ) -> Vec<f32> {
     (0..(size * size * depth))
-        .par()
+        .into_par_iter()
         .map(|i| {
             // Unravel i into x,y,z
             let x = i % size;

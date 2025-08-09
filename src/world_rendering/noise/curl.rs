@@ -1,6 +1,6 @@
 use crate::world_rendering::noise::perlin::perlin_fbm3;
 use bevy::math::Vec3A;
-use orx_parallel::*;
+use rayon::prelude::*;
 
 /// Computes the 2D curl magnitude of a scalar field
 const EPSILON: f32 = 0.001;
@@ -13,7 +13,7 @@ pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<f32>, Vec<f32>, Vec<
     let total_pixels = width * height;
 
     let curl_values: Vec<Vec3A> = (0..total_pixels)
-        .par()
+        .into_par_iter()
         .map(|i| {
             let x = i % width;
             let y = i / width;

@@ -1,5 +1,5 @@
 use bevy::math::Vec3A;
-use orx_parallel::*;
+use rayon::prelude::*;
 
 // Generate a 3D Perlin Noise Texture
 pub fn perlin_3d(
@@ -11,7 +11,7 @@ pub fn perlin_3d(
     gamma: f32,
 ) -> Vec<f32> {
     (0..(size * size * depth))
-        .par()
+        .into_par_iter()
         .map(|i| {
             // Unravel i into x,y,z
             let x = i % size;
@@ -39,14 +39,12 @@ pub fn perlin_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, tile: b
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
-
     for _ in 0..octaves {
         total += perlin3(pos * freq, freq, tile) * amp;
         norm += amp;
         amp *= gain;
         freq *= 2.0;
     }
-
     total / norm
 }
 
@@ -61,7 +59,7 @@ const OFF: [Vec3A; 8] = [
     Vec3A::new(0.0, 1.0, 1.0),
     Vec3A::new(1.0, 1.0, 1.0),
 ];
-fn perlin3(pos: Vec3A, period: f32, tile: bool) -> f32 {
+pub fn perlin3(pos: Vec3A, period: f32, tile: bool) -> f32 {
     // Cell corner + local coords
     let p = pos.floor();
     let w = pos.fract();

@@ -1,10 +1,55 @@
 use bevy::{
     asset::RenderAssetUsages,
-    image::{Image, ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use image::RgbaImage;
+use rayon::prelude::*;
 use std::path::Path;
+
+/// Generate a 3D noise texture using the provided noise function.
+pub fn generate_noise_3d<F>(size: usize, depth: usize, noise_fn: F) -> Vec<f32>
+where
+    F: Fn(usize, Vec3A) -> f32 + Send + Sync,
+{
+    (0..(size * size * depth))
+        .into_par_iter()
+        .map(|i| {
+            // Unravel i into x,y,z
+            let x = i % size;
+            let y = (i / size) % size;
+            let z = i / (size * size);
+
+            // Normalized coordinates in [0..1]
+            let pos = Vec3A::new(
+                x as f32 / size as f32,
+                y as f32 / size as f32,
+                z as f32 / depth as f32,
+            );
+
+            // Call the provided noise function to get v
+            noise_fn(i, pos)
+        })
+        .collect()
+}
+
+// Generate FBM noise from a noise function
+pub fn noise_fbm<F>(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, noise_fn: F) -> f32
+where
+    F: Fn(Vec3A, f32) -> f32 + Send + Sync,
+{
+    let mut total = 0.0;
+    let mut amp = 1.0;
+    let mut norm = 0.0;
+    for _ in 0..octaves {
+        total += noise_fn(pos * freq, freq) * amp;
+        norm += amp;
+        amp *= gain;
+        freq *= 2.0;
+    }
+    total / norm
+}
 
 /// Stretch contrast: map [min, max] → [0,255].
 pub fn spread(image: &[f32]) -> Vec<f32> {
