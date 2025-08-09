@@ -6,7 +6,7 @@ use bevy::{
 };
 use image::RgbaImage;
 use rayon::prelude::*;
-use std::path::Path;
+use std::{fs, path::Path};
 
 /// Generate a 3D noise texture using the provided noise function.
 pub fn generate_noise_3d<F>(size: usize, depth: usize, noise_fn: F) -> Vec<f32>
@@ -119,12 +119,30 @@ const IMAGE_SAMPLER: ImageSamplerDescriptor = ImageSamplerDescriptor {
     border_color: None,
     label: None,
 };
-pub fn create_noise_image(
+
+pub fn save_texture_bin(path: &str, data: &[u8]) -> std::io::Result<()> {
+    fs::write(path, data)
+}
+
+pub fn load_or_generate_texture<F>(
+    path: &str,
     size: usize,
     depth: usize,
     format: TextureFormat,
-    data: Vec<u8>,
-) -> Image {
+    generate_fn: F,
+) -> Image
+where
+    F: FnOnce() -> Vec<u8>,
+{
+    let path = format!("assets/textures/{}.bin", path);
+    let data = if let Ok(data) = fs::read(&path) {
+        data
+    } else {
+        let data = generate_fn();
+        save_texture_bin(&path, &data).unwrap();
+        data
+    };
+
     let mut image = Image::new(
         Extent3d {
             width: size as u32,
