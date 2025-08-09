@@ -7,15 +7,22 @@
 @group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
 @group(0) @binding(7) var cloud_weather_texture: texture_2d<f32>;
 
-const COVERAGE: f32 = 0.25; // Overall cloud coverage
-
-// Base Shape
+// Base Parameters
 const BASE_NOISE_SCALE: f32 = 0.00008;
-const WIND_DIRECTION_BASE: vec3<f32> = vec3<f32>(0.001, 0.0, 0.0); // Main wind for base shape
+const WIND_DIRECTION_BASE: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0) * 0.005; // Main wind for base shape
 
-// Detail Shape
+// Weather Parameters
+const WEATHER_NOISE_SCALE: f32 = 0.000006;
+const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.0005; // Weather wind for weather shape
+
+// Detail Parameters
 const DETAIL_NOISE_SCALE: f32 = 0.001;
-const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(0.008, -0.008, 0.0); // Details move faster
+const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(0.3, -0.3, 0.0) * 0.1; // Details move faster
+
+// Curl Parameters
+const CURL_NOISE_SCALE: f32 = 0.000003;  // Scale for curl noise sampling
+const CURL_TIME_SCALE: f32 = 0.0004;    // Speed of curl noise animation
+const CURL_STRENGTH: f32 = 8.0;      // Strength of curl distortion
 
 // Cloud scales
 const CLOUDS_BOTTOM_HEIGHT: f32 = 1500.0;
@@ -62,7 +69,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
     let altitude = pos.y;
 
     // --- Height Gradient ---
-    let gradient_low = vec4<f32>(1500.0, 1650.0, 2500.0, 3000.0);
+    let gradient_low = vec4<f32>(1500.0, 1650.0, 2250.0, 3000.0);
     let gradient_high = vec4<f32>(6500.0, 6650.0, 7000.0, 7500.0);
     var gradient = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     if altitude >= gradient_low.x && altitude <= gradient_low.w {
@@ -76,22 +83,26 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
     let height_fraction = smoothstep(gradient.x, gradient.w, altitude);
 
     // --- Base Cloud Shape ---
-    let time_vec = time * WIND_DIRECTION_BASE;
-    let base_scaled_pos = pos * BASE_NOISE_SCALE + time_vec;
+    let base_scaled_pos = pos * BASE_NOISE_SCALE + time * WIND_DIRECTION_BASE;
+    let weather_pos = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
 
     let base_noise = sample_base(base_scaled_pos, linear_sampler);
 	let fbm = base_noise.g * 0.625 + base_noise.b * 0.25 + base_noise.a * 0.125;
 	var base_cloud = remap(base_noise.r, -(1.0 - fbm), 1.0, 0.0, 1.0);
-	base_cloud = remap(base_cloud * height_gradient, 1.0 - COVERAGE, 1.0, 0.0, 1.0);
-	base_cloud *= COVERAGE;
+
+	let weather_noise = sample_weather(weather_pos, linear_sampler);
+	let weather_coverage = remap(pow(weather_noise.r, 0.5), 0.0, 1.0, 0.0, 0.5);
+
+	base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
+	base_cloud *= weather_noise.r;
 
 	if base_cloud <= 0.0 { return 0.0; }
 
-	// --- High Frequency Detail with Curl Distortion (TODO) ---
-   	// let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
-    // let detail_curl_distortion = vec3(motion_sample.r, 0.0, motion_sample.g) * CURL_STRENGTH;
+	// --- High Frequency Detail with Curl Distortion ---
+   	let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
+    let detail_curl_distortion = motion_sample * CURL_STRENGTH;
     let detail_time_vec = time * WIND_DIRECTION_DETAIL;
-    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec;
+    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec + detail_curl_distortion;
 
    	let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
    	var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
@@ -185,7 +196,7 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere_colors: AtmosphereColo
 
 			// Compute in-scattering
 			let height_fraction = get_height_fraction(pos.y);
-			let aur_ambient = mix(atmosphere_colors.ground, vec3(1.0), pow(height_fraction, 0.15));
+			let aur_ambient = mix(atmosphere_colors.ground, vec3(1.0), pow(height_fraction, 0.5));
             let ambient = aur_ambient * DENSITY * mix(atmosphere_colors.ambient, vec3(1.0), 0.4) * (sun_dir.y);
             let in_scattering = ambient + beers_total * atmosphere_colors.sun * atmosphere_colors.phase;
 
@@ -211,9 +222,13 @@ fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {
 }
 
 fn sample_details(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(cloud_details_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).xyz;
+    return textureSample(cloud_details_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).rgb;
 }
 
 fn sample_motion(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(cloud_motion_texture, linear_sampler, pos).xyz;
+    return textureSample(cloud_motion_texture, linear_sampler, pos).rgb;
+}
+
+fn sample_weather(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
+    return textureSample(cloud_weather_texture, linear_sampler, pos).rgb;
 }

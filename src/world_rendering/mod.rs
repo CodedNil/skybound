@@ -1,6 +1,6 @@
 mod noise;
 
-use crate::world::{CameraCoordinates, PLANET_RADIUS, SunLight, WorldCoordinates};
+use crate::world::{PLANET_RADIUS, SunLight, WorldCoordinates};
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -111,11 +111,9 @@ struct CloudsViewUniform {
     world_from_clip: Mat4,
     world_position: Vec3,
     planet_rotation: Vec4,
+    camera_offset: Vec3,
     latitude: f32,
     longitude: f32,
-    latitude_meters: f32,
-    longitude_meters: f32,
-    altitude: f32,
 }
 
 #[derive(Resource)]
@@ -153,9 +151,7 @@ struct ExtractedViewData {
     planet_rotation: Vec4,
     latitude: f32,
     longitude: f32,
-    latitude_meters: f32,
-    longitude_meters: f32,
-    altitude: f32,
+    camera_offset: Vec3,
 }
 
 // --- Systems (Render World) ---
@@ -176,21 +172,15 @@ fn extract_clouds_global_uniform(
 fn extract_clouds_view_uniform(
     mut commands: Commands,
     world_coords: Extract<Res<WorldCoordinates>>,
-    camera_query: Extract<Query<(&Transform, &CameraCoordinates), With<Camera>>>,
+    camera_query: Extract<Query<&Transform, With<Camera>>>,
 ) {
-    if let Ok((camera_transform, camera_coordinates)) = camera_query.single() {
-        let planet_rotation = camera_coordinates.planet_rotation(&world_coords, camera_transform);
-        let latitude = camera_coordinates.latitude(planet_rotation, camera_transform);
-        let longitude = camera_coordinates.longitude(planet_rotation, camera_transform);
-        let latitude_meters = camera_coordinates.latitude_meters(latitude);
-        let longitude_meters = camera_coordinates.longitude_meters(longitude, latitude);
+    if let Ok(camera_transform) = camera_query.single() {
+        let planet_rotation = world_coords.planet_rotation(camera_transform);
         commands.insert_resource(ExtractedViewData {
             planet_rotation: planet_rotation.into(),
-            latitude,
-            longitude,
-            latitude_meters,
-            longitude_meters,
-            altitude: camera_coordinates.altitude(camera_transform),
+            latitude: world_coords.latitude(),
+            longitude: world_coords.longitude(),
+            camera_offset: world_coords.camera_offset,
         });
     }
 }
@@ -239,9 +229,7 @@ fn prepare_clouds_view_uniforms(
                 planet_rotation: data.planet_rotation,
                 latitude: data.latitude,
                 longitude: data.longitude,
-                latitude_meters: data.latitude_meters,
-                longitude_meters: data.longitude_meters,
-                altitude: data.altitude,
+                camera_offset: data.camera_offset,
             }),
         });
     }

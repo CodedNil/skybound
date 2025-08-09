@@ -6,12 +6,9 @@ mod worley;
 
 use crate::world_rendering::noise::{
     curl::curl_2d_texture,
-    perlin::{perlin_3d, perlin3},
+    perlin::perlin_3d,
     simplex::simplex_3d,
-    utils::{
-        generate_noise_3d, interleave_channels, load_or_generate_texture, map_range, noise_fbm,
-        save_noise_layer, spread,
-    },
+    utils::{interleave_channels, load_or_generate_texture, map_range, save_noise_layer, spread},
     worley::worley_3d,
 };
 use bevy::{
@@ -38,12 +35,11 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         size,
         TextureFormat::Rgba8Unorm,
         || {
-            let worleya = worley_3d(size, size, 6.0, 0.5, true);
-            let perlinworley = spread(&generate_noise_3d(size, size, |i, pos| {
-                let perlin = noise_fbm(pos, 5, 0.5, 7.0, |pos, freq| perlin3(pos, freq, true));
-                let perlin = (perlin * 0.5 + 0.5).powf(0.7);
-                map_range(perlin.abs() * 2.0 - 1.0, 0.0, 1.0, worleya[i], 1.0)
-            }));
+            let perlinworley = spread(&perlin_3d(size, size, 5, 0.5, 6.0, 1.5))
+                .iter()
+                .zip(worley_3d(size, size, 6.0, 2.0, true))
+                .map(|(&perlin, worley)| map_range(perlin, 0.0, 1.0, worley, 1.0))
+                .collect::<Vec<f32>>();
             let gamma = 0.5;
             let worley1 = spread(&worley_3d(size, size, 12.0, gamma, true));
             let worley2 = spread(&worley_3d(size, size, 18.0, gamma, true));

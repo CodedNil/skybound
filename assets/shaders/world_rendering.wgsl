@@ -10,11 +10,9 @@ struct View {
     world_from_clip: mat4x4<f32>,
     world_position: vec3<f32>,
     planet_rotation: vec4<f32>,
+    camera_offset: vec3<f32>,
     latitude: f32,
     longitude: f32,
-    latitude_meters: f32,
-    longitude_meters: f32,
-    altitude: f32,
 };
 @group(0) @binding(1) var<uniform> globals: Globals;
 struct Globals {
@@ -25,6 +23,8 @@ struct Globals {
 }
 @group(0) @binding(2) var linear_sampler: sampler;
 @group(0) @binding(3) var depth_texture: texture_depth_2d;
+
+const ATMOSPHERE_HEIGHT: f32 = 100000.0;
 
 // Lighting Parameters
 const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
@@ -54,7 +54,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let world_pos3 = world_pos4.xyz / world_pos4.w;
 
     // Ray origin & dir
-    let ro = view.world_position; //vec3(view.longitude_meters, view.altitude, -view.latitude_meters);
+    let ro = view.world_position + view.camera_offset;
     let rd_vec = world_pos3 - ro;
     let t_max = length(rd_vec);
     let rd = normalize(rd_vec);
@@ -117,8 +117,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     if depth <= 0.00001 {
         // Blend in poles behind clouds
-        acc_color += pole_color.rgb * pole_color.a * (1.0 - acc_alpha);
-        acc_alpha += pole_color.a * (1.0 - acc_alpha);
+        acc_color += pole_color.rgb * pole_color.a;
+        acc_alpha += pole_color.a;
 
         // Add our sky in the background
         acc_color += vec3(atmosphere_colors.sky * (1.0 - acc_alpha));

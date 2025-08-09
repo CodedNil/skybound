@@ -1,4 +1,4 @@
-use crate::world::{CameraCoordinates, WorldCoordinates};
+use crate::world::WorldCoordinates;
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -39,7 +39,7 @@ fn update(
     diagnostics: Res<DiagnosticsStore>,
     mut fps_state: ResMut<FpsCounter>,
     world_coords: Res<WorldCoordinates>,
-    camera_query: Query<(&Transform, &CameraCoordinates), With<Camera>>,
+    camera_query: Query<&Transform, With<Camera>>,
     mut display: Single<&mut Text, With<FpsCounterText>>,
 ) {
     let fps_res = diagnostics
@@ -53,33 +53,23 @@ fn update(
 
     let fps = fps_res.unwrap_or(0.0);
 
-    let (lat_deg, lon_deg, lat_m, lon_m, alt) = camera_query
+    let (lat_deg, lon_deg, alt) = camera_query
         .single()
-        .map(|(transform, camera_coords)| {
-            let planet_rotation = camera_coords.planet_rotation(&world_coords, transform);
-            let latitude_rad = camera_coords.latitude(planet_rotation, transform);
-            let longitude_rad = camera_coords.longitude(planet_rotation, transform);
+        .map(|camera_transform| {
             (
-                latitude_rad.to_degrees(),
-                longitude_rad.to_degrees(),
-                camera_coords.latitude_meters(latitude_rad),
-                camera_coords.longitude_meters(latitude_rad, longitude_rad),
-                camera_coords.altitude(transform),
+                world_coords.latitude().to_degrees(),
+                world_coords.longitude().to_degrees(),
+                camera_transform.translation.y,
             )
         })
-        .unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0));
+        .unwrap_or((0.0, 0.0, 0.0));
 
     display.0 = format!(
-        "FPS:  {fps:.0}\n\
-         Lat:  {lat_deg:+.2}° ({lat_m:+.0} m)\n\
-         Lon:  {lon_deg:+.2}° ({lon_m:+.0} m)\n\
-         Alt:  {alt:+.2} m",
-        fps = fps,
-        lat_deg = lat_deg,
-        lat_m = lat_m,
-        lon_deg = lon_deg,
-        lon_m = lon_m,
-        alt = alt,
+        "FPS: {:.0}\n\
+         Lat: {:+.2}\n\
+         Lon: {:+.2}\n\
+         Alt: {:+.2}m",
+        fps, lat_deg, lon_deg, alt,
     );
 }
 
