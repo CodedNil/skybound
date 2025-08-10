@@ -6,22 +6,18 @@
 
 @group(0) @binding(0) var<uniform> view: View;
 struct View {
+    time: f32, // Time since startup
     world_from_clip: mat4x4<f32>,
     world_position: vec3<f32>,
     planet_rotation: vec4<f32>,
+    planet_radius: f32,
     camera_offset: vec3<f32>,
     latitude: f32,
     longitude: f32,
-};
-@group(0) @binding(1) var<uniform> globals: Globals;
-struct Globals {
-    time: f32,
-    planet_radius: f32,
     sun_direction: vec3<f32>,
-    sun_intensity: f32,
-}
-@group(0) @binding(2) var linear_sampler: sampler;
-@group(0) @binding(3) var depth_texture: texture_depth_2d;
+};
+@group(0) @binding(1) var linear_sampler: sampler;
+@group(0) @binding(2) var depth_texture: texture_depth_2d;
 
 const ATMOSPHERE_HEIGHT: f32 = 100000.0;
 
@@ -59,9 +55,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let rd = normalize(rd_vec);
 
     // Get sun direction and intensity, mix between aur light (straight up) and sun
-    let sun_dot = globals.sun_direction.y;
+    let sun_dot = view.sun_direction.y;
     let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
-    let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
+    let sun_dir = normalize(mix(AUR_DIR, view.sun_direction, sun_t));
 
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
@@ -71,8 +67,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
 
     atmosphere.planet_rotation = view.planet_rotation;
-    atmosphere.planet_center = vec3<f32>(ro.x, -globals.planet_radius, ro.z);
-    atmosphere.planet_radius = globals.planet_radius;
+    atmosphere.planet_center = vec3<f32>(ro.x, -view.planet_radius, ro.z);
+    atmosphere.planet_radius = view.planet_radius;
     atmosphere.sun_dir = sun_dir;
 
 	// Phase functions for silver and back scattering
@@ -83,7 +79,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Sample the volumes
-    let volumes_color: vec4<f32> = raymarch(ro, rd, atmosphere, t_max, dither, globals.time, linear_sampler);
+    let volumes_color: vec4<f32> = raymarch(ro, rd, atmosphere, t_max, dither, view.time, linear_sampler);
     var acc_color: vec3<f32> = volumes_color.rgb;
     var acc_alpha: f32 = volumes_color.a;
 

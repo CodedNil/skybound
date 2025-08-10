@@ -1,6 +1,6 @@
 mod noise;
 
-use crate::world::{PLANET_RADIUS, SunLight, WorldCoordinates};
+use crate::world::{PLANET_RADIUS, WorldData};
 use bevy::{
     core_pipeline::{
         FullscreenShader,
@@ -8,7 +8,6 @@ use bevy::{
         prepass::ViewPrepassTextures,
     },
     ecs::query::QueryItem,
-    pbr::light_consts::lux,
     prelude::*,
     render::{
         Extract, Render, RenderApp, RenderStartup, RenderSystems,
@@ -25,11 +24,8 @@ use bevy::{
             PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
             RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
             ShaderType, StoreOp, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-            TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, UniformBuffer,
-            binding_types::{
-                sampler, texture_2d, texture_3d, texture_depth_2d, uniform_buffer,
-                uniform_buffer_sized,
-            },
+            TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
+            binding_types::{sampler, texture_2d, texture_3d, texture_depth_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -56,20 +52,13 @@ impl Plugin for WorldRenderingPlugin {
         };
         render_app
             .init_resource::<CloudRenderTexture>()
-            .init_resource::<CloudsGlobalUniforms>()
-            .add_systems(
-                ExtractSchedule,
-                (extract_clouds_global_uniform, extract_clouds_view_uniform),
-            )
+            .add_systems(ExtractSchedule, extract_clouds_view_uniform)
             .add_systems(RenderStartup, setup_volumetric_clouds_pipeline)
             .add_systems(RenderStartup, setup_volumetric_clouds_composite_pipeline)
             .add_systems(Render, manage_textures.in_set(RenderSystems::Queue))
             .add_systems(
                 Render,
-                (
-                    prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
-                    prepare_clouds_global_uniforms.in_set(RenderSystems::PrepareResources),
-                ),
+                prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
             );
 
         render_app
@@ -100,27 +89,17 @@ impl Plugin for WorldRenderingPlugin {
 }
 
 // --- Uniform Definition ---
-#[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
-struct CloudsGlobalUniform {
-    time: f32, // Time since startup
-    planet_radius: f32,
-    sun_direction: Vec3,
-    sun_intensity: f32,
-}
-
-#[derive(Resource, Default)]
-struct CloudsGlobalUniforms {
-    uniforms: UniformBuffer<CloudsGlobalUniform>,
-}
-
 #[derive(Clone, ShaderType)]
 struct CloudsViewUniform {
+    time: f32, // Time since startup
     world_from_clip: Mat4,
     world_position: Vec3,
     planet_rotation: Vec4,
+    planet_radius: f32,
     camera_offset: Vec3,
     latitude: f32,
     longitude: f32,
+    sun_direction: Vec3,
 }
 
 #[derive(Resource)]
@@ -148,64 +127,33 @@ struct CloudsViewUniformOffset {
 }
 
 #[derive(Resource, Default, ExtractResource, Clone)]
-struct ExtractedGlobalData {
-    direction: Vec3,
-    intensity: f32,
-}
-
-#[derive(Resource, Default, ExtractResource, Clone)]
 struct ExtractedViewData {
     planet_rotation: Vec4,
+    planet_radius: f32,
     latitude: f32,
     longitude: f32,
     camera_offset: Vec3,
+    sun_direction: Vec3,
 }
 
 // --- Systems (Render World) ---
-fn extract_clouds_global_uniform(
-    mut commands: Commands,
-    time: Extract<Res<Time>>,
-    sun_query: Extract<Query<(&Transform, &DirectionalLight), With<SunLight>>>,
-) {
-    commands.insert_resource(**time);
-    if let Ok((sun_transform, sun_light)) = sun_query.single() {
-        commands.insert_resource(ExtractedGlobalData {
-            direction: -sun_transform.forward().normalize(),
-            intensity: sun_light.illuminance / lux::DIRECT_SUNLIGHT,
-        });
-    }
-}
-
 fn extract_clouds_view_uniform(
     mut commands: Commands,
-    world_coords: Extract<Res<WorldCoordinates>>,
+    time: Extract<Res<Time>>,
+    world_coords: Extract<Res<WorldData>>,
     camera_query: Extract<Query<&Transform, With<Camera>>>,
 ) {
+    commands.insert_resource(**time);
     if let Ok(camera_transform) = camera_query.single() {
         commands.insert_resource(ExtractedViewData {
             planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
+            planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
             camera_offset: world_coords.camera_offset,
+            sun_direction: (world_coords.sun_rotation * Vec3::Z).normalize(),
         });
     }
-}
-
-fn prepare_clouds_global_uniforms(
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    mut clouds_buffer: ResMut<CloudsGlobalUniforms>,
-    time: Res<Time>,
-    data: Res<ExtractedGlobalData>,
-) {
-    let buffer = clouds_buffer.uniforms.get_mut();
-    buffer.planet_radius = PLANET_RADIUS;
-    buffer.time = time.elapsed_secs_wrapped();
-    buffer.sun_direction = data.direction;
-    buffer.sun_intensity = data.intensity;
-    clouds_buffer
-        .uniforms
-        .write_buffer(&render_device, &render_queue);
 }
 
 fn prepare_clouds_view_uniforms(
@@ -214,6 +162,7 @@ fn prepare_clouds_view_uniforms(
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
     views: Query<(Entity, &ExtractedView)>,
+    time: Res<Time>,
     data: Res<ExtractedViewData>,
 ) {
     let view_iter = views.iter();
@@ -230,12 +179,15 @@ fn prepare_clouds_view_uniforms(
         let world_from_view = extracted_view.world_from_view.to_matrix();
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
+                time: time.elapsed_secs_wrapped(),
                 world_from_clip: world_from_view * view_from_clip,
                 world_position: extracted_view.world_from_view.translation(),
                 planet_rotation: data.planet_rotation,
+                planet_radius: data.planet_radius,
+                camera_offset: data.camera_offset,
                 latitude: data.latitude,
                 longitude: data.longitude,
-                camera_offset: data.camera_offset,
+                sun_direction: data.sun_direction,
             }),
         });
     }
@@ -330,7 +282,6 @@ impl ViewNode for VolumetricCloudsNode {
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(uniforms_binding),
             Some(depth_view),
             Some(texture),
             Some(view),
@@ -342,7 +293,6 @@ impl ViewNode for VolumetricCloudsNode {
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            world.resource::<CloudsGlobalUniforms>().uniforms.binding(),
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
@@ -362,7 +312,6 @@ impl ViewNode for VolumetricCloudsNode {
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
                 view_binding.clone(),
-                uniforms_binding,
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
                 &base_noise.texture_view,
@@ -439,14 +388,13 @@ fn setup_volumetric_clouds_pipeline(
         &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<CloudsViewUniform>(true), // View uniforms (camera projection, etc.)
-                uniform_buffer_sized(false, Some(CloudsGlobalUniform::min_size())),
-                sampler(SamplerBindingType::Filtering), // Linear sampler
-                texture_depth_2d(),                     // Depth texture from prepass
+                uniform_buffer::<CloudsViewUniform>(true), // View uniforms
+                sampler(SamplerBindingType::Filtering),    // Linear sampler
+                texture_depth_2d(),                        // Depth texture from prepass
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
-                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                texture_3d(TextureSampleType::Float { filterable: true }), // Weather noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
             ),
         ),

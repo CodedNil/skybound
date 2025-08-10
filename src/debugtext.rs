@@ -1,4 +1,4 @@
-use crate::world::WorldCoordinates;
+use crate::world::WorldData;
 use bevy::{
     diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
@@ -38,7 +38,7 @@ fn update(
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
     mut fps_state: ResMut<FpsCounter>,
-    world_coords: Res<WorldCoordinates>,
+    world_coords: Res<WorldData>,
     camera_query: Query<&Transform, With<Camera>>,
     mut display: Single<&mut Text, With<FpsCounterText>>,
 ) {

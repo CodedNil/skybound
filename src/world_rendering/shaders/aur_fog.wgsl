@@ -2,7 +2,7 @@
 #import skybound::functions::{mod1, hash12, hash13, intersect_sphere}
 #import skybound::sky::AtmosphereData
 
-@group(0) @binding(8) var fog_noise_texture: texture_3d<f32>;
+@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);

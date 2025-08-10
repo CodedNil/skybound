@@ -6,7 +6,7 @@ use rayon::prelude::*;
 const EPSILON: f32 = 0.001;
 const SCALE: f32 = 0.005;
 const OCTAVES: usize = 5;
-const FREQUENCY: f32 = 2.0;
+const FREQUENCY: Vec3A = Vec3A::new(2.0, 2.0, 2.0);
 const GAIN: f32 = 0.4;
 const GAMMA: f32 = 1.2;
 pub fn curl_2d_texture(width: usize, height: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>) {

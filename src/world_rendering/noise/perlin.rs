@@ -1,4 +1,4 @@
-use bevy::math::Vec3A;
+use bevy::math::{Vec2, Vec3A};
 use rayon::prelude::*;
 
 // Generate a 3D Perlin Noise Texture
@@ -7,9 +7,10 @@ pub fn perlin_3d(
     depth: usize,
     octaves: usize,
     gain: f32,
-    freq: f32,
+    freq: Vec2,
     gamma: f32,
 ) -> Vec<f32> {
+    let freq = Vec3A::new(freq.x, freq.x, freq.y);
     (0..(size * size * depth))
         .into_par_iter()
         .map(|i| {
@@ -35,7 +36,7 @@ pub fn perlin_3d(
 }
 
 // FBM Perlin Noise
-pub fn perlin_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32, tile: bool) -> f32 {
+pub fn perlin_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32, tile: bool) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
@@ -59,7 +60,7 @@ const OFF: [Vec3A; 8] = [
     Vec3A::new(0.0, 1.0, 1.0),
     Vec3A::new(1.0, 1.0, 1.0),
 ];
-pub fn perlin3(pos: Vec3A, period: f32, tile: bool) -> f32 {
+pub fn perlin3(pos: Vec3A, period: Vec3A, tile: bool) -> f32 {
     // Cell corner + local coords
     let p = pos.floor();
     let w = pos.fract();
@@ -72,7 +73,7 @@ pub fn perlin3(pos: Vec3A, period: f32, tile: bool) -> f32 {
     for (idx, &off) in OFF.iter().enumerate() {
         // Tile the integer cell coordinates so that noise is periodic at 'period'
         let coords = if tile {
-            (p + off).rem_euclid(Vec3A::splat(period))
+            (p + off).rem_euclid(period)
         } else {
             p + off
         };

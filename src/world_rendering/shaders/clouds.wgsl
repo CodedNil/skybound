@@ -2,60 +2,85 @@
 #import skybound::functions::{remap, intersect_sphere}
 #import skybound::sky::AtmosphereData
 
-@group(0) @binding(4) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(5) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(6) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(7) var cloud_weather_texture: texture_2d<f32>;
+@group(0) @binding(3) var cloud_base_texture: texture_3d<f32>;
+@group(0) @binding(4) var cloud_details_texture: texture_3d<f32>;
+@group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(6) var cloud_weather_texture: texture_3d<f32>;
+
+const BASE_SCALE = 0.001;
+const BASE_TIME = 0.01;
 
 // Base Parameters
-const BASE_NOISE_SCALE: f32 = 0.00008;
-const WIND_DIRECTION_BASE: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0) * 0.005; // Main wind for base shape
+const BASE_NOISE_SCALE: f32 = 0.03 * BASE_SCALE;
+const WIND_DIRECTION_BASE: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0) * 0.2 * BASE_TIME; // Main wind for base shape
 
 // Weather Parameters
-const WEATHER_NOISE_SCALE: f32 = 0.000006;
-const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.0005; // Weather wind for weather shape
+const WEATHER_NOISE_SCALE: f32 = 0.001 * BASE_SCALE;
+const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.02 * BASE_TIME; // Weather wind for weather shape
 
 // Detail Parameters
-const DETAIL_NOISE_SCALE: f32 = 0.001;
-const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(0.3, -0.3, 0.0) * 0.1; // Details move faster
+const DETAIL_NOISE_SCALE: f32 = 1.0 * BASE_SCALE;
+const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, -1.0, 0.0) * 0.1 * BASE_TIME; // Details move faster
 
 // Curl Parameters
-const CURL_NOISE_SCALE: f32 = 0.000003;  // Scale for curl noise sampling
-const CURL_TIME_SCALE: f32 = 0.0004;    // Speed of curl noise animation
-const CURL_STRENGTH: f32 = 8.0;      // Strength of curl distortion
+const CURL_NOISE_SCALE: f32 = 0.0005 * BASE_SCALE; // Scale for curl noise sampling
+const CURL_TIME_SCALE: f32 = 0.005 * BASE_TIME; // Speed of curl noise animation
+const CURL_STRENGTH: f32 = 6.0; // Strength of curl distortion
 
 // Cloud scales
-const CLOUDS_BOTTOM_HEIGHT: f32 = 1500.0;
+const CLOUDS_BOTTOM_HEIGHT: f32 = 1000.0;
 const CLOUDS_TOP_HEIGHT: f32 = 40000.0;
+const CLOUD_TOTAL_LAYERS: u32 = 16u;
+const CLOUD_LAYER_HEIGHTS = array<u32, CLOUD_TOTAL_LAYERS>(3500, 3000, 2500, 3000, 2000, 1500, 1500, 2000, 1500, 1000, 1000, 800, 600, 800, 800, 1000);
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
     return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
 }
 
-fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
-    let altitude = pos.y;
-
-    // --- Height Gradient ---
-    let gradient_low = vec4<f32>(1500.0, 1650.0, 2250.0, 3000.0);
-    let gradient_high = vec4<f32>(6500.0, 6650.0, 7000.0, 7500.0);
-    var gradient = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    if altitude >= gradient_low.x && altitude <= gradient_low.w {
-        gradient = gradient_low;
-    } else if altitude >= gradient_high.x && altitude <= gradient_high.w {
-        gradient = gradient_high;
-    } else {
-        return 0.0;
+// Gets the current cloud layers index, bottom and top height
+struct CloudLayer {
+    index: u32,
+    bottom: f32,
+    top: f32,
+}
+fn get_cloud_layer(altitude: f32) -> CloudLayer {
+    var cloud_layer: CloudLayer;
+    var bottom: f32 = CLOUDS_BOTTOM_HEIGHT;
+    for (var i = 0u; i < CLOUD_TOTAL_LAYERS; i++) {
+        let height = f32(CLOUD_LAYER_HEIGHTS[i]);
+        let top = bottom + height;
+        if (altitude >= bottom && altitude <= top) {
+            cloud_layer.index = i;
+            cloud_layer.bottom = bottom;
+            cloud_layer.top = top;
+            return cloud_layer;
+        }
+        bottom = top + 500.0;
     }
-    let height_gradient = smoothstep(gradient.x, gradient.y, altitude) - smoothstep(gradient.z, gradient.w, altitude);
-    let height_fraction = smoothstep(gradient.x, gradient.w, altitude);
+    return cloud_layer; // Altitude out of range
+}
+
+fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
+    // --- Height Gradient ---
+    var cloud_layer = get_cloud_layer(pos.y);
+    if cloud_layer.top == 0.0 { return 0.0; }
+    let gradient = vec4<f32>(
+        cloud_layer.bottom,
+        mix(cloud_layer.bottom, cloud_layer.top, 0.2),
+        mix(cloud_layer.bottom, cloud_layer.top, 0.6),
+        cloud_layer.top
+    );
+    let height_gradient = smoothstep(gradient.y, gradient.y + 200.0, pos.y) - smoothstep(gradient.z, gradient.w, pos.y);
+    let height_fraction = smoothstep(gradient.y, gradient.w, pos.y);
 
     // --- Base Cloud Shape ---
     let base_scaled_pos = pos * BASE_NOISE_SCALE + time * WIND_DIRECTION_BASE;
-    let weather_pos = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
+    let weather_pos_2d = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
+    let weather_pos = vec3<f32>(weather_pos_2d.x, f32(cloud_layer.index) / f32(CLOUD_TOTAL_LAYERS), weather_pos_2d.y);
 
     let base_noise = sample_base(base_scaled_pos, linear_sampler);
-    let fbm = base_noise.g * 0.625 + base_noise.b * 0.25 + base_noise.a * 0.125;
+    let fbm = dot(base_noise.gba, vec3(0.625, 0.25, 0.125));
     var base_cloud = remap(base_noise.r, -(1.0 - fbm), 1.0, 0.0, 1.0);
 
     let weather_noise = sample_weather(weather_pos, linear_sampler);
@@ -129,6 +154,6 @@ fn sample_motion(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
     return textureSample(cloud_motion_texture, linear_sampler, pos).rgb;
 }
 
-fn sample_weather(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
+fn sample_weather(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
     return textureSample(cloud_weather_texture, linear_sampler, pos).rgb;
 }

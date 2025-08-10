@@ -1,14 +1,22 @@
+vary cloud base scale, weather scale, weather position (slightly) - based on cloud layer
+vary cloud layer height by random weather.g for an offset position
+make weather map frequency lower for height so i dont need to sample only a small portion
+make sure clouds have shadows visible from further away, and cast shadows between layers (loosely sample the layer above)
+
+
 rust_gpu then have the raymarch code shared, do a raymarch from fixed position on cpu and draw gizmos to debug step size etc
 remove the base geometry, use sdfs instead, remove shadows etc from scene
+https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
+https://github.com/klownie/bevy_sdf_klown
 
 
 atmosphere:
-Auroras and stars https://www.shadertoy.com/view/XtGGRt
 Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 too bright at night
 set the sun_dir correctly in the cpu side, blended into going straight up with aur color
+atmospheric distance fog
 
 
 froxels:
@@ -35,7 +43,6 @@ have layers of clouds, define them in a const array, each has a height so there 
 could maybe do simple shadowing using the layers above with very coarse read at a single depth of it, then offset with light direction
 vary the layers each with a perlin noise heightmap, each has a different offset so sometimes layers can overlap
 
-fade out clouds with distance
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
@@ -43,7 +50,7 @@ cumulonimbus clouds, huge with anvils, use worley noise to position them as sepa
 
 do the world rendering:
 better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
-blend into the clouds
+Auroras and stars https://www.shadertoy.com/view/XtGGRt
 
 
 aur fog:
@@ -56,5 +63,3 @@ misc:
 atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
 aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go
 patterns of stars, basically a tapestry of the universes history created by the gods
-https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
-https://github.com/klownie/bevy_sdf_klown

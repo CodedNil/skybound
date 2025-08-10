@@ -4,16 +4,16 @@
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 #import skybound::sky::AtmosphereData
 
-const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
+const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
 const MAX_STEPS: i32 = 2048;
-const STEP_SIZE_INSIDE: f32 = 32.0;
-const STEP_SIZE_OUTSIDE: f32 = 64.0;
+const STEP_SIZE_INSIDE: f32 = 24.0;
+const STEP_SIZE_OUTSIDE: f32 = 48.0;
 
 const SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
-const SCALING_MAX: f32 = 12.0; // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
 const LIGHT_STEPS_START: f32 = 6.0; // How many steps to take along the sun direction
@@ -30,12 +30,8 @@ struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, volumes_inside: VolumesInside, only_density: bool, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesInside, only_density: bool, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
-
-    // Make pos spherical in altitude
-    let altitude = distance(pos_raw, atmosphere.planet_center) - atmosphere.planet_radius;
-    let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
 
     if volumes_inside.fog {
         let fog_sample = sample_fog(pos, dist, time, only_density, linear_sampler);
@@ -136,8 +132,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
         var step = STEP_SIZE_OUTSIDE * step_scaler;
 
         // Sample the volumes
-        let pos = ro + rd * (t + dither * step);
-        let main_sample = sample_volume(pos, atmosphere, t, time, volumes_inside, false, linear_sampler);
+        let pos_raw = ro + rd * (t + dither * step);
+        let altitude = distance(pos_raw, atmosphere.planet_center) - atmosphere.planet_radius;
+        let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
+        let main_sample = sample_volume(pos, t, time, volumes_inside, false, linear_sampler);
         let step_density = main_sample.density;
 
         // Adjust t to effectively backtrack and take smaller steps when entering density
@@ -161,14 +159,16 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos;
-            for (var j: u32 = 0; j <= u32(mix(LIGHT_STEPS_START, LIGHT_STEPS_END, distance_scale)); j++) {
+            var light_altitude: f32;
+            for (var j: u32 = 0; j <= u32(round(mix(LIGHT_STEPS_START, LIGHT_STEPS_END, distance_scale))); j++) {
                 lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_volume(lightmarch_pos, atmosphere, t, time, volumes_inside, true, linear_sampler).density;
+                light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
+                density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
             }
             // Take a single distant sample
             lightmarch_pos += atmosphere.sun_dir * LIGHT_STEP_SIZE * 18.0;
-            let lheight_fraction = get_height_fraction(lightmarch_pos.y);
-            density_sunwards += pow(sample_volume(lightmarch_pos, atmosphere, t, time, volumes_inside, true, linear_sampler).density, (1.0 - lheight_fraction) * 0.8 + 0.5);
+            light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
+            density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
 
             // Captures the direct lighting from the sun
             let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
@@ -176,16 +176,13 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
             let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
-            let height_fraction = get_height_fraction(pos.y);
-            let aur_ambient = mix(atmosphere.ground, vec3(1.0), pow(height_fraction, 0.5));
+            let aur_intensity = smoothstep(12000.0, 0.0, altitude);
+            let aur_ambient = mix(vec3(1.0), atmosphere.ground, aur_intensity);
             let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
-            // Compute emission, aur color if low altitude
-            let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step + main_sample.emission;
-
             acc_alpha += alpha_step * (1.0 - acc_alpha);
-            acc_color += in_scattering * transmittance * alpha_step * main_sample.color + emission;
+            acc_color += in_scattering * transmittance * alpha_step * main_sample.color + main_sample.emission;
 
             transmittance *= step_transmittance;
         }
@@ -193,7 +190,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
         t += step;
     }
 
-    acc_alpha = min(acc_alpha * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
+    acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
     return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
 }
