@@ -5,6 +5,8 @@ though it will only do the light_march once per step max, as a shared shadow var
 try to not have max_steps and let it take as many steps as it needs, would need to fade quality to make that perform well
 and each step it asks each for a step size and takes a minimum
 
+rust_gpu then have the raymarch code shared, do a raymarch from fixed position on cpu and draw gizmos to debug step size etc
+
 
 
 atmosphere:

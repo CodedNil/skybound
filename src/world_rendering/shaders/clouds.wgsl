@@ -52,7 +52,7 @@ const FADE_END_DISTANCE: f32 = 200000.0;
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
-	return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
+    return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
 }
 
 fn sample_clouds(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, fast: bool, linear_sampler: sampler) -> f32 {
@@ -78,29 +78,29 @@ fn sample_clouds(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time
     let weather_pos = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
 
     let base_noise = sample_base(base_scaled_pos, linear_sampler);
-	let fbm = base_noise.g * 0.625 + base_noise.b * 0.25 + base_noise.a * 0.125;
-	var base_cloud = remap(base_noise.r, -(1.0 - fbm), 1.0, 0.0, 1.0);
+    let fbm = base_noise.g * 0.625 + base_noise.b * 0.25 + base_noise.a * 0.125;
+    var base_cloud = remap(base_noise.r, -(1.0 - fbm), 1.0, 0.0, 1.0);
 
-	let weather_noise = sample_weather(weather_pos, linear_sampler);
-	let weather_coverage = remap(pow(weather_noise.r, 0.5), 0.0, 1.0, 0.0, 0.5);
+    let weather_noise = sample_weather(weather_pos, linear_sampler);
+    let weather_coverage = remap(pow(weather_noise.r, 0.5), 0.0, 1.0, 0.0, 0.5);
 
-	base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
-	base_cloud *= weather_noise.r;
+    base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
+    base_cloud *= weather_noise.r;
 
-	if base_cloud <= 0.0 { return 0.0; }
+    if base_cloud <= 0.0 { return 0.0; }
 
 	// --- High Frequency Detail with Curl Distortion ---
-   	let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
+    let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
     let detail_curl_distortion = motion_sample * CURL_STRENGTH;
     let detail_time_vec = time * WIND_DIRECTION_DETAIL;
     let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec + detail_curl_distortion;
 
-   	let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
-   	var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
-   	hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
-   	base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
+    let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
+    var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
+    hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
+    base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
 
-	return clamp(base_cloud, 0.0, 1.0);
+    return clamp(base_cloud, 0.0, 1.0);
 }
 
 fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
@@ -120,7 +120,7 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
         // Below clouds
         if bottom_shell_dist <= 0.0 { return vec4<f32>(0.0); }
         t = bottom_shell_dist + dither * STEP_SIZE_OUTSIDE;
-        if (top_shell_dist > 0.0) {
+        if top_shell_dist > 0.0 {
             t_end = top_shell_dist;
         } else {
             t_end = t_max;
@@ -129,7 +129,7 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
         // We are above the clouds, only raymarch if the intersects the sphere, start at the top_shell_dist and end at bottom_shell_dist
         if top_shell_dist <= 0.0 { return vec4<f32>(0.0); }
         t = top_shell_dist + dither * STEP_SIZE_OUTSIDE;
-        if (bottom_shell_dist > 0.0) {
+        if bottom_shell_dist > 0.0 {
             t_end = bottom_shell_dist;
         } else {
             t_end = t_max;
@@ -197,23 +197,23 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
             density_sunwards += pow(sample_clouds(lightmarch_pos, atmosphere, t, time, true, linear_sampler), (1.0 - lheight_fraction) * 0.8 + 0.5);
 
             // Captures the direct lighting from the sun
-			let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-			let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-			let beers_total = max(beers, beers2);
+            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
+            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+            let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
-			let height_fraction = get_height_fraction(pos.y);
-			let aur_ambient = mix(atmosphere.ground, vec3(1.0), pow(height_fraction, 0.5));
+            let height_fraction = get_height_fraction(pos.y);
+            let aur_ambient = mix(atmosphere.ground, vec3(1.0), pow(height_fraction, 0.5));
             let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
             // Compute emission, aur color if low altitude
             let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step;
 
-			acc_alpha += alpha_step * (1.0 - acc_alpha);
-			acc_color += in_scattering * transmittance * alpha_step + emission;
+            acc_alpha += alpha_step * (1.0 - acc_alpha);
+            acc_color += in_scattering * transmittance * alpha_step + emission;
 
-			transmittance *= step_transmittance;
+            transmittance *= step_transmittance;
         }
 
         t += step;

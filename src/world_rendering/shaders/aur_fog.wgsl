@@ -30,14 +30,14 @@ const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0
 // Fog turbulence calculations
 const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
 const TURB_ROTS: array<mat2x2<f32>, 8> = array<mat2x2<f32>,8>(
-    mat2x2<f32>(vec2<f32>( 0.600, -0.800), vec2<f32>( 0.800,  0.600)),
-    mat2x2<f32>(vec2<f32>(-0.280, -0.960), vec2<f32>( 0.960, -0.280)),
-    mat2x2<f32>(vec2<f32>(-0.936, -0.352), vec2<f32>( 0.352, -0.936)),
-    mat2x2<f32>(vec2<f32>(-0.843,  0.538), vec2<f32>(-0.538, -0.843)),
-    mat2x2<f32>(vec2<f32>(-0.076,  0.997), vec2<f32>(-0.997, -0.076)),
-    mat2x2<f32>(vec2<f32>( 0.752,  0.659), vec2<f32>(-0.659,  0.752)),
-    mat2x2<f32>(vec2<f32>( 0.978, -0.206), vec2<f32>( 0.206,  0.978)),
-    mat2x2<f32>(vec2<f32>( 0.422, -0.907), vec2<f32>( 0.907,  0.422))
+    mat2x2<f32>(vec2<f32>(0.600, -0.800), vec2<f32>(0.800, 0.600)),
+    mat2x2<f32>(vec2<f32>(-0.280, -0.960), vec2<f32>(0.960, -0.280)),
+    mat2x2<f32>(vec2<f32>(-0.936, -0.352), vec2<f32>(0.352, -0.936)),
+    mat2x2<f32>(vec2<f32>(-0.843, 0.538), vec2<f32>(-0.538, -0.843)),
+    mat2x2<f32>(vec2<f32>(-0.076, 0.997), vec2<f32>(-0.997, -0.076)),
+    mat2x2<f32>(vec2<f32>(0.752, 0.659), vec2<f32>(-0.659, 0.752)),
+    mat2x2<f32>(vec2<f32>(0.978, -0.206), vec2<f32>(0.206, 0.978)),
+    mat2x2<f32>(vec2<f32>(0.422, -0.907), vec2<f32>(0.907, 0.422))
 );
 const TURB_AMP: f32 = 0.6; // Turbulence amplitude
 const TURB_SPEED: f32 = 0.5; // Turbulence speed
@@ -95,7 +95,7 @@ fn flash_emission(pos: vec2<f32>, time: f32) -> vec3<f32> {
         let start_time = h_cell.x * period;
         let tmod = mod1(time - start_time, period);
         let duration_jitter = mix(FLASH_DURATION_MIN, FLASH_DURATION_MAX, h_cell.y);
-        if (tmod > duration_jitter) { continue; }
+        if tmod > duration_jitter { continue; }
 
         // Normalised flash life progress [0..1]
         let life = clamp(tmod / duration_jitter, 0.0, 1.0);
@@ -117,7 +117,7 @@ fn flash_emission(pos: vec2<f32>, time: f32) -> vec3<f32> {
 
             // Distance fall-off
             let d = distance(pos, gp);
-            if (d > max_effective_dist) { continue; }
+            if d > max_effective_dist { continue; }
 
             // Animate scale
             let base_scale = mix(0.5, 3.0, h.z);
@@ -185,7 +185,7 @@ fn sample_fog(pos: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, 
 
 fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
-	let shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + FOG_START_HEIGHT);
+    let shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + FOG_START_HEIGHT);
 
     var t: f32;
     var t_end: f32;
@@ -245,18 +245,18 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
             }
 
             // Captures the direct lighting from the sun
-			let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-			let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-			let beers_total = max(beers, beers2);
+            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
+            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+            let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
             let ambient = atmosphere.ground * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
-			acc_alpha += alpha_step * (1.0 - acc_alpha);
-			acc_color += in_scattering * transmittance * alpha_step * fog_sample.color + fog_sample.emission;
+            acc_alpha += alpha_step * (1.0 - acc_alpha);
+            acc_color += in_scattering * transmittance * alpha_step * fog_sample.color + fog_sample.emission;
 
-			transmittance *= step_transmittance;
+            transmittance *= step_transmittance;
         }
 
         t += step;

@@ -62,7 +62,7 @@ fn hash22(p: vec2<f32>) -> vec2<f32> {
     let pi_i: vec2<i32> = vec2<i32>(floor(p));
     var pi_u: vec2<u32> = vec2<u32>(pi_i) * UI2_1;
     let h: u32 = pi_u.x ^ pi_u.y;
-    var qi_u: vec2<u32>  = vec2<u32>(h) * UI2_2;
+    var qi_u: vec2<u32> = vec2<u32>(h) * UI2_2;
     return (vec2<f32>(qi_u) * UIF) * 2.0 - 1.0;
 }
 
@@ -79,7 +79,7 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     var s0: f32 = hash21(uv + vec2<f32>(-1.0, 0.0));
     var s1: f32 = hash21(uv + vec2<f32>(1.0, 0.0));
     var s2: f32 = hash21(uv + vec2<f32>(0.0, 1.0));
-    var s3: f32 = hash21(uv + vec2<f32>( 0.0, -1.0));
+    var s3: f32 = hash21(uv + vec2<f32>(0.0, -1.0));
     var s: f32 = s0 + s1 + s2 + s3;
     return hash21(uv) - s * 0.25 + 0.5;
 }
@@ -93,14 +93,14 @@ fn value31(p: vec3<f32>) -> f32 {
     return mix(
         // Mix along y-axis for the bottom face (z=0)
         mix(
-            mix(hash3i1(i + vec3<i32>(0,0,0)), hash3i1(i + vec3<i32>(1,0,0)), u.x),
-            mix(hash3i1(i + vec3<i32>(0,1,0)), hash3i1(i + vec3<i32>(1,1,0)), u.x),
+            mix(hash3i1(i + vec3<i32>(0, 0, 0)), hash3i1(i + vec3<i32>(1, 0, 0)), u.x),
+            mix(hash3i1(i + vec3<i32>(0, 1, 0)), hash3i1(i + vec3<i32>(1, 1, 0)), u.x),
             u.y
         ),
         // Mix along y-axis for the top face (z=1)
         mix(
-            mix(hash3i1(i + vec3<i32>(0,0,1)), hash3i1(i + vec3<i32>(1,0,1)), u.x),
-            mix(hash3i1(i + vec3<i32>(0,1,1)), hash3i1(i + vec3<i32>(1,1,1)), u.x),
+            mix(hash3i1(i + vec3<i32>(0, 0, 1)), hash3i1(i + vec3<i32>(1, 0, 1)), u.x),
+            mix(hash3i1(i + vec3<i32>(0, 1, 1)), hash3i1(i + vec3<i32>(1, 1, 1)), u.x),
             u.y
         ),
         u.z // Mix along z-axis between the two faces

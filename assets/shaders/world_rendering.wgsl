@@ -1,6 +1,6 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::functions::{ blue_noise}
-#import skybound::clouds::{render_clouds}
+#import skybound::functions::blue_noise
+#import skybound::clouds::render_clouds
 #import skybound::aur_fog::render_fog
 #import skybound::sky::{AtmosphereData, render_sky}
 #import skybound::poles::render_poles
@@ -36,7 +36,7 @@ const SILVER_INTENSITY: f32 = 0.01;
 
 const K: f32 = 0.0795774715459;
 fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
-	return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
+    return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
 }
 
 @fragment
@@ -65,15 +65,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let sun_dir = normalize(mix(AUR_DIR, globals.sun_direction, sun_t));
 
 	// Precalculate sun, sky and ambient colors
-	var atmosphere: AtmosphereData;
-	atmosphere.sky = render_sky(rd, sun_dir, ro.y);
-	atmosphere.sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
-	atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
-	atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
+    var atmosphere: AtmosphereData;
+    atmosphere.sky = render_sky(rd, sun_dir, ro.y);
+    atmosphere.sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
+    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
+    atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
 
-	atmosphere.planet_radius = globals.planet_radius;
-	atmosphere.planet_center = vec3<f32>(ro.x, -globals.planet_radius, ro.z);
-	atmosphere.sun_dir = sun_dir;
+    atmosphere.planet_radius = globals.planet_radius;
+    atmosphere.planet_center = vec3<f32>(ro.x, -globals.planet_radius, ro.z);
+    atmosphere.sun_dir = sun_dir;
 
 	// Phase functions for silver and back scattering
     let cos_theta = dot(sun_dir, rd);
