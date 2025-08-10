@@ -55,18 +55,9 @@ fn get_height_fraction(altitude: f32) -> f32 {
 	return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
 }
 
-const PLANE_NORMAL: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
-fn intersect_cloud_start(ro: vec3<f32>, rd: vec3<f32>) -> f32 {
-    let denom = dot(PLANE_NORMAL, rd);
-    if abs(denom) < 1e-6 {
-        return -1.0; // Parallel
-    }
-    let t = -(dot(PLANE_NORMAL, ro) - CLOUDS_BOTTOM_HEIGHT) / denom;
-    return t;
-}
-
-fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sampler: sampler) -> f32 {
-    let altitude = pos.y;
+fn sample_clouds(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, fast: bool, linear_sampler: sampler) -> f32 {
+    let altitude = distance(pos_raw, atmosphere.planet_center) - atmosphere.planet_radius;
+    let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
 
     // --- Height Gradient ---
     let gradient_low = vec4<f32>(1500.0, 1650.0, 2250.0, 3000.0);
@@ -113,20 +104,36 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, fast: bool, linear_sample
 }
 
 fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
-    // Determine raymarch start and end distances
-    var t = dither * STEP_SIZE_INSIDE;
-    var t_end = t_max;
-    let start_intersect = intersect_cloud_start(ro, rd);
-    if (ro.y < CLOUDS_BOTTOM_HEIGHT) {
-        // Camera below clouds, start raymarching at intersection if valid
-        t += max(start_intersect, 0.0);
-        t_end = min(t_end, FADE_END_DISTANCE);
+    let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
+
+    let bottom_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_BOTTOM_HEIGHT);
+    let top_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_TOP_HEIGHT);
+
+    var t: f32;
+    var t_end: f32;
+    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
+    if altitude >= CLOUDS_BOTTOM_HEIGHT && altitude <= CLOUDS_TOP_HEIGHT {
+        // We are inside the clouds, start raymarching at the camera and end when we exit the clouds
+        t = dither * STEP_SIZE_INSIDE;
+        t_end = max(bottom_shell_dist, top_shell_dist); // Whichever is further along the ray
+    } else if altitude < CLOUDS_BOTTOM_HEIGHT {
+        // Below clouds
+        if bottom_shell_dist <= 0.0 { return vec4<f32>(0.0); }
+        t = bottom_shell_dist + dither * STEP_SIZE_OUTSIDE;
+        if (top_shell_dist > 0.0) {
+            t_end = top_shell_dist;
+        } else {
+            t_end = t_max;
+        }
     } else {
-        // Camera above clouds, start at 0 and end at intersection if valid
-        t_end = min(t_end, select(FADE_END_DISTANCE, start_intersect, start_intersect > 0.0));
-    }
-    if t >= t_end {
-        return vec4<f32>(0.0);
+        // We are above the clouds, only raymarch if the intersects the sphere, start at the top_shell_dist and end at bottom_shell_dist
+        if top_shell_dist <= 0.0 { return vec4<f32>(0.0); }
+        t = top_shell_dist + dither * STEP_SIZE_OUTSIDE;
+        if (bottom_shell_dist > 0.0) {
+            t_end = bottom_shell_dist;
+        } else {
+            t_end = t_max;
+        }
     }
 
     // Accumulation variables
@@ -157,7 +164,7 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
 
         // Sample the cloud
         let pos = ro + rd * (t + dither * step);
-        let step_density = sample_clouds(pos, t, time, false, linear_sampler);
+        let step_density = sample_clouds(pos, atmosphere, t, time, false, linear_sampler);
 
         // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
         if step_density > 0.0 {
@@ -182,12 +189,12 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
                 lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_clouds(lightmarch_pos, t, time, true, linear_sampler);
+                density_sunwards += sample_clouds(lightmarch_pos, atmosphere, t, time, true, linear_sampler);
             }
             // Take a single distant sample
             lightmarch_pos += atmosphere.sun_dir * LIGHT_STEP_SIZE * 18.0;
             let lheight_fraction = get_height_fraction(lightmarch_pos.y);
-            density_sunwards += pow(sample_clouds(lightmarch_pos, t, time, true, linear_sampler), (1.0 - lheight_fraction) * 0.8 + 0.5);
+            density_sunwards += pow(sample_clouds(lightmarch_pos, atmosphere, t, time, true, linear_sampler), (1.0 - lheight_fraction) * 0.8 + 0.5);
 
             // Captures the direct lighting from the sun
 			let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);

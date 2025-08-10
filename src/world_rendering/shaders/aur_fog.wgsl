@@ -145,10 +145,10 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, planet_center: vec3<f32>, planet_radius: f32, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
-    var altitude = distance(pos, planet_center) - planet_radius;
+    var altitude = distance(pos, atmosphere.planet_center) - atmosphere.planet_radius;
     if altitude > FOG_START_HEIGHT { return sample; }
 
     let height_noise = sample_height(pos.xz, time, linear_sampler);
@@ -229,7 +229,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
 
         // Sample the fog
         let pos = ro + rd * (t + dither * step);
-        let fog_sample = sample_fog(pos, atmosphere.planet_center, atmosphere.planet_radius, t, time, false, linear_sampler);
+        let fog_sample = sample_fog(pos, atmosphere, t, time, false, linear_sampler);
         let step_density = fog_sample.density;
 
         if step_density > 0.0 {
@@ -241,7 +241,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
             var lightmarch_pos = pos;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
                 lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_fog(lightmarch_pos, atmosphere.planet_center, atmosphere.planet_radius, t, time, true, linear_sampler).density;
+                density_sunwards += sample_fog(lightmarch_pos, atmosphere, t, time, true, linear_sampler).density;
             }
 
             // Captures the direct lighting from the sun
