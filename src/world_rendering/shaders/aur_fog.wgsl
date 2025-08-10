@@ -4,27 +4,12 @@
 
 @group(0) @binding(8) var fog_noise_texture: texture_3d<f32>;
 
-// Colours
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
-// Raymarcher Parameters
-const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
-const DENSITY: f32 = 0.05; // Base density for lighting
-
 const FOG_START_HEIGHT: f32 = 0.0;
-const MAX_STEPS: i32 = 512;
-const STEP_SIZE: f32 = 32.0;
-
-const STEP_SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
-const STEP_SCALING_END: f32 = 50000.0; // Distance from camera to use max step size
-const STEP_SCALING_MAX: f32 = 4.0; // Maximum scaling factor to increase by
-
-const LIGHT_STEPS: u32 = 2; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 30.0;
-const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
 
 
 // Fog turbulence calculations
@@ -140,20 +125,17 @@ fn flash_emission(pos: vec2<f32>, time: f32) -> vec3<f32> {
 
 /// Sample from the fog
 struct FogSample {
-    fog_height: f32,
     density: f32,
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
-    var altitude = distance(pos, atmosphere.planet_center) - atmosphere.planet_radius;
-    if altitude > FOG_START_HEIGHT { return sample; }
+    if pos.y > FOG_START_HEIGHT { return sample; }
 
     let height_noise = sample_height(pos.xz, time, linear_sampler);
-    sample.fog_height = height_noise;
-    altitude -= height_noise;
+    let altitude = pos.y - height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
 
@@ -183,20 +165,23 @@ fn sample_fog(pos: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, 
     return sample;
 }
 
-fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+// Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
+fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
     let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
+    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
+
     let shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + FOG_START_HEIGHT);
 
-    var t: f32;
+    var t_start: f32;
     var t_end: f32;
-    if ro.y > FOG_START_HEIGHT {
+    if altitude > FOG_START_HEIGHT {
         // We are above the fog, only raymarch if the intersects the sphere, start at the shell_dist
-        if shell_dist <= 0.0 { return vec4<f32>(0.0); }
-        t = shell_dist + dither * STEP_SIZE;
+        if shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
+        t_start = shell_dist;
         t_end = t_max;
     } else {
         // We are inside the fog, start raymarching at the camera and end at the shell_dist
-        t = dither * STEP_SIZE;
+        t_start = 0.0;
         if shell_dist <= 0.0 {
             t_end = t_max;
         } else {
@@ -204,67 +189,7 @@ fn render_fog(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f
         }
     }
 
-    // Accumulation variables
-    var acc_color = vec3(0.0);
-    var acc_alpha = 0.0;
-    var transmittance = 1.0;
-
-    // Start raymarching
-    for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_end || acc_alpha >= ALPHA_THRESHOLD { break; }
-
-        // Scale step size based on distance from camera
-        var step_scaler = 1.0;
-        if t > STEP_SCALING_START {
-            step_scaler = 1.0 + smoothstep(STEP_SCALING_START, STEP_SCALING_END, t) * STEP_SCALING_MAX;
-        }
-        // Reduce scaling when close to surfaces
-        let close_threshold = STEP_SIZE * step_scaler;
-        let distance_left = t_max - t;
-        if distance_left < close_threshold {
-            let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
-            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
-        }
-        var step = STEP_SIZE * step_scaler;
-
-        // Sample the fog
-        let pos = ro + rd * (t + dither * step);
-        let fog_sample = sample_fog(pos, atmosphere, t, time, false, linear_sampler);
-        let step_density = fog_sample.density;
-
-        if step_density > 0.0 {
-            let step_transmittance = exp(-DENSITY * step_density * step);
-            let alpha_step = (1.0 - step_transmittance);
-
-            // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = pos;
-            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_fog(lightmarch_pos, atmosphere, t, time, true, linear_sampler).density;
-            }
-
-            // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-            let beers_total = max(beers, beers2);
-
-			// Compute in-scattering
-            let ambient = atmosphere.ground * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
-            let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
-
-            acc_alpha += alpha_step * (1.0 - acc_alpha);
-            acc_color += in_scattering * transmittance * alpha_step * fog_sample.color + fog_sample.emission;
-
-            transmittance *= step_transmittance;
-        }
-
-        t += step;
-    }
-
-    acc_alpha = min(acc_alpha * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-
-    return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    return vec2<f32>(t_start, t_end);
 }
 
 fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {

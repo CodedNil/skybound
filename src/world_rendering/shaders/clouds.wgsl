@@ -29,35 +29,12 @@ const CLOUDS_BOTTOM_HEIGHT: f32 = 1500.0;
 const CLOUDS_TOP_HEIGHT: f32 = 40000.0;
 
 
-// Raymarcher Parameters
-const ALPHA_THRESHOLD: f32 = 0.95; // Max alpha to reach before stopping
-
-const MAX_STEPS: i32 = 2048;
-const STEP_SIZE_INSIDE: f32 = 12.0;
-const STEP_SIZE_OUTSIDE: f32 = 24.0;
-
-const STEP_SCALING_START: f32 = 500.0; // Distance from camera to start scaling step size
-const STEP_SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
-const STEP_SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
-
-const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 30.0;
-const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
-
-// Lighting Parameters
-const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
-const DENSITY: f32 = 0.05;
-const FADE_START_DISTANCE: f32 = 1000.0;
-const FADE_END_DISTANCE: f32 = 200000.0;
-
-
 fn get_height_fraction(altitude: f32) -> f32 {
     return clamp((altitude - CLOUDS_BOTTOM_HEIGHT) / (CLOUDS_TOP_HEIGHT - CLOUDS_BOTTOM_HEIGHT), 0.0, 1.0);
 }
 
-fn sample_clouds(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time: f32, fast: bool, linear_sampler: sampler) -> f32 {
-    let altitude = distance(pos_raw, atmosphere.planet_center) - atmosphere.planet_radius;
-    let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
+fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
+    let altitude = pos.y;
 
     // --- Height Gradient ---
     let gradient_low = vec4<f32>(1500.0, 1650.0, 2250.0, 3000.0);
@@ -103,23 +80,24 @@ fn sample_clouds(pos_raw: vec3<f32>, atmosphere: AtmosphereData, dist: f32, time
     return clamp(base_cloud, 0.0, 1.0);
 }
 
-fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+// Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
+fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
     let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
+    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
 
     let bottom_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_BOTTOM_HEIGHT);
     let top_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_TOP_HEIGHT);
 
-    var t: f32;
+    var t_start: f32;
     var t_end: f32;
-    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
     if altitude >= CLOUDS_BOTTOM_HEIGHT && altitude <= CLOUDS_TOP_HEIGHT {
-        // We are inside the clouds, start raymarching at the camera and end when we exit the clouds
-        t = dither * STEP_SIZE_INSIDE;
+        // We are inside the clouds, start raymarching immediately and end when we exit the clouds
+        t_start = 0.0;
         t_end = max(bottom_shell_dist, top_shell_dist); // Whichever is further along the ray
     } else if altitude < CLOUDS_BOTTOM_HEIGHT {
         // Below clouds
-        if bottom_shell_dist <= 0.0 { return vec4<f32>(0.0); }
-        t = bottom_shell_dist + dither * STEP_SIZE_OUTSIDE;
+        if bottom_shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
+        t_start = bottom_shell_dist;
         if top_shell_dist > 0.0 {
             t_end = top_shell_dist;
         } else {
@@ -127,8 +105,8 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
         }
     } else {
         // We are above the clouds, only raymarch if the intersects the sphere, start at the top_shell_dist and end at bottom_shell_dist
-        if top_shell_dist <= 0.0 { return vec4<f32>(0.0); }
-        t = top_shell_dist + dither * STEP_SIZE_OUTSIDE;
+        if top_shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
+        t_start = top_shell_dist;
         if bottom_shell_dist > 0.0 {
             t_end = bottom_shell_dist;
         } else {
@@ -136,92 +114,7 @@ fn render_clouds(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max
         }
     }
 
-    // Accumulation variables
-    var acc_color = vec3(0.0);
-    var acc_alpha = 0.0;
-    var transmittance = 1.0;
-    var steps_outside_cloud = 0;
-
-    // Start raymarching
-    for (var i = 0; i < MAX_STEPS; i += 1) {
-        if t >= t_end || acc_alpha >= ALPHA_THRESHOLD || t >= FADE_END_DISTANCE {
-            break;
-        }
-
-        // Scale step size based on distance from camera
-        var step_scaler = 1.0;
-        if t > STEP_SCALING_START {
-            step_scaler = 1.0 + smoothstep(STEP_SCALING_START, STEP_SCALING_END, t) * STEP_SCALING_MAX;
-        }
-        // Reduce scaling when close to surfaces
-        let close_threshold = STEP_SIZE_OUTSIDE * step_scaler;
-        let distance_left = t_max - t;
-        if distance_left < close_threshold {
-            let norm = clamp(distance_left / close_threshold, 0.0, 1.0);
-            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
-        }
-        var step = STEP_SIZE_OUTSIDE * step_scaler;
-
-        // Sample the cloud
-        let pos = ro + rd * (t + dither * step);
-        let step_density = sample_clouds(pos, atmosphere, t, time, false, linear_sampler);
-
-        // Adjust t to effectively "backtrack" and take smaller steps when entering a cloud
-        if step_density > 0.0 {
-            if steps_outside_cloud != 0 {
-                // First step into the cloud;
-                steps_outside_cloud = 0;
-                t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * step_scaler, 0.0);
-                continue;
-            }
-        } else {
-            steps_outside_cloud += 1;
-        }
-
-        if step_density > 0.0 {
-            step = STEP_SIZE_INSIDE * step_scaler;
-
-            let step_transmittance = exp(-DENSITY * step_density * step);
-            let alpha_step = (1.0 - step_transmittance);
-
-            // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = pos;
-            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_clouds(lightmarch_pos, atmosphere, t, time, true, linear_sampler);
-            }
-            // Take a single distant sample
-            lightmarch_pos += atmosphere.sun_dir * LIGHT_STEP_SIZE * 18.0;
-            let lheight_fraction = get_height_fraction(lightmarch_pos.y);
-            density_sunwards += pow(sample_clouds(lightmarch_pos, atmosphere, t, time, true, linear_sampler), (1.0 - lheight_fraction) * 0.8 + 0.5);
-
-            // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-            let beers_total = max(beers, beers2);
-
-			// Compute in-scattering
-            let height_fraction = get_height_fraction(pos.y);
-            let aur_ambient = mix(atmosphere.ground, vec3(1.0), pow(height_fraction, 0.5));
-            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
-            let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
-
-            // Compute emission, aur color if low altitude
-            let emission = AMBIENT_AUR_COLOR * max((1.0 - height_fraction) - 0.5, 0.0) * 0.0005 * step;
-
-            acc_alpha += alpha_step * (1.0 - acc_alpha);
-            acc_color += in_scattering * transmittance * alpha_step + emission;
-
-            transmittance *= step_transmittance;
-        }
-
-        t += step;
-    }
-
-    acc_alpha = min(acc_alpha * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-
-    return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    return vec2<f32>(t_start, t_end);
 }
 
 fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {

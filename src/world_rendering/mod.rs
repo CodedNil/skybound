@@ -43,6 +43,7 @@ impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
         load_shader_library!(app, "shaders/functions.wgsl");
         load_shader_library!(app, "shaders/sky.wgsl");
+        load_shader_library!(app, "shaders/raymarch.wgsl");
         load_shader_library!(app, "shaders/clouds.wgsl");
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");

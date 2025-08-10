@@ -1,7 +1,8 @@
 #define_import_path skybound::poles
+#import skybound::sky::AtmosphereData
 
-const POLE_WIDTH: f32 = 10000.0; // Cylinder radius
-const POLE_COLOR: vec3<f32> = vec3(0.0, 0.5, 1.0); // Blue
+const POLE_WIDTH: f32 = 10000.0;
+const ATMOSPHERE_HEIGHT: f32 = 400000;
 
 // Rotate vector v by quaternion q = (xyz, w)
 fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
@@ -10,47 +11,50 @@ fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     return v + 2.0 * (q.w * uv + cross(u, uv));
 }
 
-// Ray–infinite‐cylinder intersection
-// returns t > 0 if hit, else -1
-fn intersect_cylinder(ro: vec3<f32>, rd: vec3<f32>, center: vec3<f32>, axis: vec3<f32>, radius: f32) -> f32 {
+struct PolesSample {
+    density: f32,
+    color: vec3<f32>,
+    emission: vec3<f32>,
+}
+fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> PolesSample {
+    var sample: PolesSample;
+    sample.density = 1.0;
+    sample.color = vec3(0.0, 0.5, 1.0);
+
+    // Make it more intense at the top of the atmosphere
+    let atmosphere_dist = smoothstep(5000.0, 100.0, abs(pos.y - ATMOSPHERE_HEIGHT));
+    if atmosphere_dist > 0.0 {
+        sample.color += atmosphere_dist;
+    }
+
+    sample.emission = sample.color;
+    return sample;
+}
+
+// Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
+fn poles_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
+    let center = ro - vec3<f32>(0.0, atmosphere.planet_radius, 0.0);
+    let axis = normalize(quat_rotate(atmosphere.planet_rotation, vec3<f32>(0.0, 1.0, 0.0)));
+
     let oc = ro - center;
     let ad = dot(axis, rd);
     let ao = dot(axis, oc);
     let a = 1.0 - ad * ad;
     let b = 2.0 * (dot(oc, rd) - ao * ad);
-    let c = dot(oc, oc) - ao * ao - radius * radius;
+    let c = dot(oc, oc) - ao * ao - POLE_WIDTH * POLE_WIDTH;
+
     let disc = b * b - 4.0 * a * c;
-    if disc < 0.0 {
-        return -1.0;
-    }
-    let t0 = (-b - sqrt(disc)) / (2.0 * a);
-    if t0 <= 0.0 {
-        return -1.0;
-    }
-    return t0;
-}
+    if disc < 0.0 || a == 0.0 { return vec2<f32>(t_max, 0.0); }
 
-fn render_poles(ro: vec3<f32>, rd: vec3<f32>, planet_rot: vec4<f32>, planet_center: vec3<f32>, planet_radius: f32) -> vec4<f32> {
-    let center = ro - vec3<f32>(0.0, planet_radius, 0.0);
+    let s = sqrt(disc);
+    let t0 = (-b - s) / (2.0 * a);
+    let t1 = (-b + s) / (2.0 * a);
 
-    // Rotate the Y‐axis by the planet’s quaternion to get the pole‐axis
-    let axis = normalize(quat_rotate(planet_rot, vec3<f32>(0.0, 1.0, 0.0)));
+    // Ensure t0 ≤ t1
+    let entry = min(t0, t1);
+    let exit  = max(t0, t1);
 
-    let t = intersect_cylinder(ro, rd, center, axis, POLE_WIDTH);
-    if t < 0.0 {
-        return vec4<f32>(0.0);
-    }
+    if exit <= 0.0 { return vec2<f32>(t_max, 0.0); }
 
-    // Clamp to above horizon only
-    let p = ro + rd * t;
-    if length(p - planet_center) < planet_radius {
-        return vec4<f32>(0.0);
-    }
-
-    // Compute a soft‐edge alpha via an SDF & smoothstep
-    let proj = center + axis * dot(p - center, axis);
-    let sdf = length(p - proj) - POLE_WIDTH;
-    let alpha = 1.0 - smoothstep(0.0, POLE_WIDTH * 0.5, sdf);
-
-    return vec4<f32>(POLE_COLOR, alpha);
+    return vec2<f32>(entry, exit);
 }

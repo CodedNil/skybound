@@ -1,12 +1,5 @@
-new raymarching setup, first gather the entry and exit points of each separate volume
-then do a single raymarch which jumps ahead if not inside any volume
-for each step it queries each volume its inside for a colour plus alpha, these would include shading, it merges those
-though it will only do the light_march once per step max, as a shared shadow variable
-try to not have max_steps and let it take as many steps as it needs, would need to fade quality to make that perform well
-and each step it asks each for a step size and takes a minimum
-
 rust_gpu then have the raymarch code shared, do a raymarch from fixed position on cpu and draw gizmos to debug step size etc
-
+remove the base geometry, use sdfs instead, remove shadows etc from scene
 
 
 atmosphere:
