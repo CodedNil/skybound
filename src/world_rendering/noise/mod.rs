@@ -36,7 +36,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         depth,
         TextureFormat::Rgba8Unorm,
         || {
-            let perlinworley = spread(&perlin_3d(size, depth, 5, 0.5, Vec2::new(16.0, 8.0), 1.5))
+            let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(6.0, 3.0), 1.5))
                 .iter()
                 .zip(worley_3d(size, depth, 16.0, 2.0, true))
                 .map(|(&perlin, worley)| map_range(perlin, 0.0, 1.0, worley, 1.0))
@@ -127,7 +127,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
     let fog_texture =
         load_or_generate_texture("fog_texture", size, size, TextureFormat::Rg8Unorm, || {
             let fog1 = spread(&perlin_3d(size, size, 6, 0.1, Vec2::new(18.0, 12.0), 1.0));
-            let fog2 = spread(&simplex_3d(size, size, 12, 0.4, 6.0, 1.0));
+            let fog2 = spread(&simplex_3d(size, size, 12, 0.4, Vec2::new(6.0, 4.0), 1.0));
 
             save_noise_layer(&fog1, "fog1.png", size);
             save_noise_layer(&fog2, "fog2.png", size);

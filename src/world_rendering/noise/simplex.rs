@@ -1,4 +1,4 @@
-use bevy::math::{IVec3, Vec3A};
+use bevy::math::{IVec3, Vec2, Vec3A};
 use rayon::prelude::*;
 
 // Generate a 3D Simplex Noise Texture
@@ -7,9 +7,10 @@ pub fn simplex_3d(
     depth: usize,
     octaves: usize,
     gain: f32,
-    freq: f32,
+    freq: Vec2,
     gamma: f32,
 ) -> Vec<f32> {
+    let freq = Vec3A::new(freq.x, freq.x, freq.y);
     (0..(size * size * depth))
         .into_par_iter()
         .map(|i| {
@@ -35,7 +36,7 @@ pub fn simplex_3d(
 }
 
 // FBM Simplex Noise
-fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: f32, gain: f32) -> f32 {
+fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
