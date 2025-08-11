@@ -394,7 +394,7 @@ fn setup_volumetric_clouds_pipeline(
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
-                texture_3d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
             ),
         ),

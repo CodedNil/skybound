@@ -42,13 +42,49 @@ fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32) -> f32 {
     let mut norm = 0.0;
 
     for _ in 0..octaves {
-        total += simplex3(pos * freq) * amp;
+        total += simplex3_seamless(pos * freq, freq) * amp;
         norm += amp;
         amp *= gain;
         freq *= 2.0;
     }
 
     total / norm
+}
+
+fn simplex3_seamless(pos: Vec3A, period: Vec3A) -> f32 {
+    let fpos = (pos % period) / period;
+    let wx = fpos.x;
+    let wy = fpos.y;
+    let wz = fpos.z;
+
+    let p000 = simplex3(pos);
+    let p100 = simplex3(pos - Vec3A::new(period.x, 0.0, 0.0));
+    let p010 = simplex3(pos - Vec3A::new(0.0, period.y, 0.0));
+    let p110 = simplex3(pos - Vec3A::new(period.x, period.y, 0.0));
+
+    let p001 = simplex3(pos - Vec3A::new(0.0, 0.0, period.z));
+    let p101 = simplex3(pos - Vec3A::new(period.x, 0.0, period.z));
+    let p011 = simplex3(pos - Vec3A::new(0.0, period.y, period.z));
+    let p111 = simplex3(pos - Vec3A::new(period.x, period.y, period.z));
+
+    let w000 = (1.0 - wx) * (1.0 - wy) * (1.0 - wz);
+    let w100 = wx * (1.0 - wy) * (1.0 - wz);
+    let w010 = (1.0 - wx) * wy * (1.0 - wz);
+    let w110 = wx * wy * (1.0 - wz);
+
+    let w001 = (1.0 - wx) * (1.0 - wy) * wz;
+    let w101 = wx * (1.0 - wy) * wz;
+    let w011 = (1.0 - wx) * wy * wz;
+    let w111 = wx * wy * wz;
+
+    p000 * w000
+        + p100 * w100
+        + p010 * w010
+        + p110 * w110
+        + p001 * w001
+        + p101 * w101
+        + p011 * w011
+        + p111 * w111
 }
 
 // https://github.com/Razaekel/noise-rs/blob/develop/src/core/super_simplex.rs

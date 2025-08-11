@@ -5,9 +5,9 @@
 @group(0) @binding(3) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(4) var cloud_details_texture: texture_3d<f32>;
 @group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(6) var cloud_weather_texture: texture_3d<f32>;
+@group(0) @binding(6) var cloud_weather_texture: texture_2d<f32>;
 
-const BASE_SCALE = 0.001;
+const BASE_SCALE = 0.003;
 const BASE_TIME = 0.01;
 
 // Base Parameters
@@ -19,7 +19,7 @@ const WEATHER_NOISE_SCALE: f32 = 0.001 * BASE_SCALE;
 const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.02 * BASE_TIME; // Weather wind for weather shape
 
 // Detail Parameters
-const DETAIL_NOISE_SCALE: f32 = 1.0 * BASE_SCALE;
+const DETAIL_NOISE_SCALE: f32 = 0.3 * BASE_SCALE;
 const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, -1.0, 0.0) * 0.1 * BASE_TIME; // Details move faster
 
 // Curl Parameters
@@ -37,6 +37,12 @@ const CLOUD_LAYER_HEIGHTS = array<u32, CLOUD_TOTAL_LAYERS>(
     1500, 1000, 1000, 800,
     600, 800, 800, 1000
 );
+const CLOUD_LAYER_SCALES = array<f32, CLOUD_TOTAL_LAYERS>(
+    0.35, 0.3, 0.25, 0.3,
+    0.2, 0.15, 0.15, 0.2,
+    0.15, 0.1, 0.1, 0.08,
+    0.06, 0.08, 0.08, 0.1
+);
 
 
 fn get_height_fraction(altitude: f32) -> f32 {
@@ -45,49 +51,55 @@ fn get_height_fraction(altitude: f32) -> f32 {
 
 // Gets the current cloud layers index, bottom and top height
 struct CloudLayer {
-    index: u32,
+    index: f32,
+    layer: f32,
     bottom: f32,
     top: f32,
+    scale: f32
 }
 fn get_cloud_layer(altitude: f32) -> CloudLayer {
     var bottom: f32 = CLOUDS_BOTTOM_HEIGHT;
     for (var i = 0u; i < CLOUD_TOTAL_LAYERS; i++) {
         let top = bottom + f32(CLOUD_LAYER_HEIGHTS[i]);
         if (altitude >= bottom && altitude <= top) {
-            return CloudLayer(i, bottom, top);
+            return CloudLayer(f32(i), f32(i) / f32(CLOUD_TOTAL_LAYERS), bottom, top, CLOUD_LAYER_SCALES[i]);
         }
         bottom = top + 500.0;
     }
-    return CloudLayer(0u, 0.0, 0.0); // Altitude out of range
+    return CloudLayer(); // Altitude out of range
 }
 
 fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
-    // --- Height Gradient ---
+    // --- Weather Parameters ---
     var cloud_layer = get_cloud_layer(pos.y);
+    let weather_pos_2d = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
+    let weather_noise = sample_weather(weather_pos_2d, linear_sampler);
+    let cloud_type_a = weather_noise.b;
+    let cloud_type_b = weather_noise.a;
+    var weather_coverage = mix(weather_noise.r, weather_noise.g, cloud_type_a) + mix(weather_noise.r, weather_noise.g, cloud_type_b) * 0.5;
+    if weather_coverage <= 0.0 { return 0.0; }
+
+    // --- Height Gradient ---
     if cloud_layer.top == 0.0 { return 0.0; }
     let gradient = vec4<f32>(
         cloud_layer.bottom,
+        mix(cloud_layer.bottom, cloud_layer.top, 0.1),
         mix(cloud_layer.bottom, cloud_layer.top, 0.2),
-        mix(cloud_layer.bottom, cloud_layer.top, 0.6),
         cloud_layer.top
     );
     let height_gradient = smoothstep(gradient.x, gradient.y, pos.y) - smoothstep(gradient.z, gradient.w, pos.y);
     let height_fraction = smoothstep(gradient.x, gradient.w, pos.y);
+    // Decide whether the clouds should be weight towards the highest or lowest altitudes
+    let cloud_layer_coverage_a = 1.0 - smoothstep(0.0, 0.6, distance(cloud_type_a, cloud_layer.layer));
+    let cloud_layer_coverage_b = 1.0 - smoothstep(0.0, 0.4, distance(cloud_type_b, cloud_layer.layer));
+    weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b) * 0.5;
 
     // --- Base Cloud Shape ---
-    let base_scaled_pos = pos * BASE_NOISE_SCALE + time * WIND_DIRECTION_BASE;
-    let base_noise = sample_base(base_scaled_pos, linear_sampler);
-    let fbm = dot(base_noise.gba, vec3(0.625, 0.25, 0.125));
-    var base_cloud = remap(base_noise.r, -(1.0 - fbm), 1.0, 0.0, 1.0);
-    if base_cloud <= 0.0 { return 0.0; }
-
-    let weather_pos_2d = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
-    let weather_pos = vec3<f32>(weather_pos_2d.x, f32(cloud_layer.index) / f32(CLOUD_TOTAL_LAYERS), weather_pos_2d.y);
-    let weather_noise = sample_weather(weather_pos, linear_sampler);
-    let weather_coverage = remap(pow(weather_noise.r, 0.5), 0.0, 1.0, 0.0, 0.5);
+    let base_scaled_pos = pos * BASE_NOISE_SCALE * cloud_layer.scale + time * WIND_DIRECTION_BASE;
+    var base_cloud = sample_base(base_scaled_pos, linear_sampler);
 
     base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
-    base_cloud *= weather_noise.r;
+    base_cloud *= weather_coverage;
     if base_cloud <= 0.0 { return 0.0; }
 
 	// --- High Frequency Detail with Curl Distortion ---
@@ -97,8 +109,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) 
     let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec + detail_curl_distortion;
 
     let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
-    var hfbm = detail_noise.r * 0.625 + detail_noise.g * 0.25 + detail_noise.b * 0.125;
-    hfbm = mix(hfbm, 1.0 - hfbm, clamp(height_fraction * 4.0, 0.0, 1.0));
+    let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(height_fraction * 4.0, 0.0, 1.0));
     base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
 
     return clamp(base_cloud, 0.0, 1.0);
@@ -125,18 +136,18 @@ fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereDat
     return vec2<f32>(top_shell_dist, select(t_max, bottom_shell_dist, bottom_shell_dist > 0.0));
 }
 
-fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> vec4<f32> {
-    return textureSample(cloud_base_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y));
+fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> f32 {
+    return textureSample(cloud_base_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).r;
 }
 
-fn sample_details(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(cloud_details_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).rgb;
+fn sample_details(pos: vec3<f32>, linear_sampler: sampler) -> f32 {
+    return textureSample(cloud_details_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).r;
 }
 
 fn sample_motion(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
     return textureSample(cloud_motion_texture, linear_sampler, pos).rgb;
 }
 
-fn sample_weather(pos: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(cloud_weather_texture, linear_sampler, pos).rgb;
+fn sample_weather(pos: vec2<f32>, linear_sampler: sampler) -> vec4<f32> {
+    return textureSample(cloud_weather_texture, linear_sampler, pos);
 }

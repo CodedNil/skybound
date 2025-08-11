@@ -1,7 +1,11 @@
-vary cloud base scale, weather scale, weather position (slightly) - based on cloud layer
-vary cloud layer height by random weather.g for an offset position
-make weather map frequency lower for height so i dont need to sample only a small portion
-make sure clouds have shadows visible from further away, and cast shadows between layers (loosely sample the layer above)
+fix shadowing with froxels
+give the layers random offsets on the height and positioning so they dont look so flat
+make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
+much less dense mostly upper atmosphere clouds on the equator
+
+
+froxels as compute shader, each cell march to sun pos which is a fixed position above pole, and down to aur
+GPU benchmark
 
 
 rust_gpu then have the raymarch code shared, do a raymarch from fixed position on cpu and draw gizmos to debug step size etc
@@ -20,11 +24,9 @@ atmospheric distance fog
 
 
 froxels:
-pass lights emission
+pass lights emission, raymarched so it passes through volumes nicely
 do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
-colour the sky and pass that through as ambient colour, distance fog so they fade out
 simple froxel shadowing, so i can do larger scale shadowing
-cpu side clouds_sample.rs which is a replica of the clouds density equation so i can do raymarches on cpu, from light source to froxel cell for example
 
 
 clouds:
@@ -50,13 +52,14 @@ cumulonimbus clouds, huge with anvils, use worley noise to position them as sepa
 
 do the world rendering:
 better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
-Auroras and stars https://www.shadertoy.com/view/XtGGRt
+auroras and stars https://www.shadertoy.com/view/XtGGRt
 
 
 aur fog:
 give fog shadows from the clouds
 bad lighting at night, lighting is green at night
 make it wildly more turbulent around the lightning flashes
+fix pattern on aur fog
 
 
 misc:
