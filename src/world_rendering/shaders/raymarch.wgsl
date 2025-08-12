@@ -145,6 +145,11 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         let main_sample = sample_volume(pos, t, time, volumes_inside, false, linear_sampler);
         let step_density = main_sample.density;
 
+        // Get data from froxels
+        let froxels_data = get_froxel_data(pos, view);
+        // let step_density = froxels_data.density;
+        // let density_sunwards = froxels_data.sun_light;
+
         // Adjust t to effectively backtrack and take smaller steps when entering density
         if step_density > 0.0 {
             if steps_outside != 0 {
@@ -163,19 +168,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let step_transmittance = exp(-DENSITY * step_density * step);
             let alpha_step = (1.0 - step_transmittance);
 
-            // Get data from froxels
-            let froxels_data = get_froxel_data(pos, view);
-            let density_sunwards = froxels_data.sun_light;
-
             // Lightmarching for self-shadowing
-            // var density_sunwards = max(step_density, 0.0);
-            // var lightmarch_pos = pos;
-            // var light_altitude: f32;
-            // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-            //     lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-            //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
-            // }
+            var density_sunwards = max(step_density, 0.0);
+            var lightmarch_pos = pos;
+            var light_altitude: f32;
+            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+                lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
+                light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
+                density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
+            }
 
             // Captures the direct lighting from the sun
             let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);

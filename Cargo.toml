@@ -44,6 +44,7 @@ cast_possible_truncation = "allow"
 many_single_char_names = "allow"
 inline_always = "allow"
 too-many-lines = "allow"
+too-many-arguments = "allow"
 
 [profile.dev]
 opt-level = 1

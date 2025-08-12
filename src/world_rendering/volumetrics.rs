@@ -5,6 +5,7 @@ use crate::{
 use bevy::{
     asset::load_embedded_asset,
     core_pipeline::{FullscreenShader, prepass::ViewPrepassTextures},
+    diagnostic::FrameCount,
     ecs::query::QueryItem,
     prelude::*,
     render::{
@@ -30,12 +31,18 @@ use bevy::{
 
 #[derive(Clone, ShaderType)]
 pub struct CloudsViewUniform {
-    time: f32, // Time since startup
+    time: f32,
+    frame_count: u32,
+
+    clip_from_world: Mat4,
     world_from_clip: Mat4,
     world_from_view: Mat4,
     view_from_world: Mat4,
-    clip_from_world: Mat4,
+
+    clip_from_view: Mat4,
+    view_from_clip: Mat4,
     world_position: Vec3,
+
     planet_rotation: Vec4,
     planet_center: Vec3,
     planet_radius: f32,
@@ -104,6 +111,7 @@ pub fn prepare_clouds_view_uniforms(
     mut view_uniforms: ResMut<CloudsViewUniforms>,
     views: Query<(Entity, &ExtractedView)>,
     time: Res<Time>,
+    frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
 ) {
     let view_iter = views.iter();
@@ -128,11 +136,17 @@ pub fn prepare_clouds_view_uniforms(
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
+                frame_count: frame_count.0,
+
+                clip_from_world,
                 world_from_clip,
                 world_from_view,
                 view_from_world,
-                clip_from_world,
+
+                clip_from_view,
+                view_from_clip,
                 world_position,
+
                 planet_rotation: data.planet_rotation,
                 planet_center: Vec3::new(world_position.x, -data.planet_radius, world_position.z),
                 planet_radius: data.planet_radius,

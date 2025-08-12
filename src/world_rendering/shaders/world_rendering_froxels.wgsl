@@ -51,11 +51,14 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
 
 @compute @workgroup_size(8, 8, 8)
 fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
-    let view_pos_o = vec3<f32>(id) / vec3<f32>(RESOLUTION); // View space coordinates
-    let view_pos = vec3<f32>(view_pos_o.x, view_pos_o.z, view_pos_o.y); // Y up
+    if (id.x >= RESOLUTION.x || id.y >= RESOLUTION.y || id.z >= RESOLUTION.z) { return; }
 
-    let wp4 = view.world_from_view * vec4<f32>(view_pos, 1.0);
-    let pos = wp4.xyz / wp4.w; // World space coordinates
+    // Convert to world space
+    let uv = vec3<f32>(id) / vec3<f32>(RESOLUTION);
+    let ndc = uv_to_ndc(uv.xy);
+    let ndc_depth = view_z_to_depth_ndc(uv.z, view.clip_from_view);
+    let pos = position_ndc_to_world(vec3<f32>(ndc, ndc_depth), view.world_from_clip);
+    let t = distance(view.world_position, pos);
 
     // Sample density
     let altitude = distance(pos, view.planet_center) - view.planet_radius;
@@ -63,7 +66,7 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     volumes_inside.clouds = true;
     volumes_inside.fog = true;
     volumes_inside.poles = true;
-    let density = sample_volume(pos, view_pos.z, view.time, volumes_inside);
+    let density = sample_volume(pos, t, view.time, volumes_inside);
 
     // Lightmarching for self-shadowing
     var density_sunwards = max(density, 0.0);
@@ -72,7 +75,7 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
         lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
         light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-        density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), view_pos.z, view.time, volumes_inside);
+        density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, view.time, volumes_inside);
     }
 
     // Captures the direct lighting from the sun
@@ -80,5 +83,27 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
     let beers_total = max(beers, beers2);
 
-    textureStore(output, vec3<i32>(id), vec4<f32>(density, beers_total, 0.0, 0.0));
+    // textureStore(output, vec3<i32>(id), vec4<f32>(density, beers_total, 0.0, 0.0));
+    textureStore(output, vec3<i32>(id), vec4<f32>(pos.x * 0.001, pos.y * 0.001, pos.z * 0.001, 0.0));
+}
+
+/// Convert a ndc space position to world space
+fn position_ndc_to_world(ndc_pos: vec3<f32>, world_from_clip: mat4x4<f32>) -> vec3<f32> {
+    let world_pos = world_from_clip * vec4(ndc_pos, 1.0);
+    return world_pos.xyz / world_pos.w;
+}
+
+/// Retrieve the perspective camera near clipping plane
+fn perspective_camera_near(clip_from_view: mat4x4<f32>) -> f32 {
+    return clip_from_view[3][2];
+}
+
+/// Convert linear view z to ndc depth.
+fn view_z_to_depth_ndc(view_z: f32, clip_from_view: mat4x4<f32>) -> f32 {
+    return -perspective_camera_near(clip_from_view) / view_z;
+}
+
+/// Convert ndc space xy coordinate [-1.0 .. 1.0] to uv [0.0 .. 1.0]
+fn uv_to_ndc(uv: vec2<f32>) -> vec2<f32> {
+    return uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
 }

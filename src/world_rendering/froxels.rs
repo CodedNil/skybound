@@ -24,7 +24,7 @@ use bevy::{
     },
 };
 
-const RESOLUTION: [u32; 3] = [128, 80, 512];
+const RESOLUTION: UVec3 = UVec3::new(128, 80, 512);
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct FroxelsTexture {
@@ -32,14 +32,14 @@ pub struct FroxelsTexture {
 }
 
 pub fn setup_froxels_texture(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let total_bytes = (RESOLUTION[0] * RESOLUTION[1] * RESOLUTION[2] * 4) as usize;
+    let total_bytes = (RESOLUTION.x * RESOLUTION.y * RESOLUTION.z * 4) as usize;
     let data = vec![0u8; total_bytes];
 
     let mut image = Image::new(
         Extent3d {
-            width: RESOLUTION[0],
-            height: RESOLUTION[1],
-            depth_or_array_layers: RESOLUTION[2],
+            width: RESOLUTION.x,
+            height: RESOLUTION.y,
+            depth_or_array_layers: RESOLUTION.z,
         },
         TextureDimension::D3,
         data,
