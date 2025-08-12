@@ -1,8 +1,9 @@
 #define_import_path skybound::raymarch
+#import skybound::utils::{AtmosphereData, View}
+#import skybound::froxels::get_froxel_data
 #import skybound::clouds::{clouds_raymarch_entry, sample_clouds, get_height_fraction}
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
-#import skybound::sky::AtmosphereData
 
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
@@ -67,7 +68,7 @@ struct VolumesInside {
     fog: bool,
     poles: bool,
 }
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
 
     // Get entry exit points for each volume
@@ -155,15 +156,19 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
             let step_transmittance = exp(-DENSITY * step_density * step);
             let alpha_step = (1.0 - step_transmittance);
 
+            // Get data from froxels
+            let froxels_data = get_froxel_data(pos, view);
+            let density_sunwards = froxels_data.sun_light;
+
             // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = pos;
-            var light_altitude: f32;
-            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-                light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
-                density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
-            }
+            // var density_sunwards = max(step_density, 0.0);
+            // var lightmarch_pos = pos;
+            // var light_altitude: f32;
+            // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+            //     lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
+            //     light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
+            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
+            // }
 
             // Captures the direct lighting from the sun
             let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);

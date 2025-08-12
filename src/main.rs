@@ -1,9 +1,7 @@
 #![feature(portable_simd, default_field_values)]
 
-use bevy::{
-    pbr::{NotShadowCaster, light_consts::lux},
-    prelude::*,
-};
+use bevy::light::NotShadowCaster;
+use bevy::prelude::*;
 
 mod world_rendering;
 use crate::world_rendering::WorldRenderingPlugin;
@@ -19,10 +17,6 @@ use crate::world::WorldPlugin;
 
 fn main() {
     App::new()
-        .insert_resource(AmbientLight {
-            brightness: lux::AMBIENT_DAYLIGHT,
-            ..default()
-        })
         .add_plugins((
             DefaultPlugins,
             WorldRenderingPlugin,

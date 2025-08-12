@@ -1,21 +1,10 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::functions::blue_noise
+#import skybound::utils::{View, AtmosphereData, blue_noise}
 #import skybound::raymarch::raymarch
-#import skybound::sky::{AtmosphereData, render_sky}
+#import skybound::sky::render_sky
 #import skybound::poles::render_poles
 
 @group(0) @binding(0) var<uniform> view: View;
-struct View {
-    time: f32, // Time since startup
-    world_from_clip: mat4x4<f32>,
-    world_position: vec3<f32>,
-    planet_rotation: vec4<f32>,
-    planet_radius: f32,
-    camera_offset: vec3<f32>,
-    latitude: f32,
-    longitude: f32,
-    sun_direction: vec3<f32>,
-};
 @group(0) @binding(1) var linear_sampler: sampler;
 @group(0) @binding(2) var depth_texture: texture_depth_2d;
 
@@ -79,7 +68,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Sample the volumes
-    let volumes_color: vec4<f32> = raymarch(ro, rd, atmosphere, t_max, dither, view.time, linear_sampler);
+    let volumes_color: vec4<f32> = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
     var acc_color: vec3<f32> = volumes_color.rgb;
     var acc_alpha: f32 = volumes_color.a;
 

@@ -1,8 +1,9 @@
 use crate::{
     world::{PLANET_RADIUS, WorldData},
-    world_rendering::noise,
+    world_rendering::{froxels::FroxelsTexture, noise::NoiseTextures},
 };
 use bevy::{
+    asset::load_embedded_asset,
     core_pipeline::{FullscreenShader, prepass::ViewPrepassTextures},
     ecs::query::QueryItem,
     prelude::*,
@@ -27,11 +28,12 @@ use bevy::{
     },
 };
 
-// --- Uniform Definition ---
 #[derive(Clone, ShaderType)]
-struct CloudsViewUniform {
+pub struct CloudsViewUniform {
     time: f32, // Time since startup
     world_from_clip: Mat4,
+    view_from_world: Mat4,
+    clip_from_world: Mat4,
     world_position: Vec3,
     planet_rotation: Vec4,
     planet_radius: f32,
@@ -43,7 +45,7 @@ struct CloudsViewUniform {
 
 #[derive(Resource)]
 pub struct CloudsViewUniforms {
-    uniforms: DynamicUniformBuffer<CloudsViewUniform>,
+    pub uniforms: DynamicUniformBuffer<CloudsViewUniform>,
 }
 
 impl FromWorld for CloudsViewUniforms {
@@ -62,7 +64,7 @@ impl FromWorld for CloudsViewUniforms {
 
 #[derive(Component)]
 pub struct CloudsViewUniformOffset {
-    offset: u32,
+    pub offset: u32,
 }
 
 #[derive(Resource, Default, ExtractResource, Clone)]
@@ -75,7 +77,6 @@ pub struct ExtractedViewData {
     sun_direction: Vec3,
 }
 
-// --- Systems (Render World) ---
 pub fn extract_clouds_view_uniform(
     mut commands: Commands,
     time: Extract<Res<Time>>,
@@ -114,12 +115,20 @@ pub fn prepare_clouds_view_uniforms(
         return;
     };
     for (entity, extracted_view) in &views {
-        let view_from_clip = extracted_view.clip_from_view.inverse();
+        let clip_from_view = extracted_view.clip_from_view;
+        let view_from_clip = clip_from_view.inverse();
         let world_from_view = extracted_view.world_from_view.to_matrix();
+        let view_from_world = world_from_view.inverse();
+        let clip_from_world = extracted_view
+            .clip_from_world
+            .unwrap_or_else(|| clip_from_view * view_from_world);
+        let world_from_clip = world_from_view * view_from_clip;
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
-                world_from_clip: world_from_view * view_from_clip,
+                world_from_clip,
+                view_from_world,
+                clip_from_world,
                 world_position: extracted_view.world_from_view.translation(),
                 planet_rotation: data.planet_rotation,
                 planet_radius: data.planet_radius,
@@ -139,7 +148,6 @@ pub struct CloudRenderTexture {
     pub sampler: Option<Sampler>,
 }
 
-/// Render world system: Manages the creation and resizing of the intermediate cloud render target.
 pub fn manage_textures(
     mut cloud_render_texture: ResMut<CloudRenderTexture>,
     render_device: Res<RenderDevice>,
@@ -188,17 +196,20 @@ pub fn manage_textures(
     }
 }
 
-// --- Volumetric Clouds Render Pipeline (Pass 1: Renders clouds to intermediate texture) ---
-
-/// Label for the volumetric clouds render graph node.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct VolumetricCloudsLabel;
+pub struct VolumetricsLabel;
 
-/// Render graph node for drawing volumetric clouds.
 #[derive(Default)]
-pub struct VolumetricCloudsNode;
+pub struct VolumetricsNode;
 
-impl ViewNode for VolumetricCloudsNode {
+#[derive(Resource)]
+struct VolumetricsPipeline {
+    layout: BindGroupLayout,
+    pipeline_id: CachedRenderPipelineId,
+    linear_sampler: Sampler,
+}
+
+impl ViewNode for VolumetricsNode {
     type ViewQuery = (
         &'static CloudsViewUniformOffset,
         &'static ViewPrepassTextures,
@@ -211,11 +222,12 @@ impl ViewNode for VolumetricCloudsNode {
         (view_uniform_offset, prepass_textures): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        let volumetric_clouds_pipeline = world.resource::<VolumetricCloudsPipeline>();
+        let volumetric_clouds_pipeline = world.resource::<VolumetricsPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
-        let noise_texture_handle = world.resource::<noise::NoiseTextures>();
+        let noise_texture_handle = world.resource::<NoiseTextures>();
+        let froxels_texture_handle = world.resource::<FroxelsTexture>();
 
         // Ensure the intermediate data is ready
         let (
@@ -224,6 +236,7 @@ impl ViewNode for VolumetricCloudsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
+            Some(froxels_texture),
             Some(base_noise),
             Some(detail_noise),
             Some(turbulence_noise),
@@ -235,6 +248,7 @@ impl ViewNode for VolumetricCloudsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
+            gpu_images.get(&froxels_texture_handle.handle),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
@@ -253,6 +267,8 @@ impl ViewNode for VolumetricCloudsNode {
                 view_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
+                &froxels_texture.texture_view,
+                &froxels_texture.sampler,
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
@@ -295,16 +311,7 @@ impl ViewNode for VolumetricCloudsNode {
     }
 }
 
-/// Resource holding the ID and layout for the volumetric clouds render pipeline.
-#[derive(Resource)]
-struct VolumetricCloudsPipeline {
-    layout: BindGroupLayout,
-    pipeline_id: CachedRenderPipelineId,
-    linear_sampler: Sampler,
-}
-
-/// Render world system: Sets up the pipeline for rendering volumetric clouds.
-pub fn setup_volumetric_clouds_pipeline(
+pub fn setup_volumetrics_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     asset_server: Res<AssetServer>,
@@ -330,6 +337,8 @@ pub fn setup_volumetric_clouds_pipeline(
                 uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                 sampler(SamplerBindingType::Filtering),    // Linear sampler
                 texture_depth_2d(),                        // Depth texture from prepass
+                texture_3d(TextureSampleType::Float { filterable: true }), // Froxels 3D texture
+                sampler(SamplerBindingType::Filtering),    // Froxels sampler
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
@@ -345,7 +354,7 @@ pub fn setup_volumetric_clouds_pipeline(
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
-            shader: asset_server.load("shaders/world_rendering.wgsl"), // Shader for cloud rendering
+            shader: load_embedded_asset!(asset_server.as_ref(), "shaders/world_rendering.wgsl"),
             targets: vec![Some(ColorTargetState {
                 format: TextureFormat::Rgba16Float,
                 blend: None,
@@ -355,7 +364,7 @@ pub fn setup_volumetric_clouds_pipeline(
         }),
         ..default()
     });
-    commands.insert_resource(VolumetricCloudsPipeline {
+    commands.insert_resource(VolumetricsPipeline {
         layout,
         pipeline_id,
         linear_sampler,

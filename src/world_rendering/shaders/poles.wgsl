@@ -1,5 +1,5 @@
 #define_import_path skybound::poles
-#import skybound::sky::AtmosphereData
+#import skybound::utils::AtmosphereData
 
 const POLE_WIDTH: f32 = 10000.0;
 const ATMOSPHERE_HEIGHT: f32 = 400000;

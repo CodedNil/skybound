@@ -1,4 +1,6 @@
+use crate::world_rendering::volumetrics::CloudRenderTexture;
 use bevy::{
+    asset::load_embedded_asset,
     core_pipeline::FullscreenShader,
     ecs::query::QueryItem,
     prelude::*,
@@ -17,20 +19,19 @@ use bevy::{
     },
 };
 
-use crate::world_rendering::volumetrics::CloudRenderTexture;
-
-// --- Volumetric Clouds Composite Render Pipeline (Pass 2: Composites clouds onto main scene) ---
-
-/// Label for the volumetric clouds composite render graph node.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct VolumetricCloudsCompositeLabel;
+pub struct CompositeLabel;
 
-/// Render graph node for compositing volumetric clouds onto the main view.
 #[derive(Default)]
-pub struct VolumetricCloudsCompositeNode;
+pub struct CompositeNode;
 
-impl ViewNode for VolumetricCloudsCompositeNode {
-    // Query for the main view target
+#[derive(Resource)]
+struct CompositePipeline {
+    layout: BindGroupLayout,
+    pipeline_id: CachedRenderPipelineId,
+}
+
+impl ViewNode for CompositeNode {
     type ViewQuery = &'static ViewTarget;
 
     fn run(
@@ -41,8 +42,7 @@ impl ViewNode for VolumetricCloudsCompositeNode {
         world: &World,
     ) -> Result<(), NodeRunError> {
         // Get necessary resources from the render world
-        let volumetric_clouds_composite_pipeline =
-            world.resource::<VolumetricCloudsCompositePipeline>();
+        let volumetric_clouds_composite_pipeline = world.resource::<CompositePipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
 
@@ -93,15 +93,7 @@ impl ViewNode for VolumetricCloudsCompositeNode {
     }
 }
 
-/// Resource holding the ID and layout for the volumetric clouds composite render pipeline.
-#[derive(Resource)]
-struct VolumetricCloudsCompositePipeline {
-    layout: BindGroupLayout,
-    pipeline_id: CachedRenderPipelineId,
-}
-
-/// Render world system: Sets up the pipeline for compositing volumetric clouds.
-pub fn setup_volumetric_clouds_composite_pipeline(
+pub fn setup_composite_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     asset_server: Res<AssetServer>,
@@ -127,7 +119,10 @@ pub fn setup_volumetric_clouds_composite_pipeline(
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
-            shader: asset_server.load("shaders/world_rendering_composite.wgsl"),
+            shader: load_embedded_asset!(
+                asset_server.as_ref(),
+                "shaders/world_rendering_composite.wgsl"
+            ),
             targets: vec![Some(ColorTargetState {
                 format: TextureFormat::Rgba16Float,
                 blend: Some(BlendState::ALPHA_BLENDING),
@@ -137,7 +132,7 @@ pub fn setup_volumetric_clouds_composite_pipeline(
         }),
         ..default()
     });
-    commands.insert_resource(VolumetricCloudsCompositePipeline {
+    commands.insert_resource(CompositePipeline {
         layout,
         pipeline_id,
     });
