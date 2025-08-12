@@ -1,11 +1,6 @@
 #define_import_path skybound::clouds
 #import skybound::utils::{View, remap, intersect_sphere}
 
-@group(0) @binding(5) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(6) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(7) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(8) var cloud_weather_texture: texture_2d<f32>;
-
 const BASE_SCALE = 0.003;
 const BASE_TIME = 0.01;
 
@@ -68,11 +63,11 @@ fn get_cloud_layer(altitude: f32) -> CloudLayer {
     return CloudLayer(); // Altitude out of range
 }
 
-fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
+fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
     // --- Weather Parameters ---
     var cloud_layer = get_cloud_layer(pos.y);
     let weather_pos_2d = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
-    let weather_noise = sample_weather(weather_pos_2d, linear_sampler);
+    let weather_noise = textureSampleLevel(weather_texture, linear_sampler, weather_pos_2d, 0.0);
     let cloud_type_a = weather_noise.b;
     let cloud_type_b = weather_noise.a;
     var weather_coverage = mix(weather_noise.r, weather_noise.g, cloud_type_a) + mix(weather_noise.r, weather_noise.g, cloud_type_b) * 0.5;
@@ -95,19 +90,19 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) 
 
     // --- Base Cloud Shape ---
     let base_scaled_pos = pos * BASE_NOISE_SCALE * cloud_layer.scale + time * WIND_DIRECTION_BASE;
-    var base_cloud = sample_base(base_scaled_pos, linear_sampler);
+    var base_cloud = textureSampleLevel(base_texture, linear_sampler, vec3<f32>(base_scaled_pos.x, base_scaled_pos.z, base_scaled_pos.y), 0.0).r;
 
     base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
     base_cloud *= weather_coverage;
     if base_cloud <= 0.0 { return 0.0; }
 
 	// --- High Frequency Detail with Curl Distortion ---
-    let motion_sample = sample_motion(pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, linear_sampler).rgb - 0.5;
+    let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;
     let detail_curl_distortion = motion_sample * CURL_STRENGTH;
     let detail_time_vec = time * WIND_DIRECTION_DETAIL;
     let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec + detail_curl_distortion;
 
-    let detail_noise = sample_details(detail_scaled_pos, linear_sampler);
+    let detail_noise = textureSampleLevel(details_texture, linear_sampler, vec3<f32>(detail_scaled_pos.x, detail_scaled_pos.z, detail_scaled_pos.y), 0.0).r;
     let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(height_fraction * 4.0, 0.0, 1.0));
     base_cloud = remap(base_cloud, hfbm * 0.4 * height_fraction, 1.0, 0.0, 1.0);
 
@@ -133,20 +128,4 @@ fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -
     // We are above the clouds, only raymarch if the intersects the sphere, start at the top_shell_dist and end at bottom_shell_dist
     if top_shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
     return vec2<f32>(top_shell_dist, select(t_max, bottom_shell_dist, bottom_shell_dist > 0.0));
-}
-
-fn sample_base(pos: vec3<f32>, linear_sampler: sampler) -> f32 {
-    return textureSample(cloud_base_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).r;
-}
-
-fn sample_details(pos: vec3<f32>, linear_sampler: sampler) -> f32 {
-    return textureSample(cloud_details_texture, linear_sampler, vec3<f32>(pos.x, pos.z, pos.y)).r;
-}
-
-fn sample_motion(pos: vec2<f32>, linear_sampler: sampler) -> vec3<f32> {
-    return textureSample(cloud_motion_texture, linear_sampler, pos).rgb;
-}
-
-fn sample_weather(pos: vec2<f32>, linear_sampler: sampler) -> vec4<f32> {
-    return textureSample(cloud_weather_texture, linear_sampler, pos);
 }

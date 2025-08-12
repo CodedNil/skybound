@@ -1,9 +1,16 @@
 #define_import_path skybound::raymarch
 #import skybound::utils::{AtmosphereData, View}
 #import skybound::froxels::get_froxel_data
-#import skybound::clouds::{clouds_raymarch_entry, sample_clouds, get_height_fraction}
+#import skybound::clouds::{clouds_raymarch_entry, sample_clouds}
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
+
+@group(0) @binding(5) var cloud_base_texture: texture_3d<f32>;
+@group(0) @binding(6) var cloud_details_texture: texture_3d<f32>;
+@group(0) @binding(7) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(8) var cloud_weather_texture: texture_2d<f32>;
+
+@group(0) @binding(9) var fog_noise_texture: texture_3d<f32>;
 
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
@@ -34,7 +41,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
     var sample: VolumeSample;
 
     if volumes_inside.fog {
-        let fog_sample = sample_fog(pos, dist, time, only_density, linear_sampler);
+        let fog_sample = sample_fog(pos, dist, time, only_density, fog_noise_texture, linear_sampler);
         if fog_sample.density > 0.0 {
             sample.density = fog_sample.density;
             sample.color = fog_sample.color;
@@ -43,7 +50,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
     }
 
     if volumes_inside.clouds {
-        let cloud_sample = sample_clouds(pos, dist, time, linear_sampler);
+        let cloud_sample = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
         if cloud_sample > 0.0 {
             sample.density += cloud_sample;
             sample.color = vec3<f32>(1.0);

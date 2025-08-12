@@ -1,3 +1,7 @@
+use crate::world_rendering::{
+    noise::NoiseTextures,
+    volumetrics::{CloudsViewUniform, CloudsViewUniformOffset, CloudsViewUniforms},
+};
 use bevy::{
     asset::{RenderAssetUsages, load_embedded_asset},
     ecs::query::QueryItem,
@@ -9,20 +13,15 @@ use bevy::{
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
-            CachedComputePipelineId, CachedPipelineState, ComputePassDescriptor,
-            ComputePipelineDescriptor, Extent3d, FilterMode, PipelineCache, Sampler,
-            SamplerBindingType, SamplerDescriptor, ShaderStages, StorageTextureAccess,
-            TextureDimension, TextureFormat, TextureUsages,
-            binding_types::{sampler, texture_storage_3d, uniform_buffer},
+            CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor, Extent3d,
+            FilterMode, PipelineCache, Sampler, SamplerBindingType, SamplerDescriptor,
+            ShaderStages, StorageTextureAccess, TextureDimension, TextureFormat, TextureSampleType,
+            TextureUsages,
+            binding_types::{sampler, texture_2d, texture_3d, texture_storage_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice},
         texture::GpuImage,
     },
-    shader::PipelineCacheError,
-};
-
-use crate::world_rendering::volumetrics::{
-    CloudsViewUniform, CloudsViewUniformOffset, CloudsViewUniforms,
 };
 
 const RESOLUTION: [u32; 3] = [128, 80, 512];
@@ -66,16 +65,7 @@ pub fn setup_froxels_texture(mut commands: Commands, mut images: ResMut<Assets<I
 pub struct FroxelsLabel;
 
 #[derive(Default)]
-pub struct FroxelsNode {
-    state: FroxelsState,
-}
-
-#[derive(Default, PartialEq)]
-enum FroxelsState {
-    #[default]
-    Loading,
-    Running,
-}
+pub struct FroxelsNode {}
 
 #[derive(Resource)]
 pub struct FroxelsPipeline {
@@ -98,6 +88,11 @@ pub fn setup_froxels_pipeline(
                 texture_storage_3d(TextureFormat::Rgba8Unorm, StorageTextureAccess::WriteOnly), // Froxels 3D texture
                 uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                 sampler(SamplerBindingType::Filtering),    // Linear sampler
+                texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
+                texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
             ),
         ),
     );
@@ -131,28 +126,6 @@ pub fn setup_froxels_pipeline(
 impl ViewNode for FroxelsNode {
     type ViewQuery = &'static CloudsViewUniformOffset;
 
-    fn update(&mut self, world: &mut World) {
-        let pipeline = world.resource::<FroxelsPipeline>();
-        let pipeline_cache = world.resource::<PipelineCache>();
-
-        match self.state {
-            FroxelsState::Loading => {
-                match pipeline_cache.get_compute_pipeline_state(pipeline.pipeline_id) {
-                    CachedPipelineState::Ok(_) => {
-                        self.state = FroxelsState::Running;
-                    }
-                    // If the shader hasn't loaded yet, just wait.
-                    CachedPipelineState::Err(PipelineCacheError::ShaderNotLoaded(_)) => {}
-                    CachedPipelineState::Err(err) => {
-                        panic!("Initializing froxel shader:\n{err}")
-                    }
-                    _ => {}
-                }
-            }
-            FroxelsState::Running => {}
-        }
-    }
-
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -160,20 +133,32 @@ impl ViewNode for FroxelsNode {
         view_uniform_offset: QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        if self.state != FroxelsState::Running {
-            return Ok(());
-        }
-
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<FroxelsPipeline>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
         let tex_handle = world.resource::<FroxelsTexture>();
+        let noise_texture_handle = world.resource::<NoiseTextures>();
 
-        let (Some(compute_pipeline), Some(gpu_image), Some(view_binding)) = (
+        let (
+            Some(compute_pipeline),
+            Some(view_binding),
+            Some(froxels_texture),
+            Some(base_noise),
+            Some(detail_noise),
+            Some(turbulence_noise),
+            Some(weather_noise),
+            Some(fog_noise),
+        ) = (
             pipeline_cache.get_compute_pipeline(pipeline.pipeline_id),
-            gpu_images.get(&tex_handle.handle),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-        ) else {
+            gpu_images.get(&tex_handle.handle),
+            gpu_images.get(&noise_texture_handle.base),
+            gpu_images.get(&noise_texture_handle.detail),
+            gpu_images.get(&noise_texture_handle.turbulence),
+            gpu_images.get(&noise_texture_handle.weather),
+            gpu_images.get(&noise_texture_handle.fog),
+        )
+        else {
             return Ok(());
         };
 
@@ -181,9 +166,14 @@ impl ViewNode for FroxelsNode {
             "froxels_bind_group",
             &pipeline.layout,
             &BindGroupEntries::sequential((
-                &gpu_image.texture_view,
+                &froxels_texture.texture_view,
                 view_binding.clone(),
                 &pipeline.linear_sampler,
+                &base_noise.texture_view,
+                &detail_noise.texture_view,
+                &turbulence_noise.texture_view,
+                &weather_noise.texture_view,
+                &fog_noise.texture_view,
             )),
         );
 

@@ -1,8 +1,6 @@
 #define_import_path skybound::aur_fog
 #import skybound::utils::{View, mod1, hash12, hash13, intersect_sphere}
 
-@group(0) @binding(9) var fog_noise_texture: texture_3d<f32>;
-
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
 const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
@@ -128,12 +126,12 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
     if pos.y > FOG_START_HEIGHT { return sample; }
 
-    let height_noise = sample_height(pos.xz, time, linear_sampler);
+    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xz * 0.00004, time * 0.01,), 0.0).r * -300.0;
     let altitude = pos.y - height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
@@ -144,8 +142,8 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_s
         sample.density = 1.0;
     } else {
         let turb_iters = i32(round(mix(2.0, 6.0, smoothstep(50000.0, 1000.0, dist))));
-        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2(time, 0.0), turb_iters, time);
-        fbm_value = sample_texture(vec3(turb_pos.xy * 0.1, altitude * 0.001), linear_sampler).g * 2.0 - 1.0;
+        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2<f32>(time, 0.0), turb_iters, time);
+        fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.1, altitude * 0.001), 0.0).g * 2.0 - 1.0;
         sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
     if only_density || sample.density <= 0.0 { return sample; }
@@ -189,12 +187,4 @@ fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> v
     }
 
     return vec2<f32>(t_start, t_end);
-}
-
-fn sample_height(pos: vec2<f32>, time: f32, linear_sampler: sampler) -> f32 {
-    return sample_texture(vec3<f32>(pos * 0.00004, time * 0.01), linear_sampler).r * -300.0;
-}
-
-fn sample_texture(pos: vec3<f32>, linear_sampler: sampler) -> vec2<f32> {
-    return textureSample(fog_noise_texture, linear_sampler, pos).rg;
 }

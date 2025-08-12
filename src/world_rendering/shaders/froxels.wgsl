@@ -25,5 +25,5 @@ fn get_froxel_data(pos: vec3<f32>, view: View) -> FroxelData {
 
     let sample = textureSample(froxels_texture, froxels_sampler, uvw);
 
-    return FroxelData(0.0, sample.r);
+    return FroxelData(sample.r, sample.g);
 }

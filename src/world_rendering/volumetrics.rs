@@ -132,7 +132,7 @@ pub fn prepare_clouds_view_uniforms(
                 world_from_view,
                 view_from_world,
                 clip_from_world,
-                world_position: world_position,
+                world_position,
                 planet_rotation: data.planet_rotation,
                 planet_center: Vec3::new(world_position.x, -data.planet_radius, world_position.z),
                 planet_radius: data.planet_radius,

@@ -22,6 +22,7 @@ const MIE_CONST: vec3<f32> = vec3<f32>(1.8399918514433978E14, 2.7798023919660528
 const CUTOFF_ANGLE: f32 = 1.6110731556870734; // pi / 1.95
 const STEEPNESS: f32 = 1.5;
 const SUN_ANGULAR_DIAMETER_COS: f32 = 0.999956676946448443553574619906976478926848692; // 66 arc seconds -> degrees, and the cosine of that
+const HORIZON_OFFSET_FACTOR: f32 = 0.000004;
 
 // Precomputed Constants
 const PI: f32 = 3.14159265;
@@ -63,8 +64,7 @@ fn render_sky(rd: vec3<f32>, sun_dir: vec3<f32>, altitude: f32) -> vec3<f32> {
     let v_beta_m: vec3<f32> = total_mie(TURBIDITY) * MIE_COEFFICIENT;
 
     // Adjust ray direction for altitude to lower the horizon
-    let horizon_offset_factor: f32 = 0.000001;
-    let adjusted_rd_y: f32 = rd.y + altitude * horizon_offset_factor;
+    let adjusted_rd_y: f32 = rd.y + altitude * HORIZON_OFFSET_FACTOR;
     let adjusted_ray_direction: vec3<f32> = normalize(vec3<f32>(rd.x, adjusted_rd_y, rd.z));
 
     // Optical length
