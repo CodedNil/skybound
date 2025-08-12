@@ -3,21 +3,19 @@
 struct View {
     time: f32,
     world_from_clip: mat4x4<f32>,
+    world_from_view: mat4x4<f32>,
     view_from_world: mat4x4<f32>,
     clip_from_world: mat4x4<f32>,
     world_position: vec3<f32>,
     planet_rotation: vec4<f32>,
+    planet_center: vec3<f32>,
     planet_radius: f32,
-    camera_offset: vec3<f32>,
     latitude: f32,
     longitude: f32,
     sun_direction: vec3<f32>,
 };
 
 struct AtmosphereData {
-    planet_rotation: vec4<f32>,
-    planet_center: vec3<f32>,
-    planet_radius: f32,
     sun_dir: vec3<f32>,
     sky: vec3<f32>,
     sun: vec3<f32>,

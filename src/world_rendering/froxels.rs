@@ -8,11 +8,12 @@ use bevy::{
         render_asset::RenderAssets,
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
-            BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedComputePipelineId,
-            CachedPipelineState, ComputePassDescriptor, ComputePipelineDescriptor, Extent3d,
-            PipelineCache, ShaderStages, StorageTextureAccess, TextureDimension, TextureFormat,
-            TextureUsages,
-            binding_types::{texture_storage_3d, uniform_buffer},
+            AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries,
+            CachedComputePipelineId, CachedPipelineState, ComputePassDescriptor,
+            ComputePipelineDescriptor, Extent3d, FilterMode, PipelineCache, Sampler,
+            SamplerBindingType, SamplerDescriptor, ShaderStages, StorageTextureAccess,
+            TextureDimension, TextureFormat, TextureUsages,
+            binding_types::{sampler, texture_storage_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice},
         texture::GpuImage,
@@ -80,6 +81,7 @@ enum FroxelsState {
 pub struct FroxelsPipeline {
     layout: BindGroupLayout,
     pipeline_id: CachedComputePipelineId,
+    linear_sampler: Sampler,
 }
 
 pub fn setup_froxels_pipeline(
@@ -95,6 +97,7 @@ pub fn setup_froxels_pipeline(
             (
                 texture_storage_3d(TextureFormat::Rgba8Unorm, StorageTextureAccess::WriteOnly), // Froxels 3D texture
                 uniform_buffer::<CloudsViewUniform>(true), // View uniforms
+                sampler(SamplerBindingType::Filtering),    // Linear sampler
             ),
         ),
     );
@@ -109,9 +112,19 @@ pub fn setup_froxels_pipeline(
         ..default()
     });
 
+    let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::Repeat,
+        address_mode_v: AddressMode::Repeat,
+        address_mode_w: AddressMode::Repeat,
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        ..default()
+    });
+
     commands.insert_resource(FroxelsPipeline {
         layout,
         pipeline_id,
+        linear_sampler,
     });
 }
 
@@ -167,7 +180,11 @@ impl ViewNode for FroxelsNode {
         let bind_group = render_context.render_device().create_bind_group(
             "froxels_bind_group",
             &pipeline.layout,
-            &BindGroupEntries::sequential((&gpu_image.texture_view, view_binding.clone())),
+            &BindGroupEntries::sequential((
+                &gpu_image.texture_view,
+                view_binding.clone(),
+                &pipeline.linear_sampler,
+            )),
         );
 
         let mut pass = render_context

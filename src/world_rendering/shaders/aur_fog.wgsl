@@ -1,5 +1,5 @@
 #define_import_path skybound::aur_fog
-#import skybound::utils::{AtmosphereData, mod1, hash12, hash13, intersect_sphere}
+#import skybound::utils::{View, mod1, hash12, hash13, intersect_sphere}
 
 @group(0) @binding(9) var fog_noise_texture: texture_3d<f32>;
 
@@ -165,11 +165,11 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_s
 }
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
-fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
-    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
+fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
+    let cam_pos = vec3<f32>(0.0, view.planet_radius + ro.y, 0.0);
+    let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
-    let shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + FOG_START_HEIGHT);
+    let shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + FOG_START_HEIGHT);
 
     var t_start: f32;
     var t_end: f32;

@@ -1,9 +1,14 @@
-#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import skybound::utils::{View, AtmosphereData, blue_noise}
 #import skybound::raymarch::raymarch
 #import skybound::sky::render_sky
 #import skybound::poles::render_poles
 
+struct FullscreenVertexOutput {
+    @builtin(position)
+    position: vec4<f32>,
+    @location(0)
+    uv: vec2<f32>,
+};
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 @group(0) @binding(2) var depth_texture: texture_depth_2d;
@@ -38,7 +43,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let world_pos3 = world_pos4.xyz / world_pos4.w;
 
     // Ray origin & dir
-    let ro = view.world_position + view.camera_offset;
+    let ro = view.world_position;
     let rd_vec = world_pos3 - ro;
     let t_max = length(rd_vec);
     let rd = normalize(rd_vec);
@@ -54,10 +59,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
     atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
     atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
-
-    atmosphere.planet_rotation = view.planet_rotation;
-    atmosphere.planet_center = vec3<f32>(ro.x, -view.planet_radius, ro.z);
-    atmosphere.planet_radius = view.planet_radius;
     atmosphere.sun_dir = sun_dir;
 
 	// Phase functions for silver and back scattering

@@ -1,5 +1,5 @@
 #define_import_path skybound::clouds
-#import skybound::utils::{AtmosphereData, remap, intersect_sphere}
+#import skybound::utils::{View, remap, intersect_sphere}
 
 @group(0) @binding(5) var cloud_base_texture: texture_3d<f32>;
 @group(0) @binding(6) var cloud_details_texture: texture_3d<f32>;
@@ -115,12 +115,12 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) 
 }
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
-fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, atmosphere.planet_radius + ro.y, 0.0);
-    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
+fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
+    let cam_pos = vec3<f32>(0.0, view.planet_radius + ro.y, 0.0);
+    let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
-    let bottom_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_BOTTOM_HEIGHT);
-    let top_shell_dist = intersect_sphere(cam_pos, rd, atmosphere.planet_radius + CLOUDS_TOP_HEIGHT);
+    let bottom_shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + CLOUDS_BOTTOM_HEIGHT);
+    let top_shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + CLOUDS_TOP_HEIGHT);
 
     if altitude >= CLOUDS_BOTTOM_HEIGHT && altitude <= CLOUDS_TOP_HEIGHT {
         // We are inside the clouds, start raymarching immediately and end when we exit the clouds

@@ -1,5 +1,5 @@
 #define_import_path skybound::poles
-#import skybound::utils::AtmosphereData
+#import skybound::utils::View
 
 const POLE_WIDTH: f32 = 10000.0;
 const ATMOSPHERE_HEIGHT: f32 = 400000;
@@ -32,11 +32,10 @@ fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear
 }
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
-fn poles_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32) -> vec2<f32> {
-    let center = ro - vec3<f32>(0.0, atmosphere.planet_radius, 0.0);
-    let axis = normalize(quat_rotate(atmosphere.planet_rotation, vec3<f32>(0.0, 1.0, 0.0)));
+fn poles_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
+    let axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 1.0, 0.0)));
 
-    let oc = ro - center;
+    let oc = ro - view.planet_center;
     let ad = dot(axis, rd);
     let ao = dot(axis, oc);
     let a = 1.0 - ad * ad;

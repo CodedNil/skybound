@@ -32,12 +32,13 @@ use bevy::{
 pub struct CloudsViewUniform {
     time: f32, // Time since startup
     world_from_clip: Mat4,
+    world_from_view: Mat4,
     view_from_world: Mat4,
     clip_from_world: Mat4,
     world_position: Vec3,
     planet_rotation: Vec4,
+    planet_center: Vec3,
     planet_radius: f32,
-    camera_offset: Vec3,
     latitude: f32,
     longitude: f32,
     sun_direction: Vec3,
@@ -123,16 +124,18 @@ pub fn prepare_clouds_view_uniforms(
             .clip_from_world
             .unwrap_or_else(|| clip_from_view * view_from_world);
         let world_from_clip = world_from_view * view_from_clip;
+        let world_position = extracted_view.world_from_view.translation() + data.camera_offset;
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
                 world_from_clip,
+                world_from_view,
                 view_from_world,
                 clip_from_world,
-                world_position: extracted_view.world_from_view.translation(),
+                world_position: world_position,
                 planet_rotation: data.planet_rotation,
+                planet_center: Vec3::new(world_position.x, -data.planet_radius, world_position.z),
                 planet_radius: data.planet_radius,
-                camera_offset: data.camera_offset,
                 latitude: data.latitude,
                 longitude: data.longitude,
                 sun_direction: data.sun_direction,

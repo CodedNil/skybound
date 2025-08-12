@@ -69,12 +69,12 @@ struct VolumesInside {
     poles: bool,
 }
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
-    let altitude = distance(ro, atmosphere.planet_center) - atmosphere.planet_radius;
+    let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
     // Get entry exit points for each volume
-    let clouds_entry_exit = clouds_raymarch_entry(ro, rd, atmosphere, t_max);
-    let fog_entry_exit = fog_raymarch_entry(ro, rd, atmosphere, t_max);
-    let poles_entry_exit = poles_raymarch_entry(ro, rd, atmosphere, t_max);
+    let clouds_entry_exit = clouds_raymarch_entry(ro, rd, view, t_max);
+    let fog_entry_exit = fog_raymarch_entry(ro, rd, view, t_max);
+    let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Get initial start and end of the volumes
     let t_start = min(min(clouds_entry_exit.x, fog_entry_exit.x), poles_entry_exit.x) + dither * STEP_SIZE_INSIDE;
@@ -133,7 +133,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
         // Sample the volumes
         let pos_raw = ro + rd * (t + dither * step);
-        let altitude = distance(pos_raw, atmosphere.planet_center) - atmosphere.planet_radius;
+        let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
         let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
         let main_sample = sample_volume(pos, t, time, volumes_inside, false, linear_sampler);
         let step_density = main_sample.density;
@@ -166,7 +166,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // var light_altitude: f32;
             // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
             //     lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-            //     light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
+            //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
             //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
             // }
 
