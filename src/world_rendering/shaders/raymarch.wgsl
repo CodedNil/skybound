@@ -16,9 +16,8 @@ const SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
 const SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS_START: f32 = 6.0; // How many steps to take along the sun direction
-const LIGHT_STEPS_END: f32 = 2.0; // How many steps to take along the sun direction at SCALING_END
-const LIGHT_STEP_SIZE: f32 = 30.0;
+const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE = array<f32, 6>(30.0, 50.0, 80.0, 160.0, 300.0, 500.0);
 const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
 
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
@@ -160,19 +159,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, t_max: f32
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos;
             var light_altitude: f32;
-            for (var j: u32 = 0; j <= u32(round(mix(LIGHT_STEPS_START, LIGHT_STEPS_END, distance_scale))); j++) {
-                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
+            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+                lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
                 light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
                 density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
             }
-            // Take a single distant sample
-            lightmarch_pos += atmosphere.sun_dir * LIGHT_STEP_SIZE * 18.0;
-            light_altitude = distance(lightmarch_pos, atmosphere.planet_center) - atmosphere.planet_radius;
-            density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
 
             // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);
+            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
             let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
