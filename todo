@@ -1,14 +1,12 @@
-fix shadowing with froxels
+fix shadowing with froxels, make the per pixel shadowing just fine detail
 give the layers random offsets on the height and positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
 
-
 froxels as compute shader, each cell march to sun pos which is a fixed position above pole, and down to aur
+separate aur shadowing and light emission from below
 GPU benchmark
 
-
-rust_gpu then have the raymarch code shared, do a raymarch from fixed position on cpu and draw gizmos to debug step size etc
 remove the base geometry, use sdfs instead, remove shadows etc from scene
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
 https://github.com/klownie/bevy_sdf_klown
@@ -19,7 +17,6 @@ Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 too bright at night
-set the sun_dir correctly in the cpu side, blended into going straight up with aur color
 atmospheric distance fog
 
 
@@ -53,6 +50,9 @@ cumulonimbus clouds, huge with anvils, use worley noise to position them as sepa
 do the world rendering:
 better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
 auroras and stars https://www.shadertoy.com/view/XtGGRt
+patterns of stars, basically a tapestry of the universes history created by the gods
+atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
+aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go
 
 
 aur fog:
@@ -60,9 +60,3 @@ give fog shadows from the clouds
 bad lighting at night, lighting is green at night
 make it wildly more turbulent around the lightning flashes
 fix pattern on aur fog
-
-
-misc:
-atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
-aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go
-patterns of stars, basically a tapestry of the universes history created by the gods

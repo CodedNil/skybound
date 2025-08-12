@@ -16,8 +16,6 @@ struct FullscreenVertexOutput {
 const ATMOSPHERE_HEIGHT: f32 = 100000.0;
 
 // Lighting Parameters
-const MIN_SUN_DOT: f32 = sin(radians(-8.0)); // How far below the horizon before the switching to aur light
-const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const SILVER_SPREAD: f32 = 0.1;
 const SILVER_INTENSITY: f32 = 0.01;
@@ -48,21 +46,15 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let t_max = length(rd_vec);
     let rd = normalize(rd_vec);
 
-    // Get sun direction and intensity, mix between aur light (straight up) and sun
-    let sun_dot = view.sun_direction.y;
-    let sun_t = clamp((sun_dot - MIN_SUN_DOT) / -MIN_SUN_DOT, 0.0, 1.0);
-    let sun_dir = normalize(mix(AUR_DIR, view.sun_direction, sun_t));
-
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
-    atmosphere.sky = render_sky(rd, sun_dir, ro.y);
-    atmosphere.sun = render_sky(sun_dir, sun_dir, ro.y) * 0.1;
-    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), sun_dir, ro.y);
+    atmosphere.sky = render_sky(rd, view.sun_direction, ro.y);
+    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.y) * 0.1;
+    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), view.sun_direction, ro.y);
     atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
-    atmosphere.sun_dir = sun_dir;
 
 	// Phase functions for silver and back scattering
-    let cos_theta = dot(sun_dir, rd);
+    let cos_theta = dot(view.sun_direction, rd);
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
     let hg_silver = henyey_greenstein(cos_theta, 0.99 - SILVER_SPREAD) * SILVER_INTENSITY;
     let hg_back = henyey_greenstein(cos_theta, -0.05);

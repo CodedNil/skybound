@@ -16,7 +16,6 @@ struct View {
 };
 
 struct AtmosphereData {
-    sun_dir: vec3<f32>,
     sky: vec3<f32>,
     sun: vec3<f32>,
     ambient: vec3<f32>,

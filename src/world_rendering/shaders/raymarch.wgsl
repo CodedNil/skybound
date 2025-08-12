@@ -165,7 +165,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // var lightmarch_pos = pos;
             // var light_altitude: f32;
             // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-            //     lightmarch_pos += (atmosphere.sun_dir + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
+            //     lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
             //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
             //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
             // }
@@ -178,7 +178,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 			// Compute in-scattering
             let aur_intensity = smoothstep(12000.0, 0.0, altitude);
             let aur_ambient = mix(vec3(1.0), atmosphere.ground, aur_intensity);
-            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (atmosphere.sun_dir.y);
+            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (view.sun_direction.y);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
             acc_alpha += alpha_step * (1.0 - acc_alpha);

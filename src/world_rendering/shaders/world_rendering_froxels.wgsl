@@ -17,7 +17,8 @@ const AUR_DIR: vec3<f32> = vec3(0.0, -1.0, 0.0);
 
 @compute @workgroup_size(8, 8, 8)
 fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
-    let view_pos = vec3<f32>(id) / vec3<f32>(RESOLUTION); // View space coordinates
+    let view_pos_o = vec3<f32>(id) / vec3<f32>(RESOLUTION); // View space coordinates
+    let view_pos = vec3<f32>(view_pos_o.x, view_pos_o.z, view_pos_o.y); // Y up
 
     let wp4 = view.world_from_view * vec4<f32>(view_pos, 1.0);
     let pos = wp4.xyz / wp4.w; // World space coordinates
@@ -28,8 +29,11 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     let sun_dir = normalize(mix(AUR_DIR, view.sun_direction, sun_t));
 
     // Sample density
-    // let altitude = distance(pos, view.planet_center) - view.planet_radius;
-    // let volumes_inside = VolumesInside(true, true, true); // TODO simplify testing which volumes
+    let altitude = distance(pos, view.planet_center) - view.planet_radius;
+    var volumes_inside: VolumesInside; // TODO simplify testing which volumes
+    volumes_inside.clouds = true;
+    volumes_inside.fog = true;
+    volumes_inside.poles = true;
     // let density = sample_volume(vec3<f32>(pos.x, altitude, pos.z), view_pos.z, view.time, volumes_inside, true, linear_sampler).density;
 
     // Lightmarching for self-shadowing
