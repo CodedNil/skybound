@@ -9,7 +9,8 @@ const FROXEL_FAR: f32 = 1000000.0; // Far plane of froxel frustum
 
 struct FroxelData {
     density: f32,
-    sunlight: f32,
+    density_sunwards: f32,
+    density_aurwards: f32
 }
 fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
     // Convert to NDC
@@ -25,7 +26,7 @@ fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
     // Sample the texture
     let sample = textureSample(froxels_texture, froxels_sampler, uvw);
 
-    return FroxelData(sample.x, sample.y);
+    return FroxelData(sample.x, sample.y, sample.z);
 }
 
 /// Convert a world space position to ndc space

@@ -15,18 +15,18 @@
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
-const MAX_STEPS: i32 = 2048;
-const STEP_SIZE_INSIDE: f32 = 24.0;
-const STEP_SIZE_OUTSIDE: f32 = 48.0;
+const MAX_STEPS: i32 = 1024;
+const STEP_SIZE_INSIDE: f32 = 32.0;
+const STEP_SIZE_OUTSIDE: f32 = 64.0;
 
 const SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
-const SCALING_END: f32 = 100000.0; // Distance from camera to use max step size
-const SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
+const SCALING_END: f32 = 500000.0; // Distance from camera to use max step size
+const SCALING_MAX: f32 = 12.0; // Maximum scaling factor to increase by
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = array<f32, 6>(30.0, 50.0, 80.0, 160.0, 300.0, 500.0);
-const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
+const LIGHT_STEPS: f32 = 4.0; // How many steps to take along the sun direction
+const LIGHT_STEP_DISTANCE: f32 = 100000.0; // Distance before it does not do any fine lightmarching
+const LIGHT_STEP_SIZE: f32 = 120.0;
 
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
 
@@ -37,11 +37,11 @@ struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesInside, only_density: bool, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesInside, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
 
     if volumes_inside.fog {
-        let fog_sample = sample_fog(pos, dist, time, only_density, fog_noise_texture, linear_sampler);
+        let fog_sample = sample_fog(pos, dist, time, fog_noise_texture, linear_sampler);
         if fog_sample.density > 0.0 {
             sample.density = fog_sample.density;
             sample.color = fog_sample.color;
@@ -58,7 +58,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
     }
 
     if volumes_inside.poles {
-        let poles_sample = sample_poles(pos, dist, time, only_density, linear_sampler);
+        let poles_sample = sample_poles(pos, dist, time, linear_sampler);
         if poles_sample.density > 0.0 {
             sample.density += poles_sample.density;
             sample.color += poles_sample.color;
@@ -68,6 +68,10 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
 
     sample.density = min(sample.density, 1.0);
     return sample;
+}
+
+fn sample_volume_light(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
+    return sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
 }
 
 struct VolumesInside {
@@ -126,7 +130,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
-        let distance_scale = smoothstep(SCALING_START, SCALING_END, t);
+        let distance_scale = pow(smoothstep(SCALING_START, SCALING_END, t), 0.5);
         if t > SCALING_START {
             step_scaler = 1.0 + distance_scale * SCALING_MAX;
         }
@@ -142,12 +146,8 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
         let world_pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
-        let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, false, linear_sampler);
+        let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, linear_sampler);
         let step_density = main_sample.density;
-
-        // Get data from froxels
-        let froxels_data = get_froxel_data(world_pos, view);
-        let beers_total = 1.0 - froxels_data.sunlight;
 
         // Adjust t to effectively backtrack and take smaller steps when entering density
         if step_density > 0.0 {
@@ -167,20 +167,32 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let step_transmittance = exp(-DENSITY * step_density * step);
             let alpha_step = (1.0 - step_transmittance);
 
-            // // Lightmarching for self-shadowing
-            // var density_sunwards = max(step_density, 0.0);
-            // var lightmarch_pos = world_pos;
-            // var light_altitude: f32;
-            // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-            //     lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-            //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, volumes_inside, true, linear_sampler).density;
-            // }
+            // Get data from froxels
+            let froxels_data = get_froxel_data(world_pos, view);
+            var density_sunwards = max(step_density, froxels_data.density_sunwards * 10.0);
+            // var density_aurwards = max(step_density, froxels_data.density_aurwards * 10.0);
 
-            // // Captures the direct lighting from the sun
-            // let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);
-            // let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
-            // let beers_total = max(beers, beers2);
+            // Lightmarching for self-shadowing
+            var lightmarch_pos = pos_raw;
+            var light_altitude: f32;
+            let light_steps = u32(round(LIGHT_STEPS * smoothstep(LIGHT_STEP_DISTANCE, 0.0, t)));
+            if light_steps > 0 {
+                for (var j: u32 = 0; j <= light_steps; j++) {
+                    lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
+                    light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
+                    density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, linear_sampler);
+                }
+            }
+
+            // Captures the direct lighting from the sun
+            let beers = exp(-DENSITY * density_sunwards * 30.0);
+            let beers2 = exp(-DENSITY * density_sunwards * 30.0 * 0.25) * 0.7;
+            let beers_total = max(beers, beers2);
+
+            // // Captures the direct lighting from the aur
+            // let beers_aur = exp(-DENSITY * density_aurwards * LIGHT_STEP_SIZE);
+            // let beers_aur2 = exp(-DENSITY * density_aurwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+            // let beers_aur_total = max(beers_aur, beers_aur2);
 
 			// Compute in-scattering
             let aur_intensity = smoothstep(12000.0, 0.0, altitude);
@@ -195,13 +207,6 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         }
 
         t += step;
-
-        // if t > 100000.0 || world_pos.y > 10000.0 {
-        //     let froxels_data = get_froxel_data(world_pos, view);
-        //     let density = froxels_data.density;
-        //     let sunlight = froxels_data.sunlight;
-        //     return vec4(density, 0.0, 0.0, 1.0);
-        // }
     }
 
     acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0

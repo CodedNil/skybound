@@ -24,7 +24,7 @@ use bevy::{
     },
 };
 
-const RESOLUTION: UVec3 = UVec3::new(128, 80, 1024);
+const RESOLUTION: UVec3 = UVec3::new(128, 72, 1024);
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct FroxelsTexture {
@@ -92,7 +92,6 @@ pub fn setup_froxels_pipeline(
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
-                texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
             ),
         ),
     );
@@ -147,7 +146,6 @@ impl ViewNode for FroxelsNode {
             Some(detail_noise),
             Some(turbulence_noise),
             Some(weather_noise),
-            Some(fog_noise),
         ) = (
             pipeline_cache.get_compute_pipeline(pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -156,7 +154,6 @@ impl ViewNode for FroxelsNode {
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
             gpu_images.get(&noise_texture_handle.weather),
-            gpu_images.get(&noise_texture_handle.fog),
         )
         else {
             return Ok(());
@@ -173,7 +170,6 @@ impl ViewNode for FroxelsNode {
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
                 &weather_noise.texture_view,
-                &fog_noise.texture_view,
             )),
         );
 
@@ -182,7 +178,7 @@ impl ViewNode for FroxelsNode {
             .begin_compute_pass(&ComputePassDescriptor::default());
         pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
         pass.set_pipeline(compute_pipeline);
-        pass.dispatch_workgroups(RESOLUTION[0] / 8, RESOLUTION[1] / 8, RESOLUTION[2] / 8);
+        pass.dispatch_workgroups(RESOLUTION.x / 8, RESOLUTION.y / 8, RESOLUTION.z / 16);
 
         Ok(())
     }

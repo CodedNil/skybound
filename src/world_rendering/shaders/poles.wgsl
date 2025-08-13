@@ -16,7 +16,7 @@ struct PolesSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, linear_sampler: sampler) -> PolesSample {
+fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> PolesSample {
     var sample: PolesSample;
     sample.density = 1.0;
     sample.color = vec3(0.0, 0.5, 1.0);

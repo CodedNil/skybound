@@ -7,6 +7,7 @@ const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
 const FOG_START_HEIGHT: f32 = 0.0;
+const FOG_BOTTOM_HEIGHT: f32 = -500.0;
 
 
 // Fog turbulence calculations
@@ -126,7 +127,7 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
     if pos.y > FOG_START_HEIGHT { return sample; }
@@ -146,7 +147,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_te
         fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.1, altitude * 0.001), 0.0).g * 2.0 - 1.0;
         sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
-    if only_density || sample.density <= 0.0 { return sample; }
+    if sample.density <= 0.0 { return sample; }
 
     // Compute fog color based on turbulent flow
     sample.color = mix(COLOR_A, COLOR_B, fbm_value);

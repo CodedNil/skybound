@@ -1,7 +1,6 @@
 #import skybound::utils::View
-#import skybound::clouds::sample_clouds
-#import skybound::aur_fog::sample_fog
-#import skybound::poles::sample_poles
+#import skybound::clouds::{CLOUDS_BOTTOM_HEIGHT, CLOUDS_TOP_HEIGHT, sample_clouds}
+#import skybound::aur_fog::{FOG_START_HEIGHT, FOG_BOTTOM_HEIGHT}
 
 @group(0) @binding(0) var output: texture_storage_3d<rgba8unorm, write>;
 @group(0) @binding(1) var<uniform> view: View;
@@ -12,44 +11,20 @@
 @group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
 @group(0) @binding(6) var cloud_weather_texture: texture_2d<f32>;
 
-@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
-
-const RESOLUTION: vec3<u32> = vec3<u32>(128, 80, 1024);
+const RESOLUTION: vec3<u32> = vec3<u32>(128, 72, 1024);
 const FROXEL_NEAR: f32 = 1.0; // Near plane of froxel frustum
 const FROXEL_FAR: f32 = 1000000.0; // Far plane of froxel frustum
 
-const DENSITY: f32 = 0.05; // Base density for lighting
 const LIGHT_STEPS: u32 = 10; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = array<f32, 10>(30.0, 40.0, 60.0, 80.0, 120.0, 150.0, 180.0, 200.0, 220.0, 240.0);
-const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 10>(
-    vec3(0.38051305, 0.92453449, -0.02111345),
-    vec3(-0.50625799, -0.03590792, -0.86163418),
-    vec3(-0.32509218, -0.94557439, 0.01428793),
-    vec3(0.09026238, -0.27376545, 0.95755165),
-    vec3(0.28128598, 0.42443639, -0.86065785),
-    vec3(-0.16852403, 0.14748697, 0.97460106),
-    vec3(0.74230283, -0.62948594, 0.23011457),
-    vec3(-0.67214015, 0.72263982, -0.16284937),
-    vec3(0.15849217, -0.86971574, -0.46729355),
-    vec3(-0.90573112, -0.13720485, 0.40153278)
-);
+const LIGHT_STEPS_AUR: u32 = 4; // How many steps to take along the aur direction
+const LIGHT_STEP_SIZE: f32 = 200.0;
+const AUR_DIRECTION: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
 
 fn sample_volume(pos: vec3<f32>, dist: f32, time: f32) -> f32 {
-    var sample: f32;
-
-    // let fog_sample = sample_fog(pos, dist, time, true, fog_noise_texture, linear_sampler);
-    // sample += fog_sample.density;
-
-    let cloud_sample = sample_clouds(pos, dist, time, true, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
-    sample += cloud_sample;
-
-    // let poles_sample = sample_poles(pos, dist, time, true, linear_sampler);
-    // sample += poles_sample.density;
-
-    return min(sample, 1.0);
+    return sample_clouds(pos, dist, time, true, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
 }
 
-@compute @workgroup_size(8, 8, 8)
+@compute @workgroup_size(8, 8, 16)
 fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     if (id.x >= RESOLUTION.x || id.y >= RESOLUTION.y || id.z >= RESOLUTION.z) { return; }
 
@@ -61,30 +36,34 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
     let logarithmic_depth = FROXEL_NEAR * pow(FROXEL_FAR / FROXEL_NEAR, texture_coord.z);
     let ndc_depth = view_z_to_depth_ndc(-logarithmic_depth, view.clip_from_view);
     let ndc_pos = vec3<f32>(ndc_xy.x, ndc_xy.y, ndc_depth);
-    let world_pos_raw = position_ndc_to_world(ndc_pos, view.world_from_clip);
-    let t = distance(view.world_position, world_pos_raw);
+    let world_pos = position_ndc_to_world(ndc_pos, view.world_from_clip);
+    let t = distance(view.world_position, world_pos);
+
+    // Early exit if outside of volumes
+    let inside_clouds = world_pos.y >= CLOUDS_BOTTOM_HEIGHT && world_pos.y <= CLOUDS_TOP_HEIGHT;
+    let inside_fog = world_pos.y >= FOG_BOTTOM_HEIGHT && world_pos.y <= FOG_START_HEIGHT;
+    if !(inside_clouds || inside_fog) { return; }
 
     // Sample density
-    let altitude = distance(world_pos_raw, view.planet_center) - view.planet_radius;
-    let world_pos = vec3<f32>(world_pos_raw.x, altitude, world_pos_raw.z);
     let density = sample_volume(world_pos + view.camera_offset, t, view.time);
 
     // Lightmarching for self-shadowing
     var density_sunwards = max(density, 0.0);
     var lightmarch_pos = world_pos;
     for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-        lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-        let light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-        density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, view.time);
+        lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
+        density_sunwards += sample_volume(lightmarch_pos + view.camera_offset, t, view.time);
     }
 
-    // Captures the direct lighting from the sun
-    let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);
-    let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
-    let beers_total = max(beers, beers2);
+    var density_aurwards = max(density, 0.0);
+    lightmarch_pos = world_pos;
+    for (var j: u32 = 0; j <= LIGHT_STEPS_AUR; j++) {
+        lightmarch_pos += AUR_DIRECTION * LIGHT_STEP_SIZE;
+        density_aurwards += sample_volume(lightmarch_pos + view.camera_offset, t, view.time);
+    }
 
     // Store the calculated data into the froxel texture
-    textureStore(output, id, vec4(density, 1.0 - beers_total, 0.0, 0.0));
+    textureStore(output, id, vec4(density, density_sunwards * 0.1, density_aurwards * 0.1, 0.0));
 }
 
 /// Convert a ndc space position to world space

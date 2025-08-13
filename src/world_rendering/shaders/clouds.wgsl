@@ -13,12 +13,12 @@ const WEATHER_NOISE_SCALE: f32 = 0.001 * BASE_SCALE;
 const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.02 * BASE_TIME; // Weather wind for weather shape
 
 // Detail Parameters
-const DETAIL_NOISE_SCALE: f32 = 0.3 * BASE_SCALE;
+const DETAIL_NOISE_SCALE: f32 = 0.8 * BASE_SCALE;
 const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, -1.0, 0.0) * 0.1 * BASE_TIME; // Details move faster
 
 // Curl Parameters
-const CURL_NOISE_SCALE: f32 = 0.0005 * BASE_SCALE; // Scale for curl noise sampling
-const CURL_TIME_SCALE: f32 = 0.005 * BASE_TIME; // Speed of curl noise animation
+const CURL_NOISE_SCALE: f32 = 0.0002 * BASE_SCALE; // Scale for curl noise sampling
+const CURL_TIME_SCALE: f32 = 0.05 * BASE_TIME; // Speed of curl noise animation
 const CURL_STRENGTH: f32 = 6.0; // Strength of curl distortion
 
 // Cloud scales
@@ -101,7 +101,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, simple: bool, base_textur
     let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;
     let detail_curl_distortion = motion_sample * CURL_STRENGTH;
     let detail_time_vec = time * WIND_DIRECTION_DETAIL;
-    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE - detail_time_vec + detail_curl_distortion;
+    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE * cloud_layer.scale - detail_time_vec + detail_curl_distortion;
 
     let detail_noise = textureSampleLevel(details_texture, linear_sampler, vec3<f32>(detail_scaled_pos.x, detail_scaled_pos.z, detail_scaled_pos.y), 0.0).r;
     let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(height_fraction * 4.0, 0.0, 1.0));
