@@ -142,7 +142,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
         let world_pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
-        let main_sample = sample_volume(world_pos, t, time, volumes_inside, false, linear_sampler);
+        let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, false, linear_sampler);
         let step_density = main_sample.density;
 
         // Get data from froxels
@@ -174,7 +174,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
             //     lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
             //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
+            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, volumes_inside, true, linear_sampler).density;
             // }
 
             // // Captures the direct lighting from the sun
@@ -200,7 +200,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         //     let froxels_data = get_froxel_data(world_pos, view);
         //     let density = froxels_data.density;
         //     let sunlight = froxels_data.sunlight;
-        //     return vec4(0.0, sunlight, 0.0, 1.0);
+        //     return vec4(density, 0.0, 0.0, 1.0);
         // }
     }
 

@@ -16,9 +16,9 @@ fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
     let ndc = position_world_to_ndc(world_pos, view.clip_from_world);
     let uv = ndc_to_uv(ndc.xy);
 
-    // Convert NDC depth back to linear depth, then to froxel coordinate
+    // Convert NDC depth back to linear depth, then to logarithmic froxel coordinate
     let linear_depth = -depth_ndc_to_view_z(ndc.z, view.clip_from_view);
-    let froxel_z = clamp((linear_depth - FROXEL_NEAR) / (FROXEL_FAR - FROXEL_NEAR), 0.0, 1.0);
+    let froxel_z = log(linear_depth / FROXEL_NEAR) / log(FROXEL_FAR / FROXEL_NEAR);
 
     let uvw = vec3(uv, froxel_z);
 

@@ -14,7 +14,7 @@
 
 @group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
-const RESOLUTION: vec3<u32> = vec3<u32>(128, 80, 512);
+const RESOLUTION: vec3<u32> = vec3<u32>(128, 80, 1024);
 const FROXEL_NEAR: f32 = 1.0; // Near plane of froxel frustum
 const FROXEL_FAR: f32 = 1000000.0; // Far plane of froxel frustum
 
@@ -58,25 +58,24 @@ fn generate(@builtin(global_invocation_id) id: vec3<u32>) {
 
     // Convert uvw to world space position
     let ndc_xy = uv_to_ndc(texture_coord.xy); // Converts UV [0,1] to NDC [-1,1]
-    let linear_depth = mix(FROXEL_NEAR, FROXEL_FAR, -texture_coord.z);
-    let ndc_depth = view_z_to_depth_ndc(linear_depth, view.clip_from_view);
+    let logarithmic_depth = FROXEL_NEAR * pow(FROXEL_FAR / FROXEL_NEAR, texture_coord.z);
+    let ndc_depth = view_z_to_depth_ndc(-logarithmic_depth, view.clip_from_view);
     let ndc_pos = vec3<f32>(ndc_xy.x, ndc_xy.y, ndc_depth);
-    let world_pos_raw = position_ndc_to_world(ndc_pos, view.world_from_clip) ;
+    let world_pos_raw = position_ndc_to_world(ndc_pos, view.world_from_clip);
     let t = distance(view.world_position, world_pos_raw);
 
     // Sample density
     let altitude = distance(world_pos_raw, view.planet_center) - view.planet_radius;
     let world_pos = vec3<f32>(world_pos_raw.x, altitude, world_pos_raw.z);
-    let density = sample_volume(world_pos, t, view.time);
+    let density = sample_volume(world_pos + view.camera_offset, t, view.time);
 
     // Lightmarching for self-shadowing
     var density_sunwards = max(density, 0.0);
     var lightmarch_pos = world_pos;
-    var light_altitude: f32;
     for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
         lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-        light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-        density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, view.time);
+        let light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
+        density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, view.time);
     }
 
     // Captures the direct lighting from the sun

@@ -20,15 +20,17 @@ const MAX_SUN_ELEVATION_DEG: f32 = 70.0; // The maximum sun elevation angle
 #[derive(Resource)]
 pub struct WorldData {
     pub camera_offset: Vec3,
-    last_camera_pos: Option<Vec3>,
     pub sun_rotation: Quat,
 }
 impl Default for WorldData {
     fn default() -> Self {
         let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Y * PLANET_RADIUS);
         Self {
-            camera_offset: Vec3::new(offset.x, 0.0, offset.z),
-            last_camera_pos: None,
+            camera_offset: Vec3::new(
+                offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
+                0.0,
+                offset.z - (offset.z % CAMERA_RESET_THRESHOLD),
+            ),
             sun_rotation: Quat::default(),
         }
     }
@@ -108,20 +110,15 @@ fn update(
     };
 
     // --- Camera Snapping Logic ---
-    if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD
-        || camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD
-    {
-        // Reset the camera's position to the origin, first storing the offset.
-        world_coords.camera_offset += Vec3::new(
-            camera_transform.translation.x,
-            0.0,
-            camera_transform.translation.z,
-        );
-        camera_transform.translation.x = 0.0;
-        camera_transform.translation.z = 0.0;
-
-        // After snapping, reset the last known position to the new origin.
-        world_coords.last_camera_pos = Some(camera_transform.translation);
+    if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD {
+        let offset = Vec3::X * CAMERA_RESET_THRESHOLD * camera_transform.translation.x.signum();
+        world_coords.camera_offset += offset;
+        camera_transform.translation -= offset;
+    }
+    if camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD {
+        let offset = Vec3::Z * CAMERA_RESET_THRESHOLD * camera_transform.translation.z.signum();
+        world_coords.camera_offset += offset;
+        camera_transform.translation -= offset;
     }
 
     // --- Planet and Object Positioning ---
@@ -149,7 +146,4 @@ fn update(
         Vec3::NEG_Z,
         -sun_azimuth * desired_elevation_rad.cos() - Vec3::Y * desired_elevation_rad.sin(),
     );
-
-    // Store the camera's position for the next frame's snap check.
-    world_coords.last_camera_pos = Some(camera_transform.translation);
 }

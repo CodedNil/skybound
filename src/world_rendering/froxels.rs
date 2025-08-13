@@ -24,7 +24,7 @@ use bevy::{
     },
 };
 
-const RESOLUTION: UVec3 = UVec3::new(128, 80, 512);
+const RESOLUTION: UVec3 = UVec3::new(128, 80, 1024);
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct FroxelsTexture {
