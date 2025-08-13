@@ -27,11 +27,11 @@ pub struct NoiseTextures {
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let start = std::time::Instant::now();
 
-    let size = 512;
+    let size = 256;
     let depth = 64;
     let base_texture =
         load_or_generate_texture("base_texture", size, depth, TextureFormat::R8Unorm, || {
-            let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(8.0, 4.0), 1.5))
+            let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(8.0, 6.0), 1.5))
                 .iter()
                 .zip(worley_3d(size, depth, 3, 0.5, 12.0, 0.5))
                 .map(|(&perlin, worley)| map_range(perlin, -(1.0 - worley), 1.0, 0.0, 1.0))
@@ -41,7 +41,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             interleave_channels([perlinworley])
         });
 
-    let size = 256;
+    let size = 128;
     let depth = 64;
     let detail_texture = load_or_generate_texture(
         "detail_texture",
@@ -55,7 +55,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
-    let size = 512;
+    let size = 128;
     let turbulence_texture = load_or_generate_texture(
         "turbulence_texture",
         size,
@@ -72,7 +72,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
-    let size = 512;
+    let size = 256;
     let weather_texture = load_or_generate_texture(
         "weather_texture",
         size,
@@ -104,7 +104,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
-    let size = 128;
+    let size = 96;
     let fog_texture =
         load_or_generate_texture("fog_texture", size, size, TextureFormat::Rg8Unorm, || {
             let fog1 = spread(&simplex_3d(size, size, 6, 0.1, Vec2::new(12.0, 8.0), 1.0));

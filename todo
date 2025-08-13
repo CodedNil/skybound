@@ -2,6 +2,8 @@ give the layers random offsets on the height and vertical positioning so they do
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
 
+do larger steps when going horizontally vs vertically since clouds are thinner vertically?
+
 each cell march to sun pos which is a fixed position above pole, and down to aur
 separate aur shadowing and light emission from below
 do coarser raymarching which goes to the mid point of the layers above
@@ -35,6 +37,7 @@ Horizon zero dawn https://drive.google.com/file/d/1G0Iy8QUybKMKU7Ax-ooxdfXJR-ysm
 https://github.com/clayjohn/godot-volumetric-cloud-demo
 https://github.com/AmanSachan1/Meteoros
 https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-textures/main.go
+https://www.ea.com/seed/news/egsr-2022-blue-noise
 
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation

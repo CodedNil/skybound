@@ -1,21 +1,20 @@
 #define_import_path skybound::raymarch
 #import skybound::utils::{AtmosphereData, View}
-#import skybound::froxels::get_froxel_data
 #import skybound::clouds::{clouds_raymarch_entry, sample_clouds}
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
-@group(0) @binding(5) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(6) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(7) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(8) var cloud_weather_texture: texture_2d<f32>;
+@group(0) @binding(3) var cloud_base_texture: texture_3d<f32>;
+@group(0) @binding(4) var cloud_details_texture: texture_3d<f32>;
+@group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(6) var cloud_weather_texture: texture_2d<f32>;
 
-@group(0) @binding(9) var fog_noise_texture: texture_3d<f32>;
+@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
 
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
-const MAX_STEPS: i32 = 2048;
+const MAX_STEPS: i32 = 4096;
 const STEP_SIZE_INSIDE: f32 = 32.0;
 const STEP_SIZE_OUTSIDE: f32 = 64.0;
 
@@ -28,8 +27,10 @@ const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more
 const LIGHT_STEPS: u32 = 4; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 120.0;
 
-const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
-
+// Volume bitflags
+const VOLUME_CLOUDS: u32 = 1u;
+const VOLUME_FOG: u32 = 2u;
+const VOLUME_POLES: u32 = 4u;
 
 /// Sample from the volumes
 struct VolumeSample {
@@ -37,10 +38,18 @@ struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesInside, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: u32, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
 
-    if volumes_inside.fog {
+    if (volumes_inside & VOLUME_CLOUDS) != 0u {
+        let cloud_sample = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+        if cloud_sample > 0.0 {
+            sample.density += cloud_sample;
+            sample.color = vec3<f32>(1.0);
+        }
+    }
+
+    if (volumes_inside & VOLUME_FOG) != 0u {
         let fog_sample = sample_fog(pos, dist, time, false, fog_noise_texture, linear_sampler);
         if fog_sample.density > 0.0 {
             sample.density = fog_sample.density;
@@ -49,15 +58,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
         }
     }
 
-    if volumes_inside.clouds {
-        let cloud_sample = sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
-        if cloud_sample > 0.0 {
-            sample.density += cloud_sample;
-            sample.color = vec3<f32>(1.0);
-        }
-    }
-
-    if volumes_inside.poles {
+    if (volumes_inside & VOLUME_POLES) != 0u {
         let poles_sample = sample_poles(pos, dist, time, linear_sampler);
         if poles_sample.density > 0.0 {
             sample.density += poles_sample.density;
@@ -71,16 +72,11 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
 }
 
 fn sample_volume_light(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
-    let clouds = sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+    let clouds = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
     let fog = sample_fog(pos, dist, time, true, fog_noise_texture, linear_sampler).density;
     return clouds + fog;
 }
 
-struct VolumesInside {
-    clouds: bool,
-    fog: bool,
-    poles: bool,
-}
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
     let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
@@ -91,10 +87,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
     // Get initial start and end of the volumes
     let t_start = min(min(clouds_entry_exit.x, fog_entry_exit.x), poles_entry_exit.x) + dither * STEP_SIZE_INSIDE;
-    let t_end = max(max(clouds_entry_exit.y, fog_entry_exit.y), poles_entry_exit.y);
+    let t_end = min(max(max(clouds_entry_exit.y, fog_entry_exit.y), poles_entry_exit.y), t_max);
 
     // Track which volumes we are inside
-    var volumes_inside: VolumesInside;
+    var volumes_inside: u32 = 0u;
 
     // Accumulation variables
     var t = t_start;
@@ -110,12 +106,19 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         }
 
         // Track which volumes we are inside
-        volumes_inside.clouds = t >= clouds_entry_exit.x && t <= clouds_entry_exit.y;
-        volumes_inside.fog = t >= fog_entry_exit.x && t <= fog_entry_exit.y;
-        volumes_inside.poles = t >= poles_entry_exit.x && t <= poles_entry_exit.y;
+        volumes_inside = 0u;
+        if t >= clouds_entry_exit.x && t <= clouds_entry_exit.y {
+            volumes_inside |= VOLUME_CLOUDS;
+        }
+        if t >= fog_entry_exit.x && t <= fog_entry_exit.y {
+            volumes_inside |= VOLUME_FOG;
+        }
+        if t >= poles_entry_exit.x && t <= poles_entry_exit.y {
+            volumes_inside |= VOLUME_POLES;
+        }
 
         // If not inside any volume, skip to the next entry point
-        if !volumes_inside.clouds && !volumes_inside.fog && !volumes_inside.poles {
+        if volumes_inside == 0u {
             var next_entry = t_end;
             if (clouds_entry_exit.x > t && clouds_entry_exit.x < next_entry) {
                 next_entry = clouds_entry_exit.x;
@@ -133,10 +136,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
         let distance_scale = pow(smoothstep(SCALING_START, SCALING_END, t), 0.5);
-        if t > SCALING_START && volumes_inside.fog {
+        if t > SCALING_START && (volumes_inside & VOLUME_FOG) != 0u {
             step_scaler = 1.0 + distance_scale * SCALING_MAX_FOG;
         } else if t > SCALING_START {
-                step_scaler = 1.0 + distance_scale * SCALING_MAX;
+            step_scaler = 1.0 + distance_scale * SCALING_MAX;
         }
         // Reduce scaling when close to surfaces
         let distance_left = t_max - t;
@@ -153,33 +156,25 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, linear_sampler);
         let step_density = main_sample.density;
 
-        // Adjust t to effectively backtrack and take smaller steps when entering density
         if step_density > 0.0 {
+            // Adjust t to effectively backtrack and take smaller steps when entering density
             if steps_outside != 0 {
-                // First step into the volume
                 steps_outside = 0;
                 t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * step_scaler, 0.0);
                 continue;
             }
-        } else {
-            steps_outside += 1;
-        }
 
-        if step_density > 0.0 {
             step = STEP_SIZE_INSIDE * step_scaler;
 
-            let step_transmittance = exp(-DENSITY * step_density * step);
-            let alpha_step = (1.0 - step_transmittance);
-
-            // Get data from froxels
-            let froxels_data = get_froxel_data(world_pos, view);
-            var density_sunwards = max(step_density, froxels_data.density_sunwards * 10.0);
-            // var density_aurwards = max(step_density, froxels_data.density_aurwards * 10.0);
+            let step_transmittance = max(0.0, 1.0 - DENSITY * step_density * step);
+            let alpha_step = 1.0 - step_transmittance;
 
             // Lightmarching for self-shadowing
+            var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos_raw;
             var light_altitude: f32;
-            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+            let light_steps = select(1u, LIGHT_STEPS, step_density > 0.1);
+            for (var j: u32 = 0; j <= light_steps; j++) {
                 lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
                 light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
                 density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, linear_sampler);
@@ -205,6 +200,8 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             acc_color += in_scattering * transmittance * alpha_step * main_sample.color + main_sample.emission;
 
             transmittance *= step_transmittance;
+        } else {
+            steps_outside += 1;
         }
 
         t += step;

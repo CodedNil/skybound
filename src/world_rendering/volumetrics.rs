@@ -1,6 +1,6 @@
 use crate::{
     world::{PLANET_RADIUS, WorldData},
-    world_rendering::{froxels::FroxelsTexture, noise::NoiseTextures},
+    world_rendering::noise::NoiseTextures,
 };
 use bevy::{
     asset::load_embedded_asset,
@@ -196,8 +196,8 @@ pub fn manage_textures(
 
     // Define the desired size for the intermediate texture
     let new_size = Extent3d {
-        width: primary_window.physical_width / 2,
-        height: primary_window.physical_height / 2,
+        width: primary_window.physical_width,
+        height: primary_window.physical_height,
         depth_or_array_layers: 1,
     };
 
@@ -261,7 +261,6 @@ impl ViewNode for VolumetricsNode {
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
         let noise_texture_handle = world.resource::<NoiseTextures>();
-        let froxels_texture_handle = world.resource::<FroxelsTexture>();
 
         // Ensure the intermediate data is ready
         let (
@@ -270,7 +269,6 @@ impl ViewNode for VolumetricsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
-            Some(froxels_texture),
             Some(base_noise),
             Some(detail_noise),
             Some(turbulence_noise),
@@ -282,7 +280,6 @@ impl ViewNode for VolumetricsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
-            gpu_images.get(&froxels_texture_handle.handle),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
@@ -301,8 +298,6 @@ impl ViewNode for VolumetricsNode {
                 view_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
                 depth_view,
-                &froxels_texture.texture_view,
-                &froxels_texture.sampler,
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
@@ -371,8 +366,6 @@ pub fn setup_volumetrics_pipeline(
                 uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                 sampler(SamplerBindingType::Filtering),    // Linear sampler
                 texture_depth_2d(),                        // Depth texture from prepass
-                texture_3d(TextureSampleType::Float { filterable: true }), // Froxels 3D texture
-                sampler(SamplerBindingType::Filtering),    // Froxels sampler
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                 texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture

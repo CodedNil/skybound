@@ -13,8 +13,6 @@ struct FullscreenVertexOutput {
 @group(0) @binding(1) var linear_sampler: sampler;
 @group(0) @binding(2) var depth_texture: texture_depth_2d;
 
-const ATMOSPHERE_HEIGHT: f32 = 100000.0;
-
 // Lighting Parameters
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const SILVER_SPREAD: f32 = 0.1;
