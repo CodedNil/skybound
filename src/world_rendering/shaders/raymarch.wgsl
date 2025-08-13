@@ -141,14 +141,14 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Sample the volumes
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
-        let main_sample = sample_volume(pos, t, time, volumes_inside, false, linear_sampler);
+        let world_pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
+        let main_sample = sample_volume(world_pos, t, time, volumes_inside, false, linear_sampler);
         let step_density = main_sample.density;
 
         // Get data from froxels
-        let froxels_data = get_froxel_data(pos, view);
+        let froxels_data = get_froxel_data(world_pos, view);
         // let step_density = froxels_data.density;
-        // let density_sunwards = froxels_data.sun_light;
+        // let beers_total = froxels_data.sun_light;
 
         // Adjust t to effectively backtrack and take smaller steps when entering density
         if step_density > 0.0 {
@@ -170,7 +170,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = pos;
+            var lightmarch_pos = world_pos;
             var light_altitude: f32;
             for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
                 lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
@@ -196,6 +196,13 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         }
 
         t += step;
+
+        if t > 20000.0 {
+            let froxels_data = get_froxel_data(world_pos, view);
+            let density = froxels_data.density;
+            let light = froxels_data.sun_light;
+            return vec4(vec3(density), 1.0);
+        }
     }
 
     acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0

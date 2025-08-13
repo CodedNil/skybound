@@ -10,6 +10,7 @@ use bevy::{
     prelude::*,
     render::{
         Extract,
+        camera::TemporalJitter,
         extract_resource::ExtractResource,
         render_asset::RenderAssets,
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
@@ -109,7 +110,7 @@ pub fn prepare_clouds_view_uniforms(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
-    views: Query<(Entity, &ExtractedView)>,
+    views: Query<(Entity, &ExtractedView, Option<&TemporalJitter>)>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
@@ -123,23 +124,37 @@ pub fn prepare_clouds_view_uniforms(
     else {
         return;
     };
-    for (entity, extracted_view) in &views {
-        let clip_from_view = extracted_view.clip_from_view;
+    for (entity, extracted_view, temporal_jitter) in &views {
+        let viewport = extracted_view.viewport.as_vec4();
+        let main_pass_viewport = viewport;
+
+        let unjittered_projection = extracted_view.clip_from_view;
+        let mut clip_from_view = unjittered_projection;
+
+        if let Some(temporal_jitter) = temporal_jitter {
+            temporal_jitter.jitter_projection(&mut clip_from_view, main_pass_viewport.zw());
+        }
+
         let view_from_clip = clip_from_view.inverse();
         let world_from_view = extracted_view.world_from_view.to_matrix();
         let view_from_world = world_from_view.inverse();
-        let clip_from_world = extracted_view
-            .clip_from_world
-            .unwrap_or_else(|| clip_from_view * view_from_world);
-        let world_from_clip = world_from_view * view_from_clip;
-        let world_position = extracted_view.world_from_view.translation() + data.camera_offset;
+
+        let clip_from_world = if temporal_jitter.is_some() {
+            clip_from_view * view_from_world
+        } else {
+            extracted_view
+                .clip_from_world
+                .unwrap_or_else(|| clip_from_view * view_from_world)
+        };
+
+        let world_position = extracted_view.world_from_view.translation(); // + data.camera_offset
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
                 frame_count: frame_count.0,
 
                 clip_from_world,
-                world_from_clip,
+                world_from_clip: world_from_view * view_from_clip,
                 world_from_view,
                 view_from_world,
 

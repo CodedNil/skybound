@@ -4,17 +4,26 @@
 @group(0) @binding(3) var froxels_texture: texture_3d<f32>;
 @group(0) @binding(4) var froxels_sampler: sampler;
 
+const FROXEL_NEAR: f32 = 1.0; // Near plane of froxel frustum
+const FROXEL_FAR: f32 = 100000.0; // Far plane of froxel frustum
+
 struct FroxelData {
     density: f32,
     sun_light: f32,
 }
-fn get_froxel_data(pos: vec3<f32>, view: View) -> FroxelData {
-    let ndc = position_world_to_ndc(pos, view.clip_from_world);
+fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
+    // Convert to NDC
+    let ndc = position_world_to_ndc(world_pos, view.clip_from_world);
     let uv = ndc_to_uv(ndc.xy);
-    let view_z = depth_ndc_to_view_z(ndc.z, view.clip_from_view, view.view_from_clip);
+
+    // Convert NDC depth back to linear depth, then to froxel coordinate
+    let linear_depth = depth_ndc_to_view_z(ndc.z, view.clip_from_view);
+    let froxel_z = clamp((linear_depth - FROXEL_NEAR) / (FROXEL_FAR - FROXEL_NEAR), 0.0, 1.0);
+
+    let uvw = vec3(uv, froxel_z);
 
     // Sample the texture
-    let sample = textureSample(froxels_texture, froxels_sampler, vec3<f32>(uv, view_z));
+    let sample = textureSample(froxels_texture, froxels_sampler, uvw);
 
     return FroxelData(sample.x, sample.y);
 }
@@ -30,12 +39,14 @@ fn ndc_to_uv(ndc: vec2<f32>) -> vec2<f32> {
     return ndc * vec2(0.5, -0.5) + vec2(0.5);
 }
 
+
 /// Retrieve the perspective camera near clipping plane
 fn perspective_camera_near(clip_from_view: mat4x4<f32>) -> f32 {
     return clip_from_view[3][2];
 }
 
 /// Convert ndc depth to linear view z.
-fn depth_ndc_to_view_z(ndc_depth: f32, clip_from_view: mat4x4<f32>, view_from_clip: mat4x4<f32>) -> f32 {
+/// Note: Depth values in front of the camera will be negative as -z is forward
+fn depth_ndc_to_view_z(ndc_depth: f32, clip_from_view: mat4x4<f32>) -> f32 {
     return -perspective_camera_near(clip_from_view) / ndc_depth;
 }
