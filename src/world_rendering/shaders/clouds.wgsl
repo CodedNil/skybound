@@ -63,7 +63,7 @@ fn get_cloud_layer(altitude: f32) -> CloudLayer {
     return CloudLayer(); // Altitude out of range
 }
 
-fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
+fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
     // --- Weather Parameters ---
     var cloud_layer = get_cloud_layer(pos.y);
     let weather_pos_2d = pos.xz * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
@@ -95,6 +95,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
     base_cloud = remap(base_cloud * height_gradient, 1.0 - weather_coverage, 1.0, 0.0, 1.0);
     base_cloud *= weather_coverage;
     if base_cloud <= 0.0 { return 0.0; }
+    if simple { return base_cloud; }
 
 	// --- High Frequency Detail with Curl Distortion ---
     let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;

@@ -50,7 +50,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
     }
 
     if volumes_inside.clouds {
-        let cloud_sample = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+        let cloud_sample = sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
         if cloud_sample > 0.0 {
             sample.density += cloud_sample;
             sample.color = vec3<f32>(1.0);
@@ -147,8 +147,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
         // Get data from froxels
         let froxels_data = get_froxel_data(world_pos, view);
-        // let step_density = froxels_data.density;
-        // let beers_total = froxels_data.sun_light;
+        let beers_total = 1.0 - froxels_data.sunlight;
 
         // Adjust t to effectively backtrack and take smaller steps when entering density
         if step_density > 0.0 {
@@ -168,20 +167,20 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let step_transmittance = exp(-DENSITY * step_density * step);
             let alpha_step = (1.0 - step_transmittance);
 
-            // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = world_pos;
-            var light_altitude: f32;
-            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
-                lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
-                light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-                density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
-            }
+            // // Lightmarching for self-shadowing
+            // var density_sunwards = max(step_density, 0.0);
+            // var lightmarch_pos = world_pos;
+            // var light_altitude: f32;
+            // for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+            //     lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE[j];
+            //     light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
+            //     density_sunwards += sample_volume(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z), t, time, volumes_inside, true, linear_sampler).density;
+            // }
 
-            // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);
-            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
-            let beers_total = max(beers, beers2);
+            // // Captures the direct lighting from the sun
+            // let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1]);
+            // let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE[1] * 0.25) * 0.7;
+            // let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
             let aur_intensity = smoothstep(12000.0, 0.0, altitude);
@@ -197,12 +196,12 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
         t += step;
 
-        if t > 20000.0 {
-            let froxels_data = get_froxel_data(world_pos, view);
-            let density = froxels_data.density;
-            let light = froxels_data.sun_light;
-            return vec4(vec3(density), 1.0);
-        }
+        // if t > 100000.0 || world_pos.y > 10000.0 {
+        //     let froxels_data = get_froxel_data(world_pos, view);
+        //     let density = froxels_data.density;
+        //     let sunlight = froxels_data.sunlight;
+        //     return vec4(0.0, sunlight, 0.0, 1.0);
+        // }
     }
 
     acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0

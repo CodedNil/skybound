@@ -43,6 +43,7 @@ pub struct CloudsViewUniform {
     clip_from_view: Mat4,
     view_from_clip: Mat4,
     world_position: Vec3,
+    camera_offset: Vec3,
 
     planet_rotation: Vec4,
     planet_center: Vec3,
@@ -147,7 +148,7 @@ pub fn prepare_clouds_view_uniforms(
                 .unwrap_or_else(|| clip_from_view * view_from_world)
         };
 
-        let world_position = extracted_view.world_from_view.translation(); // + data.camera_offset
+        let world_position = extracted_view.world_from_view.translation();
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
@@ -161,6 +162,7 @@ pub fn prepare_clouds_view_uniforms(
                 clip_from_view,
                 view_from_clip,
                 world_position,
+                camera_offset: data.camera_offset,
 
                 planet_rotation: data.planet_rotation,
                 planet_center: Vec3::new(world_position.x, -data.planet_radius, world_position.z),

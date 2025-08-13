@@ -5,11 +5,11 @@
 @group(0) @binding(4) var froxels_sampler: sampler;
 
 const FROXEL_NEAR: f32 = 1.0; // Near plane of froxel frustum
-const FROXEL_FAR: f32 = 100000.0; // Far plane of froxel frustum
+const FROXEL_FAR: f32 = 1000000.0; // Far plane of froxel frustum
 
 struct FroxelData {
     density: f32,
-    sun_light: f32,
+    sunlight: f32,
 }
 fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
     // Convert to NDC
@@ -17,7 +17,7 @@ fn get_froxel_data(world_pos: vec3<f32>, view: View) -> FroxelData {
     let uv = ndc_to_uv(ndc.xy);
 
     // Convert NDC depth back to linear depth, then to froxel coordinate
-    let linear_depth = depth_ndc_to_view_z(ndc.z, view.clip_from_view);
+    let linear_depth = -depth_ndc_to_view_z(ndc.z, view.clip_from_view);
     let froxel_z = clamp((linear_depth - FROXEL_NEAR) / (FROXEL_FAR - FROXEL_NEAR), 0.0, 1.0);
 
     let uvw = vec3(uv, froxel_z);

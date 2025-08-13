@@ -49,9 +49,9 @@ pub fn setup_froxels_texture(mut commands: Commands, mut images: ResMut<Assets<I
     image.texture_descriptor.usage =
         TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::ClampToEdge,
-        address_mode_v: ImageAddressMode::ClampToEdge,
-        address_mode_w: ImageAddressMode::ClampToEdge,
+        address_mode_u: ImageAddressMode::ClampToBorder,
+        address_mode_v: ImageAddressMode::ClampToBorder,
+        address_mode_w: ImageAddressMode::ClampToBorder,
         mag_filter: ImageFilterMode::Linear,
         min_filter: ImageFilterMode::Linear,
         mipmap_filter: ImageFilterMode::Linear,
