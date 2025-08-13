@@ -24,7 +24,7 @@ use bevy::{
     },
 };
 
-const RESOLUTION: UVec3 = UVec3::new(128, 72, 1024);
+const RESOLUTION: UVec3 = UVec3::new(256, 144, 1024);
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct FroxelsTexture {
@@ -178,7 +178,7 @@ impl ViewNode for FroxelsNode {
             .begin_compute_pass(&ComputePassDescriptor::default());
         pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
         pass.set_pipeline(compute_pipeline);
-        pass.dispatch_workgroups(RESOLUTION.x / 8, RESOLUTION.y / 8, RESOLUTION.z / 16);
+        // pass.dispatch_workgroups(RESOLUTION.x / 8, RESOLUTION.y / 8, RESOLUTION.z / 16);
 
         Ok(())
     }

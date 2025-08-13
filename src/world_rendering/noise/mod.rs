@@ -33,7 +33,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         load_or_generate_texture("base_texture", size, depth, TextureFormat::R8Unorm, || {
             let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(8.0, 4.0), 1.5))
                 .iter()
-                .zip(worley_3d(size, depth, 12.0, 0.5, true))
+                .zip(worley_3d(size, depth, 3, 0.5, 12.0, 0.5))
                 .map(|(&perlin, worley)| map_range(perlin, -(1.0 - worley), 1.0, 0.0, 1.0))
                 .collect::<Vec<f32>>();
 
@@ -41,13 +41,19 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             interleave_channels([perlinworley])
         });
 
-    let size = 64;
-    let detail_texture =
-        load_or_generate_texture("detail_texture", size, size, TextureFormat::R8Unorm, || {
-            let detail1 = worley_3d(size, size, 5.0, 0.6, true);
+    let size = 256;
+    let depth = 64;
+    let detail_texture = load_or_generate_texture(
+        "detail_texture",
+        size,
+        depth,
+        TextureFormat::R8Unorm,
+        || {
+            let detail1 = worley_3d(size, depth, 12, 0.8, 8.0, 0.6);
             save_noise_layer(&detail1, "detail1.png", size);
             interleave_channels([detail1])
-        });
+        },
+    );
 
     let size = 512;
     let turbulence_texture = load_or_generate_texture(
@@ -77,14 +83,14 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
                 .iter()
                 .map(|&x| x * 1.1 - 0.1)
                 .collect::<Vec<f32>>();
-            let weather2 = spread(&worley_3d(size, 1, 8.0, 0.4, true))
+            let weather2 = spread(&worley_3d(size, 1, 3, 0.5, 8.0, 0.4))
                 .iter()
                 .zip(spread(&simplex_3d(size, 1, 5, 0.8, Vec2::new(8.0, 2.0), 1.0)).iter())
                 .map(|(&a, &b)| (a * 1.7 - 0.5) + b * 0.1)
                 .collect::<Vec<f32>>();
             let weather3 = spread(&simplex_3d(size, 1, 6, 0.8, Vec2::splat(2.0), 0.5))
                 .iter()
-                .zip(spread(&worley_3d(size, 1, 2.0, 1.0, true)).iter())
+                .zip(spread(&worley_3d(size, 1, 3, 0.5, 2.0, 1.0)).iter())
                 .map(|(&a, &b)| (a * 1.2 - 0.2) - b * 0.1)
                 .collect::<Vec<f32>>();
             let weather4 = spread(&simplex_3d(size, 1, 6, 0.8, Vec2::splat(4.0), 0.5));
@@ -101,7 +107,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
     let size = 128;
     let fog_texture =
         load_or_generate_texture("fog_texture", size, size, TextureFormat::Rg8Unorm, || {
-            let fog1 = spread(&simplex_3d(size, size, 6, 0.1, Vec2::new(18.0, 12.0), 1.0));
+            let fog1 = spread(&simplex_3d(size, size, 6, 0.1, Vec2::new(12.0, 8.0), 1.0));
             let fog2 = spread(&simplex_3d(size, size, 12, 0.4, Vec2::new(6.0, 4.0), 1.0));
 
             save_noise_layer(&fog1, "fog1.png", size);

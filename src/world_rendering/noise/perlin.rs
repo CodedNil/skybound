@@ -6,7 +6,7 @@ pub fn perlin_3d(
     size: usize,
     depth: usize,
     octaves: usize,
-    gain: f32,
+    persistence: f32,
     freq: Vec2,
     gamma: f32,
 ) -> Vec<f32> {
@@ -27,7 +27,7 @@ pub fn perlin_3d(
             );
 
             // Compute fractal‐brownian motion
-            let v = perlin_fbm3(pos, octaves, freq, gain, true);
+            let v = perlin_fbm3(pos, octaves, freq, persistence, true);
 
             // Map from [-1..1] to [0..1]
             (v * 0.5 + 0.5).powf(gamma)
@@ -36,14 +36,20 @@ pub fn perlin_3d(
 }
 
 // FBM Perlin Noise
-pub fn perlin_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32, tile: bool) -> f32 {
+pub fn perlin_fbm3(
+    pos: Vec3A,
+    octaves: usize,
+    mut freq: Vec3A,
+    persistence: f32,
+    tile: bool,
+) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
     for _ in 0..octaves {
         total += perlin3(pos * freq, freq, tile) * amp;
         norm += amp;
-        amp *= gain;
+        amp *= persistence;
         freq *= 2.0;
     }
     total / norm

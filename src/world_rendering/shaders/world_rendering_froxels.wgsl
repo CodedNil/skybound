@@ -11,13 +11,13 @@
 @group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
 @group(0) @binding(6) var cloud_weather_texture: texture_2d<f32>;
 
-const RESOLUTION: vec3<u32> = vec3<u32>(128, 72, 1024);
+const RESOLUTION: vec3<u32> = vec3<u32>(256, 144, 1024);
 const FROXEL_NEAR: f32 = 1.0; // Near plane of froxel frustum
 const FROXEL_FAR: f32 = 1000000.0; // Far plane of froxel frustum
 
-const LIGHT_STEPS: u32 = 10; // How many steps to take along the sun direction
+const LIGHT_STEPS: u32 = 40; // How many steps to take along the sun direction
 const LIGHT_STEPS_AUR: u32 = 4; // How many steps to take along the aur direction
-const LIGHT_STEP_SIZE: f32 = 200.0;
+const LIGHT_STEP_SIZE: f32 = 150.0;
 const AUR_DIRECTION: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
 
 fn sample_volume(pos: vec3<f32>, dist: f32, time: f32) -> f32 {

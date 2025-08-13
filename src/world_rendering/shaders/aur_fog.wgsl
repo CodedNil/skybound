@@ -12,24 +12,26 @@ const FOG_BOTTOM_HEIGHT: f32 = -500.0;
 
 // Fog turbulence calculations
 const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
-const TURB_ROTS: array<mat2x2<f32>, 8> = array<mat2x2<f32>,8>(
-    mat2x2<f32>(vec2<f32>(0.600, -0.800), vec2<f32>(0.800, 0.600)),
-    mat2x2<f32>(vec2<f32>(-0.280, -0.960), vec2<f32>(0.960, -0.280)),
-    mat2x2<f32>(vec2<f32>(-0.936, -0.352), vec2<f32>(0.352, -0.936)),
-    mat2x2<f32>(vec2<f32>(-0.843, 0.538), vec2<f32>(-0.538, -0.843)),
-    mat2x2<f32>(vec2<f32>(-0.076, 0.997), vec2<f32>(-0.997, -0.076)),
-    mat2x2<f32>(vec2<f32>(0.752, 0.659), vec2<f32>(-0.659, 0.752)),
-    mat2x2<f32>(vec2<f32>(0.978, -0.206), vec2<f32>(0.206, 0.978)),
-    mat2x2<f32>(vec2<f32>(0.422, -0.907), vec2<f32>(0.907, 0.422))
+const TURB_ROTS = array<mat2x2<f32>, 10>(
+    mat2x2<f32>(vec2<f32>(0.600, 0.800), vec2<f32>(-0.800, 0.600)),
+    mat2x2<f32>(vec2<f32>(-0.280, 0.960), vec2<f32>(-0.960, -0.280)),
+    mat2x2<f32>(vec2<f32>(-0.843, -0.538), vec2<f32>(0.538, -0.843)),
+    mat2x2<f32>(vec2<f32>(0.422, 0.907), vec2<f32>(-0.907, 0.422)),
+    mat2x2<f32>(vec2<f32>(-0.644, 0.765), vec2<f32>(-0.765, -0.644)),
+    mat2x2<f32>(vec2<f32>(-0.171, -0.985), vec2<f32>(0.985, -0.171)),
+    mat2x2<f32>(vec2<f32>(-0.942, 0.337), vec2<f32>(-0.337, -0.942)),
+    mat2x2<f32>(vec2<f32>(0.773, -0.634), vec2<f32>(0.634, 0.773)),
+    mat2x2<f32>(vec2<f32>(0.196, -0.981), vec2<f32>(0.981, 0.196)),
+    mat2x2<f32>(vec2<f32>(-0.923, -0.384), vec2<f32>(0.384, -0.923))
 );
 const TURB_AMP: f32 = 0.6; // Turbulence amplitude
 const TURB_SPEED: f32 = 0.5; // Turbulence speed
 const TURB_FREQ: f32 = 0.4; // Initial turbulence frequency
 const TURB_EXP: f32 = 1.6; // Frequency multiplier per iteration
-fn compute_turbulence(initial_pos: vec2<f32>, iters: i32, time: f32) -> vec2<f32> {
+fn compute_turbulence(initial_pos: vec2<f32>, time: f32) -> vec2<f32> {
     var pos = initial_pos;
     var freq = TURB_FREQ;
-    for (var i = 0; i < iters; i++) {
+    for (var i = 0; i < 10; i++) {
         // Compute phase using rotated y-coordinate, time, and iteration offset
         let rot = TURB_ROTS[i];
         let phase = freq * (pos * rot).y + TURB_SPEED * time + f32(i);
@@ -127,12 +129,12 @@ struct FogSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
+fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
     if pos.y > FOG_START_HEIGHT { return sample; }
 
-    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xz * 0.00004, time * 0.01,), 0.0).r * -300.0;
+    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xz * 0.00001, time * 0.01,), 0.0).r * -1200.0;
     let altitude = pos.y - height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
@@ -142,12 +144,11 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, noise_texture: texture_3d<f3
     if density >= 1.0 {
         sample.density = 1.0;
     } else {
-        let turb_iters = i32(round(mix(2.0, 6.0, smoothstep(50000.0, 1000.0, dist))));
-        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.01 + vec2<f32>(time, 0.0), turb_iters, time);
-        fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.1, altitude * 0.001), 0.0).g * 2.0 - 1.0;
+        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.001 + vec2<f32>(time, 0.0), time);
+        fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.2, altitude * 0.001), 0.0).g * 2.0 - 1.0;
         sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
-    if sample.density <= 0.0 { return sample; }
+    if only_density || sample.density <= 0.0 { return sample; }
 
     // Compute fog color based on turbulent flow
     sample.color = mix(COLOR_A, COLOR_B, fbm_value);

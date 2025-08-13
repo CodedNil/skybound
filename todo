@@ -1,4 +1,4 @@
-give the layers random offsets on the height and positioning so they dont look so flat
+give the layers random offsets on the height and vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
 
@@ -36,10 +36,6 @@ https://github.com/clayjohn/godot-volumetric-cloud-demo
 https://github.com/AmanSachan1/Meteoros
 https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-textures/main.go
 
-have layers of clouds, define them in a const array, each has a height so there can be thin layers and different layer variables, each also has a different wind direction (though probably shouldn't drastically switch, slow rotations)
-could maybe do simple shadowing using the layers above with very coarse read at a single depth of it, then offset with light direction
-vary the layers each with a perlin noise heightmap, each has a different offset so sometimes layers can overlap
-
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
@@ -56,4 +52,3 @@ aur particles in air going up, wind speed based on height going to poles, maybe 
 aur fog:
 bad lighting at night, lighting is green at night
 make it wildly more turbulent around the lightning flashes
-fix pattern on aur fog

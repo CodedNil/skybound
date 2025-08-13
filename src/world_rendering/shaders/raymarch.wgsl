@@ -15,17 +15,17 @@
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
-const MAX_STEPS: i32 = 1024;
+const MAX_STEPS: i32 = 2048;
 const STEP_SIZE_INSIDE: f32 = 32.0;
 const STEP_SIZE_OUTSIDE: f32 = 64.0;
 
 const SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const SCALING_END: f32 = 500000.0; // Distance from camera to use max step size
 const SCALING_MAX: f32 = 12.0; // Maximum scaling factor to increase by
+const SCALING_MAX_FOG: f32 = 2.0; // Maximum scaling factor to increase by while in fog
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS: f32 = 4.0; // How many steps to take along the sun direction
-const LIGHT_STEP_DISTANCE: f32 = 100000.0; // Distance before it does not do any fine lightmarching
+const LIGHT_STEPS: u32 = 4; // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 120.0;
 
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.6, 0.3, 0.8);
@@ -41,7 +41,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
     var sample: VolumeSample;
 
     if volumes_inside.fog {
-        let fog_sample = sample_fog(pos, dist, time, fog_noise_texture, linear_sampler);
+        let fog_sample = sample_fog(pos, dist, time, false, fog_noise_texture, linear_sampler);
         if fog_sample.density > 0.0 {
             sample.density = fog_sample.density;
             sample.color = fog_sample.color;
@@ -71,7 +71,9 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesIn
 }
 
 fn sample_volume_light(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
-    return sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+    let clouds = sample_clouds(pos, dist, time, false, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+    let fog = sample_fog(pos, dist, time, true, fog_noise_texture, linear_sampler).density;
+    return clouds + fog;
 }
 
 struct VolumesInside {
@@ -131,8 +133,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
         let distance_scale = pow(smoothstep(SCALING_START, SCALING_END, t), 0.5);
-        if t > SCALING_START {
-            step_scaler = 1.0 + distance_scale * SCALING_MAX;
+        if t > SCALING_START && volumes_inside.fog {
+            step_scaler = 1.0 + distance_scale * SCALING_MAX_FOG;
+        } else if t > SCALING_START {
+                step_scaler = 1.0 + distance_scale * SCALING_MAX;
         }
         // Reduce scaling when close to surfaces
         let distance_left = t_max - t;
@@ -175,13 +179,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // Lightmarching for self-shadowing
             var lightmarch_pos = pos_raw;
             var light_altitude: f32;
-            let light_steps = u32(round(LIGHT_STEPS * smoothstep(LIGHT_STEP_DISTANCE, 0.0, t)));
-            if light_steps > 0 {
-                for (var j: u32 = 0; j <= light_steps; j++) {
-                    lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
-                    light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-                    density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, linear_sampler);
-                }
+            for (var j: u32 = 0; j <= LIGHT_STEPS; j++) {
+                lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
+                light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
+                density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, linear_sampler);
             }
 
             // Captures the direct lighting from the sun
@@ -195,7 +196,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // let beers_aur_total = max(beers_aur, beers_aur2);
 
 			// Compute in-scattering
-            let aur_intensity = smoothstep(12000.0, 0.0, altitude);
+            let aur_intensity = smoothstep(6000.0, 0.0, altitude);
             let aur_ambient = mix(vec3(1.0), atmosphere.ground, aur_intensity);
             let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (view.sun_direction.y);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;

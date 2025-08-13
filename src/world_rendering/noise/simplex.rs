@@ -6,7 +6,7 @@ pub fn simplex_3d(
     size: usize,
     depth: usize,
     octaves: usize,
-    gain: f32,
+    persistence: f32,
     freq: Vec2,
     gamma: f32,
 ) -> Vec<f32> {
@@ -27,7 +27,7 @@ pub fn simplex_3d(
             );
 
             // Compute fractal‐brownian motion
-            let v = simplex_fbm3(pos, octaves, freq, gain);
+            let v = simplex_fbm3(pos, octaves, freq, persistence);
 
             // Map from [-1..1] to [0..1]
             (v * 0.5 + 0.5).powf(gamma)
@@ -36,7 +36,7 @@ pub fn simplex_3d(
 }
 
 // FBM Simplex Noise
-fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32) -> f32 {
+fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, persistence: f32) -> f32 {
     let mut total = 0.0;
     let mut amp = 1.0;
     let mut norm = 0.0;
@@ -44,7 +44,7 @@ fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, gain: f32) -> f32 {
     for _ in 0..octaves {
         total += simplex3_seamless(pos * freq, freq) * amp;
         norm += amp;
-        amp *= gain;
+        amp *= persistence;
         freq *= 2.0;
     }
 
