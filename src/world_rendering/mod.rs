@@ -49,26 +49,17 @@ impl Plugin for WorldRenderingPlugin {
                 Render,
                 (
                     manage_textures.in_set(RenderSystems::Queue),
-                    (
-                        prepare_clouds_view_uniforms,
-                        update_previous_view_data.after(prepare_clouds_view_uniforms),
-                    )
+                    prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
+                    update_previous_view_data
+                        .after(prepare_clouds_view_uniforms)
                         .in_set(RenderSystems::PrepareResources),
                 ),
             )
             .add_render_graph_node::<ViewNodeRunner<VolumetricsNode>>(Core3d, VolumetricsLabel)
             .add_render_graph_node::<ViewNodeRunner<CompositeNode>>(Core3d, CompositeLabel)
-            .add_render_graph_edges(Core3d, (Node3d::EndMainPass, VolumetricsLabel))
             .add_render_graph_edges(
                 Core3d,
-                (
-                    Node3d::StartMainPass,
-                    VolumetricsLabel,
-                    CompositeLabel,
-                    Node3d::Bloom,
-                    Node3d::EndMainPassPostProcessing,
-                    Node3d::Upscaling,
-                ),
+                (Node3d::StartMainPass, VolumetricsLabel, CompositeLabel),
             );
     }
 

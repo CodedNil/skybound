@@ -18,7 +18,6 @@ struct FragmentOutput {
 
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
-@group(0) @binding(2) var depth_texture: texture_depth_2d;
 
 // Lighting Parameters
 const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
@@ -37,19 +36,14 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     let pix = in.position.xy;
     let dither = fract(blue_noise(pix));
 
-    // Load depth and unproject to clip space
-    let depth = textureSample(depth_texture, linear_sampler, uv);
-    let ndc = vec4(uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0), depth, 1.0);
-
     // Reconstruct world‑space pos
-    let world_pos4 = view.world_from_clip * ndc;
-    let world_pos3 = world_pos4.xyz / world_pos4.w;
+    let ndc = uv_to_ndc(uv);
+    let world_pos_far = position_ndc_to_world(vec3(ndc, 0.01), view.world_from_clip);
 
     // Ray origin & dir
     let ro = view.world_position;
-    let rd_vec = world_pos3 - ro;
-    let t_max = length(rd_vec);
-    let rd = normalize(rd_vec);
+    let rd = normalize(world_pos_far - ro);
+    let t_max = 10000000.0;
 
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
@@ -71,11 +65,9 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     var acc_color: vec3<f32> = raymarch_result.color.rgb;
     var acc_alpha: f32 = raymarch_result.color.a;
 
-    if depth <= 0.00001 {
-        // Add our sky in the background
-        acc_color += vec3(atmosphere.sky * (1.0 - acc_alpha));
-        acc_alpha = 1.0;
-    }
+    // Blend the volumetrics with the sky color behind them
+    acc_color = acc_color + atmosphere.sky * (1.0 - acc_alpha);
+    acc_alpha = 1.0;
 
     // Calculate motion vectors using volumetric depth for better accuracy
     var motion_vector = vec2(0.0);
@@ -99,18 +91,25 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     }
 
     var output: FragmentOutput;
-    output.color = clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    output.color = clamp(vec4(acc_color, 1.0), vec4(0.0), vec4(1.0));
     output.motion_vector = motion_vector;
 
     // Output volumetric depth, or far plane if no volumetric contribution
     var final_volumetric_depth: f32 = 0.0;
-    if acc_alpha > 0.001 && volumetrics_depth > 0.0 {
-        // Normalize the depth value to the [0, 1] range
+    if volumetrics_depth > 0.0 {
         final_volumetric_depth = volumetrics_depth / t_max;
-    } else {
-        // No volumetrics, so depth is at the far plane (1.0)
-        final_volumetric_depth = 1.0;
     }
 
     return output;
+}
+
+/// Convert a ndc space position to world space
+fn position_ndc_to_world(ndc_pos: vec3<f32>, world_from_clip: mat4x4<f32>) -> vec3<f32> {
+    let world_pos = world_from_clip * vec4(ndc_pos, 1.0);
+    return world_pos.xyz / world_pos.w;
+}
+
+/// Convert uv [0.0 .. 1.0] coordinate to ndc space xy [-1.0 .. 1.0]
+fn uv_to_ndc(uv: vec2<f32>) -> vec2<f32> {
+    return uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
 }

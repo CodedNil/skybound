@@ -4,12 +4,12 @@
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
-@group(0) @binding(3) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(4) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(5) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(6) var cloud_weather_texture: texture_2d<f32>;
+@group(0) @binding(2) var cloud_base_texture: texture_3d<f32>;
+@group(0) @binding(3) var cloud_details_texture: texture_3d<f32>;
+@group(0) @binding(4) var cloud_motion_texture: texture_2d<f32>;
+@group(0) @binding(5) var cloud_weather_texture: texture_2d<f32>;
 
-@group(0) @binding(7) var fog_noise_texture: texture_3d<f32>;
+@group(0) @binding(6) var fog_noise_texture: texture_3d<f32>;
 
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting

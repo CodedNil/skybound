@@ -6,5 +6,5 @@
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let clouds = textureSample(cloudsTexture, cloudsSampler, in.uv);
-    return vec4<f32>(clouds.xyz, 1.0);
+    return vec4<f32>(clouds.rgb, 1.0);
 }

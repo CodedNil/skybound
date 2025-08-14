@@ -4,7 +4,7 @@ use crate::{
 };
 use bevy::{
     asset::load_embedded_asset,
-    core_pipeline::{FullscreenShader, prepass::ViewPrepassTextures},
+    core_pipeline::FullscreenShader,
     diagnostic::FrameCount,
     ecs::query::QueryItem,
     prelude::*,
@@ -22,7 +22,7 @@ use bevy::{
             SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, StoreOp, Texture,
             TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
             TextureView, TextureViewDescriptor,
-            binding_types::{sampler, texture_2d, texture_3d, texture_depth_2d, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -193,7 +193,7 @@ pub fn prepare_clouds_view_uniforms(
     }
 }
 
-/// System that runs late in the frame to update the PreviousViewData resource
+/// System that runs late in the frame to update the `PreviousViewData` resource
 pub fn update_previous_view_data(
     mut prev_view_data: ResMut<PreviousViewData>,
     views: Query<(&ExtractedView, Option<&TemporalJitter>)>,
@@ -264,7 +264,6 @@ pub fn manage_textures(
         });
         let view = texture.create_view(&TextureViewDescriptor::default());
 
-        // Create motion vector texture (RG16Float for 2D motion vectors)
         let motion_texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_motion_texture"),
             size: new_size,
@@ -279,7 +278,6 @@ pub fn manage_textures(
         });
         let motion_view = motion_texture.create_view(&TextureViewDescriptor::default());
 
-        // Create depth texture (R32Float for volumetric depth)
         let depth_texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_depth_texture"),
             size: new_size,
@@ -325,16 +323,13 @@ pub struct VolumetricsPipeline {
 }
 
 impl ViewNode for VolumetricsNode {
-    type ViewQuery = (
-        &'static CloudsViewUniformOffset,
-        &'static ViewPrepassTextures,
-    );
+    type ViewQuery = &'static CloudsViewUniformOffset;
 
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_uniform_offset, prepass_textures): QueryItem<Self::ViewQuery>,
+        view_uniform_offset: QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let volumetric_clouds_pipeline = world.resource::<VolumetricsPipeline>();
@@ -347,7 +342,6 @@ impl ViewNode for VolumetricsNode {
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(depth_view),
             Some(texture),
             Some(view),
             Some(motion_view),
@@ -360,7 +354,6 @@ impl ViewNode for VolumetricsNode {
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
             cloud_render_texture.motion_view.as_ref(),
@@ -382,7 +375,6 @@ impl ViewNode for VolumetricsNode {
             &BindGroupEntries::sequential((
                 view_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
-                depth_view,
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
@@ -471,7 +463,6 @@ impl FromWorld for VolumetricsPipeline {
                 (
                     uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                     sampler(SamplerBindingType::Filtering),    // Linear sampler
-                    texture_depth_2d(),                        // Depth texture from prepass
                     texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture

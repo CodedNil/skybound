@@ -1,12 +1,9 @@
 #![feature(portable_simd, default_field_values)]
 
-use bevy::light::NotShadowCaster;
-use bevy::prelude::*;
+use bevy::{app::plugin_group, prelude::*};
 
 mod world_rendering;
 use crate::world_rendering::WorldRenderingPlugin;
-// mod wind;
-// use crate::wind::apply_wind_force;
 
 mod debugtext;
 use crate::debugtext::DebugTextPlugin;
@@ -15,34 +12,41 @@ use crate::camera::CameraPlugin;
 pub mod world;
 use crate::world::WorldPlugin;
 
+plugin_group! {
+    struct CustomPlugins {
+        bevy::app:::PanicHandlerPlugin,
+        bevy::log:::LogPlugin,
+        bevy::app:::TaskPoolPlugin,
+        bevy::diagnostic:::FrameCountPlugin,
+        bevy::time:::TimePlugin,
+        bevy::transform:::TransformPlugin,
+        bevy::diagnostic:::DiagnosticsPlugin,
+        bevy::input:::InputPlugin,
+        bevy::app:::ScheduleRunnerPlugin,
+        bevy::window:::WindowPlugin,
+        bevy::a11y:::AccessibilityPlugin,
+        bevy::app:::TerminalCtrlCHandlerPlugin,
+        bevy::asset:::AssetPlugin,
+        bevy::winit:::WinitPlugin,
+        bevy::render:::RenderPlugin,
+        bevy::image:::ImagePlugin,
+        bevy::render::pipelined_rendering:::PipelinedRenderingPlugin,
+        bevy::core_pipeline:::CorePipelinePlugin,
+        bevy::sprite:::SpritePlugin,
+        bevy::text:::TextPlugin,
+        bevy::ui:::UiPlugin,
+        bevy::ui_render:::UiRenderPlugin,
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins((
-            DefaultPlugins,
-            WorldRenderingPlugin,
-            CameraPlugin,
-            DebugTextPlugin,
+            CustomPlugins,
             WorldPlugin,
+            CameraPlugin,
+            WorldRenderingPlugin,
+            DebugTextPlugin,
         ))
-        .add_systems(Startup, setup)
-        // .add_systems(FixedUpdate, apply_wind_force)
         .run();
-}
-
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Srgba::hex("000000").unwrap().into(),
-            unlit: true,
-            cull_mode: None,
-            ..default()
-        })),
-        Transform::from_scale(Vec3::splat(100_000_000.0)),
-        NotShadowCaster,
-    ));
 }

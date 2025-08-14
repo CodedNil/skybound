@@ -10,10 +10,10 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
 
     "std",
     "async_executor",
+    "bevy_asset",
+    "bevy_color",
     "bevy_core_pipeline",
     "bevy_log",
-    "bevy_pbr",
-    "bevy_ui_render",
     "bevy_window",
     "default_font",
     "hdr",
@@ -23,6 +23,13 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
 
     "debug",
 ] }
+bevy_internal = { git = "https://github.com/bevyengine/bevy", package = "bevy_internal", default-features = false, features = [
+    "bevy_ui",
+    "bevy_ui_render",
+    "bevy_text",
+    "bevy_sprite",
+] }
+
 bytemuck = "1.23.2"
 image = "0.25.6"
 rayon = "1.11.0"
@@ -33,7 +40,6 @@ unsafe_code = "forbid"
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
-
 must_use_candidate = "allow"
 suboptimal_flops = "allow"
 needless_pass_by_value = "allow"

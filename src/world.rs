@@ -1,9 +1,14 @@
 use crate::camera::CameraController;
 use bevy::{
-    camera::Exposure,
-    core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
+    camera::{
+        Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, RenderTarget,
+        ScreenSpaceTransmissionQuality,
+    },
     prelude::*,
+    render::{render_resource::TextureUsages, view::Hdr},
+    window::WindowRef,
 };
+use core::default::Default;
 use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
@@ -83,13 +88,34 @@ impl Plugin for WorldPlugin {
 fn setup(mut commands: Commands) {
     // Camera
     commands.spawn((
-        Camera3d::default(),
-        Camera::default(),
-        Msaa::Off,
+        Camera3d {
+            depth_load_op: Camera3dDepthLoadOp::Clear(0.0),
+            depth_texture_usages: TextureUsages::RENDER_ATTACHMENT.into(),
+            screen_space_specular_transmission_steps: 0,
+            screen_space_specular_transmission_quality: ScreenSpaceTransmissionQuality::Low,
+        },
+        Camera {
+            is_active: true,
+            order: 0,
+            viewport: None,
+            computed: ComputedCameraValues::default(),
+            target: RenderTarget::Window(WindowRef::Primary),
+            output_mode: CameraOutputMode::Write {
+                blend_state: None,
+                clear_color: ClearColorConfig::Default,
+            },
+            msaa_writeback: false,
+            clear_color: ClearColorConfig::Default,
+            sub_camera_view: None,
+        },
+        Projection::Perspective(PerspectiveProjection {
+            fov: FRAC_PI_4,
+            near: 0.1,
+            far: 1000.0,
+            aspect_ratio: 1.0,
+        }),
+        Hdr,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
-        Exposure::SUNLIGHT,
-        Bloom::NATURAL,
-        DepthPrepass,
         CameraController {
             speed: 40.0,
             sensitivity: 0.005,
@@ -120,7 +146,7 @@ fn update(
     }
 
     // --- Planet and Object Positioning ---
-    // The planet's center is always directly below the camera's XY position, creating a "treadmill" effect.
+    // The planet's center is always directly below the camera's XY position, creating a treadmill effect.
     let effective_rotation = world_coords.planet_rotation(camera_transform.translation);
 
     // --- Sun Logic ---
