@@ -9,9 +9,9 @@ use bevy::{
         render_resource::{
             BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BlendState,
             CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, LoadOp,
-            Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, SamplerBindingType, ShaderStages, StoreOp, TextureFormat,
-            TextureSampleType,
+            MultisampleState, Operations, PipelineCache, RenderPassColorAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, SamplerBindingType, ShaderStages,
+            StoreOp, TextureFormat, TextureSampleType,
             binding_types::{sampler, texture_2d},
         },
         renderer::{RenderContext, RenderDevice},
@@ -26,7 +26,7 @@ pub struct CompositeLabel;
 pub struct CompositeNode;
 
 #[derive(Resource)]
-struct CompositePipeline {
+pub struct CompositePipeline {
     layout: BindGroupLayout,
     pipeline_id: CachedRenderPipelineId,
 }
@@ -55,17 +55,13 @@ impl ViewNode for CompositeNode {
             return Ok(());
         };
 
-        // Get the main view's post-process write target (source is current scene, destination is where we write)
-        let post_process = view_target.post_process_write();
-
         // Create the bind group for the composite shader
         let bind_group = render_context.render_device().create_bind_group(
             "volumetric_clouds_composite_bind_group",
             &volumetric_clouds_composite_pipeline.layout,
             &BindGroupEntries::sequential((
-                post_process.source, // The current scene's color texture
-                cloud_texture_view,  // Our rendered clouds texture
-                cloud_sampler,       // Sampler for the clouds texture
+                cloud_texture_view, // Our rendered clouds texture
+                cloud_sampler,      // Sampler for the clouds texture
             )),
         );
 
@@ -73,7 +69,7 @@ impl ViewNode for CompositeNode {
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("volumetric_clouds_composite_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: post_process.destination, // Render to the main view target
+                view: view_target.main_texture_view(),
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
@@ -93,47 +89,47 @@ impl ViewNode for CompositeNode {
     }
 }
 
-pub fn setup_composite_pipeline(
-    mut commands: Commands,
-    render_device: Res<RenderDevice>,
-    asset_server: Res<AssetServer>,
-    fullscreen_shader: Res<FullscreenShader>,
-    pipeline_cache: ResMut<PipelineCache>,
-) {
-    // Define the bind group layout for the composite shader
-    let layout = render_device.create_bind_group_layout(
-        "volumetric_clouds_composite_bind_group_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT, // Bindings primarily for the fragment shader
-            (
-                texture_2d(TextureSampleType::Float { filterable: true }), // Original scene color texture
-                texture_2d(TextureSampleType::Float { filterable: true }), // Clouds texture
-                sampler(SamplerBindingType::Filtering), // Sampler for both textures
-            ),
-        ),
-    );
+impl FromWorld for CompositePipeline {
+    fn from_world(world: &mut World) -> Self {
+        let shader = load_embedded_asset!(
+            world.resource::<AssetServer>(),
+            "shaders/world_rendering_composite.wgsl"
+        );
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let render_device = world.resource::<RenderDevice>();
+        let fullscreen_shader = world.resource::<FullscreenShader>();
 
-    // Queue the render pipeline for creation
-    let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
-        label: Some("volumetric_clouds_composite_pipeline".into()),
-        layout: vec![layout.clone()],
-        vertex: fullscreen_shader.to_vertex_state(),
-        fragment: Some(FragmentState {
-            shader: load_embedded_asset!(
-                asset_server.as_ref(),
-                "shaders/world_rendering_composite.wgsl"
+        let layout = render_device.create_bind_group_layout(
+            "volumetric_clouds_composite_bind_group_layout",
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::FRAGMENT,
+                (
+                    texture_2d(TextureSampleType::Float { filterable: true }),
+                    sampler(SamplerBindingType::Filtering),
+                ),
             ),
-            targets: vec![Some(ColorTargetState {
-                format: TextureFormat::Rgba16Float,
-                blend: Some(BlendState::ALPHA_BLENDING),
-                write_mask: ColorWrites::ALL,
-            })],
+        );
+
+        let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("volumetric_clouds_composite_pipeline".into()),
+            layout: vec![layout.clone()],
+            vertex: fullscreen_shader.to_vertex_state(),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                shader,
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
             ..default()
-        }),
-        ..default()
-    });
-    commands.insert_resource(CompositePipeline {
-        layout,
-        pipeline_id,
-    });
+        });
+
+        Self {
+            layout,
+            pipeline_id,
+        }
+    }
 }

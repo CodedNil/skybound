@@ -87,7 +87,6 @@ fn setup(mut commands: Commands) {
         Camera3d::default(),
         Camera::default(),
         Msaa::Off,
-        TemporalAntiAliasing::default(),
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
         Exposure::SUNLIGHT,
         Bloom::NATURAL,

@@ -3,19 +3,19 @@ mod noise;
 mod volumetrics;
 
 use crate::world_rendering::{
-    composite::{CompositeLabel, CompositeNode, setup_composite_pipeline},
+    composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
     volumetrics::{
         CloudRenderTexture, CloudsViewUniforms, VolumetricsLabel, VolumetricsNode,
-        extract_clouds_view_uniform, manage_textures, prepare_clouds_view_uniforms,
-        setup_volumetrics_pipeline,
+        VolumetricsPipeline, extract_clouds_view_uniform, manage_textures,
+        prepare_clouds_view_uniforms,
     },
 };
 use bevy::{
     core_pipeline::core_3d::graph::{Core3d, Node3d},
     prelude::*,
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
+        Render, RenderApp, RenderSystems,
         extract_resource::ExtractResourcePlugin,
         render_graph::{RenderGraphExt, ViewNodeRunner},
     },
@@ -37,34 +37,42 @@ impl Plugin for WorldRenderingPlugin {
         app.add_plugins(ExtractResourcePlugin::<NoiseTextures>::default())
             .add_systems(Startup, setup_noise_textures);
 
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
+        let render_app = app
+            .get_sub_app_mut(RenderApp)
+            .expect("RenderApp should already exist in App");
+
         render_app
             .init_resource::<CloudRenderTexture>()
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)
-            .add_systems(
-                RenderStartup,
-                (setup_volumetrics_pipeline, setup_composite_pipeline),
-            )
             .add_systems(
                 Render,
                 (
                     manage_textures.in_set(RenderSystems::Queue),
                     prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
                 ),
-            );
-
-        render_app
+            )
             .add_render_graph_node::<ViewNodeRunner<VolumetricsNode>>(Core3d, VolumetricsLabel)
             .add_render_graph_node::<ViewNodeRunner<CompositeNode>>(Core3d, CompositeLabel)
             .add_render_graph_edges(Core3d, (Node3d::EndMainPass, VolumetricsLabel))
-            .add_render_graph_edges(Core3d, (VolumetricsLabel, CompositeLabel, Node3d::Bloom));
+            .add_render_graph_edges(
+                Core3d,
+                (
+                    Node3d::StartMainPass,
+                    VolumetricsLabel,
+                    CompositeLabel,
+                    Node3d::Bloom,
+                    Node3d::EndMainPassPostProcessing,
+                    Node3d::Upscaling,
+                ),
+            );
     }
 
     fn finish(&self, app: &mut App) {
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-            render_app.init_resource::<CloudsViewUniforms>();
+            render_app
+                .init_resource::<CloudsViewUniforms>()
+                .init_resource::<VolumetricsPipeline>()
+                .init_resource::<CompositePipeline>();
         }
     }
 }

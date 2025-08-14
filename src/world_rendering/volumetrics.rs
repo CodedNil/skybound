@@ -196,8 +196,8 @@ pub fn manage_textures(
 
     // Define the desired size for the intermediate texture
     let new_size = Extent3d {
-        width: primary_window.physical_width,
-        height: primary_window.physical_height,
+        width: primary_window.physical_width / 4,
+        height: primary_window.physical_height / 4,
         depth_or_array_layers: 1,
     };
 
@@ -237,7 +237,7 @@ pub struct VolumetricsLabel;
 pub struct VolumetricsNode;
 
 #[derive(Resource)]
-struct VolumetricsPipeline {
+pub struct VolumetricsPipeline {
     layout: BindGroupLayout,
     pipeline_id: CachedRenderPipelineId,
     linear_sampler: Sampler,
@@ -340,60 +340,62 @@ impl ViewNode for VolumetricsNode {
     }
 }
 
-pub fn setup_volumetrics_pipeline(
-    mut commands: Commands,
-    render_device: Res<RenderDevice>,
-    asset_server: Res<AssetServer>,
-    fullscreen_shader: Res<FullscreenShader>,
-    pipeline_cache: ResMut<PipelineCache>,
-) {
-    // Create a linear sampler for the volumetric clouds
-    let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
-        address_mode_u: AddressMode::Repeat,
-        address_mode_v: AddressMode::Repeat,
-        address_mode_w: AddressMode::Repeat,
-        mag_filter: FilterMode::Linear,
-        min_filter: FilterMode::Linear,
-        ..default()
-    });
+impl FromWorld for VolumetricsPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let shader = load_embedded_asset!(
+            world.resource::<AssetServer>(),
+            "shaders/world_rendering.wgsl"
+        );
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let render_device = world.resource::<RenderDevice>();
+        let fullscreen_shader = world.resource::<FullscreenShader>();
 
-    // Define the bind group layout for the cloud rendering shader
-    let layout = render_device.create_bind_group_layout(
-        "volumetric_clouds_bind_group_layout",
-        &BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                uniform_buffer::<CloudsViewUniform>(true), // View uniforms
-                sampler(SamplerBindingType::Filtering),    // Linear sampler
-                texture_depth_2d(),                        // Depth texture from prepass
-                texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
-                texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
-                texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
-                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
-                texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
-            ),
-        ),
-    );
-
-    // Queue the render pipeline for creation
-    let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
-        label: Some("volumetric_clouds_pipeline".into()),
-        layout: vec![layout.clone()],
-        vertex: fullscreen_shader.to_vertex_state(),
-        fragment: Some(FragmentState {
-            shader: load_embedded_asset!(asset_server.as_ref(), "shaders/world_rendering.wgsl"),
-            targets: vec![Some(ColorTargetState {
-                format: TextureFormat::Rgba16Float,
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            })],
+        let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            address_mode_w: AddressMode::Repeat,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..default()
-        }),
-        ..default()
-    });
-    commands.insert_resource(VolumetricsPipeline {
-        layout,
-        pipeline_id,
-        linear_sampler,
-    });
+        });
+
+        let layout = render_device.create_bind_group_layout(
+            "volumetric_clouds_bind_group_layout",
+            &BindGroupLayoutEntries::sequential(
+                ShaderStages::FRAGMENT,
+                (
+                    uniform_buffer::<CloudsViewUniform>(true), // View uniforms
+                    sampler(SamplerBindingType::Filtering),    // Linear sampler
+                    texture_depth_2d(),                        // Depth texture from prepass
+                    texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
+                    texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
+                    texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
+                    texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                    texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
+                ),
+            ),
+        );
+
+        let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("volumetric_clouds_pipeline".into()),
+            layout: vec![layout.clone()],
+            vertex: fullscreen_shader.to_vertex_state(),
+            fragment: Some(FragmentState {
+                shader,
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
+            ..default()
+        });
+
+        Self {
+            layout,
+            pipeline_id,
+            linear_sampler,
+        }
+    }
 }

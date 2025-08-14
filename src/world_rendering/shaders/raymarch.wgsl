@@ -24,8 +24,8 @@ const SCALING_MAX: f32 = 12.0; // Maximum scaling factor to increase by
 const SCALING_MAX_FOG: f32 = 2.0; // Maximum scaling factor to increase by while in fog
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS: u32 = 4; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 120.0;
+const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE: f32 = 60.0;
 
 // Volume bitflags
 const VOLUME_CLOUDS: u32 = 1u;
