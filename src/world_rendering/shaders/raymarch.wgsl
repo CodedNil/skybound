@@ -1,6 +1,6 @@
 #define_import_path skybound::raymarch
-#import skybound::utils::{AtmosphereData, View}
-#import skybound::clouds::{clouds_raymarch_entry, sample_clouds}
+#import skybound::utils::{AtmosphereData, View, intersect_plane}
+#import skybound::clouds::{clouds_raymarch_entry, sample_clouds, get_cloud_layer_above}
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
@@ -15,12 +15,12 @@ const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
 
 const MAX_STEPS: i32 = 4096;
-const STEP_SIZE_INSIDE: f32 = 32.0;
-const STEP_SIZE_OUTSIDE: f32 = 64.0;
+const STEP_SIZE_INSIDE: f32 = 24.0;
+const STEP_SIZE_OUTSIDE: f32 = 48.0;
 
 const SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
 const SCALING_END: f32 = 500000.0; // Distance from camera to use max step size
-const SCALING_MAX: f32 = 12.0; // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
 const SCALING_MAX_FOG: f32 = 2.0; // Maximum scaling factor to increase by while in fog
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
@@ -82,8 +82,6 @@ struct RaymarchResult {
     depth: f32
 }
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
-    let altitude = distance(ro, view.planet_center) - view.planet_radius;
-
     // Get entry exit points for each volume
     let clouds_entry_exit = clouds_raymarch_entry(ro, rd, view, t_max);
     let fog_entry_exit = fog_raymarch_entry(ro, rd, view, t_max);
@@ -160,8 +158,8 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Sample the volumes
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let world_pos = vec3<f32>(pos_raw.x, pos_raw.y, altitude);
-        let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, linear_sampler);
+        let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
+        let main_sample = sample_volume(world_pos, t, time, volumes_inside, linear_sampler);
         let step_density = main_sample.density;
 
         if step_density > 0.0 {
@@ -184,13 +182,28 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
-            var lightmarch_pos = pos_raw;
-            var light_altitude: f32;
-            let light_steps = select(1u, LIGHT_STEPS, step_density > 0.1);
-            for (var j: u32 = 0; j <= light_steps; j++) {
-                lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
-                light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-                density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, lightmarch_pos.y, light_altitude) + view.camera_offset, t, time, linear_sampler);
+
+            // Do a few basic steps first
+            // let basic_steps = select(1, LIGHT_STEPS, step_density > 0.1);
+            // for (var j: u32 = 0; j < basic_steps; j++) {
+            //     let lightmarch_pos = world_pos + view.sun_direction * LIGHT_STEP_SIZE * f32(j);
+            //     density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler);
+            // }
+
+            // Optimised sampling of cloud layers above
+            if step_density > 0.1 && view.sun_direction.z > 0.01 {
+                for (var i: u32 = 1; i <= 3; i++) {
+                    let next_layer = get_cloud_layer_above(altitude, f32(i));
+                    if next_layer <= 0.0 { continue; }
+
+                    // Find intersection with the layer midpoint plane
+                    let intersection_t = intersect_plane(world_pos, view.sun_direction, next_layer);
+                    if intersection_t <= 0.0 { continue; }
+
+                    // Sample at the layer midpoint with higher weight since we're skipping intermediate samples
+                    let lightmarch_pos = world_pos + view.sun_direction * intersection_t;
+                    density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler) * 6.0;
+                }
             }
 
             // Captures the direct lighting from the sun

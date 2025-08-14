@@ -24,15 +24,15 @@ const CURL_STRENGTH: f32 = 0.2; // Strength of curl distortion
 // Cloud scales
 const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
 const CLOUD_TOP_HEIGHT: f32 = 30000;
-const CLOUD_LAYER_HEIGHT: f32 = 1600;
+const CLOUD_LAYER_HEIGHT: f32 = 2500;
 const CLOUD_BASE_FRACTION: f32 = 0.2; // A lower value gives a flatter, more defined base.
 const CLOUD_TOTAL_LAYERS: u32 = 16u;
 // The vertical height of the layer
 const CLOUD_LAYER_HEIGHTS = array<f32, CLOUD_TOTAL_LAYERS>(
-    1600, 1500, 1500, 1600,
-    1400, 1300, 1300, 1200,
-    1100, 700, 900, 600,
-    400, 400, 300, 250
+    2500, 2400, 2400, 2500,
+    2400, 2200, 2200, 2000,
+    1800, 1600, 1400, 1200,
+    800, 400, 300, 250
 );
 // Position offset for the weather coverage per layer
 const CLOUD_LAYER_OFFSETS = array<vec2<f32>, CLOUD_TOTAL_LAYERS>(
@@ -98,6 +98,19 @@ fn get_cloud_layer(altitude: f32) -> CloudLayer {
     return CloudLayer(index, bottom, top);
 }
 
+// Get midpoint height of the cloud layer above
+fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
+    let above_height:f32  = altitude + CLOUD_LAYER_HEIGHT * above;
+    let layer_index: u32 = u32(max((above_height - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT, 0.0));
+    if layer_index >= CLOUD_TOTAL_LAYERS {
+        return -1.0; // Above clouds
+    }
+
+    let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(layer_index) * CLOUD_LAYER_HEIGHT;
+    let midpoint: f32 = bottom + CLOUD_LAYER_HEIGHTS[layer_index] * 0.2;
+    return midpoint;
+}
+
 fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
     var cloud_layer = get_cloud_layer(pos.z);
     if cloud_layer.top == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer.
@@ -151,7 +164,8 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
     let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(detail_amount * 4.0, 0.0, 1.0));
     base_cloud = remap(base_cloud, hfbm * 0.4 * detail_amount, 1.0, 0.0, 1.0);
 
-    return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
+    // return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
+    return clamp(base_cloud, 0.0, 1.0);
 }
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit

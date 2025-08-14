@@ -43,7 +43,7 @@ pub struct CloudsViewUniform {
     clip_from_view: Mat4,
     view_from_clip: Mat4,
     world_position: Vec3,
-    camera_offset: Vec3,
+    camera_offset: Vec2,
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: Mat4,
@@ -95,7 +95,7 @@ pub struct ExtractedViewData {
     planet_radius: f32,
     latitude: f32,
     longitude: f32,
-    camera_offset: Vec3,
+    camera_offset: Vec2,
     sun_direction: Vec3,
 }
 
@@ -112,7 +112,7 @@ pub fn extract_clouds_view_uniform(
             planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
-            camera_offset: world_coords.camera_offset.extend(0.0),
+            camera_offset: world_coords.camera_offset,
             sun_direction: (world_coords.sun_rotation * Vec3::Y).normalize(),
         });
     }

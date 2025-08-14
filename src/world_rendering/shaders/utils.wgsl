@@ -12,7 +12,7 @@ struct View {
     clip_from_view: mat4x4<f32>,
     view_from_clip: mat4x4<f32>,
     world_position: vec3<f32>,
-    camera_offset: vec3<f32>,
+    camera_offset: vec2<f32>,
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: mat4x4<f32>,
@@ -105,4 +105,14 @@ fn intersect_sphere(ro: vec3<f32>, rd: vec3<f32>, radius: f32) -> f32 {
     if t0 > 0.0 { return t0; }
     if t1 > 0.0 { return t1; }
     return -1.0;
+}
+
+// Calculate intersection with a horizontal plane at given height
+fn intersect_plane(ro: vec3<f32>, rd: vec3<f32>, plane_height: f32) -> f32 {
+    if abs(rd.z) < 0.001 {
+        return -1.0; // Ray is parallel to plane
+    }
+
+    let t = (plane_height - ro.z) / rd.z;
+    return select(-1.0, t, t > 0.0);
 }

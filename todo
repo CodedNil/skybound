@@ -60,3 +60,4 @@ make it wildly more turbulent around the lightning flashes
 long term:
 implement intel xess for performance wins
 switch to wesl
+custom renderer using WGPU directly with RustGPU

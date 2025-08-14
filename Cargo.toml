@@ -29,7 +29,6 @@ bevy_internal = { git = "https://github.com/bevyengine/bevy", package = "bevy_in
     "bevy_text",
     "bevy_sprite",
 ] }
-
 bytemuck = "1.23.2"
 image = "0.25.6"
 rayon = "1.11.0"
