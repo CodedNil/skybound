@@ -132,10 +132,10 @@ struct FogSample {
 fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
-    if pos.y > FOG_START_HEIGHT { return sample; }
+    if pos.z > FOG_START_HEIGHT { return sample; }
 
-    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xz * 0.00001, time * 0.01,), 0.0).r * -1200.0;
-    let altitude = pos.y - height_noise;
+    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xy * 0.00001, time * 0.01,), 0.0).r * -1200.0;
+    let altitude = pos.z - height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
 
@@ -144,7 +144,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_te
     if density >= 1.0 {
         sample.density = 1.0;
     } else {
-        let turb_pos: vec2<f32> = compute_turbulence(pos.xz * 0.001 + vec2<f32>(time, 0.0), time);
+        let turb_pos: vec2<f32> = compute_turbulence(pos.xy * 0.001 + vec2<f32>(time, 0.0), time);
         fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.2, altitude * 0.001), 0.0).g * 2.0 - 1.0;
         sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
@@ -159,14 +159,14 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_te
     // Add emission from the fog color and lightning flashes
     let emission_amount = smoothstep(-200.0, -1000.0, altitude);
     sample.emission = (sample.color * 0.5 + FLASH_COLOR * 0.5) * emission_amount * sample.density;
-    sample.emission += flash_emission(pos.xz, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
+    sample.emission += flash_emission(pos.xy, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
 
     return sample;
 }
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
 fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, view.planet_radius + ro.y, 0.0);
+    let cam_pos = vec3<f32>(0.0, 0.0, view.planet_radius + ro.z);
     let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
     let shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + FOG_START_HEIGHT);

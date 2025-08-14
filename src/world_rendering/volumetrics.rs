@@ -100,8 +100,8 @@ pub fn extract_clouds_view_uniform(
             planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
-            camera_offset: world_coords.camera_offset,
-            sun_direction: (world_coords.sun_rotation * Vec3::Z).normalize(),
+            camera_offset: world_coords.camera_offset.extend(0.0),
+            sun_direction: (world_coords.sun_rotation * Vec3::Y).normalize(),
         });
     }
 }
@@ -165,7 +165,7 @@ pub fn prepare_clouds_view_uniforms(
                 camera_offset: data.camera_offset,
 
                 planet_rotation: data.planet_rotation,
-                planet_center: Vec3::new(world_position.x, -data.planet_radius, world_position.z),
+                planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
                 planet_radius: data.planet_radius,
                 latitude: data.latitude,
                 longitude: data.longitude,

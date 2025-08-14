@@ -14,7 +14,7 @@ const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.02 * BASE_TIME
 
 // Detail Parameters
 const DETAIL_NOISE_SCALE: f32 = 0.2 * BASE_SCALE;
-const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, -1.0, 0.0) * 0.1 * BASE_TIME; // Details move faster
+const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, 0.0, -1.0) * 0.1 * BASE_TIME; // Details move faster
 
 // Curl Parameters
 const CURL_NOISE_SCALE: f32 = 0.003 * BASE_SCALE; // Scale for curl noise sampling
@@ -99,12 +99,12 @@ fn get_cloud_layer(altitude: f32) -> CloudLayer {
 }
 
 fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
-    var cloud_layer = get_cloud_layer(pos.y);
+    var cloud_layer = get_cloud_layer(pos.z);
     if cloud_layer.top == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer.
     let layer_i = cloud_layer.index;
 
     // --- Weather & Coverage ---
-    let weather_pos_2d = (pos.xz + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
+    let weather_pos_2d = (pos.xy + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
     let weather_noise = textureSampleLevel(weather_texture, linear_sampler, weather_pos_2d, 0.0);
     let cloud_type_a = weather_noise.b;
     let cloud_type_b = weather_noise.a;
@@ -122,29 +122,29 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
     weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b) * (0.5 + lf_sq * lf_sq * 0.5);
 
     // --- Height Gradient ---
-    let height_fraction = clamp((pos.y - cloud_layer.bottom) / (cloud_layer.top - cloud_layer.bottom), 0.0, 1.0);
+    let height_fraction = clamp((pos.z - cloud_layer.bottom) / (cloud_layer.top - cloud_layer.bottom), 0.0, 1.0);
     let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
     let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);
     let height_gradient = rise * fall;
 
     // --- Base Cloud Shape ---
-    let stretched_scale = vec3<f32>(CLOUD_LAYER_SCALES[layer_i] * CLOUD_LAYER_STRETCH[layer_i], 1.0, CLOUD_LAYER_SCALES[layer_i]);
+    let stretched_scale = vec3<f32>(CLOUD_LAYER_SCALES[layer_i] * CLOUD_LAYER_STRETCH[layer_i], CLOUD_LAYER_SCALES[layer_i], 1.0);
     let base_scaled_pos = pos * BASE_NOISE_SCALE * stretched_scale + time * WIND_DIRECTION_BASE;
-    let base_noise = textureSampleLevel(base_texture, linear_sampler, vec3<f32>(base_scaled_pos.x, base_scaled_pos.z, base_scaled_pos.y), 0.0).r;
+    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_scaled_pos, 0.0).r;
 
     var base_cloud = (base_noise * height_gradient) + weather_coverage - 1.0;
     if base_cloud <= 0.01 { return 0.0; } // Early exit if density is too low.
 
 	// --- High Frequency Detail with Curl Distortion ---
-    let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xz * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;
+    let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xy * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;
     let detail_curl_distortion = motion_sample * CURL_STRENGTH;
     let detail_time_vec = time * WIND_DIRECTION_DETAIL;
 
     // Strech the detail scale as the verticality increases
     let detail_stretched_scale = mix(CLOUD_LAYER_SCALES[layer_i] * max(CLOUD_LAYER_STRETCH[layer_i] * 0.2, 1.0), 1.0, -0.5);
-    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE * vec3<f32>(detail_stretched_scale, 1.0, CLOUD_LAYER_SCALES[layer_i]) - detail_time_vec + detail_curl_distortion;
+    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE * vec3<f32>(detail_stretched_scale, CLOUD_LAYER_SCALES[layer_i], 1.0) - detail_time_vec + detail_curl_distortion;
 
-    let detail_noise = textureSampleLevel(details_texture, linear_sampler, vec3<f32>(detail_scaled_pos.x, detail_scaled_pos.z, detail_scaled_pos.y), 0.0).r;
+    let detail_noise = textureSampleLevel(details_texture, linear_sampler, detail_scaled_pos, 0.0).r;
 
     // Apply more less noise to the lower portion of the cloud, reduced at higher altitudes
     let detail_amount = mix(height_fraction, 1.0, CLOUD_LAYER_DETAILS[layer_i]);
@@ -156,7 +156,7 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
 fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, view.planet_radius + ro.y, 0.0);
+    let cam_pos = vec3<f32>(0.0, 0.0, view.planet_radius + ro.z);
     let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
     let bottom_shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + CLOUD_BOTTOM_HEIGHT);

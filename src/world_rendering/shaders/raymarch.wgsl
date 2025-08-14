@@ -152,7 +152,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Sample the volumes
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let world_pos = vec3<f32>(pos_raw.x, altitude, pos_raw.z);
+        let world_pos = vec3<f32>(pos_raw.x, pos_raw.y, altitude);
         let main_sample = sample_volume(world_pos + view.camera_offset, t, time, volumes_inside, linear_sampler);
         let step_density = main_sample.density;
 
@@ -177,7 +177,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             for (var j: u32 = 0; j <= light_steps; j++) {
                 lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
                 light_altitude = distance(lightmarch_pos, view.planet_center) - view.planet_radius;
-                density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, light_altitude, lightmarch_pos.z) + view.camera_offset, t, time, linear_sampler);
+                density_sunwards += sample_volume_light(vec3<f32>(lightmarch_pos.x, lightmarch_pos.y, light_altitude) + view.camera_offset, t, time, linear_sampler);
             }
 
             // Captures the direct lighting from the sun
@@ -193,7 +193,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 			// Compute in-scattering
             let aur_intensity = smoothstep(6000.0, 0.0, altitude);
             let aur_ambient = mix(vec3(1.0), atmosphere.ground, aur_intensity);
-            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (view.sun_direction.y);
+            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (view.sun_direction.z);
             let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
 
             acc_alpha += alpha_step * (1.0 - acc_alpha);

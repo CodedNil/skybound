@@ -34,63 +34,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Circular base
-    commands.spawn((
-        Mesh3d(meshes.add(Cylinder::new(8.0, 0.1))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
-    ));
-
-    // Cube
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_length(1.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 4.0, 0.0),
-    ));
-
-    // Sky cubes
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_length(3.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 100.0, 0.0),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_length(6.0))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 500.0, 0.0),
-    ));
-
-    // Plane proportions
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(75.0, 10.0, 10.0)))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 1000.0, 0.0),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(6.0, 1.0, 65.0)))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, 1000.0, 0.0),
-    ));
-
-    // Pole down
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(3.0, 1000.0, 3.0)))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(0.0, -500.0, 0.0),
-    ));
-
-    // Poles up
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(5.0, 20000.0, 5.0)))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(500.0, 9000.0, 0.0),
-    ));
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::from_size(Vec3::new(5.0, 20000.0, 5.0)))),
-        MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-        Transform::from_xyz(-500.0, 9000.0, 0.0),
-    ));
-
-    // Sky
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {

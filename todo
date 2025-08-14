@@ -1,7 +1,6 @@
 give the layers random offsets on the height and vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
-switch to Z up
 
 do larger steps when going horizontally vs vertically since clouds are thinner vertically?
 

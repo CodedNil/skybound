@@ -73,8 +73,8 @@ fn camera_controller(
         }
 
         // Update camera rotation
-        let yaw_quat = Quat::from_rotation_y(controller.yaw);
-        let pitch_quat = Quat::from_rotation_x(controller.pitch);
+        let yaw_quat = Quat::from_rotation_z(controller.yaw);
+        let pitch_quat = Quat::from_rotation_x(controller.pitch + std::f32::consts::FRAC_PI_2);
         transform.rotation = yaw_quat * pitch_quat;
 
         // Speed adjustment with scroll wheel

@@ -27,7 +27,7 @@ const HORIZON_OFFSET_FACTOR: f32 = 0.000004;
 // Precomputed Constants
 const PI: f32 = 3.14159265;
 const E: f32 = 2.71828182;
-const UP: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
+const UP: vec3<f32> = vec3<f32>(0.0, 0.0, 1.0);
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 const ONE_OVER_FOUR_PI: f32 = 1.0 / (4.0 * PI);
 
@@ -54,8 +54,8 @@ fn hg_phase(cos_theta: f32, g: f32) -> f32 {
 
 
 fn render_sky(rd: vec3<f32>, sun_dir: vec3<f32>, altitude: f32) -> vec3<f32> {
-    let v_sun_e: f32 = sun_intensity(dot(sun_dir, UP));
-    let v_sunfade: f32 = 1.0 - clamp(1.0 - exp((sun_dir.y / 450000.0)), 0.0, 1.0);
+let v_sun_e: f32 = sun_intensity(dot(sun_dir, UP));
+    let v_sunfade: f32 = 1.0 - clamp(1.0 - exp((sun_dir.z / 450000.0)), 0.0, 1.0);
 
     let rayleigh_coefficient: f32 = RAYLEIGH - (1.0 * (1.0 - v_sunfade));
 
@@ -64,8 +64,8 @@ fn render_sky(rd: vec3<f32>, sun_dir: vec3<f32>, altitude: f32) -> vec3<f32> {
     let v_beta_m: vec3<f32> = total_mie(TURBIDITY) * MIE_COEFFICIENT;
 
     // Adjust ray direction for altitude to lower the horizon
-    let adjusted_rd_y: f32 = rd.y + altitude * HORIZON_OFFSET_FACTOR;
-    let adjusted_ray_direction: vec3<f32> = normalize(vec3<f32>(rd.x, adjusted_rd_y, rd.z));
+    let adjusted_rd_z: f32 = rd.z + altitude * HORIZON_OFFSET_FACTOR;
+    let adjusted_ray_direction: vec3<f32> = normalize(vec3<f32>(rd.x, rd.y, adjusted_rd_z));
 
     // Optical length
     let zenith_angle: f32 = acos(max(0.0, dot(UP, adjusted_ray_direction)));

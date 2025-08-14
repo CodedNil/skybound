@@ -46,9 +46,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
-    atmosphere.sky = render_sky(rd, view.sun_direction, ro.y);
-    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.y) * 0.1;
-    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 1.0, 0.0)), view.sun_direction, ro.y);
+    atmosphere.sky = render_sky(rd, view.sun_direction, ro.z);
+    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z) * 0.1;
+    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view.sun_direction, ro.z);
     atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
 
 	// Phase functions for silver and back scattering

@@ -1,6 +1,5 @@
 use crate::camera::CameraController;
 use bevy::{
-    anti_aliasing::taa::TemporalAntiAliasing,
     camera::Exposure,
     core_pipeline::{bloom::Bloom, prepass::DepthPrepass},
     prelude::*,
@@ -19,17 +18,16 @@ const MAX_SUN_ELEVATION_DEG: f32 = 70.0; // The maximum sun elevation angle
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldData {
-    pub camera_offset: Vec3,
+    pub camera_offset: Vec2,
     pub sun_rotation: Quat,
 }
 impl Default for WorldData {
     fn default() -> Self {
-        let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Y * PLANET_RADIUS);
+        let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Z * PLANET_RADIUS);
         Self {
-            camera_offset: Vec3::new(
+            camera_offset: Vec2::new(
                 offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
-                0.0,
-                offset.z - (offset.z % CAMERA_RESET_THRESHOLD),
+                offset.y - (offset.y % CAMERA_RESET_THRESHOLD),
             ),
             sun_rotation: Quat::default(),
         }
@@ -38,27 +36,28 @@ impl Default for WorldData {
 impl WorldData {
     /// Calculates the latitude at a given position.
     pub fn latitude(&self, pos: Vec3) -> f32 {
-        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Y);
-        v_local.y.clamp(-1.0, 1.0).asin()
+        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Z);
+        v_local.z.clamp(-1.0, 1.0).asin()
     }
 
     /// Calculates the longitude at a given position.
     pub fn longitude(&self, pos: Vec3) -> f32 {
-        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Y);
-        if v_local.x.abs() < f32::EPSILON && v_local.z.abs() < f32::EPSILON {
+        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Z);
+        if v_local.x.abs() < f32::EPSILON && v_local.y.abs() < f32::EPSILON {
             0.0
         } else {
-            v_local.x.atan2(v_local.z)
+            v_local.x.atan2(-v_local.y)
         }
     }
 
     /// Calculates the rotation caused by the camera's current translation from the origin.
     fn rotation_from_translation(translation: Vec3) -> Quat {
-        let delta_xz = translation.xz();
-        if delta_xz.length_squared() > f32::EPSILON {
-            let roll_axis = Vec3::new(-delta_xz.y, 0.0, delta_xz.x).normalize();
-            let roll_angle = delta_xz.length() / PLANET_RADIUS;
-            Quat::from_axis_angle(roll_axis, roll_angle)
+        let delta_xy = translation.xy();
+        if delta_xy.length_squared() > f32::EPSILON {
+            Quat::from_axis_angle(
+                Vec3::new(delta_xy.y, -delta_xy.x, 0.0).normalize(),
+                delta_xy.length() / PLANET_RADIUS,
+            )
         } else {
             Quat::IDENTITY
         }
@@ -66,7 +65,7 @@ impl WorldData {
 
     /// Calculates the effective rotation of the planet at a given position.
     pub fn planet_rotation(&self, pos: Vec3) -> Quat {
-        Self::rotation_from_translation(self.camera_offset + pos)
+        Self::rotation_from_translation(self.camera_offset.extend(0.0) + pos)
     }
 }
 
@@ -110,18 +109,18 @@ fn update(
 
     // --- Camera Snapping Logic ---
     if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD {
-        let offset = Vec3::X * CAMERA_RESET_THRESHOLD * camera_transform.translation.x.signum();
-        world_coords.camera_offset += offset;
-        camera_transform.translation -= offset;
+        let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.x.signum();
+        world_coords.camera_offset.x += snap_amount;
+        camera_transform.translation.x -= snap_amount;
     }
-    if camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD {
-        let offset = Vec3::Z * CAMERA_RESET_THRESHOLD * camera_transform.translation.z.signum();
-        world_coords.camera_offset += offset;
-        camera_transform.translation -= offset;
+    if camera_transform.translation.y.abs() > CAMERA_RESET_THRESHOLD {
+        let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.y.signum();
+        world_coords.camera_offset.y += snap_amount;
+        camera_transform.translation.y -= snap_amount;
     }
 
     // --- Planet and Object Positioning ---
-    // The planet's center is always directly below the camera's XZ position, creating a "treadmill" effect.
+    // The planet's center is always directly below the camera's XY position, creating a "treadmill" effect.
     let effective_rotation = world_coords.planet_rotation(camera_transform.translation);
 
     // --- Sun Logic ---
@@ -132,17 +131,17 @@ fn update(
         .clamp(0.0, 1.0);
 
     let pole_sign = if current_latitude >= 0.0 { 1.0 } else { -1.0 };
-    let planet_pole_direction = effective_rotation.mul_vec3(Vec3::Y) * pole_sign;
+    let planet_pole_direction = effective_rotation.mul_vec3(Vec3::Z) * pole_sign;
 
-    let sun_azimuth = (planet_pole_direction - Vec3::Y * planet_pole_direction.dot(Vec3::Y))
-        .normalize_or((Vec3::X - Vec3::Y * Vec3::X.dot(Vec3::Y)).normalize());
+    let sun_azimuth = (planet_pole_direction - Vec3::Z * planet_pole_direction.dot(Vec3::Z))
+        .normalize_or(Vec3::X);
 
     let desired_elevation_rad = (MIN_SUN_ELEVATION_DEG
         + (MAX_SUN_ELEVATION_DEG - MIN_SUN_ELEVATION_DEG) * latitude_abs)
         .to_radians();
 
     world_coords.sun_rotation = Quat::from_rotation_arc(
-        Vec3::NEG_Z,
-        -sun_azimuth * desired_elevation_rad.cos() - Vec3::Y * desired_elevation_rad.sin(),
+        Vec3::NEG_Y,
+        -sun_azimuth * desired_elevation_rad.cos() - Vec3::Z * desired_elevation_rad.sin(),
     );
 }

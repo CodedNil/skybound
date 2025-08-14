@@ -22,7 +22,7 @@ fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -
     sample.color = vec3(0.0, 0.5, 1.0);
 
     // Make it more intense at the top of the atmosphere
-    let atmosphere_dist = smoothstep(5000.0, 100.0, abs(pos.y - ATMOSPHERE_HEIGHT));
+    let atmosphere_dist = smoothstep(5000.0, 100.0, abs(pos.z - ATMOSPHERE_HEIGHT));
     if atmosphere_dist > 0.0 {
         sample.color += atmosphere_dist;
     }
@@ -33,7 +33,7 @@ fn sample_poles(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -
 
 // Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
 fn poles_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
-    let axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 1.0, 0.0)));
+    let axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 0.0, 1.0)));
 
     let oc = ro - view.planet_center;
     let ad = dot(axis, rd);
