@@ -9,22 +9,26 @@
 @group(0) @binding(4) var motion_texture: texture_2d<f32>;
 @group(0) @binding(5) var weather_texture: texture_2d<f32>;
 
-const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
-const DENSITY: f32 = 0.05; // Base density for lighting
+const DENSITY: f32 = 0.2;            // Base density for lighting
 
 const MAX_STEPS: i32 = 4096;
 const STEP_SIZE_INSIDE: f32 = 24.0;
 const STEP_SIZE_OUTSIDE: f32 = 48.0;
 
-const SCALING_START: f32 = 1000.0; // Distance from camera to start scaling step size
-const SCALING_END: f32 = 500000.0; // Distance from camera to use max step size
-const SCALING_MAX: f32 = 8.0; // Maximum scaling factor to increase by
-const SCALING_MAX_FOG: f32 = 2.0; // Maximum scaling factor to increase by while in fog
-const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
+const SCALING_START: f32 = 1000.0;   // Distance from camera to start scaling step size
+const SCALING_END: f32 = 500000.0;   // Distance from camera to use max step size
+const SCALING_MAX: f32 = 8.0;        // Maximum scaling factor to increase by
+const SCALING_MAX_FOG: f32 = 2.0;    // Maximum scaling factor to increase by while in fog
+const CLOSE_THRESHOLD: f32 = 200.0;  // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = 40.0;
-const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
+const LIGHT_STEPS: u32 = 8;          // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE = 60.0;
+
+const EXTINCTION: f32 = 0.4;                   // Overall density/darkness of the cloud material.
+const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is white, lower values are darker grey.
+const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows.
+const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows.
+
 
 /// Sample from the volumes
 struct VolumeSample {
@@ -106,7 +110,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
     // Start raymarching
     for (var i = 0; i < MAX_STEPS; i++) {
-        if t >= t_end || acc_alpha >= ALPHA_THRESHOLD {
+        if t >= t_end || acc_alpha >= 1.0 {
             break;
         }
 
@@ -164,21 +168,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
             step = STEP_SIZE_INSIDE * step_scaler;
 
-            let step_transmittance = max(0.0, 1.0 - DENSITY * step_density * step);
-            let alpha_step = 1.0 - step_transmittance;
-
-            // The contribution of this step towards depth average
-            let contribution = step_density * alpha_step * transmittance;
-            accumulated_weighted_depth += t * contribution;
-            accumulated_density += contribution;
-
             // Lightmarching for self-shadowing
-            var density_sunwards = max(step_density, 0.0);
+            var optical_depth: f32 = 0.0;
             var lightmarch_pos = world_pos;
             for (var j: u32 = 0; j < LIGHT_STEPS; j++) {
-                lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
-                density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler);
+                lightmarch_pos += view.sun_direction * LIGHT_STEP_SIZE;
+                let light_sample_density = sample_volume_light(lightmarch_pos, t, time, linear_sampler);
+                optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE;
             }
+            let sun_transmittance = exp(-optical_depth);
 
             // // Optimised sampling of cloud layers above
             // if step_density > 0.0 && view.sun_direction.z > 0.01 {
@@ -198,19 +196,28 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             //     }
             // }
 
-            // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
-            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-            let beers_total = max(beers, beers2);
+            // Calculate Single Scattering (Direct Light)
+            // This is the light from the sun that scatters exactly once towards the camera, it's responsible for the crisp details and the silver lining.
+            let single_scattering = sun_transmittance * atmosphere.sun * atmosphere.phase;
 
-			// Compute in-scattering
-            let aur_intensity = smoothstep(6000.0, 0.0, altitude);
-            let aur_ambient = mix(vec3(1.0), atmosphere.ground, aur_intensity);
-            let ambient = aur_ambient * DENSITY * mix(atmosphere.ambient, vec3(1.0), 0.4) * (view.sun_direction.z);
-            let in_scattering = ambient + beers_total * atmosphere.sun * atmosphere.phase;
+            // The ambient light is occluded by the cloud itself.
+            let ambient_occlusion = exp(-optical_depth * AMBIENT_OCCLUSION_STRENGTH);
+            let multiple_scattering = atmosphere.ambient * ambient_occlusion;
+
+            // The final color is the sum of single and multiple scattering, tinted by the cloud's albedo.
+            let in_scattering = (single_scattering + multiple_scattering + AMBIENT_FLOOR) * SCATTERING_ALBEDO;
+
+            // Accumulate color and alpha for this step
+            let step_transmittance = exp(-DENSITY * step_density * step);
+            let alpha_step = 1.0 - step_transmittance;
+
+            // The contribution of this step towards depth average
+            let contribution = step_density * alpha_step * transmittance;
+            accumulated_weighted_depth += t * contribution;
+            accumulated_density += contribution;
 
             acc_alpha += alpha_step * (1.0 - acc_alpha);
-            acc_color += in_scattering * transmittance * alpha_step * main_sample.color + main_sample.emission;
+            acc_color += in_scattering * transmittance * alpha_step * main_sample.color; // + main_sample.emission;
 
             transmittance *= step_transmittance;
         } else {
@@ -227,11 +234,8 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         final_depth = accumulated_weighted_depth / accumulated_density;
     }
 
-    // Scale alpha so ALPHA_THRESHOLD becomes 1.0
-    acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0);
-
     var output: RaymarchResult;
-    output.color = clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    output.color = clamp(vec4(acc_color, min(acc_alpha, 1.0)), vec4(0.0), vec4(1.0));
     output.depth = final_depth;
     return output;
 }

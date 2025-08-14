@@ -26,8 +26,8 @@ pub struct NoiseTextures {
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let start = std::time::Instant::now();
 
-    let size = 256;
-    let depth = 64;
+    let size = 384;
+    let depth = 96;
     let base_texture =
         load_or_generate_texture("base_texture", size, depth, TextureFormat::Rg8Unorm, || {
             let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(8.0, 6.0), 1.5))
@@ -46,8 +46,8 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             interleave_channels([perlinworley, height])
         });
 
-    let size = 64;
-    let depth = 64;
+    let size = 128;
+    let depth = 128;
     let detail_texture = load_or_generate_texture(
         "detail_texture",
         size,
@@ -55,7 +55,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         TextureFormat::Rgba8Unorm,
         || {
             let detail1 = worley_3d(size, depth, 12, 0.8, 8.0, 0.6);
-            let fog1 = spread(&simplex_3d(size, depth, 6, 0.1, Vec2::new(12.0, 8.0), 1.0));
+            let fog1 = spread(&simplex_3d(size, depth, 6, 0.1, Vec2::new(7.0, 7.0), 1.0));
             let fog2 = spread(&simplex_3d(size, depth, 12, 0.4, Vec2::new(6.0, 4.0), 1.0));
 
             save_noise_layer(&detail1, "detail1.png", size);

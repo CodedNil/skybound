@@ -19,15 +19,10 @@ struct FragmentOutput {
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 
-// Lighting Parameters
-const AMBIENT_AUR_COLOR: vec3<f32> = vec3(0.4, 0.1, 0.6);
-const SILVER_SPREAD: f32 = 0.1;
-const SILVER_INTENSITY: f32 = 0.01;
-
-
-const K: f32 = 0.0795774715459;
+const INV_4_PI: f32 = 0.07957747154;
 fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
-    return K * (1.0 - g * g) / (pow(1.0 + g * g - 2.0 * g * cos_theta, 1.5));
+    let g2 = g * g;
+    return INV_4_PI * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
 }
 
 @fragment
@@ -48,16 +43,15 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
     atmosphere.sky = render_sky(rd, view.sun_direction, ro.z);
-    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z) * 0.1;
+    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z) * 0.5;
     atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view.sun_direction, ro.z);
-    atmosphere.ground = AMBIENT_AUR_COLOR * 100.0;
 
 	// Phase functions for silver and back scattering
     let cos_theta = dot(view.sun_direction, rd);
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
-    let hg_silver = henyey_greenstein(cos_theta, 0.99 - SILVER_SPREAD) * SILVER_INTENSITY;
+    let hg_silver = henyey_greenstein(cos_theta, 0.9) * 0.01;
     let hg_back = henyey_greenstein(cos_theta, -0.05);
-    atmosphere.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
+    atmosphere.phase = max(hg_forward, max(hg_silver, hg_back));
 
     // Sample the volumes
     let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
@@ -67,7 +61,6 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
 
     // Blend the volumetrics with the sky color behind them
     acc_color = acc_color + atmosphere.sky * (1.0 - acc_alpha);
-    acc_alpha = 1.0;
 
     // Calculate motion vectors using volumetric depth for better accuracy
     var motion_vector = vec2(0.0);
@@ -99,6 +92,7 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     if volumetrics_depth > 0.0 {
         final_volumetric_depth = volumetrics_depth / t_max;
     }
+    output.volumetric_depth = final_volumetric_depth;
 
     return output;
 }
