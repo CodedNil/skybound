@@ -23,8 +23,8 @@ const CURL_STRENGTH: f32 = 0.2; // Strength of curl distortion
 
 // Cloud scales
 const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
-const CLOUD_TOP_HEIGHT: f32 = 64000;
-const CLOUD_LAYER_HEIGHT: f32 = 4000;
+const CLOUD_TOP_HEIGHT: f32 = 48000;
+const CLOUD_LAYER_HEIGHT: f32 = 3000;
 const CLOUD_BASE_FRACTION: f32 = 0.2; // A lower value gives a flatter, more defined base.
 const CLOUD_TOTAL_LAYERS: u32 = 16u;
 // The vertical height of the layer

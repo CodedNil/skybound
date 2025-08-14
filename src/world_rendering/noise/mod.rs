@@ -46,8 +46,8 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             interleave_channels([perlinworley, height])
         });
 
-    let size = 128;
-    let depth = 128;
+    let size = 192;
+    let depth = 96;
     let detail_texture = load_or_generate_texture(
         "detail_texture",
         size,

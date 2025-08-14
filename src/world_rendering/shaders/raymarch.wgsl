@@ -17,18 +17,20 @@ const STEP_SIZE_OUTSIDE: f32 = 48.0;
 
 const SCALING_START: f32 = 1000.0;   // Distance from camera to start scaling step size
 const SCALING_END: f32 = 500000.0;   // Distance from camera to use max step size
-const SCALING_MAX: f32 = 8.0;        // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 16.0;       // Maximum scaling factor to increase by
 const SCALING_MAX_FOG: f32 = 2.0;    // Maximum scaling factor to increase by while in fog
 const CLOSE_THRESHOLD: f32 = 200.0;  // Distance from solid objects to begin more precise raymarching
 
-const LIGHT_STEPS: u32 = 8;          // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = 60.0;
+const LIGHT_STEPS: u32 = 4;          // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE = 90.0;
 
-const EXTINCTION: f32 = 0.4;                   // Overall density/darkness of the cloud material.
-const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is white, lower values are darker grey.
-const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows.
-const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows.
+const EXTINCTION: f32 = 0.4;                   // Overall density/darkness of the cloud material
+const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is white, lower values are darker grey
+const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows
+const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows
 
+const FOG_DENSITY: f32 = 0.000003;       // Density of the atmospheric fog, higher values create thicker fog
+const SHADOW_FADE_END: f32 = 100000.0;  // Distance at which shadows from layers above are fully faded
 
 /// Sample from the volumes
 struct VolumeSample {
@@ -100,7 +102,6 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     // Accumulation variables
     var t = t_start;
     var acc_color = vec3(0.0);
-    var acc_alpha = 0.0;
     var transmittance = 1.0;
     var steps_outside = 0;
 
@@ -110,7 +111,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
     // Start raymarching
     for (var i = 0; i < MAX_STEPS; i++) {
-        if t >= t_end || acc_alpha >= 1.0 {
+        if t >= t_end || transmittance < 0.01 {
             break;
         }
 
@@ -149,24 +150,32 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let norm = clamp(distance_left / CLOSE_THRESHOLD, 0.0, 1.0);
             step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
         }
-        var step = STEP_SIZE_OUTSIDE * step_scaler;
 
         // Sample the volumes
-        let pos_raw = ro + rd * (t + dither * step);
+        let pos_raw = ro + rd * (t + dither * (STEP_SIZE_OUTSIDE * step_scaler));
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
         let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
         let main_sample = sample_volume(world_pos, t, time, volumes_inside, linear_sampler);
         let step_density = main_sample.density;
 
-        if step_density > 0.0 {
+        // Get step size based on density
+        var step = STEP_SIZE_OUTSIDE * step_scaler;
+        if (step_density > 0.0) {
+            step = STEP_SIZE_INSIDE * step_scaler;
+        }
+
+        // Determine the total density for this step by combining cloud and atmospheric fog
+        let total_step_density = DENSITY * step_density + FOG_DENSITY;
+        let step_transmittance = exp(-total_step_density * step);
+        let alpha_step = 1.0 - step_transmittance;
+
+        if alpha_step > 0.0 {
             // Adjust t to effectively backtrack and take smaller steps when entering density
             if steps_outside != 0 {
                 steps_outside = 0;
                 t = max(t + (-STEP_SIZE_OUTSIDE + STEP_SIZE_INSIDE) * step_scaler, 0.0);
                 continue;
             }
-
-            step = STEP_SIZE_INSIDE * step_scaler;
 
             // Lightmarching for self-shadowing
             var optical_depth: f32 = 0.0;
@@ -176,25 +185,36 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
                 let light_sample_density = sample_volume_light(lightmarch_pos, t, time, linear_sampler);
                 optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE;
             }
+
+            // Optimised sampling of cloud layers above
+            if step_density > 0.0 && view.sun_direction.z > 0.01 {
+                for (var i: u32 = 1; i <= 8; i++) {
+                    let next_layer = get_cloud_layer_above(altitude, f32(i));
+                    if next_layer <= 0.0 { break; }
+
+                    // Find intersection with the layer midpoint plane
+                    let intersection_t = intersect_plane(world_pos, view.sun_direction, next_layer);
+                    // If the intersection is beyond our fade distance, we can stop checking further layers
+                    if intersection_t <= 0.0 || intersection_t > SHADOW_FADE_END { continue; }
+
+
+                    for (var j: f32 = 0.0; j <= 4.0; j += 1.0) {
+                        let dist = intersection_t + j * 300.0;
+
+                        // Calculate a falloff factor based on the distance to the shadow-casting layer
+                        let shadow_falloff = 1.0 - (dist / SHADOW_FADE_END);
+
+                        // Sample at the layer midpoint
+                        let lightmarch_pos = world_pos + view.sun_direction * dist;
+                        let light_sample_density = sample_volume_light(lightmarch_pos, t, time, linear_sampler);
+
+                        // Apply the falloff to the optical depth contribution.
+                        optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
+                    }
+
+                }
+            }
             let sun_transmittance = exp(-optical_depth);
-
-            // // Optimised sampling of cloud layers above
-            // if step_density > 0.0 && view.sun_direction.z > 0.01 {
-            //     for (var i: u32 = 1; i <= 3; i++) {
-            //         let next_layer = get_cloud_layer_above(altitude, f32(i));
-            //         if next_layer <= 0.0 { continue; }
-
-            //         // Find intersection with the layer midpoint plane
-            //         let intersection_t = intersect_plane(world_pos, view.sun_direction, next_layer);
-            //         if intersection_t <= 0.0 { continue; }
-
-            //         // Sample at the layer midpoint with higher weight since we're skipping intermediate samples
-            //         for (var j: f32 = -1.0; j <= 1.0; j += 1.0) {
-            //             let lightmarch_pos = world_pos + view.sun_direction * (intersection_t + j * 40.0);
-            //             density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler) * 4.0;
-            //         }
-            //     }
-            // }
 
             // Calculate Single Scattering (Direct Light)
             // This is the light from the sun that scatters exactly once towards the camera, it's responsible for the crisp details and the silver lining.
@@ -207,18 +227,17 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // The final color is the sum of single and multiple scattering, tinted by the cloud's albedo.
             let in_scattering = (single_scattering + multiple_scattering + AMBIENT_FLOOR) * SCATTERING_ALBEDO;
 
-            // Accumulate color and alpha for this step
-            let step_transmittance = exp(-DENSITY * step_density * step);
-            let alpha_step = 1.0 - step_transmittance;
+            // Blend the cloud scattering color with the sky color based on their relative densities
+            let cloud_density_ratio = (DENSITY * step_density) / total_step_density;
+            let blended_color = mix(atmosphere.sky, in_scattering * main_sample.color, cloud_density_ratio);
 
             // The contribution of this step towards depth average
             let contribution = step_density * alpha_step * transmittance;
             accumulated_weighted_depth += t * contribution;
             accumulated_density += contribution;
 
-            acc_alpha += alpha_step * (1.0 - acc_alpha);
-            acc_color += in_scattering * transmittance * alpha_step * main_sample.color; // + main_sample.emission;
-
+            // Accumulate color and update transmittance for the entire step
+            acc_color += blended_color * transmittance * alpha_step;
             transmittance *= step_transmittance;
         } else {
             steps_outside += 1;
@@ -227,7 +246,6 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         t += step;
     }
 
-
     // Calculate the final stable depth
     var final_depth: f32 = 0.0;
     if accumulated_density > 0.0001 {
@@ -235,7 +253,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     }
 
     var output: RaymarchResult;
-    output.color = clamp(vec4(acc_color, min(acc_alpha, 1.0)), vec4(0.0), vec4(1.0));
+    output.color = clamp(vec4(acc_color, 1.0), vec4(0.0), vec4(1.0));
     output.depth = final_depth;
     return output;
 }

@@ -1,12 +1,11 @@
-give the layers random offsets on the height and vertical positioning so they dont look so flat
+give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
 
 do larger steps when going horizontally vs vertically since clouds are thinner vertically?
+make the clouds instead of a single entry exit layer, do it per cloud layer so 16 times
 
-each cell march to sun pos which is a fixed position above pole, and down to aur
-separate aur shadowing and light emission from below
-do coarser raymarching which goes to the mid point of the layers above
+do light emission from the aur below
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
@@ -18,7 +17,6 @@ Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 too bright at night
-atmospheric distance fog
 
 
 froxels:
