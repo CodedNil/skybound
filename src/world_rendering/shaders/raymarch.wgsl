@@ -77,7 +77,11 @@ fn sample_volume_light(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sam
     return clouds + fog;
 }
 
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> vec4<f32> {
+struct RaymarchResult {
+    color: vec4<f32>,
+    depth: f32
+}
+fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     let altitude = distance(ro, view.planet_center) - view.planet_radius;
 
     // Get entry exit points for each volume
@@ -98,6 +102,10 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     var acc_alpha = 0.0;
     var transmittance = 1.0;
     var steps_outside = 0;
+
+    // For calculating depth
+    var accumulated_weighted_depth = 0.0;
+    var accumulated_density = 0.0;
 
     // Start raymarching
     for (var i = 0; i < MAX_STEPS; i++) {
@@ -169,6 +177,11 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let step_transmittance = max(0.0, 1.0 - DENSITY * step_density * step);
             let alpha_step = 1.0 - step_transmittance;
 
+            // The contribution of this step towards depth average
+            let contribution = step_density * alpha_step * transmittance;
+            accumulated_weighted_depth += t * contribution;
+            accumulated_density += contribution;
+
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
             var lightmarch_pos = pos_raw;
@@ -207,7 +220,18 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         t += step;
     }
 
-    acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0); // Scale alpha so ALPHA_THRESHOLD becomes 1.0
 
-    return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    // Calculate the final stable depth
+    var final_depth: f32 = 0.0;
+    if accumulated_density > 0.0001 {
+        final_depth = accumulated_weighted_depth / accumulated_density;
+    }
+
+    // Scale alpha so ALPHA_THRESHOLD becomes 1.0
+    acc_alpha = min(min(acc_alpha, 1.0) * (1.0 / ALPHA_THRESHOLD), 1.0);
+
+    var output: RaymarchResult;
+    output.color = clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    output.depth = final_depth;
+    return output;
 }

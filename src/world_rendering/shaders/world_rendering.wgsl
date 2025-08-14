@@ -9,6 +9,13 @@ struct FullscreenVertexOutput {
     @location(0)
     uv: vec2<f32>,
 };
+
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+    @location(1) motion_vector: vec2<f32>,
+    @location(2) volumetric_depth: f32,
+}
+
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 @group(0) @binding(2) var depth_texture: texture_depth_2d;
@@ -25,7 +32,7 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
 }
 
 @fragment
-fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     let uv = in.uv;
     let pix = in.position.xy;
     let dither = fract(blue_noise(pix));
@@ -59,9 +66,10 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     atmosphere.phase = max(hg_forward, max(hg_silver, hg_back)) + 0.1;
 
     // Sample the volumes
-    let volumes_color: vec4<f32> = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
-    var acc_color: vec3<f32> = volumes_color.rgb;
-    var acc_alpha: f32 = volumes_color.a;
+    let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
+    let volumetrics_depth: f32 = raymarch_result.depth;
+    var acc_color: vec3<f32> = raymarch_result.color.rgb;
+    var acc_alpha: f32 = raymarch_result.color.a;
 
     if depth <= 0.00001 {
         // Add our sky in the background
@@ -69,5 +77,40 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         acc_alpha = 1.0;
     }
 
-    return clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    // Calculate motion vectors using volumetric depth for better accuracy
+    var motion_vector = vec2(0.0);
+
+    if volumetrics_depth > 0.0 {
+        // Use the actual volumetric sample position instead of geometry depth
+        let volumetric_world_pos = ro + rd * volumetrics_depth;
+
+        // Current screen position using volumetric depth
+        let volumetric_clip_pos = view.clip_from_world * vec4(volumetric_world_pos, 1.0);
+        let volumetric_ndc = volumetric_clip_pos.xyz / volumetric_clip_pos.w;
+        let current_uv = volumetric_ndc.xy * vec2(0.5, -0.5) + vec2(0.5, 0.5);
+
+        // Transform volumetric world position to previous frame's clip space
+        let prev_clip_pos = view.prev_clip_from_world * vec4(volumetric_world_pos, 1.0);
+        let prev_ndc = prev_clip_pos.xyz / prev_clip_pos.w;
+        let prev_uv = prev_ndc.xy * vec2(0.5, -0.5) + vec2(0.5, 0.5);
+
+        // Motion vector is the difference between current and previous UV positions
+        motion_vector = current_uv - prev_uv;
+    }
+
+    var output: FragmentOutput;
+    output.color = clamp(vec4(acc_color, acc_alpha), vec4(0.0), vec4(1.0));
+    output.motion_vector = motion_vector;
+
+    // Output volumetric depth, or far plane if no volumetric contribution
+    var final_volumetric_depth: f32 = 0.0;
+    if acc_alpha > 0.001 && volumetrics_depth > 0.0 {
+        // Normalize the depth value to the [0, 1] range
+        final_volumetric_depth = volumetrics_depth / t_max;
+    } else {
+        // No volumetrics, so depth is at the far plane (1.0)
+        final_volumetric_depth = 1.0;
+    }
+
+    return output;
 }

@@ -45,12 +45,24 @@ pub struct CloudsViewUniform {
     world_position: Vec3,
     camera_offset: Vec3,
 
+    // Previous frame matrices for motion vectors
+    prev_clip_from_world: Mat4,
+    prev_world_from_clip: Mat4,
+    prev_world_position: Vec3,
+
     planet_rotation: Vec4,
     planet_center: Vec3,
     planet_radius: f32,
     latitude: f32,
     longitude: f32,
     sun_direction: Vec3,
+}
+
+#[derive(Resource, Default)]
+pub struct PreviousViewData {
+    clip_from_world: Mat4,
+    world_from_clip: Mat4,
+    world_position: Vec3,
 }
 
 #[derive(Resource)]
@@ -115,6 +127,7 @@ pub fn prepare_clouds_view_uniforms(
     time: Res<Time>,
     frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
+    prev_view_data: Res<PreviousViewData>,
 ) {
     let view_iter = views.iter();
     let view_count = view_iter.len();
@@ -164,6 +177,11 @@ pub fn prepare_clouds_view_uniforms(
                 world_position,
                 camera_offset: data.camera_offset,
 
+                // Previous frame matrices for motion vectors
+                prev_clip_from_world: prev_view_data.clip_from_world,
+                prev_world_from_clip: prev_view_data.world_from_clip,
+                prev_world_position: prev_view_data.world_position,
+
                 planet_rotation: data.planet_rotation,
                 planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
                 planet_radius: data.planet_radius,
@@ -175,10 +193,38 @@ pub fn prepare_clouds_view_uniforms(
     }
 }
 
+/// System that runs late in the frame to update the PreviousViewData resource
+pub fn update_previous_view_data(
+    mut prev_view_data: ResMut<PreviousViewData>,
+    views: Query<(&ExtractedView, Option<&TemporalJitter>)>,
+) {
+    // Get the main view
+    if let Some((extracted_view, temporal_jitter)) = views.iter().next() {
+        // Recalculate the main view's matrices exactly as before
+        let viewport = extracted_view.viewport.as_vec4();
+        let mut clip_from_view = extracted_view.clip_from_view;
+        if let Some(jitter) = temporal_jitter {
+            jitter.jitter_projection(&mut clip_from_view, viewport.zw());
+        }
+        let view_from_clip = clip_from_view.inverse();
+        let world_from_view = extracted_view.world_from_view.to_matrix();
+        let view_from_world = world_from_view.inverse();
+
+        // Store these as the "previous" for the next frame
+        prev_view_data.clip_from_world = clip_from_view * view_from_world;
+        prev_view_data.world_from_clip = world_from_view * view_from_clip;
+        prev_view_data.world_position = extracted_view.world_from_view.translation();
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct CloudRenderTexture {
     pub texture: Option<Texture>,
     pub view: Option<TextureView>,
+    pub motion_texture: Option<Texture>,
+    pub motion_view: Option<TextureView>,
+    pub depth_texture: Option<Texture>,
+    pub depth_view: Option<TextureView>,
     pub sampler: Option<Sampler>,
 }
 
@@ -217,6 +263,37 @@ pub fn manage_textures(
             view_formats: &[],
         });
         let view = texture.create_view(&TextureViewDescriptor::default());
+
+        // Create motion vector texture (RG16Float for 2D motion vectors)
+        let motion_texture = render_device.create_texture(&TextureDescriptor {
+            label: Some("cloud_motion_texture"),
+            size: new_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rg16Float,
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let motion_view = motion_texture.create_view(&TextureViewDescriptor::default());
+
+        // Create depth texture (R32Float for volumetric depth)
+        let depth_texture = render_device.create_texture(&TextureDescriptor {
+            label: Some("cloud_depth_texture"),
+            size: new_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::R32Float,
+            usage: TextureUsages::RENDER_ATTACHMENT
+                | TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
+
         let sampler = render_device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
@@ -226,6 +303,10 @@ pub fn manage_textures(
         // Update the resource with the newly created assets
         cloud_render_texture.texture = Some(texture);
         cloud_render_texture.view = Some(view);
+        cloud_render_texture.motion_texture = Some(motion_texture);
+        cloud_render_texture.motion_view = Some(motion_view);
+        cloud_render_texture.depth_texture = Some(depth_texture);
+        cloud_render_texture.depth_view = Some(depth_view);
         cloud_render_texture.sampler = Some(sampler);
     }
 }
@@ -269,6 +350,8 @@ impl ViewNode for VolumetricsNode {
             Some(depth_view),
             Some(texture),
             Some(view),
+            Some(motion_view),
+            Some(volumetric_depth_view),
             Some(base_noise),
             Some(detail_noise),
             Some(turbulence_noise),
@@ -280,6 +363,8 @@ impl ViewNode for VolumetricsNode {
             prepass_textures.depth_view(),
             cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
+            cloud_render_texture.motion_view.as_ref(),
+            cloud_render_texture.depth_view.as_ref(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
@@ -306,18 +391,38 @@ impl ViewNode for VolumetricsNode {
             )),
         );
 
-        // Begin the render pass to draw clouds to the intermediate texture
+        // Begin the render pass to draw clouds to the intermediate texture with motion vectors
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("volumetric_clouds_pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view, // Render to our intermediate cloud texture
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(default()), // Clear the texture before drawing
-                    store: StoreOp::Store,
-                },
-            })],
+            color_attachments: &[
+                Some(RenderPassColorAttachment {
+                    view, // Render to our intermediate cloud texture
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(default()), // Clear the texture before drawing
+                        store: StoreOp::Store,
+                    },
+                }),
+                Some(RenderPassColorAttachment {
+                    view: motion_view, // Render motion vectors to second attachment
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(default()),
+                        store: StoreOp::Store,
+                    },
+                }),
+                Some(RenderPassColorAttachment {
+                    view: volumetric_depth_view, // Render volumetric depth to third attachment
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(default()),
+                        store: StoreOp::Store,
+                    },
+                }),
+            ],
             ..default()
         });
 
@@ -382,11 +487,23 @@ impl FromWorld for VolumetricsPipeline {
             vertex: fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader,
-                targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::Rgba16Float,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
+                targets: vec![
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgba16Float,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rg16Float, // Motion vectors
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::R32Float, // Volumetric depth
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                ],
                 ..default()
             }),
             ..default()

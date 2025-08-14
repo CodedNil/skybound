@@ -6,9 +6,9 @@ use crate::world_rendering::{
     composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
     volumetrics::{
-        CloudRenderTexture, CloudsViewUniforms, VolumetricsLabel, VolumetricsNode,
-        VolumetricsPipeline, extract_clouds_view_uniform, manage_textures,
-        prepare_clouds_view_uniforms,
+        CloudRenderTexture, CloudsViewUniforms, PreviousViewData, VolumetricsLabel,
+        VolumetricsNode, VolumetricsPipeline, extract_clouds_view_uniform, manage_textures,
+        prepare_clouds_view_uniforms, update_previous_view_data,
     },
 };
 use bevy::{
@@ -43,12 +43,17 @@ impl Plugin for WorldRenderingPlugin {
 
         render_app
             .init_resource::<CloudRenderTexture>()
+            .init_resource::<PreviousViewData>()
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)
             .add_systems(
                 Render,
                 (
                     manage_textures.in_set(RenderSystems::Queue),
-                    prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
+                    (
+                        prepare_clouds_view_uniforms,
+                        update_previous_view_data.after(prepare_clouds_view_uniforms),
+                    )
+                        .in_set(RenderSystems::PrepareResources),
                 ),
             )
             .add_render_graph_node::<ViewNodeRunner<VolumetricsNode>>(Core3d, VolumetricsLabel)
