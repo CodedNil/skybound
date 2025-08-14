@@ -242,8 +242,8 @@ pub fn manage_textures(
 
     // Define the desired size for the intermediate texture
     let new_size = Extent3d {
-        width: primary_window.physical_width / 4,
-        height: primary_window.physical_height / 4,
+        width: primary_window.physical_width / 2,
+        height: primary_window.physical_height / 2,
         depth_or_array_layers: 1,
     };
 
@@ -350,7 +350,6 @@ impl ViewNode for VolumetricsNode {
             Some(detail_noise),
             Some(turbulence_noise),
             Some(weather_noise),
-            Some(fog_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -362,7 +361,6 @@ impl ViewNode for VolumetricsNode {
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.turbulence),
             gpu_images.get(&noise_texture_handle.weather),
-            gpu_images.get(&noise_texture_handle.fog),
         )
         else {
             return Ok(());
@@ -379,7 +377,6 @@ impl ViewNode for VolumetricsNode {
                 &detail_noise.texture_view,
                 &turbulence_noise.texture_view,
                 &weather_noise.texture_view,
-                &fog_noise.texture_view,
             )),
         );
 
@@ -467,7 +464,6 @@ impl FromWorld for VolumetricsPipeline {
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
-                    texture_3d(TextureSampleType::Float { filterable: true }), // Fog noise texture
                 ),
             ),
         );

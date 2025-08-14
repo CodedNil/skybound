@@ -23,7 +23,7 @@ const CURL_STRENGTH: f32 = 0.2; // Strength of curl distortion
 
 // Cloud scales
 const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
-const CLOUD_TOP_HEIGHT: f32 = 30000;
+const CLOUD_TOP_HEIGHT: f32 = 40000;
 const CLOUD_LAYER_HEIGHT: f32 = 2500;
 const CLOUD_BASE_FRACTION: f32 = 0.2; // A lower value gives a flatter, more defined base.
 const CLOUD_TOTAL_LAYERS: u32 = 16u;
@@ -31,8 +31,8 @@ const CLOUD_TOTAL_LAYERS: u32 = 16u;
 const CLOUD_LAYER_HEIGHTS = array<f32, CLOUD_TOTAL_LAYERS>(
     2500, 2400, 2400, 2500,
     2400, 2200, 2200, 2000,
-    1800, 1600, 1400, 1200,
-    800, 400, 300, 250
+    1800, 1500, 1100, 800,
+    300, 250, 200, 150
 );
 // Position offset for the weather coverage per layer
 const CLOUD_LAYER_OFFSETS = array<vec2<f32>, CLOUD_TOTAL_LAYERS>(
@@ -55,13 +55,6 @@ const CLOUD_LAYER_STRETCH = array<f32, CLOUD_TOTAL_LAYERS>(
     1.0, 1.0, 1.5, 2.0,
     2.5, 4.0, 5.0, 6.0
 );
-// Density multiplier per layer
-const CLOUD_LAYER_DENSITIES = array<f32, CLOUD_TOTAL_LAYERS>(
-    1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0,
-    0.8, 0.7, 0.7, 0.6,
-    0.4, 0.3, 0.2, 0.1
-);
 // How much to increase the detail noise in the layer
 const CLOUD_LAYER_DETAILS = array<f32, CLOUD_TOTAL_LAYERS>(
     0.1, 0.1, 0.1, 0.1,
@@ -81,19 +74,19 @@ struct CloudLayer {
     bottom: f32,
     top: f32,
 }
-fn get_cloud_layer(altitude: f32) -> CloudLayer {
-    if altitude <= CLOUD_BOTTOM_HEIGHT || altitude >= CLOUD_TOP_HEIGHT { return CloudLayer(); }
+fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
+    if pos.z <= CLOUD_BOTTOM_HEIGHT || pos.z >= CLOUD_TOP_HEIGHT { return CloudLayer(); }
 
     // Get the index of the layer
-    let index: u32 = u32((altitude - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT);
+    let index: u32 = u32((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT);
     if index >= CLOUD_TOTAL_LAYERS { return CloudLayer(); }
 
     // Get the top and bottom height of the layer
     let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(index) * CLOUD_LAYER_HEIGHT;
-    let top: f32 = bottom + CLOUD_LAYER_HEIGHTS[index];
+    var top: f32 = CLOUD_LAYER_HEIGHTS[index];
 
     // Check if the altitude is within the actual cloud thickness.
-    if altitude > top { return CloudLayer(); }
+    if pos.z > bottom + top * 2.0 { return CloudLayer(); }
 
     return CloudLayer(index, bottom, top);
 }
@@ -112,8 +105,8 @@ fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
 }
 
 fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, motion_texture: texture_2d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
-    var cloud_layer = get_cloud_layer(pos.z);
-    if cloud_layer.top == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer.
+    var cloud_layer = get_cloud_layer(pos);
+    if cloud_layer.top == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer
     let layer_i = cloud_layer.index;
 
     // --- Weather & Coverage ---
@@ -133,20 +126,23 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
     // Bias the clouds coverage to the highest levels
     let lf_sq = layer_fraction * layer_fraction;
     weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b) * (0.5 + lf_sq * lf_sq * 0.5);
-
-    // --- Height Gradient ---
-    let height_fraction = clamp((pos.z - cloud_layer.bottom) / (cloud_layer.top - cloud_layer.bottom), 0.0, 1.0);
-    let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
-    let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);
-    let height_gradient = rise * fall;
+    if weather_coverage <= 0.01 { return 0.0; } // Early exit if coverage is too low
 
     // --- Base Cloud Shape ---
     let stretched_scale = vec3<f32>(CLOUD_LAYER_SCALES[layer_i] * CLOUD_LAYER_STRETCH[layer_i], CLOUD_LAYER_SCALES[layer_i], 1.0);
     let base_scaled_pos = pos * BASE_NOISE_SCALE * stretched_scale + time * WIND_DIRECTION_BASE;
-    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_scaled_pos, 0.0).r;
+    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_scaled_pos, 0.0);
 
-    var base_cloud = (base_noise * height_gradient) + weather_coverage - 1.0;
-    if base_cloud <= 0.01 { return 0.0; } // Early exit if density is too low.
+    // --- Height Gradient ---
+    let cloud_top = cloud_layer.top * (1.0 + base_noise.g * 2.0);
+    let height_fraction = clamp((pos.z - cloud_layer.bottom) / cloud_top, 0.0, 1.0);
+    let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
+    let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);
+    let height_gradient = rise * fall;
+    if  height_gradient <= 0.01 { return 0.0; } // Early exit if density is too low
+
+    var base_cloud = (base_noise.r * height_gradient) + weather_coverage - 1.0;
+    if base_cloud <= 0.01 { return 0.0; } // Early exit if density is too low
 
 	// --- High Frequency Detail with Curl Distortion ---
     let motion_sample = textureSampleLevel(motion_texture, linear_sampler, pos.xy * CURL_NOISE_SCALE + time * CURL_TIME_SCALE, 0.0).rgb - 0.5;
@@ -164,7 +160,6 @@ fn sample_clouds(pos: vec3<f32>, dist: f32, time: f32, base_texture: texture_3d<
     let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(detail_amount * 4.0, 0.0, 1.0));
     base_cloud = remap(base_cloud, hfbm * 0.4 * detail_amount, 1.0, 0.0, 1.0);
 
-    // return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
     return clamp(base_cloud, 0.0, 1.0);
 }
 

@@ -4,12 +4,10 @@
 #import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
-@group(0) @binding(2) var cloud_base_texture: texture_3d<f32>;
-@group(0) @binding(3) var cloud_details_texture: texture_3d<f32>;
-@group(0) @binding(4) var cloud_motion_texture: texture_2d<f32>;
-@group(0) @binding(5) var cloud_weather_texture: texture_2d<f32>;
-
-@group(0) @binding(6) var fog_noise_texture: texture_3d<f32>;
+@group(0) @binding(2) var base_texture: texture_3d<f32>;
+@group(0) @binding(3) var details_texture: texture_3d<f32>;
+@group(0) @binding(4) var motion_texture: texture_2d<f32>;
+@group(0) @binding(5) var weather_texture: texture_2d<f32>;
 
 const ALPHA_THRESHOLD: f32 = 0.99; // Max alpha to reach before stopping
 const DENSITY: f32 = 0.05; // Base density for lighting
@@ -25,12 +23,8 @@ const SCALING_MAX_FOG: f32 = 2.0; // Maximum scaling factor to increase by while
 const CLOSE_THRESHOLD: f32 = 200.0; // Distance from solid objects to begin more precise raymarching
 
 const LIGHT_STEPS: u32 = 6; // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE: f32 = 60.0;
-
-// Volume bitflags
-const VOLUME_CLOUDS: u32 = 1u;
-const VOLUME_FOG: u32 = 2u;
-const VOLUME_POLES: u32 = 4u;
+const LIGHT_STEP_SIZE = 40.0;
+const LIGHT_RANDOM_VECTORS = array<vec3<f32>, 6>(vec3(0.38051305, 0.92453449, -0.02111345), vec3(-0.50625799, -0.03590792, -0.86163418), vec3(-0.32509218, -0.94557439, 0.01428793), vec3(0.09026238, -0.27376545, 0.95755165), vec3(0.28128598, 0.42443639, -0.86065785), vec3(-0.16852403, 0.14748697, 0.97460106));
 
 /// Sample from the volumes
 struct VolumeSample {
@@ -38,19 +32,19 @@ struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: u32, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: VolumesInside, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
 
-    if (volumes_inside & VOLUME_CLOUDS) != 0u {
-        let cloud_sample = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
+    if volumes_inside.clouds {
+        let cloud_sample = sample_clouds(pos, dist, time, base_texture, details_texture, motion_texture, weather_texture, linear_sampler);
         if cloud_sample > 0.0 {
             sample.density += cloud_sample;
             sample.color = vec3<f32>(1.0);
         }
     }
 
-    if (volumes_inside & VOLUME_FOG) != 0u {
-        let fog_sample = sample_fog(pos, dist, time, false, fog_noise_texture, linear_sampler);
+    if volumes_inside.fog {
+        let fog_sample = sample_fog(pos, dist, time, false, details_texture, linear_sampler);
         if fog_sample.density > 0.0 {
             sample.density = fog_sample.density;
             sample.color = fog_sample.color;
@@ -58,7 +52,7 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: u32, line
         }
     }
 
-    if (volumes_inside & VOLUME_POLES) != 0u {
+    if volumes_inside.poles {
         let poles_sample = sample_poles(pos, dist, time, linear_sampler);
         if poles_sample.density > 0.0 {
             sample.density += poles_sample.density;
@@ -72,14 +66,19 @@ fn sample_volume(pos: vec3<f32>, dist: f32, time: f32, volumes_inside: u32, line
 }
 
 fn sample_volume_light(pos: vec3<f32>, dist: f32, time: f32, linear_sampler: sampler) -> f32 {
-    let clouds = sample_clouds(pos, dist, time, cloud_base_texture, cloud_details_texture, cloud_motion_texture, cloud_weather_texture, linear_sampler);
-    let fog = sample_fog(pos, dist, time, true, fog_noise_texture, linear_sampler).density;
+    let clouds = sample_clouds(pos, dist, time, base_texture, details_texture, motion_texture, weather_texture, linear_sampler);
+    let fog = sample_fog(pos, dist, time, true, details_texture, linear_sampler).density;
     return clouds + fog;
 }
 
 struct RaymarchResult {
     color: vec4<f32>,
     depth: f32
+}
+struct VolumesInside {
+    clouds: bool,
+    fog: bool,
+    poles: bool,
 }
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
@@ -92,7 +91,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     let t_end = min(max(max(clouds_entry_exit.y, fog_entry_exit.y), poles_entry_exit.y), t_max);
 
     // Track which volumes we are inside
-    var volumes_inside: u32 = 0u;
+    var volumes_inside: VolumesInside;
 
     // Accumulation variables
     var t = t_start;
@@ -112,19 +111,12 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         }
 
         // Track which volumes we are inside
-        volumes_inside = 0u;
-        if t >= clouds_entry_exit.x && t <= clouds_entry_exit.y {
-            volumes_inside |= VOLUME_CLOUDS;
-        }
-        if t >= fog_entry_exit.x && t <= fog_entry_exit.y {
-            volumes_inside |= VOLUME_FOG;
-        }
-        if t >= poles_entry_exit.x && t <= poles_entry_exit.y {
-            volumes_inside |= VOLUME_POLES;
-        }
+        volumes_inside.clouds = t >= clouds_entry_exit.x && t <= clouds_entry_exit.y;
+        volumes_inside.fog = t >= fog_entry_exit.x && t <= fog_entry_exit.y;
+        volumes_inside.poles = t >= poles_entry_exit.x && t <= poles_entry_exit.y;
 
         // If not inside any volume, skip to the next entry point
-        if volumes_inside == 0u {
+        if !volumes_inside.clouds && !volumes_inside.fog && !volumes_inside.poles {
             var next_entry = t_end;
             if (clouds_entry_exit.x > t && clouds_entry_exit.x < next_entry) {
                 next_entry = clouds_entry_exit.x;
@@ -142,7 +134,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         // Scale step size based on distance from camera
         var step_scaler = 1.0;
         let distance_scale = pow(smoothstep(SCALING_START, SCALING_END, t), 0.5);
-        if t > SCALING_START && (volumes_inside & VOLUME_FOG) != 0u {
+        if t > SCALING_START && volumes_inside.fog {
             step_scaler = 1.0 + distance_scale * SCALING_MAX_FOG;
         } else if t > SCALING_START {
             step_scaler = 1.0 + distance_scale * SCALING_MAX;
@@ -182,39 +174,34 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
             // Lightmarching for self-shadowing
             var density_sunwards = max(step_density, 0.0);
-
-            // Do a few basic steps first
-            // let basic_steps = select(1, LIGHT_STEPS, step_density > 0.1);
-            // for (var j: u32 = 0; j < basic_steps; j++) {
-            //     let lightmarch_pos = world_pos + view.sun_direction * LIGHT_STEP_SIZE * f32(j);
-            //     density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler);
-            // }
-
-            // Optimised sampling of cloud layers above
-            if step_density > 0.1 && view.sun_direction.z > 0.01 {
-                for (var i: u32 = 1; i <= 3; i++) {
-                    let next_layer = get_cloud_layer_above(altitude, f32(i));
-                    if next_layer <= 0.0 { continue; }
-
-                    // Find intersection with the layer midpoint plane
-                    let intersection_t = intersect_plane(world_pos, view.sun_direction, next_layer);
-                    if intersection_t <= 0.0 { continue; }
-
-                    // Sample at the layer midpoint with higher weight since we're skipping intermediate samples
-                    let lightmarch_pos = world_pos + view.sun_direction * intersection_t;
-                    density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler) * 6.0;
-                }
+            var lightmarch_pos = world_pos;
+            for (var j: u32 = 0; j < LIGHT_STEPS; j++) {
+                lightmarch_pos += (view.sun_direction + LIGHT_RANDOM_VECTORS[j] * f32(j)) * LIGHT_STEP_SIZE;
+                density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler);
             }
 
-            // Captures the direct lighting from the sun
-            let beers = exp(-DENSITY * density_sunwards * 30.0);
-            let beers2 = exp(-DENSITY * density_sunwards * 30.0 * 0.25) * 0.7;
-            let beers_total = max(beers, beers2);
+            // // Optimised sampling of cloud layers above
+            // if step_density > 0.0 && view.sun_direction.z > 0.01 {
+            //     for (var i: u32 = 1; i <= 3; i++) {
+            //         let next_layer = get_cloud_layer_above(altitude, f32(i));
+            //         if next_layer <= 0.0 { continue; }
 
-            // // Captures the direct lighting from the aur
-            // let beers_aur = exp(-DENSITY * density_aurwards * LIGHT_STEP_SIZE);
-            // let beers_aur2 = exp(-DENSITY * density_aurwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
-            // let beers_aur_total = max(beers_aur, beers_aur2);
+            //         // Find intersection with the layer midpoint plane
+            //         let intersection_t = intersect_plane(world_pos, view.sun_direction, next_layer);
+            //         if intersection_t <= 0.0 { continue; }
+
+            //         // Sample at the layer midpoint with higher weight since we're skipping intermediate samples
+            //         for (var j: f32 = -1.0; j <= 1.0; j += 1.0) {
+            //             let lightmarch_pos = world_pos + view.sun_direction * (intersection_t + j * 40.0);
+            //             density_sunwards += sample_volume_light(lightmarch_pos, t, time, linear_sampler) * 4.0;
+            //         }
+            //     }
+            // }
+
+            // Captures the direct lighting from the sun
+            let beers = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE);
+            let beers2 = exp(-DENSITY * density_sunwards * LIGHT_STEP_SIZE * 0.25) * 0.7;
+            let beers_total = max(beers, beers2);
 
 			// Compute in-scattering
             let aur_intensity = smoothstep(6000.0, 0.0, altitude);

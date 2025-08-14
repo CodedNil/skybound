@@ -134,7 +134,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_te
 
     if pos.z > FOG_START_HEIGHT { return sample; }
 
-    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xy * 0.00001, time * 0.01,), 0.0).r * -1200.0;
+    let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xy * 0.00001, time * 0.01,), 0.0).g * -1200.0;
     let altitude = pos.z - height_noise;
     let density = smoothstep(0.0, -500.0, altitude);
     if density <= 0.0 { return sample; }
@@ -145,7 +145,7 @@ fn sample_fog(pos: vec3<f32>, dist: f32, time: f32, only_density: bool, noise_te
         sample.density = 1.0;
     } else {
         let turb_pos: vec2<f32> = compute_turbulence(pos.xy * 0.001 + vec2<f32>(time, 0.0), time);
-        fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.2, altitude * 0.001), 0.0).g * 2.0 - 1.0;
+        fbm_value = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(turb_pos.xy * 0.2, altitude * 0.001), 0.0).b * 2.0 - 1.0;
         sample.density = pow(fbm_value, 2.0) * density + smoothstep(-50.0, -1000.0, altitude);
     }
     if only_density || sample.density <= 0.0 { return sample; }
