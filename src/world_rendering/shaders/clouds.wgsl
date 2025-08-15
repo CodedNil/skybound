@@ -77,31 +77,26 @@ struct CloudLayer {
     height: f32,
 }
 fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
-    // Get the index of the layer
     let index: u32 = u32((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT);
-    if pos.z <= CLOUD_BOTTOM_HEIGHT || index >= CLOUD_TOTAL_LAYERS { return CloudLayer(); }
-
-    // Get the top and bottom height of the layer
     let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(index) * CLOUD_LAYER_HEIGHT;
-    var height: f32 = CLOUD_LAYER_HEIGHTS[index];
 
-    // Check if the altitude is within the actual cloud thickness.
-    if pos.z > bottom + height * 3.0 { return CloudLayer(); }
+    // Branchless validity check, height becomes 0 if invalid
+    let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
+    let height: f32 = select(0.0, CLOUD_LAYER_HEIGHTS[index], is_valid_layer);
+    let is_within_thickness: f32 = f32(pos.z <= bottom + height);
 
-    return CloudLayer(index, bottom, height);
+    return CloudLayer(index, bottom, height * is_within_thickness);
 }
 
 // Get midpoint height of the cloud layer above
 fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
-    let above_height:f32  = altitude + CLOUD_LAYER_HEIGHT * above;
+    let above_height: f32 = altitude + CLOUD_LAYER_HEIGHT * above;
     let layer_index: u32 = u32(max((above_height - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT, 0.0));
-    if layer_index >= CLOUD_TOTAL_LAYERS {
-        return -1.0; // Above clouds
-    }
+    let is_valid = f32(layer_index < CLOUD_TOTAL_LAYERS);
 
     let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(layer_index) * CLOUD_LAYER_HEIGHT;
     let midpoint: f32 = bottom + CLOUD_LAYER_HEIGHTS[layer_index] * 0.2;
-    return midpoint;
+    return mix(-1.0, midpoint, is_valid);
 }
 
 fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
@@ -127,7 +122,7 @@ fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, detai
     if weather_coverage <= 0.0 { return 0.0; } // Early exit if coverage is too low
 
     // --- Height Gradient ---
-    let cloud_height = cloud_layer.height * (0.3 + weather_noise.a * 2.7);
+    let cloud_height = cloud_layer.height * (0.6 + weather_noise.a * 3.0);
     let height_fraction = clamp((pos.z - cloud_layer.bottom) / cloud_height, 0.0, 1.0);
     let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
     let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);

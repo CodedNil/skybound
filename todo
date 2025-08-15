@@ -1,3 +1,18 @@
+new approach:
+4x4 tiles of pixels computed together
+get a single exit entry pont for all the pixel group per type of volume, including for each layer of clouds
+order these entry exit points so we can raymarch until the next event then know which volumes we are in efficiently
+accumulate colour, distance and transmission on a per pixel level
+each step of the ray should sample only 1/4 of pixels, but do the stepping based on the most dense of them
+
+later optimisations can be doing colour and emission only on the outside 4 pixels then lerping for the inner ones
+maybe that can be done for lighting too?
+also can sample all 16 pixels together for low dense regions using higher mips, then per pixel in regions of density
+
+
+
+
+
 give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense mostly upper atmosphere clouds on the equator
@@ -7,7 +22,6 @@ make the clouds instead of a single entry exit layer, do it per cloud layer so 1
 
 cone tracing for lightmarching, sample at higher mip levels
 hierarchical raymarching, use higher mips to see ahead and take bigger steps
-switch to compute shader
 only update lighting every 2 steps
 
 do light emission from the aur below

@@ -10,12 +10,12 @@
 
 const DENSITY: f32 = 0.2;            // Base density for lighting
 
-const MAX_STEPS: i32 = 512;
-const STEP_SIZE_INSIDE: f32 = 64.0;
-const STEP_SIZE_OUTSIDE: f32 = 128.0;
+const MAX_STEPS: i32 = 2048;
+const STEP_SIZE_INSIDE: f32 = 32.0;
+const STEP_SIZE_OUTSIDE: f32 = 64.0;
 
 const SCALING_END: f32 = 100000.0;   // Distance from camera to use max step size
-const SCALING_MAX: f32 = 16.0;       // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 8.0;       // Maximum scaling factor to increase by
 const SCALING_MAX_FOG: f32 = 2.0;    // Maximum scaling factor to increase by while in fog
 const CLOSE_THRESHOLD: f32 = 200.0;  // Distance from solid objects to begin more precise raymarching
 
@@ -27,7 +27,7 @@ const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is whi
 const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows
 const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows
 
-const FOG_DENSITY: f32 = 0.000003;      // Density of the atmospheric fog, higher values create thicker fog
+const FOG_DENSITY: f32 = 0.000003;     // Density of the atmospheric fog, higher values create thicker fog
 const SHADOW_FADE_END: f32 = 30000.0;  // Distance at which shadows from layers above are fully faded
 
 /// Sample from the volumes
@@ -90,8 +90,6 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     var t = t_start;
     var acc_color = vec3(0.0);
     var transmittance = 1.0;
-
-    // For calculating depth
     var accumulated_weighted_depth = 0.0;
     var accumulated_density = 0.0;
 
@@ -124,16 +122,14 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         let step_density = main_sample.density;
 
         // Scale step size based on distance from camera
-        let distance_scale = min(t / SCALING_END, 1.0);
+        let distance_scale = saturate(t / SCALING_END);
         let max_scale = select(SCALING_MAX, SCALING_MAX_FOG, inside_fog);
         var step_scaler = 1.0 + distance_scale * distance_scale * max_scale;
 
         // Reduce scaling when close to surfaces
         let distance_left = t_max - t;
-        if distance_left < CLOSE_THRESHOLD {
-            let norm = clamp(distance_left / CLOSE_THRESHOLD, 0.0, 1.0);
-            step_scaler = mix(step_scaler, 0.5, 1.0 - norm);
-        }
+        let proximity_factor = 1.0 - saturate((CLOSE_THRESHOLD - distance_left) / CLOSE_THRESHOLD);
+        step_scaler = mix(0.5, step_scaler, proximity_factor);
 
         // Base step size is small in dense areas, large in sparse ones.
         let base_step = mix(STEP_SIZE_OUTSIDE, STEP_SIZE_INSIDE, saturate(step_density * 10.0));
@@ -210,16 +206,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     }
 
     // Calculate the final depth
-    var final_depth: f32 = 0.0;
-    if accumulated_density > 0.0001 {
-        final_depth = accumulated_weighted_depth / accumulated_density;
-    }
+    let final_depth = accumulated_weighted_depth / max(accumulated_density, 0.0001);
+    // Use step() to zero out depth if no density was accumulated.
+    let depth_condition = step(0.0001, accumulated_density);
 
     // Blend the accumulated volume color with the sky color behind it.
     let final_rgb = acc_color + atmosphere.sky * transmittance;
 
     var output: RaymarchResult;
     output.color = clamp(final_rgb, vec3(0.0), vec3(1.0));
-    output.depth = final_depth;
+    output.depth = final_depth * depth_condition;
     return output;
 }

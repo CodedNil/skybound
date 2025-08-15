@@ -4,7 +4,6 @@ use crate::{
 };
 use bevy::{
     asset::load_embedded_asset,
-    core_pipeline::FullscreenShader,
     diagnostic::FrameCount,
     ecs::query::QueryItem,
     prelude::*,
@@ -16,13 +15,12 @@ use bevy::{
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferUsages,
-            CachedRenderPipelineId, ColorTargetState, ColorWrites, DynamicUniformBuffer, Extent3d,
-            FilterMode, FragmentState, LoadOp, Operations, PipelineCache,
-            RenderPassColorAttachment, RenderPassDescriptor, RenderPipelineDescriptor, Sampler,
-            SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType, StoreOp, Texture,
+            CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor,
+            DynamicUniformBuffer, Extent3d, FilterMode, PipelineCache, Sampler, SamplerBindingType,
+            SamplerDescriptor, ShaderStages, ShaderType, StorageTextureAccess, Texture,
             TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
             TextureView, TextureViewDescriptor,
-            binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_3d, texture_storage_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -221,9 +219,7 @@ pub fn update_previous_view_data(
 pub struct CloudRenderTexture {
     pub texture: Option<Texture>,
     pub view: Option<TextureView>,
-    pub motion_texture: Option<Texture>,
     pub motion_view: Option<TextureView>,
-    pub depth_texture: Option<Texture>,
     pub depth_view: Option<TextureView>,
     pub sampler: Option<Sampler>,
 }
@@ -250,6 +246,8 @@ pub fn manage_textures(
     // Update CloudRenderTexture
     let current_texture_size = cloud_render_texture.texture.as_ref().map(|t| t.size());
     if current_texture_size != Some(new_size) {
+        let texture_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
+
         let texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_render_texture"),
             size: new_size,
@@ -257,9 +255,7 @@ pub fn manage_textures(
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rgba16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
+            usage: texture_usage,
             view_formats: &[],
         });
         let view = texture.create_view(&TextureViewDescriptor::default());
@@ -271,9 +267,7 @@ pub fn manage_textures(
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rg16Float,
-            usage: TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
+            usage: texture_usage,
             view_formats: &[],
         });
         let motion_view = motion_texture.create_view(&TextureViewDescriptor::default());
@@ -285,9 +279,7 @@ pub fn manage_textures(
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::R32Float,
-            usage: TextureUsages::RENDER_ATTACHMENT
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
+            usage: texture_usage,
             view_formats: &[],
         });
         let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
@@ -301,9 +293,7 @@ pub fn manage_textures(
         // Update the resource with the newly created assets
         cloud_render_texture.texture = Some(texture);
         cloud_render_texture.view = Some(view);
-        cloud_render_texture.motion_texture = Some(motion_texture);
         cloud_render_texture.motion_view = Some(motion_view);
-        cloud_render_texture.depth_texture = Some(depth_texture);
         cloud_render_texture.depth_view = Some(depth_view);
         cloud_render_texture.sampler = Some(sampler);
     }
@@ -318,7 +308,7 @@ pub struct VolumetricsNode;
 #[derive(Resource)]
 pub struct VolumetricsPipeline {
     layout: BindGroupLayout,
-    pipeline_id: CachedRenderPipelineId,
+    pipeline_id: CachedComputePipelineId,
     linear_sampler: Sampler,
 }
 
@@ -342,17 +332,15 @@ impl ViewNode for VolumetricsNode {
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(texture),
-            Some(view),
+            Some(color_view),
             Some(motion_view),
-            Some(volumetric_depth_view),
+            Some(depth_view),
             Some(base_noise),
             Some(detail_noise),
             Some(weather_noise),
         ) = (
-            pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
+            pipeline_cache.get_compute_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            cloud_render_texture.texture.as_ref(),
             cloud_render_texture.view.as_ref(),
             cloud_render_texture.motion_view.as_ref(),
             cloud_render_texture.depth_view.as_ref(),
@@ -374,58 +362,29 @@ impl ViewNode for VolumetricsNode {
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &weather_noise.texture_view,
+                color_view,
+                motion_view,
+                depth_view,
             )),
         );
 
-        // Begin the render pass to draw clouds to the intermediate texture with motion vectors
-        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("volumetric_clouds_pass"),
-            color_attachments: &[
-                Some(RenderPassColorAttachment {
-                    view, // Render to our intermediate cloud texture
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(default()), // Clear the texture before drawing
-                        store: StoreOp::Store,
-                    },
-                }),
-                Some(RenderPassColorAttachment {
-                    view: motion_view, // Render motion vectors to second attachment
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(default()),
-                        store: StoreOp::Store,
-                    },
-                }),
-                Some(RenderPassColorAttachment {
-                    view: volumetric_depth_view, // Render volumetric depth to third attachment
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(default()),
-                        store: StoreOp::Store,
-                    },
-                }),
-            ],
-            ..default()
-        });
+        // Dispatch the compute pass
+        let mut compute_pass =
+            render_context
+                .command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("volumetric_clouds_compute_pass"),
+                    timestamp_writes: None,
+                });
 
-        // Set the viewport to match the intermediate texture's size
-        render_pass.set_viewport(
-            0.0,
-            0.0,
-            texture.width() as f32,
-            texture.height() as f32,
-            0.0,
-            1.0,
-        );
+        compute_pass.set_pipeline(pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
 
-        // Set the render pipeline, bind group, and draw a full-screen triangle
-        render_pass.set_render_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
-        render_pass.draw(0..3, 0..1); // Draw 3 vertices for a full-screen triangle
+        // Get texture dimensions for work group calculation
+        let size = cloud_render_texture.texture.as_ref().unwrap().size();
+        let workgroup_count_x = size.width.div_ceil(8);
+        let workgroup_count_y = size.height.div_ceil(8);
+        compute_pass.dispatch_workgroups(workgroup_count_x, workgroup_count_y, 1);
 
         Ok(())
     }
@@ -437,9 +396,7 @@ impl FromWorld for VolumetricsPipeline {
             world.resource::<AssetServer>(),
             "shaders/world_rendering.wgsl"
         );
-        let pipeline_cache = world.resource::<PipelineCache>();
         let render_device = world.resource::<RenderDevice>();
-        let fullscreen_shader = world.resource::<FullscreenShader>();
 
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
@@ -453,43 +410,30 @@ impl FromWorld for VolumetricsPipeline {
         let layout = render_device.create_bind_group_layout(
             "volumetric_clouds_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
-                ShaderStages::FRAGMENT,
+                ShaderStages::COMPUTE,
                 (
                     uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                     sampler(SamplerBindingType::Filtering),    // Linear sampler
                     texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                    // --- Bind output textures for writing ---
+                    texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly), // Output Color
+                    texture_storage_2d(TextureFormat::Rg16Float, StorageTextureAccess::WriteOnly), // Output Motion
+                    texture_storage_2d(TextureFormat::R32Float, StorageTextureAccess::WriteOnly), // Output Depth
                 ),
             ),
         );
 
-        let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let pipeline_id = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout.clone()],
-            vertex: fullscreen_shader.to_vertex_state(),
-            fragment: Some(FragmentState {
-                shader,
-                targets: vec![
-                    Some(ColorTargetState {
-                        format: TextureFormat::Rgba16Float,
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                    Some(ColorTargetState {
-                        format: TextureFormat::Rg16Float, // Motion vectors
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                    Some(ColorTargetState {
-                        format: TextureFormat::R32Float, // Volumetric depth
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                ],
-                ..default()
-            }),
-            ..default()
+            push_constant_ranges: Vec::new(),
+            shader,
+            shader_defs: Vec::new(),
+            entry_point: Some("main".into()),
+            zero_initialize_workgroup_memory: true,
         });
 
         Self {
