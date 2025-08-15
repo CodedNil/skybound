@@ -40,18 +40,18 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     let rd = normalize(world_pos_far - ro);
     let t_max = 10000000.0;
 
-	// Precalculate sun, sky and ambient colors
-    var atmosphere: AtmosphereData;
-    atmosphere.sky = render_sky(rd, view.sun_direction, ro.z);
-    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z) * 0.5;
-    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view.sun_direction, ro.z);
-
-	// Phase functions for silver and back scattering
+    // Phase functions for silver and back scattering
     let cos_theta = dot(view.sun_direction, rd);
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
     let hg_silver = henyey_greenstein(cos_theta, 0.9) * 0.01;
     let hg_back = henyey_greenstein(cos_theta, -0.05);
-    atmosphere.phase = max(hg_forward, max(hg_silver, hg_back));
+    let phase = max(hg_forward, max(hg_silver, hg_back));
+
+	// Precalculate sun, sky and ambient colors
+    var atmosphere: AtmosphereData;
+    atmosphere.sky = render_sky(rd, view.sun_direction, ro.z);
+    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z) * 0.5 * phase;
+    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view.sun_direction, ro.z);
 
     // Sample the volumes
     let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);

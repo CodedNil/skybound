@@ -31,7 +31,6 @@ struct AtmosphereData {
     sky: vec3<f32>,
     sun: vec3<f32>,
     ambient: vec3<f32>,
-    phase: f32,
 }
 
 

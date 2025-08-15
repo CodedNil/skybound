@@ -5,6 +5,11 @@ much less dense mostly upper atmosphere clouds on the equator
 do larger steps when going horizontally vs vertically since clouds are thinner vertically?
 make the clouds instead of a single entry exit layer, do it per cloud layer so 16 times
 
+cone tracing for lightmarching, sample at higher mip levels
+hierarchical raymarching, use higher mips to see ahead and take bigger steps
+switch to compute shader
+only update lighting every 2 steps
+
 do light emission from the aur below
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene

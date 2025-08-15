@@ -1,5 +1,5 @@
 #define_import_path skybound::clouds
-#import skybound::utils::{View, remap, intersect_sphere}
+#import skybound::utils::{View, intersect_sphere}
 
 const BASE_SCALE = 0.003;
 const BASE_TIME = 0.01;
@@ -151,7 +151,10 @@ fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, detai
     // Apply more less noise to the lower portion of the cloud, reduced at higher altitudes
     let detail_amount = mix(height_fraction, 1.0, CLOUD_LAYER_DETAILS[layer_i]);
     let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(detail_amount * 4.0, 0.0, 1.0));
-    base_cloud = remap(base_cloud, hfbm * 0.4 * detail_amount, 1.0, 0.0, 1.0);
+
+    let erosion = hfbm * 0.4 * detail_amount;
+    let inv_erosion_range = 1.0 / (1.0 - erosion + 1e-6); // Add epsilon to avoid div by zero
+    base_cloud = saturate((base_cloud - erosion) * inv_erosion_range);
 
     return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
 }
