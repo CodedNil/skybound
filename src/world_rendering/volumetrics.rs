@@ -348,7 +348,6 @@ impl ViewNode for VolumetricsNode {
             Some(volumetric_depth_view),
             Some(base_noise),
             Some(detail_noise),
-            Some(turbulence_noise),
             Some(weather_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
@@ -359,7 +358,6 @@ impl ViewNode for VolumetricsNode {
             cloud_render_texture.depth_view.as_ref(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
-            gpu_images.get(&noise_texture_handle.turbulence),
             gpu_images.get(&noise_texture_handle.weather),
         )
         else {
@@ -375,7 +373,6 @@ impl ViewNode for VolumetricsNode {
                 &volumetric_clouds_pipeline.linear_sampler,
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
-                &turbulence_noise.texture_view,
                 &weather_noise.texture_view,
             )),
         );
@@ -462,7 +459,6 @@ impl FromWorld for VolumetricsPipeline {
                     sampler(SamplerBindingType::Filtering),    // Linear sampler
                     texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
-                    texture_2d(TextureSampleType::Float { filterable: true }), // Turbulence noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
                 ),
             ),

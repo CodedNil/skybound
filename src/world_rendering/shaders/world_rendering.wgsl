@@ -56,11 +56,7 @@ fn fragment(in: FullscreenVertexOutput) -> FragmentOutput {
     // Sample the volumes
     let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
     let volumetrics_depth: f32 = raymarch_result.depth;
-    var acc_color: vec3<f32> = raymarch_result.color.rgb;
-    var acc_alpha: f32 = raymarch_result.color.a;
-
-    // Blend the volumetrics with the sky color behind them
-    acc_color = acc_color + atmosphere.sky * (1.0 - acc_alpha);
+    var acc_color: vec3<f32> = raymarch_result.color;
 
     // Calculate motion vectors using volumetric depth for better accuracy
     var motion_vector = vec2(0.0);
