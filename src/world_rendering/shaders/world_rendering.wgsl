@@ -27,8 +27,16 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
     return INV_4_PI * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
 }
 
+const GROUP_PIXELS: u32 = 8; // Number of pixels^2 to process in a single compute workgroup
+const GROUP_PIXELS_N: u32 = GROUP_PIXELS * GROUP_PIXELS; // Total number of pixels per workgroup
+const CENTER_PIXEL_N: u32 = GROUP_PIXELS_N / 2; // Index of the center pixel
+
 @compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+fn main(
+    @builtin(global_invocation_id) id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+    @builtin(local_invocation_index) local_index: u32
+) {
     let texture_size = textureDimensions(output_color);
 
     // Boundary check: Stop execution if the thread is outside the texture's dimensions

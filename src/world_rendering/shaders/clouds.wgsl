@@ -153,24 +153,3 @@ fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, detai
 
     return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
 }
-
-// Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
-fn clouds_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, 0.0, view.planet_radius + ro.z);
-    let altitude = distance(ro, view.planet_center) - view.planet_radius;
-
-    let bottom_shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + CLOUD_BOTTOM_HEIGHT);
-    let top_shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + CLOUD_TOP_HEIGHT);
-
-    if altitude >= CLOUD_BOTTOM_HEIGHT && altitude <= CLOUD_TOP_HEIGHT {
-        // We are inside the clouds, start raymarching immediately and end when we exit the clouds
-        return vec2(0.0, max(bottom_shell_dist, top_shell_dist));
-    } else if altitude < CLOUD_BOTTOM_HEIGHT {
-        // Below clouds
-        if bottom_shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
-        return vec2<f32>(bottom_shell_dist, select(t_max, top_shell_dist, top_shell_dist > 0.0));
-    }
-    // We are above the clouds, only raymarch if the intersects the sphere, start at the top_shell_dist and end at bottom_shell_dist
-    if top_shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
-    return vec2<f32>(top_shell_dist, select(t_max, bottom_shell_dist, bottom_shell_dist > 0.0));
-}

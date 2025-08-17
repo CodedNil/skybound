@@ -6,8 +6,8 @@ const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
-const FOG_START_HEIGHT: f32 = 0.0;
-const FOG_BOTTOM_HEIGHT: f32 = -500.0;
+const FOG_TOP_HEIGHT: f32 = 0.0;
+const FOG_BOTTOM_HEIGHT: f32 = -20000.0;
 
 
 // Fog turbulence calculations
@@ -132,7 +132,7 @@ struct FogSample {
 fn sample_fog(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
     var sample: FogSample;
 
-    if pos.z > FOG_START_HEIGHT { return sample; }
+    if pos.z > FOG_TOP_HEIGHT { return sample; }
 
     let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xy * 0.00002, time * 0.04), 0.0).g * -1200.0;
     let altitude = pos.z - height_noise;
@@ -162,31 +162,4 @@ fn sample_fog(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: text
     // sample.emission += flash_emission(pos.xy, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
 
     return sample;
-}
-
-// Returns vec2(entry_t, exit_t), or vec2(max, 0.0) if no hit
-fn fog_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
-    let cam_pos = vec3<f32>(0.0, 0.0, view.planet_radius + ro.z);
-    let altitude = distance(ro, view.planet_center) - view.planet_radius;
-
-    let shell_dist = intersect_sphere(cam_pos, rd, view.planet_radius + FOG_START_HEIGHT);
-
-    var t_start: f32;
-    var t_end: f32;
-    if altitude > FOG_START_HEIGHT {
-        // We are above the fog, only raymarch if the intersects the sphere, start at the shell_dist
-        if shell_dist <= 0.0 { return vec2<f32>(t_max, 0.0); }
-        t_start = shell_dist;
-        t_end = t_max;
-    } else {
-        // We are inside the fog, start raymarching at the camera and end at the shell_dist
-        t_start = 0.0;
-        if shell_dist <= 0.0 {
-            t_end = t_max;
-        } else {
-            t_end = min(shell_dist, t_max);
-        }
-    }
-
-    return vec2<f32>(t_start, t_end);
 }

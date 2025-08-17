@@ -1,7 +1,7 @@
 #define_import_path skybound::raymarch
-#import skybound::utils::{AtmosphereData, View, intersect_plane}
-#import skybound::clouds::{clouds_raymarch_entry, sample_clouds, get_cloud_layer_above}
-#import skybound::aur_fog::{fog_raymarch_entry, sample_fog}
+#import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect}
+#import skybound::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds, get_cloud_layer_above}
+#import skybound::aur_fog::{FOG_BOTTOM_HEIGHT, FOG_TOP_HEIGHT, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
 @group(0) @binding(2) var base_texture: texture_3d<f32>;
@@ -71,23 +71,77 @@ fn sample_volume_light(pos: vec3<f32>, time: f32, linear_sampler: sampler) -> f3
     return clouds + fog;
 }
 
+// Logic to gather intersections per workgroup
+// 0 is none, first 4 bits are 16 cloud layers, 5th bit is fog, 6th bit is poles
+// var<workgroup> intersections: array<Intersection, 18>;
+// struct Intersection {
+//     idx: u32,
+//     distance: f32,
+//     is_entry: bool,
+// }
+
+// const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
+// const CLOUD_TOP_HEIGHT: f32 = 48000;
+// const CLOUD_LAYER_HEIGHT: f32 = 3000;
+// struct CloudLayer {
+//     index: u32,
+//     bottom: f32,
+//     height: f32,
+// }
+// fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
+//     let index: u32 = u32((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT);
+//     let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(index) * CLOUD_LAYER_HEIGHT;
+
+//     // Branchless validity check, height becomes 0 if invalid
+//     let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
+//     let height: f32 = select(0.0, CLOUD_LAYER_HEIGHTS[index], is_valid_layer);
+//     let is_within_thickness: f32 = f32(pos.z <= bottom + height);
+
+//     return CloudLayer(index, bottom, height * is_within_thickness);
+// }
+
+// fn gather_intersections(ro: vec3<f32>, rd: vec3<f32>, view: View) {
+//     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, 0.0);
+//     let up = rd.z > 0.0;
+//     // Possible paths, consider poles at every point
+//     // Already in fog, going down has no events, just fog forever, going up has fog exit then every cloud layer
+//     // Above fog below clouds, could go down into fog, entry point only one to consider, if going up then consider clouds layers
+//     // Already in a cloud layer, start with volume for that layer, then exit point for it and the layers above or below entry then exit
+//     // Above cloud layer, camera going up no paths, camera going down all clouds then fog
+
+//     if up {
+
+//     }
+// }
+
+
+
+// Raymarch
 struct RaymarchResult {
     color: vec3<f32>,
     depth: f32
 }
-
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
-    let clouds_entry_exit = clouds_raymarch_entry(ro, rd, view, t_max);
-    let fog_entry_exit = fog_raymarch_entry(ro, rd, view, t_max);
+    let clouds_entry_exit = ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
+    let fog_entry_exit = ray_shell_intersect(ro, rd, view, FOG_BOTTOM_HEIGHT, FOG_TOP_HEIGHT);
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Get initial start and end of the volumes
-    let t_start = min(min(clouds_entry_exit.x, fog_entry_exit.x), poles_entry_exit.x) + dither * STEP_SIZE_INSIDE;
+    var t_start = t_max;
+    if clouds_entry_exit.x < clouds_entry_exit.y {
+        t_start = min(clouds_entry_exit.x, t_start);
+    }
+    if fog_entry_exit.x < fog_entry_exit.y {
+        t_start = min(fog_entry_exit.x, t_start);
+    }
+    if poles_entry_exit.x < poles_entry_exit.y {
+        t_start = min(poles_entry_exit.x, t_start);
+    }
     let t_end = min(max(max(clouds_entry_exit.y, fog_entry_exit.y), poles_entry_exit.y), t_max);
 
     // Accumulation variables
-    var t = t_start;
+    var t = max(t_start, 0.0) + dither * STEP_SIZE_INSIDE;
     var acc_color = vec3(0.0);
     var transmittance = 1.0;
     var accumulated_weighted_depth = 0.0;
@@ -212,6 +266,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
 
     // Blend the accumulated volume color with the sky color behind it.
     let final_rgb = acc_color + atmosphere.sky * transmittance;
+    // let final_rgb = vec3(t_start * 0.0001);
 
     var output: RaymarchResult;
     output.color = clamp(final_rgb, vec3(0.0), vec3(1.0));

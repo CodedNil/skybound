@@ -10,6 +10,14 @@ maybe that can be done for lighting too?
 also can sample all 16 pixels together for low dense regions using higher mips, then per pixel in regions of density
 
 
+unified fog and cloud layering
+no texture for height maps of each
+instead each layer has a bottom and a top plane, given a fixed height but adjusted with computed sdf noise
+
+once per workgroup at the start, store in workgroup memory the entry exit points, computed once only on the center pixel
+var<workgroup> workgroup_var: vec4<f32>;
+then workgroupBarrier(): which stalls the other threads until this is ready
+
 
 
 

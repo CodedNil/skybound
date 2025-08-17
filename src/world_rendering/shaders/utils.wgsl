@@ -89,20 +89,23 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     return hash21(uv) - s * 0.25 + 0.5;
 }
 
-// Ray intersection of a sphere, outputs distance to the intersection point or -1.0
-fn intersect_sphere(ro: vec3<f32>, rd: vec3<f32>, radius: f32) -> f32 {
+// Returns the near (x) and far (y) intersection distances
+// If the ray misses, returns vec2(1.0, -1.0)
+fn intersect_sphere(ro: vec3<f32>, rd: vec3<f32>, radius: f32) -> vec2<f32> {
     let a = dot(rd, rd);
     let b = 2.0 * dot(rd, ro);
     let c = dot(ro, ro) - (radius * radius);
-    let disc = (b * b) - 4.0 * a * c;
-    if disc < 0.0 { return -1.0; }
-    let d = sqrt(disc);
-    let t0 = (-b - d) / (2.0 * a);
-    let t1 = (-b + d) / (2.0 * a);
-    // Return nearest positive intersection (entry), or the positive exit if inside
-    if t0 > 0.0 { return t0; }
-    if t1 > 0.0 { return t1; }
-    return -1.0;
+    let disc = b * b - 4.0 * a * c;
+
+    if disc < 0.0 {
+        return vec2<f32>(1.0, -1.0); // No real intersection
+    }
+
+    let sqrt_disc = sqrt(disc);
+    return vec2<f32>(
+        (-b - sqrt_disc) / (2.0 * a), // Near intersection (t_near)
+        (-b + sqrt_disc) / (2.0 * a)  // Far intersection (t_far)
+    );
 }
 
 // Calculate intersection with a horizontal plane at given height
@@ -113,4 +116,38 @@ fn intersect_plane(ro: vec3<f32>, rd: vec3<f32>, plane_height: f32) -> f32 {
 
     let t = (plane_height - ro.z) / rd.z;
     return select(-1.0, t, t > 0.0);
+}
+
+// Calculates the entry and exit distances for a ray intersecting a spherical shell, including if either are behind the camera
+fn ray_shell_intersect(ro: vec3<f32>, rd: vec3<f32>, view: View, bottom_altitude: f32, top_altitude: f32) -> vec2<f32> {
+    let local_ro = ro - view.planet_center;
+
+    // The entry point is the nearest intersection with the top sphere
+    let top_radius = view.planet_radius + top_altitude;
+    let top_interval = intersect_sphere(local_ro, rd, top_radius);
+    if top_interval.x > top_interval.y {
+        return vec2<f32>(1.0, 0.0); // If we miss the top sphere, we miss the shell entirely
+    }
+
+    // The exit point is the nearest intersection with the bottom sphere
+    let bottom_radius = view.planet_radius + bottom_altitude;
+    let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
+    if bottom_interval.x > bottom_interval.y {
+        return top_interval; // Glancing shot that hits the top layer but misses the bottom, exit is the far side of the top layer
+    }
+
+    // Check the near-side segment first.
+    let seg1 = vec2<f32>(top_interval.x, bottom_interval.x);
+    if seg1.x < seg1.y && seg1.y > 0.0 {
+        return seg1;
+    }
+
+    // If the near-side segment is invalid or entirely behind us, check the far-side segment.
+    let seg2 = vec2<f32>(bottom_interval.y, top_interval.y);
+    if seg2.x < seg2.y && seg2.y > 0.0 {
+        return seg2;
+    }
+
+    // No valid intersection segment is in front of the camera.
+    return vec2<f32>(1.0, 0.0);
 }
