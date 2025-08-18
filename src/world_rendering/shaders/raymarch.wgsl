@@ -32,7 +32,7 @@ const EXTINCTION: f32 = 0.4;                   // Overall density/darkness of th
 const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is white, lower values are darker grey
 const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows
 const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows
-const SHADOW_FADE_END: f32 = 20000.0;          // Distance at which shadows from layers above are fully faded
+const SHADOW_FADE_END: f32 = 40000.0;          // Distance at which shadows from layers above are fully faded
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000003;             // Density of the atmospheric fog
 
 // Samples the density, color, and emission from the various volumes
@@ -104,7 +104,7 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
 
     // Optimised sampling of cloud layers above for shadows
     if step_density > 0.0 && view.sun_direction.z > 0.01 {
-        for (var i: u32 = 1; i <= 4; i++) {
+        for (var i: u32 = 1; i <= 16; i++) {
             let next_layer = get_cloud_layer_above(world_pos.z, f32(i));
             if next_layer <= 0.0 { break; }
 
@@ -178,12 +178,20 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
     var sample_count = 0;
     var step = STEP_SIZE_OUTSIDE;
     var t = max(t_start, 0.0);
-    var transmittance = 1.0;
     var accumulated_weighted_depth = 0.0;
     var accumulated_density = 0.0;
 
+    // Pre-calculate fog for the initial empty space from camera (t=0) to t_start.
+    var transmittance = 1.0;
+    var accumulated_fog_color = vec3(0.0);
+    if t_start > 0.0 {
+        let initial_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * t_start);
+        accumulated_fog_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
+        transmittance = initial_fog_transmittance;
+    }
+
     for (var i = 0; i < MAX_STEPS; i++) {
-        if t >= t_end || transmittance < 0.01 || sample_count >= MAX_SAMPLES {
+        if t >= t_end || sample_count >= MAX_SAMPLES {
             break;
         }
 
@@ -204,6 +212,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             if poles_entry_exit.x > t {
                 next_t = min(next_t, poles_entry_exit.x);
             }
+
+            // Account for atmospheric fog across the empty, skipped space
+            let segment_length = next_t - t;
+            if segment_length > 0.0 {
+                let segment_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * segment_length);
+                accumulated_fog_color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
+                transmittance *= segment_fog_transmittance;
+            }
+
             t = next_t;
             continue;
         }
@@ -230,11 +247,14 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         step = base_step * step_scaler;
 
         // Determine the total density for this step by combining cloud and atmospheric fog
-        let total_step_density = DENSITY * step_density ;
-        let step_transmittance = exp(-total_step_density * step);
-        let alpha_step = 1.0 - step_transmittance;
+        let volume_transmittance = exp(-(DENSITY * step_density) * step);
+        let fog_transmittance_step = exp(-ATMOSPHERIC_FOG_DENSITY * step);
+        let alpha_step = 1.0 - volume_transmittance;
 
-        if step_density > 0.01 {
+        // Add the in-scattered light from the atmospheric fog in this step
+        accumulated_fog_color += atmosphere.sky * (1.0 - fog_transmittance_step) * transmittance;
+
+        if step_density > 0.0 {
             samples[sample_count].dist = t;
             samples[sample_count].density = step_density;
             samples[sample_count].contribution = transmittance * alpha_step;
@@ -246,7 +266,7 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             accumulated_density += contribution;
         }
 
-        transmittance *= step_transmittance;
+        transmittance *= volume_transmittance * fog_transmittance_step;
         t += step;
     }
 
@@ -272,21 +292,15 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             // Get the incoming light (in-scattering)
             let in_scattering = sample_shadowing(world_pos, atmosphere, sample.density, time, view, linear_sampler);
 
-            // Calculate the final color for this step
-            let total_step_density = DENSITY * sample.density;
-            let cloud_density_ratio = select(0.0, (DENSITY * sample.density) / total_step_density, total_step_density > 0.0);
-            let blended_color = mix(atmosphere.sky, in_scattering * volume_info.color + volume_info.emission, cloud_density_ratio);
-
-            // Apply atmospheric fog based on distance
-            let fog_transmittance = exp(-sample.dist * ATMOSPHERIC_FOG_DENSITY);
-            let fogged_color = mix(atmosphere.sky, blended_color, fog_transmittance);
+            // Calculate the color of the volume at this point
+            let volume_color = in_scattering * volume_info.color + volume_info.emission;
 
             // Accumulate the color, weighted by its contribution
-            acc_color += fogged_color * sample.contribution;
+            acc_color += volume_color * sample.contribution;
         }
     }
 
-    let final_rgb = acc_color + atmosphere.sky * transmittance;
+    let final_rgb = accumulated_fog_color + acc_color + atmosphere.sky * transmittance;
 
     // Calculate weighted average depth if a volume was hit, otherwise default to t_max.
     let avg_depth = accumulated_weighted_depth / max(accumulated_density, 0.0001);

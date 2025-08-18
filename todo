@@ -1,12 +1,10 @@
 give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
-much less dense mostly upper atmosphere clouds on the equator
+much less dense, mostly upper atmosphere clouds on the equator
 
-cone tracing for lightmarching, sample at higher mip levels
-hierarchical raymarching, use higher mips to see ahead and take bigger steps
-only update lighting every 2 steps
-
-do light emission from the aur below
+test sun direction dynamically against the poles collision point
+test the cloud layers directly instead of an overarching segment for all clouds, also needs to have two entry exit points
+do light emission from the aur below (a single step of shadowing)
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466

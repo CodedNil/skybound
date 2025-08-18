@@ -95,7 +95,7 @@ fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
     let is_valid = f32(layer_index < CLOUD_TOTAL_LAYERS);
 
     let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(layer_index) * CLOUD_LAYER_HEIGHT;
-    let midpoint: f32 = bottom + CLOUD_LAYER_HEIGHTS[layer_index] * 0.2;
+    let midpoint: f32 = bottom + CLOUD_LAYER_HEIGHTS[layer_index] * 0.4;
     return mix(-1.0, midpoint, is_valid);
 }
 
