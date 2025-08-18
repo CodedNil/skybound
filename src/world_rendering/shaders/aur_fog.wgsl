@@ -7,7 +7,6 @@ const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
 const FOG_TOP_HEIGHT: f32 = 0.0;
-const FOG_BOTTOM_HEIGHT: f32 = -20000.0;
 
 
 // Fog turbulence calculations

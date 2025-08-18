@@ -3,13 +3,6 @@
 #import skybound::sky::render_sky
 #import skybound::poles::render_poles
 
-struct FullscreenVertexOutput {
-    @builtin(position)
-    position: vec4<f32>,
-    @location(0)
-    uv: vec2<f32>,
-};
-
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 
@@ -26,10 +19,6 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
     let g2 = g * g;
     return INV_4_PI * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
 }
-
-const GROUP_PIXELS: u32 = 8; // Number of pixels^2 to process in a single compute workgroup
-const GROUP_PIXELS_N: u32 = GROUP_PIXELS * GROUP_PIXELS; // Total number of pixels per workgroup
-const CENTER_PIXEL_N: u32 = GROUP_PIXELS_N / 2; // Index of the center pixel
 
 @compute @workgroup_size(8, 8, 1)
 fn main(

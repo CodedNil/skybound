@@ -89,7 +89,6 @@ pub struct CloudsViewUniformOffset {
 
 #[derive(Resource, Default, ExtractResource, Clone)]
 pub struct ExtractedViewData {
-    camera_forward: Vec3,
     planet_rotation: Vec4,
     planet_radius: f32,
     latitude: f32,
@@ -107,7 +106,6 @@ pub fn extract_clouds_view_uniform(
     commands.insert_resource(**time);
     if let Ok(camera_transform) = camera_query.single() {
         commands.insert_resource(ExtractedViewData {
-            camera_forward: camera_transform.forward().as_vec3(),
             planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
             planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
@@ -190,129 +188,7 @@ pub fn prepare_clouds_view_uniforms(
                 sun_direction: data.sun_direction,
             }),
         });
-
-        let intersect = ray_shell_intersect(
-            world_position,
-            data.camera_forward,
-            Vec3::new(world_position.x, world_position.y, -data.planet_radius),
-            data.planet_radius,
-            1000.0,
-            48000.0,
-        );
-        // println!(
-        //     "Intersect {} start {} and end {}",
-        //     entity, intersect.x, intersect.y
-        // );
     }
-}
-fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
-    let a = rd.dot(rd);
-    let b = 2.0 * rd.dot(ro);
-    let c = ro.dot(ro) - (radius * radius);
-    let disc = b * b - 4.0 * a * c;
-
-    if disc < 0.0 {
-        return Vec2::new(1.0, -1.0); // No real intersection
-    }
-
-    let sqrt_disc = disc.sqrt();
-    return Vec2::new(
-        (-b - sqrt_disc) / (2.0 * a), // Near intersection (t_near)
-        (-b + sqrt_disc) / (2.0 * a), // Far intersection (t_far)
-    );
-}
-// Calculates the entry and exit distances for a ray intersecting a spherical shell, including if either are behind the camera
-fn ray_shell_intersect(
-    ro: Vec3,
-    rd: Vec3,
-    planet_center: Vec3,
-    planet_radius: f32,
-    bottom_altitude: f32,
-    top_altitude: f32,
-) -> Vec2 {
-    let local_ro = ro - planet_center;
-
-    // The entry point is the nearest intersection with the top sphere
-    let top_radius = planet_radius + top_altitude;
-    let top_interval = intersect_sphere(local_ro, rd, top_radius);
-    if top_interval.x > top_interval.y {
-        return Vec2::new(1.0, 0.0); // If we miss the top sphere, we miss the shell entirely
-    }
-
-    // The exit point is the nearest intersection with the bottom sphere
-    let bottom_radius = planet_radius + bottom_altitude;
-    let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
-    if bottom_interval.x > bottom_interval.y {
-        return top_interval; // Glancing shot that hits the top layer but misses the bottom, exit is the far side of the top layer
-    }
-
-    // The intersection with the shell is the region inside the top sphere but outside the bottom sphere
-    let seg1 = Vec2::new(top_interval.x, bottom_interval.x);
-    let seg2 = Vec2::new(bottom_interval.y, top_interval.y);
-
-    // Check the near-side segment first.
-    if seg1.x < seg1.y && seg1.y > 0.0 {
-        return seg1;
-    }
-
-    // If the near-side segment is invalid or entirely behind us, check the far-side segment.
-    if seg2.x < seg2.y && seg2.y > 0.0 {
-        return seg2;
-    }
-
-    // No valid intersection segment is in front of the camera.
-    Vec2::new(1.0, -1.0)
-}
-
-struct Intersection {
-    idx: u32,
-    distance: f32,
-    is_entry: bool,
-}
-
-const CLOUD_BOTTOM_HEIGHT: f32 = 1000.0;
-const CLOUD_TOP_HEIGHT: f32 = 48000.0;
-const CLOUD_LAYER_HEIGHT: f32 = 3000.0;
-const CLOUD_TOTAL_LAYERS: usize = 16;
-const CLOUD_LAYER_HEIGHTS: [f32; CLOUD_TOTAL_LAYERS] = [
-    2500.0, 2400.0, 2400.0, 2500.0, 2400.0, 2200.0, 2200.0, 2000.0, 1800.0, 1500.0, 1100.0, 800.0,
-    350.0, 300.0, 300.0, 250.0,
-];
-struct CloudLayer {
-    index: usize,
-    bottom: f32,
-    height: f32,
-}
-fn get_cloud_layer(pos: Vec3) -> CloudLayer {
-    let index: usize = ((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT) as usize;
-    let bottom: f32 = CLOUD_BOTTOM_HEIGHT + (index as f32) * CLOUD_LAYER_HEIGHT;
-
-    // Branchless validity check, height becomes 0 if invalid
-    let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
-    let height: f32 = if is_valid_layer {
-        CLOUD_LAYER_HEIGHTS[index]
-    } else {
-        0.0
-    };
-    let is_within_thickness: f32 = u32::from(pos.z <= bottom + height) as f32;
-
-    CloudLayer {
-        index,
-        bottom,
-        height: height * is_within_thickness,
-    }
-}
-
-fn gather_intersections(ro: Vec3, rd: Vec3) {
-    // let poles_entry_exit = poles_raymarch_entry(ro, rd, view, 0.0);
-    let up = rd.z > 0.0;
-    // Possible paths, consider poles at every point
-    // Already in fog, going down has no events, just fog forever, going up has fog exit then every cloud layer
-    // Above fog below clouds, could go down into fog, entry point only one to consider, if going up then consider clouds layers
-    // Already in a cloud layer, start with volume for that layer, then exit point for it and the layers above or below entry then exit
-    // Above cloud layer, camera going up no paths, camera going down all clouds then fog
-
-    if up {}
 }
 
 /// System that runs late in the frame to update the `PreviousViewData` resource
@@ -362,8 +238,8 @@ pub fn manage_textures(
 
     // Define the desired size for the intermediate texture
     let new_size = Extent3d {
-        width: primary_window.physical_width,
-        height: primary_window.physical_height,
+        width: primary_window.physical_width / 4,
+        height: primary_window.physical_height / 4,
         depth_or_array_layers: 1,
     };
 

@@ -83,7 +83,7 @@ fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
     // Branchless validity check, height becomes 0 if invalid
     let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
     let height: f32 = select(0.0, CLOUD_LAYER_HEIGHTS[index], is_valid_layer);
-    let is_within_thickness: f32 = f32(pos.z <= bottom + height);
+    let is_within_thickness: f32 = f32(pos.z <= bottom + height * 3.0);
 
     return CloudLayer(index, bottom, height * is_within_thickness);
 }
@@ -99,7 +99,7 @@ fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
     return mix(-1.0, midpoint, is_valid);
 }
 
-fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
+fn sample_clouds(pos: vec3<f32>, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
     var cloud_layer = get_cloud_layer(pos);
     if cloud_layer.height == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer
     let layer_i = cloud_layer.index;
@@ -135,6 +135,7 @@ fn sample_clouds(pos: vec3<f32>, time: f32, base_texture: texture_3d<f32>, detai
     let base_noise = textureSampleLevel(base_texture, linear_sampler, base_scaled_pos, 0.0);
     var base_cloud = (base_noise.r * height_gradient) + weather_coverage - 1.0;
     if base_cloud <= 0.0 { return 0.0; } // Early exit if density is too low
+    if simple { return base_cloud; }
 
 	// --- High Frequency Detail ---
 	let detail_time_vec = time * WIND_DIRECTION_DETAIL;
