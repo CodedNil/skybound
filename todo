@@ -37,6 +37,7 @@ https://github.com/clayjohn/godot-volumetric-cloud-demo
 https://github.com/AmanSachan1/Meteoros
 https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-textures/main.go
 https://www.ea.com/seed/news/egsr-2022-blue-noise
+https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_with_GPU-based_Decoupled_Ray_Marching/blob/main/Ms%20Thesis%20Presentation%20_%20Decoupled%20Ray%20Marching%20in%20Video%20Games.pdf
 
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation

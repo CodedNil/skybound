@@ -36,7 +36,7 @@ fn main(
     // Calculate the pixel coordinate and UV for the current thread
     let pix = vec2<f32>(id.xy);
     let uv = (pix + 0.5) / vec2<f32>(texture_size);
-    let dither = fract(blue_noise(pix));
+    let dither = fract(blue_noise(pix + vec2<f32>(view.time * 0.001)));
 
     // Reconstruct world-space position for the ray
     let ndc = uv_to_ndc(uv);
@@ -45,7 +45,7 @@ fn main(
     // Ray origin & dir
     let ro = view.world_position;
     let rd = normalize(world_pos_far - ro);
-    let t_max = 10000000.0;
+    let t_max = 1000000.0;
 
     // Phase functions for silver and back scattering
     let cos_theta = dot(view.sun_direction, rd);

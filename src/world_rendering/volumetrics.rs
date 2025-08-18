@@ -238,8 +238,8 @@ pub fn manage_textures(
 
     // Define the desired size for the intermediate texture
     let new_size = Extent3d {
-        width: primary_window.physical_width / 4,
-        height: primary_window.physical_height / 4,
+        width: primary_window.physical_width / 3,
+        height: primary_window.physical_height / 3,
         depth_or_array_layers: 1,
     };
 
