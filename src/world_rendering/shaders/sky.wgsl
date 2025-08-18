@@ -53,7 +53,7 @@ fn hg_phase(cos_theta: f32, g: f32) -> f32 {
 }
 
 
-fn render_sky(rd: vec3<f32>, sun_dir: vec3<f32>, altitude: f32) -> vec3<f32> {
+fn render_sky(rd: vec3<f32>, sun_dir: vec3<f32>, altitude: f32, include_sun_disk: bool) -> vec3<f32> {
 let v_sun_e: f32 = sun_intensity(dot(sun_dir, UP));
     let v_sunfade: f32 = 1.0 - clamp(1.0 - exp((sun_dir.z / 450000.0)), 0.0, 1.0);
 
@@ -94,8 +94,11 @@ let v_sun_e: f32 = sun_intensity(dot(sun_dir, UP));
     var l0: vec3<f32> = vec3<f32>(0.1) * f_ex;
 
     // Solar disk and out-scattering
-    let sun_disk: f32 = smoothstep(SUN_ANGULAR_DIAMETER_COS, SUN_ANGULAR_DIAMETER_COS + 0.00002, cos_theta);
-    l0 += (v_sun_e * 19000.0 * f_ex) * sun_disk;
+    if include_sun_disk {
+        let sun_disk: f32 = smoothstep(SUN_ANGULAR_DIAMETER_COS, SUN_ANGULAR_DIAMETER_COS + 0.00002, cos_theta);
+        l0 += (v_sun_e * 19000.0 * f_ex) * sun_disk;
+    }
+
 
     // Composition
     let tex_color: vec3<f32> = (lin + l0) * 0.04 + vec3<f32>(0.0, 0.0003, 0.00075);

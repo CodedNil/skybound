@@ -15,52 +15,63 @@ const DENSITY: f32 = 0.2;               // Base density for lighting
 const MAX_STEPS: i32 = 2048;            // Maximum number of steps to take in transmittance march
 const STEP_SIZE_INSIDE: f32 = 32;
 const STEP_SIZE_OUTSIDE: f32 = 64;
-const MAX_SAMPLES: i32 = 16;            // Maximum number of samples for decoupled raymarching
+const MAX_SAMPLES: i32 = 64;            // Maximum number of samples for decoupled raymarching
 
 const SCALING_END: f32 = 100000.0;      // Distance from camera to use max step size
-const SCALING_MAX: f32 = 8.0;           // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 6.0;           // Maximum scaling factor to increase by
 const SCALING_MAX_VERTICAL: f32 = 2.0;  // Scale less if the ray is vertical
 const SCALING_MAX_FOG: f32 = 2.0;       // Scale less if the ray is through fog
 const CLOSE_THRESHOLD: f32 = 200.0;     // Distance from solid objects to begin more precise raymarching
 
 // --- Lighting Constants ---
-const LIGHT_STEPS: u32 = 2;             // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = 90.0;
+const LIGHT_STEPS: u32 = 2;                       // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE = 90.0;                     // Step size for lightmarching steps
+const AUR_LIGHT_DIR = vec3<f32>(0.0, 0.0, -1.0);  // Direction the aur light comes from (straight below)
+const AUR_LIGHT_DISTANCE = 30000.0;               // How high before the aur light becomes negligable
+const AUR_LIGHT_COLOR = vec3(0.6, 0.3, 0.8);      // Color of the aur light from below
 
 // --- Material Properties ---
 const EXTINCTION: f32 = 0.4;                   // Overall density/darkness of the cloud material
+const AUR_EXTINCTION: f32 = 0.08;              // Lower extinction for aur light to penetrate more
 const SCATTERING_ALBEDO: f32 = 0.6;            // Color of the cloud. 0.9 is white, lower values are darker grey
 const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;  // How much shadows affect ambient light. Lower = brighter shadows
 const AMBIENT_FLOOR: f32 = 0.02;               // Minimum ambient light to prevent pitch-black shadows
 const SHADOW_FADE_END: f32 = 40000.0;          // Distance at which shadows from layers above are fully faded
-const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000003;             // Density of the atmospheric fog
+const ATMOSPHERIC_FOG_DENSITY: f32 = 0.00001;  // Density of the atmospheric fog
 
 // Samples the density, color, and emission from the various volumes
 struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume_color(pos: vec3<f32>, time: f32, clouds: bool, fog: bool, poles: bool, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume_color(pos: vec3<f32>, time: f32, fog: bool, poles: bool, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
+    sample.color = vec3<f32>(1.0);
 
-    if clouds {
-        sample.color = vec3<f32>(1.0);
-    }
-
+    var blended_color: vec3<f32> = vec3(0.0);
+    var blended_density: f32 = 0.0;
     if fog {
         let fog_sample = sample_fog(pos, time, false, details_texture, linear_sampler);
-        sample.color = fog_sample.color;
-        sample.emission = fog_sample.emission;
+        if fog_sample.density > 0.0 {
+            blended_color += fog_sample.color * fog_sample.density;
+            sample.emission += fog_sample.emission * fog_sample.density;
+            blended_density += fog_sample.density;
+        }
     }
-
     if poles {
         let poles_sample = sample_poles(pos, time, linear_sampler);
         if poles_sample.density > 0.0 {
-            sample.color += poles_sample.color;
-            sample.emission += poles_sample.emission;
+            blended_color += poles_sample.color * poles_sample.density;
+            sample.emission += poles_sample.emission * poles_sample.density;
+            blended_density += poles_sample.density;
         }
     }
 
+    if blended_density > 0.0001 {
+        let mix_factor = saturate(blended_density);
+        sample.color = blended_color / blended_density;
+        sample.emission = (sample.emission / blended_density) * mix_factor;
+    }
     return sample;
 }
 
@@ -71,12 +82,10 @@ fn sample_volume_density(pos: vec3<f32>, time: f32, clouds: bool, fog: bool, pol
         let cloud_sample = sample_clouds(pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
         sample = cloud_sample;
     }
-
     if fog {
         let fog_sample = sample_fog(pos, time, false, details_texture, linear_sampler);
         sample = fog_sample.density;
     }
-
     if poles {
         let poles_sample = sample_poles(pos, time, linear_sampler);
         if poles_sample.density > 0.0 {
@@ -136,6 +145,26 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
     return in_scattering;
 }
 
+// Calculates the aur light contribution from below.
+fn sample_aur_lighting(world_pos: vec3<f32>, time: f32, linear_sampler: sampler) -> vec3<f32> {
+    // Fade out the light intensity with altitude
+    let altitude_fade = 1.0 - saturate(world_pos.z / AUR_LIGHT_DISTANCE);
+    if (altitude_fade <= 0.0) {
+        return vec3(0.0);
+    }
+
+    // Perform a single light step upwards to check for density that would shadow the point
+    let lightmarch_pos = world_pos + AUR_LIGHT_DIR * LIGHT_STEP_SIZE;
+    let light_sample_density = sample_clouds(lightmarch_pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
+
+    // Calculate optical depth from this single sample
+    let optical_depth = max(0.0, light_sample_density) * AUR_EXTINCTION * LIGHT_STEP_SIZE;
+    let transmittance = exp(-optical_depth);
+
+    // The final value is the colored light, attenuated by occlusion and altitude
+    return AUR_LIGHT_COLOR * transmittance * altitude_fade;
+}
+
 // Main raymarching entry point
 struct RaymarchResult {
     color: vec3<f32>,
@@ -149,15 +178,21 @@ struct PackedSample {
 fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
     let clouds_entry_exit = ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
+    let clouds_entry_exit1 = vec2<f32>(clouds_entry_exit.x, clouds_entry_exit.y);
+    let clouds_entry_exit2 = vec2<f32>(clouds_entry_exit.z, clouds_entry_exit.w);
     let fog_entry_exit = intersect_sphere(ro - view.planet_center, rd, view.planet_radius + FOG_TOP_HEIGHT);
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Get initial start and end of the volumes
     var t_start = t_max;
     var t_end = 0.0;
-    if clouds_entry_exit.y > 0.0 && clouds_entry_exit.x < clouds_entry_exit.y {
-        t_start = min(clouds_entry_exit.x, t_start);
-        t_end = max(clouds_entry_exit.y, t_end);
+    if clouds_entry_exit1.y > 0.0 && clouds_entry_exit1.x < clouds_entry_exit1.y {
+        t_start = min(clouds_entry_exit1.x, t_start);
+        t_end = max(clouds_entry_exit1.y, t_end);
+    }
+    if clouds_entry_exit2.y > 0.0 && clouds_entry_exit2.x < clouds_entry_exit2.y {
+        t_start = min(clouds_entry_exit2.x, t_start);
+        t_end = max(clouds_entry_exit2.y, t_end);
     }
     if fog_entry_exit.y > 0.0 && fog_entry_exit.x < fog_entry_exit.y {
         t_start = min(fog_entry_exit.x, t_start);
@@ -196,15 +231,18 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
         }
 
         // Check if we are inside any volume
-        let inside_clouds = t >= clouds_entry_exit.x && t <= clouds_entry_exit.y;
+        let inside_clouds = t >= clouds_entry_exit1.x && t <= clouds_entry_exit1.y || t >= clouds_entry_exit2.x && t <= clouds_entry_exit2.y;
         let inside_fog = t >= fog_entry_exit.x && t <= fog_entry_exit.y;
         let inside_poles = t >= poles_entry_exit.x && t <= poles_entry_exit.y;
 
         // If not inside any volume, skip to the next entry point
         if !inside_clouds && !inside_fog && !inside_poles {
             var next_t = t_end;
-            if clouds_entry_exit.x > t {
-                next_t = min(next_t, clouds_entry_exit.x);
+            if clouds_entry_exit1.x > t {
+                next_t = min(next_t, clouds_entry_exit1.x);
+            }
+            if clouds_entry_exit2.x > t {
+                next_t = min(next_t, clouds_entry_exit2.x);
             }
             if fog_entry_exit.x > t {
                 next_t = min(next_t, fog_entry_exit.x);
@@ -282,18 +320,19 @@ fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View
             let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
 
             // Check which volumes we are inside at this sample's position
-            let inside_clouds = sample.dist >= clouds_entry_exit.x && sample.dist <= clouds_entry_exit.y;
             let inside_fog = sample.dist >= fog_entry_exit.x && sample.dist <= fog_entry_exit.y;
             let inside_poles = sample.dist >= poles_entry_exit.x && sample.dist <= poles_entry_exit.y;
 
             // Get the color and emission properties of the volume at this point
-            let volume_info = sample_volume_color(world_pos, time, inside_clouds, inside_fog, inside_poles, linear_sampler);
+            let volume_info = sample_volume_color(world_pos, time, inside_fog, inside_poles, linear_sampler);
 
             // Get the incoming light (in-scattering)
-            let in_scattering = sample_shadowing(world_pos, atmosphere, sample.density, time, view, linear_sampler);
+            var in_scattering = sample_shadowing(world_pos, atmosphere, sample.density, time, view, linear_sampler);
+            // Add the incoming aur light from below to the total in-scattering
+            in_scattering += sample_aur_lighting(world_pos, time, linear_sampler);
 
             // Calculate the color of the volume at this point
-            let volume_color = in_scattering * volume_info.color + volume_info.emission;
+            let volume_color = in_scattering * volume_info.color + volume_info.emission * 10000.0;
 
             // Accumulate the color, weighted by its contribution
             acc_color += volume_color * sample.contribution;

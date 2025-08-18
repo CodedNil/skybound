@@ -155,10 +155,10 @@ fn sample_fog(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: text
     let shadow_factor = 1.0 - smoothstep(-30.0, -500.0, altitude);
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
-    // // Add emission from the fog color and lightning flashes
-    // let emission_amount = smoothstep(-200.0, -1000.0, altitude);
-    // sample.emission = (sample.color * 0.5 + FLASH_COLOR * 0.5) * emission_amount * sample.density;
-    // sample.emission += flash_emission(pos.xy, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
+    // Add emission from the fog color and lightning flashes
+    let emission_amount = smoothstep(-100.0, -1000.0, altitude);
+    sample.emission = sample.color * emission_amount * sample.density;
+    sample.emission += flash_emission(pos.xy, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
 
     return sample;
 }
