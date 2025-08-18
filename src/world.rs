@@ -15,16 +15,10 @@ use std::f32::consts::FRAC_PI_4;
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
-// Sun Angle Configuration
-const SUNSET_LATITUDE_DEG: f32 = 6.0; // The latitude at which the sun sets
-const MIN_SUN_ELEVATION_DEG: f32 = -17.0; // The sun elevation at sunset latitude
-const MAX_SUN_ELEVATION_DEG: f32 = 70.0; // The maximum sun elevation angle
-
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldData {
     pub camera_offset: Vec2,
-    pub sun_rotation: Quat,
 }
 impl Default for WorldData {
     fn default() -> Self {
@@ -34,7 +28,6 @@ impl Default for WorldData {
                 offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
                 offset.y - (offset.y % CAMERA_RESET_THRESHOLD),
             ),
-            sun_rotation: Quat::default(),
         }
     }
 }
@@ -144,30 +137,4 @@ fn update(
         world_coords.camera_offset.y += snap_amount;
         camera_transform.translation.y -= snap_amount;
     }
-
-    // --- Planet and Object Positioning ---
-    // The planet's center is always directly below the camera's XY position, creating a treadmill effect.
-    let effective_rotation = world_coords.planet_rotation(camera_transform.translation);
-
-    // --- Sun Logic ---
-    // Get the current latitude for sun calculations.
-    let current_latitude = world_coords.latitude(camera_transform.translation);
-    let latitude_abs = ((current_latitude.abs().to_degrees() - SUNSET_LATITUDE_DEG)
-        / (90.0 - SUNSET_LATITUDE_DEG))
-        .clamp(0.0, 1.0);
-
-    let pole_sign = if current_latitude >= 0.0 { 1.0 } else { -1.0 };
-    let planet_pole_direction = effective_rotation.mul_vec3(Vec3::Z) * pole_sign;
-
-    let sun_azimuth = (planet_pole_direction - Vec3::Z * planet_pole_direction.dot(Vec3::Z))
-        .normalize_or(Vec3::X);
-
-    let desired_elevation_rad = (MIN_SUN_ELEVATION_DEG
-        + (MAX_SUN_ELEVATION_DEG - MIN_SUN_ELEVATION_DEG) * latitude_abs)
-        .to_radians();
-
-    world_coords.sun_rotation = Quat::from_rotation_arc(
-        Vec3::NEG_Y,
-        -sun_azimuth * desired_elevation_rad.cos() - Vec3::Z * desired_elevation_rad.sin(),
-    );
 }

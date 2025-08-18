@@ -1,15 +1,7 @@
 #define_import_path skybound::poles
-#import skybound::utils::View
+#import skybound::utils::{ATMOSPHERE_HEIGHT, View, quat_rotate}
 
 const POLE_WIDTH: f32 = 10000.0;
-const ATMOSPHERE_HEIGHT: f32 = 400000;
-
-// Rotate vector v by quaternion q = (xyz, w)
-fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
-    let u = q.xyz;
-    let uv = cross(u, v);
-    return v + 2.0 * (q.w * uv + cross(u, uv));
-}
 
 struct PolesSample {
     density: f32,

@@ -2,7 +2,6 @@ give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator
 
-test sun direction dynamically against the poles collision point
 test the cloud layers directly instead of an overarching segment for all clouds, also needs to have two entry exit points
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene
@@ -11,10 +10,11 @@ https://github.com/klownie/bevy_sdf_klown
 
 
 atmosphere:
-Best simple atmosphere with sunsets https://www.shadertoy.com/view/msXXDS https://www.shadertoy.com/view/XdK3zy https://www.shadertoy.com/view/slyBDG
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
-too bright at night
+sky goes far too red at night, and it snaps between the two suns sharply
+planet cutout is too harsh for sky
+sunsets look meh
 
 
 froxels:
@@ -39,6 +39,8 @@ https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_wi
 use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
+cloud shapes suck especially high up, and very noisy
+add bloom on emissive areas?
 
 
 world rendering:
@@ -50,8 +52,7 @@ aur particles in air going up, wind speed based on height going to poles, maybe 
 
 
 aur fog:
-bad lighting at night, lighting is green at night
-make it wildly more turbulent around the lightning flashes
+make it wildly more turbulent around the lightning flashes, make actual bolts of lightning flash out of them
 
 
 long term:

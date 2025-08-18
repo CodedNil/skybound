@@ -53,7 +53,6 @@ pub struct CloudsViewUniform {
     planet_radius: f32,
     latitude: f32,
     longitude: f32,
-    sun_direction: Vec3,
 }
 
 #[derive(Resource, Default)]
@@ -94,7 +93,6 @@ pub struct ExtractedViewData {
     latitude: f32,
     longitude: f32,
     camera_offset: Vec2,
-    sun_direction: Vec3,
 }
 
 pub fn extract_clouds_view_uniform(
@@ -111,7 +109,6 @@ pub fn extract_clouds_view_uniform(
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
             camera_offset: world_coords.camera_offset,
-            sun_direction: (world_coords.sun_rotation * Vec3::Y).normalize(),
         });
     }
 }
@@ -185,7 +182,6 @@ pub fn prepare_clouds_view_uniforms(
                 planet_radius: data.planet_radius,
                 latitude: data.latitude,
                 longitude: data.longitude,
-                sun_direction: data.sun_direction,
             }),
         });
     }

@@ -1,5 +1,7 @@
 #define_import_path skybound::utils
 
+const ATMOSPHERE_HEIGHT: f32 = 400000;
+
 struct View {
     time: f32,
     frame_count: u32,
@@ -24,10 +26,10 @@ struct View {
     planet_radius: f32,
     latitude: f32,
     longitude: f32,
-    sun_direction: vec3<f32>,
 };
 
 struct AtmosphereData {
+    sun_pos: vec3<f32>,
     sky: vec3<f32>,
     sun: vec3<f32>,
     ambient: vec3<f32>,
@@ -89,6 +91,13 @@ fn blue_noise(uv: vec2<f32>) -> f32 {
     return hash21(uv) - s * 0.25 + 0.5;
 }
 
+// Rotate vector v by quaternion q = (xyz, w)
+fn quat_rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let u = q.xyz;
+    let uv = cross(u, v);
+    return v + 2.0 * (q.w * uv + cross(u, uv));
+}
+
 // Returns the near (x) and far (y) intersection distances
 // If the ray misses, returns vec2(1.0, -1.0)
 fn intersect_sphere(ro: vec3<f32>, rd: vec3<f32>, radius: f32) -> vec2<f32> {
@@ -143,4 +152,24 @@ fn ray_shell_intersect(ro: vec3<f32>, rd: vec3<f32>, view: View, bottom_altitude
     // Segment 1: Enters top sphere (near), exits bottom sphere (near)
     // Segment 2: Enters bottom sphere (far), exits top sphere (far)
     return vec4<f32>(top_interval.x, bottom_interval.x, bottom_interval.y, top_interval.y);
+}
+
+
+/// Calculates the world position of the two polar suns and returns the one highest in the sky
+fn get_sun_position(view: View) -> vec3<f32> {
+    // Determine the planet's current north pole axis based on its rotation
+    let north_axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 0.0, 1.0)));
+
+    // The "up" direction is the vector from the planet's center to the camera
+    let up_vector = normalize(view.world_position - view.planet_center);
+
+    // The sign of the dot product tells us which hemisphere the camera is in
+    let is_in_northern_hemisphere = dot(north_axis, up_vector) > 0.0;
+
+    // Select the correct axis (north or south) based on the hemisphere
+    let sun_axis = select(-north_axis, north_axis, is_in_northern_hemisphere);
+
+    // Calculate the sun's position at a fixed altitude above the relevant pole
+    let sun_altitude = view.planet_radius + ATMOSPHERE_HEIGHT;
+    return view.planet_center + sun_axis * sun_altitude;
 }

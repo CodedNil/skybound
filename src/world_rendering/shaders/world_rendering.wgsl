@@ -1,6 +1,6 @@
-#import skybound::utils::{View, AtmosphereData, blue_noise}
+#import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position}
 #import skybound::raymarch::raymarch
-#import skybound::sky::render_sky
+#import skybound::sky::{render_sky, get_sun_light_color}
 #import skybound::poles::render_poles
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -46,9 +46,11 @@ fn main(
     let ro = view.world_position;
     let rd = normalize(world_pos_far - ro);
     let t_max = 10000000.0;
+    let sun_pos = get_sun_position(view);
+    let sun_dir = normalize(sun_pos - ro);
 
     // Phase functions for silver and back scattering
-    let cos_theta = dot(view.sun_direction, rd);
+    let cos_theta = dot(sun_dir, rd);
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
     let hg_silver = henyey_greenstein(cos_theta, 0.9) * 0.01;
     let hg_back = henyey_greenstein(cos_theta, -0.05);
@@ -56,9 +58,10 @@ fn main(
 
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
-    atmosphere.sky = render_sky(rd, view.sun_direction, ro.z, false);
-    atmosphere.sun = render_sky(view.sun_direction, view.sun_direction, ro.z, true) * 0.5 * phase;
-    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view.sun_direction, ro.z, true);
+    atmosphere.sun_pos = sun_pos;
+    atmosphere.sky = render_sky(rd, view, sun_dir);
+    atmosphere.sun = get_sun_light_color(ro, view, sun_dir) * 0.5 * phase;
+    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir);
 
     // Sample the volumes
     let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
