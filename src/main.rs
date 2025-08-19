@@ -33,6 +33,7 @@ plugin_group! {
         bevy::render::pipelined_rendering:::PipelinedRenderingPlugin,
         bevy::core_pipeline:::CorePipelinePlugin,
         bevy::sprite:::SpritePlugin,
+        bevy::sprite_render:::SpriteRenderingPlugin,
         bevy::text:::TextPlugin,
         bevy::ui:::UiPlugin,
         bevy::ui_render:::UiRenderPlugin,

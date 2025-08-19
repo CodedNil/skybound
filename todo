@@ -2,7 +2,7 @@ give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator
 
-test the cloud layers directly instead of an overarching segment for all clouds, also needs to have two entry exit points
+test the cloud layers directly instead of an overarching segment for all clouds
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466

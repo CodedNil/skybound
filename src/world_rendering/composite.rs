@@ -59,10 +59,7 @@ impl ViewNode for CompositeNode {
         let bind_group = render_context.render_device().create_bind_group(
             "volumetric_clouds_composite_bind_group",
             &volumetric_clouds_composite_pipeline.layout,
-            &BindGroupEntries::sequential((
-                cloud_texture_view, // Our rendered clouds texture
-                cloud_sampler,      // Sampler for the clouds texture
-            )),
+            &BindGroupEntries::sequential((cloud_texture_view, cloud_sampler)),
         );
 
         // Begin the render pass to composite clouds onto the main view
@@ -73,7 +70,7 @@ impl ViewNode for CompositeNode {
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
-                    load: LoadOp::Load,
+                    load: LoadOp::Clear(wgpu_types::Color::WHITE),
                     store: StoreOp::Store,
                 },
             })],
