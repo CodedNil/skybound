@@ -1,5 +1,5 @@
 #define_import_path skybound::poles
-#import skybound::utils::{ATMOSPHERE_HEIGHT, View, quat_rotate}
+#import skybound::utils::{MAGNETOSPHERE_HEIGHT, View, quat_rotate}
 
 const POLE_WIDTH: f32 = 10000.0;
 
@@ -14,7 +14,7 @@ fn sample_poles(pos: vec3<f32>, time: f32, linear_sampler: sampler) -> PolesSamp
     sample.color = vec3(0.0, 0.5, 1.0);
 
     // Make it more intense at the top of the atmosphere
-    let atmosphere_dist = smoothstep(5000.0, 100.0, abs(pos.z - ATMOSPHERE_HEIGHT));
+    let atmosphere_dist = smoothstep(5000.0, 100.0, abs(pos.z - MAGNETOSPHERE_HEIGHT));
     if atmosphere_dist > 0.0 {
         sample.color += atmosphere_dist;
     }

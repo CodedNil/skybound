@@ -36,7 +36,7 @@ fn main(
     // Calculate the pixel coordinate and UV for the current thread
     let pix = vec2<f32>(id.xy);
     let uv = (pix + 0.5) / vec2<f32>(texture_size);
-    let dither = fract(blue_noise(pix + vec2<f32>(view.time * 0.001)));
+    let dither = fract(blue_noise(pix));
 
     // Reconstruct world-space position for the ray
     let ndc = uv_to_ndc(uv);

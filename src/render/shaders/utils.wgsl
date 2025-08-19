@@ -1,6 +1,6 @@
 #define_import_path skybound::utils
 
-const ATMOSPHERE_HEIGHT: f32 = 400000;
+const MAGNETOSPHERE_HEIGHT: f32 = 400000;
 
 struct View {
     time: f32,
@@ -168,6 +168,6 @@ fn get_sun_position(view: View) -> vec3<f32> {
     let sun_axis = select(-north_axis, north_axis, is_in_northern_hemisphere);
 
     // Calculate the sun's position at a fixed altitude above the relevant pole
-    let sun_altitude = view.planet_radius + ATMOSPHERE_HEIGHT;
+    let sun_altitude = view.planet_radius + MAGNETOSPHERE_HEIGHT;
     return view.planet_center + sun_axis * sun_altitude;
 }
