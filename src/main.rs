@@ -2,8 +2,8 @@
 
 use bevy::{app::plugin_group, prelude::*};
 
-mod world_rendering;
-use crate::world_rendering::WorldRenderingPlugin;
+mod render;
+use crate::render::WorldRenderingPlugin;
 
 mod debugtext;
 use crate::debugtext::DebugTextPlugin;

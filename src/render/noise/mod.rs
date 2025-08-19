@@ -2,15 +2,13 @@ mod simplex;
 mod utils;
 mod worley;
 
-use crate::world_rendering::noise::{
-    simplex::simplex_3d,
-    utils::{interleave_channels, load_or_generate_texture, map_range, save_noise_layer, spread},
-    worley::worley_3d,
-};
 use bevy::{
     prelude::*,
     render::{extract_resource::ExtractResource, render_resource::TextureFormat},
 };
+use simplex::simplex_3d;
+use utils::{interleave_channels, load_or_generate_texture, map_range, save_noise_layer, spread};
+use worley::worley_3d;
 
 #[derive(Resource, Component, ExtractResource, Clone)]
 pub struct NoiseTextures {

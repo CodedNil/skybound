@@ -1,6 +1,6 @@
 use crate::{
+    render::noise::NoiseTextures,
     world::{PLANET_RADIUS, WorldData},
-    world_rendering::noise::NoiseTextures,
 };
 use bevy::{
     asset::load_embedded_asset,
@@ -16,9 +16,9 @@ use bevy::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferUsages,
             CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor,
             DynamicUniformBuffer, Extent3d, FilterMode, PipelineCache, Sampler, SamplerBindingType,
-            SamplerDescriptor, ShaderStages, ShaderType, StorageTextureAccess, Texture,
-            TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-            TextureView, TextureViewDescriptor,
+            SamplerDescriptor, ShaderStages, ShaderType, StorageTextureAccess, TextureDescriptor,
+            TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+            TextureViewDescriptor,
             binding_types::{sampler, texture_2d, texture_3d, texture_storage_2d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -194,11 +194,14 @@ pub fn prepare_clouds_view_uniforms(
 
 #[derive(Resource, Default)]
 pub struct CloudRenderTexture {
-    pub texture: Option<Texture>,
-    pub view: Option<TextureView>,
+    pub color_view: Option<TextureView>,
     pub motion_view: Option<TextureView>,
     pub depth_view: Option<TextureView>,
     pub sampler: Option<Sampler>,
+
+    // Full-resolution history textures for TAA
+    pub history_a_view: Option<TextureView>,
+    pub history_b_view: Option<TextureView>,
 }
 
 pub fn manage_textures(
@@ -213,21 +216,22 @@ pub fn manage_textures(
         return;
     };
 
-    // Define the desired size for the intermediate texture
-    let new_size = Extent3d {
+    // Low res textures
+    let low_res_size = Extent3d {
         width: primary_window.physical_width / 3,
         height: primary_window.physical_height / 3,
         depth_or_array_layers: 1,
     };
-
-    // Update CloudRenderTexture
-    let current_texture_size = cloud_render_texture.texture.as_ref().map(|t| t.size());
-    if current_texture_size != Some(new_size) {
+    let current_low_res_size = cloud_render_texture
+        .color_view
+        .as_ref()
+        .map(|t| t.texture().size());
+    if current_low_res_size != Some(low_res_size) {
         let texture_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
 
         let texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_render_texture"),
-            size: new_size,
+            size: low_res_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -235,11 +239,12 @@ pub fn manage_textures(
             usage: texture_usage,
             view_formats: &[],
         });
-        let view = texture.create_view(&TextureViewDescriptor::default());
+        cloud_render_texture.color_view =
+            Some(texture.create_view(&TextureViewDescriptor::default()));
 
         let motion_texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_motion_texture"),
-            size: new_size,
+            size: low_res_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -247,11 +252,12 @@ pub fn manage_textures(
             usage: texture_usage,
             view_formats: &[],
         });
-        let motion_view = motion_texture.create_view(&TextureViewDescriptor::default());
+        cloud_render_texture.motion_view =
+            Some(motion_texture.create_view(&TextureViewDescriptor::default()));
 
         let depth_texture = render_device.create_texture(&TextureDescriptor {
             label: Some("cloud_depth_texture"),
-            size: new_size,
+            size: low_res_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -259,20 +265,55 @@ pub fn manage_textures(
             usage: texture_usage,
             view_formats: &[],
         });
-        let depth_view = depth_texture.create_view(&TextureViewDescriptor::default());
+        cloud_render_texture.depth_view =
+            Some(depth_texture.create_view(&TextureViewDescriptor::default()));
 
-        let sampler = render_device.create_sampler(&SamplerDescriptor {
+        cloud_render_texture.sampler = Some(render_device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
             ..default()
-        });
+        }));
+    }
 
-        // Update the resource with the newly created assets
-        cloud_render_texture.texture = Some(texture);
-        cloud_render_texture.view = Some(view);
-        cloud_render_texture.motion_view = Some(motion_view);
-        cloud_render_texture.depth_view = Some(depth_view);
-        cloud_render_texture.sampler = Some(sampler);
+    // Full-resolution history textures
+    let full_res_size = Extent3d {
+        width: primary_window.physical_width,
+        height: primary_window.physical_height,
+        depth_or_array_layers: 1,
+    };
+    let current_history_size = cloud_render_texture
+        .history_a_view
+        .as_ref()
+        .map(|t| t.texture().size());
+    if current_history_size != Some(full_res_size) {
+        let texture_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
+        let texture_format = TextureFormat::Rgba16Float;
+
+        // Create History Texture A
+        let history_a_texture = render_device.create_texture(&TextureDescriptor {
+            label: Some("taa_history_a_texture"),
+            size: full_res_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: texture_format,
+            usage: texture_usage,
+            view_formats: &[],
+        });
+        cloud_render_texture.history_a_view = Some(history_a_texture.create_view(&default()));
+
+        // Create History Texture B
+        let history_b_texture = render_device.create_texture(&TextureDescriptor {
+            label: Some("taa_history_b_texture"),
+            size: full_res_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: texture_format,
+            usage: texture_usage,
+            view_formats: &[],
+        });
+        cloud_render_texture.history_b_view = Some(history_b_texture.create_view(&default()));
     }
 }
 
@@ -318,7 +359,7 @@ impl ViewNode for VolumetricsNode {
         ) = (
             pipeline_cache.get_compute_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            cloud_render_texture.view.as_ref(),
+            cloud_render_texture.color_view.as_ref(),
             cloud_render_texture.motion_view.as_ref(),
             cloud_render_texture.depth_view.as_ref(),
             gpu_images.get(&noise_texture_handle.base),
@@ -358,7 +399,7 @@ impl ViewNode for VolumetricsNode {
         compute_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
 
         // Get texture dimensions for workgroup calculation
-        let size = cloud_render_texture.texture.as_ref().unwrap().size();
+        let size = color_view.texture().size();
         let workgroup_count_x = size.width.div_ceil(8);
         let workgroup_count_y = size.height.div_ceil(8);
         compute_pass.dispatch_workgroups(workgroup_count_x, workgroup_count_y, 1);
@@ -369,10 +410,8 @@ impl ViewNode for VolumetricsNode {
 
 impl FromWorld for VolumetricsPipeline {
     fn from_world(world: &mut World) -> Self {
-        let shader = load_embedded_asset!(
-            world.resource::<AssetServer>(),
-            "shaders/world_rendering.wgsl"
-        );
+        let shader =
+            load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");
         let render_device = world.resource::<RenderDevice>();
 
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {

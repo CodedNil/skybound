@@ -2,7 +2,7 @@ mod composite;
 mod noise;
 mod volumetrics;
 
-use crate::world_rendering::{
+use crate::render::{
     composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
     volumetrics::{
@@ -25,14 +25,15 @@ use bevy::{
 pub struct WorldRenderingPlugin;
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
-        load_shader_library!(app, "shaders/world_rendering.wgsl");
-        load_shader_library!(app, "shaders/world_rendering_composite.wgsl");
+        load_shader_library!(app, "shaders/rendering.wgsl");
         load_shader_library!(app, "shaders/utils.wgsl");
         load_shader_library!(app, "shaders/sky.wgsl");
         load_shader_library!(app, "shaders/raymarch.wgsl");
         load_shader_library!(app, "shaders/clouds.wgsl");
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
+
+        load_shader_library!(app, "shaders/composite.wgsl");
 
         app.add_plugins(ExtractResourcePlugin::<NoiseTextures>::default())
             .add_systems(Startup, setup_noise_textures);
@@ -56,7 +57,12 @@ impl Plugin for WorldRenderingPlugin {
             .add_render_graph_node::<ViewNodeRunner<CompositeNode>>(Core3d, CompositeLabel)
             .add_render_graph_edges(
                 Core3d,
-                (Node3d::StartMainPass, VolumetricsLabel, CompositeLabel),
+                (
+                    Node3d::StartMainPass,
+                    VolumetricsLabel,
+                    CompositeLabel,
+                    Node3d::Bloom,
+                ),
             );
     }
 
