@@ -8,7 +8,7 @@ use crate::world_rendering::{
     volumetrics::{
         CloudRenderTexture, CloudsViewUniforms, PreviousViewData, VolumetricsLabel,
         VolumetricsNode, VolumetricsPipeline, extract_clouds_view_uniform, manage_textures,
-        prepare_clouds_view_uniforms, update_previous_view_data,
+        prepare_clouds_view_uniforms,
     },
 };
 use bevy::{
@@ -50,9 +50,6 @@ impl Plugin for WorldRenderingPlugin {
                 (
                     manage_textures.in_set(RenderSystems::Queue),
                     prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
-                    update_previous_view_data
-                        .after(prepare_clouds_view_uniforms)
-                        .in_set(RenderSystems::PrepareResources),
                 ),
             )
             .add_render_graph_node::<ViewNodeRunner<VolumetricsNode>>(Core3d, VolumetricsLabel)

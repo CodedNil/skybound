@@ -9,7 +9,6 @@ use bevy::{
     prelude::*,
     render::{
         Extract,
-        camera::TemporalJitter,
         extract_resource::ExtractResource,
         render_asset::RenderAssets,
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
@@ -45,8 +44,6 @@ pub struct CloudsViewUniform {
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: Mat4,
-    prev_world_from_clip: Mat4,
-    prev_world_position: Vec3,
 
     planet_rotation: Vec4,
     planet_center: Vec3,
@@ -58,8 +55,6 @@ pub struct CloudsViewUniform {
 #[derive(Resource, Default)]
 pub struct PreviousViewData {
     clip_from_world: Mat4,
-    world_from_clip: Mat4,
-    world_position: Vec3,
 }
 
 #[derive(Resource)]
@@ -118,12 +113,24 @@ pub fn prepare_clouds_view_uniforms(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
-    views: Query<(Entity, &ExtractedView, Option<&TemporalJitter>)>,
+    views: Query<(Entity, &ExtractedView), With<Camera3d>>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
-    prev_view_data: Res<PreviousViewData>,
+    mut prev_view_data: ResMut<PreviousViewData>,
 ) {
+    // Halton sequence (2, 3) - 0.5
+    const HALTON_SEQUENCE: [Vec2; 8] = [
+        vec2(0.0, 0.0),
+        vec2(0.0, -0.166_666_66),
+        vec2(-0.25, 0.166_666_69),
+        vec2(0.25, -0.388_888_9),
+        vec2(-0.375, -0.055_555_552),
+        vec2(0.125, 0.277_777_8),
+        vec2(-0.125, -0.277_777_8),
+        vec2(0.375, 0.055_555_582),
+    ];
+
     let view_iter = views.iter();
     let view_count = view_iter.len();
     let Some(mut writer) =
@@ -133,37 +140,33 @@ pub fn prepare_clouds_view_uniforms(
     else {
         return;
     };
-    for (entity, extracted_view, temporal_jitter) in &views {
+
+    for (entity, extracted_view) in &views {
         let viewport = extracted_view.viewport.as_vec4();
-        let main_pass_viewport = viewport;
+        let view_size = viewport.zw();
 
-        let unjittered_projection = extracted_view.clip_from_view;
-        let mut clip_from_view = unjittered_projection;
+        let mut clip_from_view = extracted_view.clip_from_view;
 
-        if let Some(temporal_jitter) = temporal_jitter {
-            temporal_jitter.jitter_projection(&mut clip_from_view, main_pass_viewport.zw());
-        }
+        // Jitter the current frame from the Halton sequence
+        let offset = HALTON_SEQUENCE[frame_count.0 as usize % HALTON_SEQUENCE.len()];
+        let jitter = (offset * vec2(2.0, -2.0)) / view_size;
+        clip_from_view.z_axis.x += jitter.x;
+        clip_from_view.z_axis.y += jitter.y;
 
         let view_from_clip = clip_from_view.inverse();
         let world_from_view = extracted_view.world_from_view.to_matrix();
         let view_from_world = world_from_view.inverse();
-
-        let clip_from_world = if temporal_jitter.is_some() {
-            clip_from_view * view_from_world
-        } else {
-            extracted_view
-                .clip_from_world
-                .unwrap_or_else(|| clip_from_view * view_from_world)
-        };
-
+        let clip_from_world = clip_from_view * view_from_world;
+        let world_from_clip = world_from_view * view_from_clip;
         let world_position = extracted_view.world_from_view.translation();
+
         commands.entity(entity).insert(CloudsViewUniformOffset {
             offset: writer.write(&CloudsViewUniform {
                 time: time.elapsed_secs_wrapped(),
                 frame_count: frame_count.0,
 
                 clip_from_world,
-                world_from_clip: world_from_view * view_from_clip,
+                world_from_clip,
                 world_from_view,
                 view_from_world,
 
@@ -174,8 +177,6 @@ pub fn prepare_clouds_view_uniforms(
 
                 // Previous frame matrices for motion vectors
                 prev_clip_from_world: prev_view_data.clip_from_world,
-                prev_world_from_clip: prev_view_data.world_from_clip,
-                prev_world_position: prev_view_data.world_position,
 
                 planet_rotation: data.planet_rotation,
                 planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
@@ -184,30 +185,10 @@ pub fn prepare_clouds_view_uniforms(
                 longitude: data.longitude,
             }),
         });
-    }
-}
 
-/// System that runs late in the frame to update the `PreviousViewData` resource
-pub fn update_previous_view_data(
-    mut prev_view_data: ResMut<PreviousViewData>,
-    views: Query<(&ExtractedView, Option<&TemporalJitter>)>,
-) {
-    // Get the main view
-    if let Some((extracted_view, temporal_jitter)) = views.iter().next() {
-        // Recalculate the main view's matrices exactly as before
-        let viewport = extracted_view.viewport.as_vec4();
-        let mut clip_from_view = extracted_view.clip_from_view;
-        if let Some(jitter) = temporal_jitter {
-            jitter.jitter_projection(&mut clip_from_view, viewport.zw());
-        }
-        let view_from_clip = clip_from_view.inverse();
-        let world_from_view = extracted_view.world_from_view.to_matrix();
-        let view_from_world = world_from_view.inverse();
-
-        // Store these as the "previous" for the next frame
-        prev_view_data.clip_from_world = clip_from_view * view_from_world;
-        prev_view_data.world_from_clip = world_from_view * view_from_clip;
-        prev_view_data.world_position = extracted_view.world_from_view.translation();
+        prev_view_data.clip_from_world = extracted_view
+            .clip_from_world
+            .unwrap_or_else(|| extracted_view.clip_from_view * view_from_world);
     }
 }
 

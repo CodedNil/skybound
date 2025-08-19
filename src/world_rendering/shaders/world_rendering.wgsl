@@ -68,22 +68,29 @@ fn main(
     let volumetrics_depth: f32 = raymarch_result.depth;
     var acc_color: vec3<f32> = raymarch_result.color;
 
-    // Calculate motion vectors using volumetric depth
-    let volumetric_world_pos = ro + rd * volumetrics_depth;
-    let current_clip_pos = view.clip_from_world * vec4(volumetric_world_pos, 1.0);
-    let current_uv = (current_clip_pos.xy / current_clip_pos.w) * vec2(0.5, -0.5) + 0.5;
-    let prev_clip_pos = view.prev_clip_from_world * vec4(volumetric_world_pos, 1.0);
-    let prev_uv = (prev_clip_pos.xy / prev_clip_pos.w) * vec2(0.5, -0.5) + 0.5;
-    let condition = step(0.0001, volumetrics_depth);
-    let motion_vector = (current_uv - prev_uv) * condition;
+    // Motion Vectors
+    var motion_vector = vec2(0.0);
+    if volumetrics_depth < t_max {
+        // Find the world position of the point we rendered, project it into the previous frames screen space
+        let world_pos_current = ro + rd * volumetrics_depth;
+
+        // Project to previous frame's clip space
+        let clip_pos_prev = view.prev_clip_from_world * vec4<f32>(world_pos_current, 1.0);
+        // Perform perspective divide to get Normalized Device Coordinates (NDC)
+        let ndc_prev = clip_pos_prev.xyz / clip_pos_prev.w;
+        // Convert NDC [-1, 1] to UV [0, 1]
+        let uv_prev = ndc_prev.xy * vec2<f32>(0.5, -0.5) + 0.5;
+
+        motion_vector = uv - uv_prev;
+    }
 
     // Normalize depth to a [0, 1] range.
     var final_volumetric_depth: f32 = select(0.0, volumetrics_depth / t_max, volumetrics_depth > 0.0);
 
     // Write the final results to the output storage textures
-    textureStore(output_color, id.xy, clamp(vec4(acc_color, 1.0), vec4(0.0), vec4(1.0)));
-    textureStore(output_motion, id.xy, vec4(motion_vector, 0.0, 0.0));
-    textureStore(output_depth, id.xy, vec4(final_volumetric_depth, 0.0, 0.0, 0.0));
+    textureStore(output_color, id.xy, clamp(vec4<f32>(acc_color, 1.0), vec4(0.0), vec4(1.0)));
+    textureStore(output_motion, id.xy, vec4<f32>(motion_vector, 0.0, 0.0));
+    textureStore(output_depth, id.xy, vec4<f32>(final_volumetric_depth, 0.0, 0.0, 0.0));
 }
 
 /// Convert a ndc space position to world space

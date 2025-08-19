@@ -18,8 +18,6 @@ struct View {
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: mat4x4<f32>,
-    prev_world_from_clip: mat4x4<f32>,
-    prev_world_position: vec3<f32>,
 
     planet_rotation: vec4<f32>,
     planet_center: vec3<f32>,
