@@ -25,9 +25,7 @@ in
       export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
       export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
     '';
-    RUSTFLAGS = builtins.map (a: ''-L ${a}/lib'') [
-      # add libraries here (e.g. pkgs.libvmi)
-    ];
+    RUSTFLAGS = [];
     LD_LIBRARY_PATH = libPath;
     BINDGEN_EXTRA_CLANG_ARGS =
       (builtins.map (a: ''-I"${a}/include"'') [

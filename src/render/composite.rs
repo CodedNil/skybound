@@ -1,4 +1,4 @@
-use crate::render::volumetrics::CloudRenderTexture;
+use crate::render::raymarch::CloudRenderTexture;
 use bevy::{
     asset::load_embedded_asset,
     core_pipeline::FullscreenShader,

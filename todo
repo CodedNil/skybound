@@ -1,5 +1,4 @@
-use the bevy implemented pass, output to the bevy view and depth and motion vectors, so bloom and dlss etc can apply on top
-
+compute shader for noise gen
 
 give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser

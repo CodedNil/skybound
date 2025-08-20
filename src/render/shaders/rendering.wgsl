@@ -1,5 +1,5 @@
 #import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position}
-#import skybound::raymarch::raymarch
+#import skybound::volumetrics::raymarch_volumetrics
 #import skybound::sky::{render_sky, get_sun_light_color}
 #import skybound::poles::render_poles
 
@@ -64,7 +64,7 @@ fn main(
     atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir);
 
     // Sample the volumes
-    let raymarch_result = raymarch(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
+    let raymarch_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
     let volumetrics_depth: f32 = raymarch_result.depth;
     var acc_color: vec3<f32> = raymarch_result.color;
 

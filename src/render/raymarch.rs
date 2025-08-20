@@ -218,8 +218,8 @@ pub fn manage_textures(
 
     // Low res textures
     let low_res_size = Extent3d {
-        width: primary_window.physical_width / 3,
-        height: primary_window.physical_height / 3,
+        width: primary_window.physical_width / 2,
+        height: primary_window.physical_height / 2,
         depth_or_array_layers: 1,
     };
     let current_low_res_size = cloud_render_texture
@@ -318,19 +318,19 @@ pub fn manage_textures(
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct VolumetricsLabel;
+pub struct RaymarchLabel;
 
 #[derive(Default)]
-pub struct VolumetricsNode;
+pub struct RaymarchNode;
 
 #[derive(Resource)]
-pub struct VolumetricsPipeline {
+pub struct RaymarchPipeline {
     layout: BindGroupLayout,
     pipeline_id: CachedComputePipelineId,
     linear_sampler: Sampler,
 }
 
-impl ViewNode for VolumetricsNode {
+impl ViewNode for RaymarchNode {
     type ViewQuery = &'static CloudsViewUniformOffset;
 
     fn run(
@@ -340,7 +340,7 @@ impl ViewNode for VolumetricsNode {
         view_uniform_offset: QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        let volumetric_clouds_pipeline = world.resource::<VolumetricsPipeline>();
+        let volumetric_clouds_pipeline = world.resource::<RaymarchPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let cloud_render_texture = world.resource::<CloudRenderTexture>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
@@ -408,7 +408,7 @@ impl ViewNode for VolumetricsNode {
     }
 }
 
-impl FromWorld for VolumetricsPipeline {
+impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
         let shader =
             load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");

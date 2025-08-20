@@ -1,4 +1,4 @@
-#define_import_path skybound::raymarch
+#define_import_path skybound::volumetrics
 #import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect, intersect_sphere}
 #import skybound::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds, get_cloud_layer_above}
 #import skybound::aur_fog::{FOG_TOP_HEIGHT, sample_fog}
@@ -12,22 +12,23 @@
 const DENSITY: f32 = 0.2;               // Base density for lighting
 
 // --- Raymarching Constants ---
-const MAX_STEPS: i32 = 4096;            // Maximum number of steps to take in transmittance march
-const STEP_SIZE_INSIDE: f32 = 32;
-const STEP_SIZE_OUTSIDE: f32 = 64;
+const MAX_STEPS: i32 = 512;            // Maximum number of steps to take in transmittance march
+const STEP_SIZE_INSIDE: f32 = 80;
+const STEP_SIZE_OUTSIDE: f32 = 160;
 
-const SCALING_END: f32 = 200000.0;      // Distance from camera to use max step size
-const SCALING_MAX: f32 = 8.0;           // Maximum scaling factor to increase by
-const SCALING_MAX_VERTICAL: f32 = 2.0;  // Scale less if the ray is vertical
-const SCALING_MAX_FOG: f32 = 2.0;       // Scale less if the ray is through fog
-const CLOSE_THRESHOLD: f32 = 200.0;     // Distance from solid objects to begin more precise raymarching
+const SCALING_END: f32 = 200000;      // Distance from camera to use max step size
+const SCALING_MAX: f32 = 12;           // Maximum scaling factor to increase by
+const SCALING_MAX_VERTICAL: f32 = 2;  // Scale less if the ray is vertical
+const SCALING_MAX_FOG: f32 = 2;       // Scale less if the ray is through fog
+const CLOSE_THRESHOLD: f32 = 200;     // Distance from solid objects to begin more precise raymarching
 
 // --- Lighting Constants ---
-const LIGHT_STEPS: u32 = 2;                         // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = 90.0;                       // Step size for lightmarching steps
-const AUR_LIGHT_DIR = vec3<f32>(0.0, 0.0, -1.0);    // Direction the aur light comes from (straight below)
-const AUR_LIGHT_DISTANCE = 60000.0;                 // How high before the aur light becomes negligable
+const LIGHT_STEPS: u32 = 4;                         // How many steps to take along the sun direction
+const LIGHT_STEP_SIZE = 90;                         // Step size for lightmarching steps
+const AUR_LIGHT_DIR = vec3<f32>(0, 0, -1);          // Direction the aur light comes from (straight below)
+const AUR_LIGHT_DISTANCE = 60000;                   // How high before the aur light becomes negligable
 const AUR_LIGHT_COLOR = vec3(0.6, 0.3, 0.8) * 0.6;  // Color of the aur light from below
+const SHADOW_FADE_END: f32 = 80000;                 // Distance at which shadows from layers above are fully faded
 
 // --- Material Properties ---
 const EXTINCTION: f32 = 0.4;                    // Overall density/darkness of the cloud material
@@ -35,7 +36,6 @@ const AUR_EXTINCTION: f32 = 0.2;                // Lower extinction for aur ligh
 const SCATTERING_ALBEDO: f32 = 0.6;             // Color of the cloud. 0.9 is white, lower values are darker grey
 const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;   // How much shadows affect ambient light. Lower = brighter shadows
 const AMBIENT_FLOOR: f32 = 0.02;                // Minimum ambient light to prevent pitch-black shadows
-const SHADOW_FADE_END: f32 = 80000.0;           // Distance at which shadows from layers above are fully faded
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000002;  // Density of the atmospheric fog
 
 // Samples the density, color, and emission from the various volumes
@@ -154,7 +154,7 @@ struct RaymarchResult {
     color: vec3<f32>,
     depth: f32
 }
-fn raymarch(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
+fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
     let clouds_entry_exit = ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
     let clouds_entry_exit1 = vec2<f32>(clouds_entry_exit.x, clouds_entry_exit.y);

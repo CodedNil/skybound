@@ -1,13 +1,13 @@
 mod composite;
 mod noise;
-mod volumetrics;
+mod raymarch;
 
 use crate::render::{
     composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
-    volumetrics::{
-        CloudRenderTexture, CloudsViewUniforms, PreviousViewData, VolumetricsLabel,
-        VolumetricsNode, VolumetricsPipeline, extract_clouds_view_uniform, manage_textures,
+    raymarch::{
+        CloudRenderTexture, CloudsViewUniforms, PreviousViewData, RaymarchLabel, RaymarchNode,
+        RaymarchPipeline, extract_clouds_view_uniform, manage_textures,
         prepare_clouds_view_uniforms,
     },
 };
@@ -28,7 +28,7 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/rendering.wgsl");
         load_shader_library!(app, "shaders/utils.wgsl");
         load_shader_library!(app, "shaders/sky.wgsl");
-        load_shader_library!(app, "shaders/raymarch.wgsl");
+        load_shader_library!(app, "shaders/volumetrics.wgsl");
         load_shader_library!(app, "shaders/clouds.wgsl");
         load_shader_library!(app, "shaders/aur_fog.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
@@ -53,13 +53,13 @@ impl Plugin for WorldRenderingPlugin {
                     prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
                 ),
             )
-            .add_render_graph_node::<ViewNodeRunner<VolumetricsNode>>(Core3d, VolumetricsLabel)
+            .add_render_graph_node::<ViewNodeRunner<RaymarchNode>>(Core3d, RaymarchLabel)
             .add_render_graph_node::<ViewNodeRunner<CompositeNode>>(Core3d, CompositeLabel)
             .add_render_graph_edges(
                 Core3d,
                 (
                     Node3d::StartMainPass,
-                    VolumetricsLabel,
+                    RaymarchLabel,
                     CompositeLabel,
                     Node3d::Bloom,
                 ),
@@ -70,7 +70,7 @@ impl Plugin for WorldRenderingPlugin {
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .init_resource::<CloudsViewUniforms>()
-                .init_resource::<VolumetricsPipeline>()
+                .init_resource::<RaymarchPipeline>()
                 .init_resource::<CompositePipeline>();
         }
     }

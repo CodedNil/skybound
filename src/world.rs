@@ -4,6 +4,7 @@ use bevy::{
         Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, RenderTarget,
         ScreenSpaceTransmissionQuality,
     },
+    core_pipeline::bloom::Bloom,
     prelude::*,
     render::{render_resource::TextureUsages, view::Hdr},
     window::WindowRef,
@@ -108,6 +109,7 @@ fn setup(mut commands: Commands) {
             aspect_ratio: 1.0,
         }),
         Hdr,
+        Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
         CameraController {
             speed: 40.0,
