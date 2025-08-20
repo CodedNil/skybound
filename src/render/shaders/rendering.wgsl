@@ -1,5 +1,6 @@
 #import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position}
 #import skybound::volumetrics::raymarch_volumetrics
+#import skybound::raymarch::raymarch_solids
 #import skybound::sky::{render_sky, get_sun_light_color}
 #import skybound::poles::render_poles
 
@@ -45,7 +46,7 @@ fn main(
     // Ray origin & dir
     let ro = view.world_position;
     let rd = normalize(world_pos_far - ro);
-    let t_max = 10000000.0;
+    var t_max = 10000000.0;
     let sun_pos = get_sun_position(view);
     let sun_dir = normalize(sun_pos - ro);
 
@@ -63,10 +64,15 @@ fn main(
     atmosphere.sun = get_sun_light_color(ro, view, sun_dir) * 0.5 * phase;
     atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir);
 
-    // Sample the volumes
+    // Run solids raymarch in the rendering pass (solids are independent of volumetrics)
+    let solids = raymarch_solids(ro, rd, view, t_max, view.time);
+    var rendered_color = select(atmosphere.sky, solids.color, solids.depth < t_max);
+    t_max = solids.depth;
+
+    // Sample the volumetrics
     let raymarch_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
     let volumetrics_depth: f32 = raymarch_result.depth;
-    var acc_color: vec3<f32> = raymarch_result.color;
+    rendered_color = raymarch_result.color.rgb + rendered_color * raymarch_result.color.a;
 
     // Motion Vectors
     var motion_vector = vec2(0.0);
@@ -88,7 +94,7 @@ fn main(
     var final_volumetric_depth: f32 = select(0.0, volumetrics_depth / t_max, volumetrics_depth > 0.0);
 
     // Write the final results to the output storage textures
-    textureStore(output_color, id.xy, clamp(vec4<f32>(acc_color, 1.0), vec4(0.0), vec4(1.0)));
+    textureStore(output_color, id.xy, clamp(vec4<f32>(rendered_color, 1.0), vec4(0.0), vec4(1.0)));
     textureStore(output_motion, id.xy, vec4<f32>(motion_vector, 0.0, 0.0));
     textureStore(output_depth, id.xy, vec4<f32>(final_volumetric_depth, 0.0, 0.0, 0.0));
 }

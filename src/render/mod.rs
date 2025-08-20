@@ -28,6 +28,7 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/rendering.wgsl");
         load_shader_library!(app, "shaders/utils.wgsl");
         load_shader_library!(app, "shaders/sky.wgsl");
+        load_shader_library!(app, "shaders/raymarch.wgsl");
         load_shader_library!(app, "shaders/volumetrics.wgsl");
         load_shader_library!(app, "shaders/clouds.wgsl");
         load_shader_library!(app, "shaders/aur_fog.wgsl");

@@ -20,7 +20,7 @@ const SCALING_END: f32 = 200000;      // Distance from camera to use max step si
 const SCALING_MAX: f32 = 12;           // Maximum scaling factor to increase by
 const SCALING_MAX_VERTICAL: f32 = 2;  // Scale less if the ray is vertical
 const SCALING_MAX_FOG: f32 = 2;       // Scale less if the ray is through fog
-const CLOSE_THRESHOLD: f32 = 200;     // Distance from solid objects to begin more precise raymarching
+const CLOSE_THRESHOLD: f32 = 2000;     // Distance from solid objects to begin more precise raymarching
 
 // --- Lighting Constants ---
 const LIGHT_STEPS: u32 = 4;                         // How many steps to take along the sun direction
@@ -151,7 +151,7 @@ fn sample_aur_lighting(world_pos: vec3<f32>, time: f32, linear_sampler: sampler)
 
 // Main raymarching entry point
 struct RaymarchResult {
-    color: vec3<f32>,
+    color: vec4<f32>,
     depth: f32
 }
 fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
@@ -185,7 +185,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
     t_end = min(t_end, t_max);
 
     if t_start >= t_end {
-        return RaymarchResult(atmosphere.sky, t_max);
+        return RaymarchResult(vec4<f32>(0.0, 0.0, 0.0, 1.0), t_max);
     }
 
     // Accumulation variables
@@ -197,12 +197,13 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
 
     // Pre-calculate fog for the initial empty space from camera (t=0) to t_start.
     var transmittance = 1.0;
-    var accumulated_fog_color = vec3(0.0);
     if t_start > 0.0 {
         let initial_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * t_start);
-        accumulated_fog_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
+        acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
         transmittance = initial_fog_transmittance;
     }
+    let sun_altitude = distance(atmosphere.sun_pos, view.planet_center) - view.planet_radius;
+    let sun_world_pos = vec3<f32>(atmosphere.sun_pos.xy + view.camera_offset, sun_altitude);
 
     for (var i = 0; i < MAX_STEPS; i++) {
         if t >= t_end || transmittance < 0.01 {
@@ -234,7 +235,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             let segment_length = next_t - t;
             if segment_length > 0.0 {
                 let segment_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * segment_length);
-                accumulated_fog_color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
+                acc_color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
                 transmittance *= segment_fog_transmittance;
             }
 
@@ -256,9 +257,9 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         var step_scaler = 1.0 + distance_scale * distance_scale * max_scale;
 
         // Reduce scaling when close to surfaces
-        let distance_left = t_max - t;
-        let proximity_factor = 1.0 - saturate((CLOSE_THRESHOLD - distance_left) / CLOSE_THRESHOLD);
-        step_scaler = mix(0.5, step_scaler, proximity_factor);
+        let distance_to_surface = t_max - t;
+        let proximity_factor = 1.0 - saturate(distance_to_surface / CLOSE_THRESHOLD);
+        step_scaler = mix(step_scaler, 0.1, proximity_factor);
 
         // Base step size is small in dense areas, large in sparse ones.
         let base_step = mix(STEP_SIZE_OUTSIDE, STEP_SIZE_INSIDE, saturate(step_density * 10.0));
@@ -270,12 +271,10 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         let alpha_step = 1.0 - volume_transmittance;
 
         // Add the in-scattered light from the atmospheric fog in this step
-        accumulated_fog_color += atmosphere.sky * (1.0 - fog_transmittance_step) * transmittance;
+        acc_color += atmosphere.sky * (1.0 - fog_transmittance_step) * transmittance;
 
         if step_density > 0.0 {
             // Get the incoming light (in-scattering)
-            let sun_altitude = distance(atmosphere.sun_pos, view.planet_center) - view.planet_radius;
-            let sun_world_pos = vec3<f32>(atmosphere.sun_pos.xy + view.camera_offset, sun_altitude);
             let sun_dir = normalize(sun_world_pos - world_pos);
             let in_scattering = sample_shadowing(world_pos, atmosphere, step_density, time, sun_dir, linear_sampler);
 
@@ -298,14 +297,12 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         t += step;
     }
 
-    let final_rgb = accumulated_fog_color + acc_color + atmosphere.sky * transmittance;
-
     // Calculate weighted average depth if a volume was hit, otherwise default to t_max.
     let avg_depth = accumulated_weighted_depth / max(accumulated_density, 0.0001);
     let final_depth = select(t_max, avg_depth, accumulated_density > 0.0001);
 
     var output: RaymarchResult;
-    output.color = clamp(final_rgb, vec3(0.0), vec3(1.0));
+    output.color = clamp(vec4<f32>(acc_color, transmittance), vec4(0.0), vec4(1.0));
     output.depth = final_depth;
     return output;
 }
