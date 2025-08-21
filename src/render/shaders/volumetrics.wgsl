@@ -13,11 +13,11 @@ const DENSITY: f32 = 0.2;               // Base density for lighting
 
 // --- Raymarching Constants ---
 const MAX_STEPS: i32 = 512;            // Maximum number of steps to take in transmittance march
-const STEP_SIZE_INSIDE: f32 = 80;
-const STEP_SIZE_OUTSIDE: f32 = 160;
+const STEP_SIZE_INSIDE: f32 = 120;
+const STEP_SIZE_OUTSIDE: f32 = 240;
 
 const SCALING_END: f32 = 200000;      // Distance from camera to use max step size
-const SCALING_MAX: f32 = 12;           // Maximum scaling factor to increase by
+const SCALING_MAX: f32 = 6;           // Maximum scaling factor to increase by
 const SCALING_MAX_VERTICAL: f32 = 2;  // Scale less if the ray is vertical
 const SCALING_MAX_FOG: f32 = 2;       // Scale less if the ray is through fog
 const CLOSE_THRESHOLD: f32 = 2000;     // Distance from solid objects to begin more precise raymarching
@@ -33,9 +33,8 @@ const SHADOW_FADE_END: f32 = 80000;                 // Distance at which shadows
 // --- Material Properties ---
 const EXTINCTION: f32 = 0.4;                    // Overall density/darkness of the cloud material
 const AUR_EXTINCTION: f32 = 0.2;                // Lower extinction for aur light to penetrate more
-const SCATTERING_ALBEDO: f32 = 0.6;             // Color of the cloud. 0.9 is white, lower values are darker grey
-const AMBIENT_OCCLUSION_STRENGTH: f32 = 0.03;   // How much shadows affect ambient light. Lower = brighter shadows
-const AMBIENT_FLOOR: f32 = 0.02;                // Minimum ambient light to prevent pitch-black shadows
+const SCATTERING_ALBEDO: f32 = 0.7;             // Color of the cloud. 0.9 is white, lower values are darker grey
+const AMBIENT_FLOOR: f32 = 0.1;                // Minimum ambient light to prevent pitch-black shadows
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000002;  // Density of the atmospheric fog
 
 // Samples the density, color, and emission from the various volumes
@@ -123,7 +122,7 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
     let single_scattering = sun_transmittance * atmosphere.sun;
 
     // Calculate Multiple Scattering (Ambient Light)
-    let multiple_scattering = atmosphere.ambient * mix(1.0, sun_transmittance, AMBIENT_OCCLUSION_STRENGTH);
+    let multiple_scattering = atmosphere.ambient * sun_transmittance;
 
     let in_scattering = (single_scattering + multiple_scattering + AMBIENT_FLOOR) * SCATTERING_ALBEDO;
     return in_scattering;

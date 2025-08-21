@@ -24,11 +24,13 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
     let depth = 96;
     let base_texture =
         load_or_generate_texture("base_texture", size, depth, TextureFormat::R8Unorm, || {
-            let perlinworley = spread(&simplex_3d(size, depth, 5, 0.5, Vec2::new(8.0, 6.0), 1.5))
-                .iter()
-                .zip(worley_3d(size, depth, 3, 0.5, 12.0, 0.5))
-                .map(|(&perlin, worley)| map_range(perlin, -(1.0 - worley), 1.0, 0.0, 1.0))
-                .collect::<Vec<f32>>();
+            let perlinworley = spread(
+                &simplex_3d(size, depth, 7, 0.7, Vec2::new(8.0, 6.0), 1.5)
+                    .iter()
+                    .zip(worley_3d(size, depth, 5, 0.7, 12.0, 0.5))
+                    .map(|(&perlin, worley)| map_range(perlin, -(1.0 - worley), 1.0, 0.0, 1.0))
+                    .collect::<Vec<f32>>(),
+            );
 
             save_noise_layer(&perlinworley, "perlinworley.png", size);
             interleave_channels([perlinworley])

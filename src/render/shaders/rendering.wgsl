@@ -61,7 +61,7 @@ fn main(
     var atmosphere: AtmosphereData;
     atmosphere.sun_pos = sun_pos;
     atmosphere.sky = render_sky(rd, view, sun_dir);
-    atmosphere.sun = get_sun_light_color(ro, view, sun_dir) * 0.5 * phase;
+    atmosphere.sun = get_sun_light_color(ro, view, sun_dir) * 0.55 * phase;
     atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir);
 
     // Run solids raymarch in the rendering pass (solids are independent of volumetrics)
