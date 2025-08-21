@@ -71,7 +71,7 @@ const IMAGE_SAMPLER: ImageSamplerDescriptor = ImageSamplerDescriptor {
     lod_min_clamp: 0.0,
     lod_max_clamp: 32.0,
     compare: None,
-    anisotropy_clamp: 1,
+    anisotropy_clamp: 4,
     border_color: None,
     label: None,
 };

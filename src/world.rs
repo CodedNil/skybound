@@ -19,15 +19,16 @@ const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldData {
-    pub camera_offset: Vec2,
+    pub camera_offset: Vec3,
 }
 impl Default for WorldData {
     fn default() -> Self {
         let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Z * PLANET_RADIUS);
         Self {
-            camera_offset: Vec2::new(
+            camera_offset: Vec3::new(
                 offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
                 offset.y - (offset.y % CAMERA_RESET_THRESHOLD),
+                0.0,
             ),
         }
     }
@@ -64,7 +65,7 @@ impl WorldData {
 
     /// Calculates the effective rotation of the planet at a given position.
     pub fn planet_rotation(&self, pos: Vec3) -> Quat {
-        Self::rotation_from_translation(self.camera_offset.extend(0.0) + pos)
+        Self::rotation_from_translation(self.camera_offset + pos)
     }
 }
 
@@ -138,5 +139,10 @@ fn update(
         let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.y.signum();
         world_coords.camera_offset.y += snap_amount;
         camera_transform.translation.y -= snap_amount;
+    }
+    if camera_transform.translation.z.abs() > CAMERA_RESET_THRESHOLD {
+        let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.z.signum();
+        world_coords.camera_offset.z += snap_amount;
+        camera_transform.translation.z -= snap_amount;
     }
 }

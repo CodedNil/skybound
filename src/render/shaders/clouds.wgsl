@@ -50,13 +50,6 @@ const CLOUD_LAYER_STRETCH = array<f32, CLOUD_TOTAL_LAYERS>(
     1.0, 1.0, 1.2, 1.8,
     2.5, 3.0, 4.0, 4.0
 );
-// Density multiplier per layer
-const CLOUD_LAYER_DENSITIES = array<f32, CLOUD_TOTAL_LAYERS>(
-    1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 0.8, 0.6,
-    0.4, 0.3, 0.2, 0.12,
-    0.08, 0.05, 0.03, 0.03
-);
 // How much to increase the detail noise in the layer
 const CLOUD_LAYER_DETAILS = array<f32, CLOUD_TOTAL_LAYERS>(
     0.1, 0.1, 0.1, 0.1,
@@ -83,7 +76,7 @@ fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
     // Branchless validity check, height becomes 0 if invalid
     let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
     let height: f32 = select(0.0, CLOUD_LAYER_HEIGHTS[index], is_valid_layer);
-    let is_within_thickness: f32 = f32(pos.z <= bottom + height * 3.0);
+    let is_within_thickness: f32 = f32(pos.z <= bottom + height * 2.0);
 
     return CloudLayer(index, bottom, height * is_within_thickness);
 }
@@ -99,7 +92,7 @@ fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
     return mix(-1.0, midpoint, is_valid);
 }
 
-fn sample_clouds(pos: vec3<f32>, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
+fn sample_clouds(pos: vec3<f32>, view: View, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
     var cloud_layer = get_cloud_layer(pos);
     if cloud_layer.height == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer
     let layer_i = cloud_layer.index;
@@ -119,10 +112,17 @@ fn sample_clouds(pos: vec3<f32>, time: f32, simple: bool, base_texture: texture_
     // Bias the clouds coverage to the highest levels
     let lf_sq = layer_fraction * layer_fraction;
     weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b) * (0.5 + lf_sq * lf_sq * 0.5);
+
+    // Latitude-based sparsity applied to weather coverage: sparser at equator
+    let lat_norm = saturate(abs(view.latitude) * 0.8);
+    let equator_scale = mix(0.5, 1.0, lat_norm);
+    let upper_layer_bias = 1.0 + (1.0 - lat_norm) * 0.5 * smoothstep(0.6, 1.0, layer_fraction);
+    weather_coverage = weather_coverage * equator_scale * upper_layer_bias;
+
     if weather_coverage <= 0.0 { return 0.0; } // Early exit if coverage is too low
 
     // --- Height Gradient ---
-    let cloud_height = cloud_layer.height * (0.6 + weather_noise.a * 3.0);
+    let cloud_height = cloud_layer.height * (0.6 + weather_noise.a * 2.0);
     let height_fraction = clamp((pos.z - cloud_layer.bottom) / cloud_height, 0.0, 1.0);
     let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
     let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);
@@ -130,19 +130,35 @@ fn sample_clouds(pos: vec3<f32>, time: f32, simple: bool, base_texture: texture_
     if height_gradient <= 0.0 { return 0.0; } // Early exit if density is too low
 
     // --- Base Cloud Shape ---
-    let stretched_scale = vec3<f32>(CLOUD_LAYER_SCALES[layer_i] * CLOUD_LAYER_STRETCH[layer_i], CLOUD_LAYER_SCALES[layer_i], 1.0);
-    let base_scaled_pos = pos * BASE_NOISE_SCALE * stretched_scale + time * WIND_DIRECTION_BASE;
-    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_scaled_pos, 0.0);
+    // Wind-aligned base shape (single sample, simpler stretch).
+    let stretch = CLOUD_LAYER_STRETCH[layer_i];
+    let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_i];
+    let base_time = time * WIND_DIRECTION_BASE;
+    var wind = normalize(WIND_DIRECTION_BASE.xy);
+    if (length(wind) < 1e-6) { wind = vec2<f32>(1.0, 0.0); }
+    let wind_perp = vec2<f32>(-wind.y, wind.x);
+    let coord_along = dot(pos.xy, wind);
+    let coord_perp = dot(pos.xy, wind_perp);
+    let base_time_along = dot(base_time.xy, wind);
+    let base_time_perp = dot(base_time.xy, wind_perp);
+    let base_time_vec = vec3<f32>(base_time_along, base_time_perp, base_time.z);
+    let sample_pos = vec3<f32>(coord_along * stretch, coord_perp, pos.z) * base_scale + base_time_vec;
+    let base_noise = textureSampleLevel(base_texture, linear_sampler, sample_pos, 0.0);
     var base_cloud = (base_noise.r * height_gradient) + weather_coverage - 1.0;
     if base_cloud <= 0.0 { return 0.0; } // Early exit if density is too low
     if simple { return base_cloud; }
 
-	// --- High Frequency Detail ---
-	let detail_time_vec = time * WIND_DIRECTION_DETAIL;
-    let detail_stretched_scale = mix(CLOUD_LAYER_SCALES[layer_i] * max(CLOUD_LAYER_STRETCH[layer_i] * 0.2, 1.0), 1.0, -0.5);
-    let detail_scaled_pos = pos * DETAIL_NOISE_SCALE * vec3<f32>(detail_stretched_scale, CLOUD_LAYER_SCALES[layer_i], 1.0) - detail_time_vec;
-
-    let detail_noise = textureSampleLevel(details_texture, linear_sampler, detail_scaled_pos, 0.0).r;
+    // --- High Frequency Detail ---
+    let detail_time = time * WIND_DIRECTION_DETAIL;
+    var dw = normalize(WIND_DIRECTION_DETAIL.xy);
+    if (length(dw) < 1e-6) { dw = wind; }
+    let dperp = vec2<f32>(-dw.y, dw.x);
+    let dalong = dot(pos.xy, dw);
+    let dperp_coord = dot(pos.xy, dperp);
+    let detail_stretch = max(1.0, stretch * 0.5);
+    let dtime_vec = vec3<f32>(dot(detail_time.xy, dw), dot(detail_time.xy, dperp), detail_time.z);
+    let dpos = vec3<f32>(dalong * detail_stretch, dperp_coord, pos.z) * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_i] - dtime_vec;
+    let detail_noise = textureSampleLevel(details_texture, linear_sampler, dpos, 0.0).r;
 
     // Apply more less noise to the lower portion of the cloud, reduced at higher altitudes
     let detail_amount = mix(height_fraction, 1.0, CLOUD_LAYER_DETAILS[layer_i]);
@@ -152,5 +168,5 @@ fn sample_clouds(pos: vec3<f32>, time: f32, simple: bool, base_texture: texture_
     let inv_erosion_range = 1.0 / (1.0 - erosion + 1e-6); // Add epsilon to avoid div by zero
     base_cloud = saturate((base_cloud - erosion) * inv_erosion_range);
 
-    return clamp(base_cloud * CLOUD_LAYER_DENSITIES[layer_i], 0.0, 1.0);
+    return clamp(base_cloud, 0.0, 1.0);
 }

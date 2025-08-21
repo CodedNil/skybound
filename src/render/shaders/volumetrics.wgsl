@@ -65,13 +65,13 @@ struct VolumeSample {
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_volume(pos: vec3<f32>, time: f32, clouds: bool, fog: bool, poles: bool, linear_sampler: sampler) -> VolumeSample {
+fn sample_volume(pos: vec3<f32>, view: View, time: f32, clouds: bool, fog: bool, poles: bool, linear_sampler: sampler) -> VolumeSample {
     var sample: VolumeSample;
     sample.color = vec3<f32>(1.0);
 
     var blended_color: vec3<f32> = vec3(0.0);
     if clouds {
-        let cloud_sample = sample_clouds(pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
+        let cloud_sample = sample_clouds(pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
         if cloud_sample > 0.0 {
             blended_color += vec3<f32>(1.0) * cloud_sample;
             sample.density += cloud_sample;
@@ -103,13 +103,13 @@ fn sample_volume(pos: vec3<f32>, time: f32, clouds: bool, fog: bool, poles: bool
 }
 
 // Calculates the incoming light (in-scattering) at a given point within the volume
-fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler, dither: f32) -> vec3<f32> {
+fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData, step_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler, dither: f32) -> vec3<f32> {
     // Start with a conservative local optical depth term
     var optical_depth = step_density * EXTINCTION * LIGHT_STEP_SIZE * 0.5;
 
     // Build an orthonormal basis around the sun direction for disk sampling
     var up = vec3<f32>(0.0, 0.0, 1.0);
-    if (abs(sun_dir.z) > 0.999) {
+    if abs(sun_dir.z) > 0.999 {
         up = vec3<f32>(1.0, 0.0, 0.0);
     }
     let tangent1 = normalize(cross(sun_dir, up));
@@ -134,7 +134,7 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
 
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
 
-        let clouds = sample_clouds(lightmarch_pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
+        let clouds = sample_clouds(lightmarch_pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
         let fog = sample_fog(lightmarch_pos, time, true, details_texture, linear_sampler).density;
         let light_sample_density = clouds + fog;
 
@@ -164,7 +164,7 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
             let disk_offset = tangent1 * (sample_offset.x * layer_disk_radius) + tangent2 * (sample_offset.y * layer_disk_radius);
 
             let layer_sample_pos = world_pos + sun_dir * intersection_t + disk_offset;
-            let light_sample_density = sample_clouds(layer_sample_pos, time, true, base_texture, details_texture, weather_texture, linear_sampler);
+            let light_sample_density = sample_clouds(layer_sample_pos, view, time, true, base_texture, details_texture, weather_texture, linear_sampler);
 
             // Apply the falloff to the optical depth contribution.
             optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
@@ -189,16 +189,16 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
 }
 
 // Calculates the aur light contribution from below.
-fn sample_aur_lighting(world_pos: vec3<f32>, time: f32, linear_sampler: sampler) -> vec3<f32> {
+fn sample_aur_lighting(world_pos: vec3<f32>, view: View, time: f32, linear_sampler: sampler) -> vec3<f32> {
     // Fade out the light intensity with altitude
     let altitude_fade = 1.0 - saturate(pow(world_pos.z / AUR_LIGHT_DISTANCE, 0.2));
-    if (altitude_fade <= 0.0) {
+    if altitude_fade <= 0.0 {
         return vec3(0.0);
     }
 
     // Perform a single light step upwards to check for density that would shadow the point
     let lightmarch_pos = world_pos + AUR_LIGHT_DIR * LIGHT_STEP_SIZE;
-    let light_sample_density = sample_clouds(lightmarch_pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
+    let light_sample_density = sample_clouds(lightmarch_pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
 
     // Calculate optical depth from this single sample
     let optical_depth = max(0.0, light_sample_density) * AUR_EXTINCTION * LIGHT_STEP_SIZE;
@@ -261,8 +261,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
         transmittance = initial_fog_transmittance;
     }
-    let sun_altitude = distance(atmosphere.sun_pos, view.planet_center) - view.planet_radius;
-    let sun_world_pos = vec3<f32>(atmosphere.sun_pos.xy + view.camera_offset, sun_altitude);
+    let sun_world_pos = atmosphere.sun_pos + view.camera_offset;
 
     for (var i = 0; i < MAX_STEPS; i++) {
         if t >= t_end || transmittance < 0.01 {
@@ -305,8 +304,8 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         // Sample the density
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
-        let sample = sample_volume(world_pos, time, inside_clouds, inside_fog, inside_poles, linear_sampler);
+        let world_pos = vec3<f32>(pos_raw.xy, altitude) + view.camera_offset;
+        let sample = sample_volume(world_pos, view, time, inside_clouds, inside_fog, inside_poles, linear_sampler);
         let step_density = sample.density;
 
         // Scale step size based on distance from camera
@@ -335,10 +334,10 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         if step_density > 0.0 {
             // Get the incoming light (in-scattering)
             let sun_dir = normalize(sun_world_pos - world_pos);
-            let in_scattering = sample_shadowing(world_pos, atmosphere, step_density, time, sun_dir, linear_sampler, dither);
+            let in_scattering = sample_shadowing(world_pos, view, atmosphere, step_density, time, sun_dir, linear_sampler, dither);
 
             // Add the incoming aur light from below to the emission
-            let emission = sample.emission * 1000.0 + sample_aur_lighting(world_pos, time, linear_sampler);
+            let emission = sample.emission * 1000.0 + sample_aur_lighting(world_pos, view, time, linear_sampler);
 
             // Calculate the color of the volume at this point
             let volume_color = in_scattering * sample.color + emission;

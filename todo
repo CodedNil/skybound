@@ -1,6 +1,8 @@
-make the top layer clouds less stretched but still wide clouds
-softer brighter shadows that blend into the atmosphere better
+clean up and simplify clouds.wgsl
+softer brighter shadows that blend into the atmosphere better, give them fluffy soft edges too
 reduced noise
+finish making camera_offset adjust vertically too
+shadows at high altitude clouds are bad, they clip vertically weirdly, and dont seem to respect sun direction
 
 
 give the layers random offsets on vertical positioning so they dont look so flat
@@ -44,7 +46,7 @@ https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_wi
 
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
-cloud shapes suck especially high up
+try to blend between cirrus, cirrocumulus, altocumulus etc
 
 
 world rendering:
