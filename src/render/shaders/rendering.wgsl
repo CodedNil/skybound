@@ -52,17 +52,19 @@ fn main(
 
     // Phase functions for silver and back scattering
     let cos_theta = dot(sun_dir, rd);
+    // phase components: forward scattering (bulk), narrow silver highlight, and slight backscatter
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
-    let hg_silver = henyey_greenstein(cos_theta, 0.9) * 0.01;
+    let hg_silver = henyey_greenstein(cos_theta, 0.95) * 0.003; // narrow, low-intensity silver rim
     let hg_back = henyey_greenstein(cos_theta, -0.05);
-    let phase = max(hg_forward, max(hg_silver, hg_back));
+    // Blend phase terms rather than taking a hard max so highlights blend into sky
+    let phase = hg_forward + hg_back * 0.15 + hg_silver * 0.2;
 
 	// Precalculate sun, sky and ambient colors
     var atmosphere: AtmosphereData;
     atmosphere.sun_pos = sun_pos;
     atmosphere.sky = render_sky(rd, view, sun_dir);
-    atmosphere.sun = get_sun_light_color(ro, view, sun_dir) * 0.55 * phase;
-    atmosphere.ambient = render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir);
+    atmosphere.sun = (get_sun_light_color(ro, view, sun_dir) * 0.45 + atmosphere.sky * 0.18) * phase;
+    atmosphere.ambient = atmosphere.sky * 0.8 + render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir) * 0.2;
 
     // Run solids raymarch in the rendering pass (solids are independent of volumetrics)
     let solids = raymarch_solids(ro, rd, view, t_max, view.time);

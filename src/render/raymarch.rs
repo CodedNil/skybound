@@ -218,8 +218,8 @@ pub fn manage_textures(
 
     // Low res textures
     let low_res_size = Extent3d {
-        width: primary_window.physical_width / 2,
-        height: primary_window.physical_height / 2,
+        width: primary_window.physical_width,
+        height: primary_window.physical_height,
         depth_or_array_layers: 1,
     };
     let current_low_res_size = cloud_render_texture

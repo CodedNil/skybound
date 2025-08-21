@@ -9,10 +9,10 @@
 @group(0) @binding(4) var weather_texture: texture_2d<f32>;
 
 // --- Constants ---
-const DENSITY: f32 = 0.2;               // Base density for lighting
+const DENSITY: f32 = 0.2;             // Base density for lighting
 
 // --- Raymarching Constants ---
-const MAX_STEPS: i32 = 512;            // Maximum number of steps to take in transmittance march
+const MAX_STEPS: i32 = 512;           // Maximum number of steps to take in transmittance march
 const STEP_SIZE_INSIDE: f32 = 120;
 const STEP_SIZE_OUTSIDE: f32 = 240;
 
@@ -20,24 +20,22 @@ const SCALING_END: f32 = 200000;      // Distance from camera to use max step si
 const SCALING_MAX: f32 = 6;           // Maximum scaling factor to increase by
 const SCALING_MAX_VERTICAL: f32 = 2;  // Scale less if the ray is vertical
 const SCALING_MAX_FOG: f32 = 2;       // Scale less if the ray is through fog
-const CLOSE_THRESHOLD: f32 = 2000;     // Distance from solid objects to begin more precise raymarching
+const CLOSE_THRESHOLD: f32 = 2000;    // Distance from solid objects to begin more precise raymarching
 
 // --- Lighting Constants ---
 const LIGHT_STEPS: u32 = 4;                         // How many steps to take along the sun direction
 const LIGHT_STEP_SIZE: f32 = 90.0;                  // Step size for lightmarching steps
 const SUN_CONE_ANGLE: f32 = 0.005;                  // Angular radius of the sun / area light (radians). Increase for softer shadows
-const TWO_PI: f32 = 6.283185307179586;
 const AUR_LIGHT_DIR = vec3<f32>(0, 0, -1);          // Direction the aur light comes from (straight below)
 const AUR_LIGHT_DISTANCE = 60000;                   // How high before the aur light becomes negligable
 const AUR_LIGHT_COLOR = vec3(0.6, 0.3, 0.8) * 0.6;  // Color of the aur light from below
 const SHADOW_FADE_END: f32 = 80000;                 // Distance at which shadows from layers above are fully faded
 
 // --- Material Properties ---
-const EXTINCTION: f32 = 0.2;                    // Overall density/darkness of the cloud material
-const AUR_EXTINCTION: f32 = 0.1;                // Lower extinction for aur light to penetrate more
-const SCATTERING_ALBEDO: f32 = 0.7;             // Color of the cloud. 0.9 is white, lower values are darker grey
-const AMBIENT_FLOOR: f32 = 0.1;                // Minimum ambient light to prevent pitch-black shadows
-const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000002;  // Density of the atmospheric fog
+const EXTINCTION: f32 = 0.05;                    // Overall density/darkness of the cloud material
+const AUR_EXTINCTION: f32 = 0.05;                // Lower extinction for aur light to penetrate more
+const SCATTERING_ALBEDO: f32 = 0.65;            // Scattering albedo (0..1)
+const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000004;  // Density of the atmospheric fog
 
 // Precomputed disk samples (unit-disk offsets). These are cheap to index
 // and paired with per-pixel `dither` produce low-cost stochastic sampling.
@@ -181,7 +179,12 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
     // Calculate Multiple Scattering (Ambient Light)
     let multiple_scattering = atmosphere.ambient * sun_transmittance;
 
-    let in_scattering = (single_scattering + multiple_scattering + AMBIENT_FLOOR) * SCATTERING_ALBEDO;
+    // Compute a dynamic ambient floor
+    let shadow_boost = (1.0 - sun_transmittance);
+    let ambient_base = 0.12 + 0.6 * saturate(step_density * 3.0);
+    let ambient_floor_vec = atmosphere.ambient * ambient_base * (0.6 + 0.4 * shadow_boost) + atmosphere.sky * 0.03;
+
+    let in_scattering = (single_scattering + multiple_scattering + ambient_floor_vec) * SCATTERING_ALBEDO;
     return in_scattering;
 }
 

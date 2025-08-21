@@ -53,9 +53,9 @@ const CLOUD_LAYER_STRETCH = array<f32, CLOUD_TOTAL_LAYERS>(
 // Density multiplier per layer
 const CLOUD_LAYER_DENSITIES = array<f32, CLOUD_TOTAL_LAYERS>(
     1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0,
-    0.6, 0.6, 0.6, 0.6
+    1.0, 1.0, 0.8, 0.6,
+    0.4, 0.3, 0.2, 0.12,
+    0.08, 0.05, 0.03, 0.03
 );
 // How much to increase the detail noise in the layer
 const CLOUD_LAYER_DETAILS = array<f32, CLOUD_TOTAL_LAYERS>(

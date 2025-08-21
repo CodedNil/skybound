@@ -1,3 +1,8 @@
+make the top layer clouds less stretched but still wide clouds
+softer brighter shadows that blend into the atmosphere better
+reduced noise
+
+
 give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator
@@ -37,7 +42,6 @@ https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-
 https://www.ea.com/seed/news/egsr-2022-blue-noise
 https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_with_GPU-based_Decoupled_Ray_Marching/blob/main/Ms%20Thesis%20Presentation%20_%20Decoupled%20Ray%20Marching%20in%20Video%20Games.pdf
 
-use bluenoise texture instead of maths
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
 cloud shapes suck especially high up
