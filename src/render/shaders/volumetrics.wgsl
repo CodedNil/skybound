@@ -24,18 +24,42 @@ const CLOSE_THRESHOLD: f32 = 2000;     // Distance from solid objects to begin m
 
 // --- Lighting Constants ---
 const LIGHT_STEPS: u32 = 4;                         // How many steps to take along the sun direction
-const LIGHT_STEP_SIZE = 90;                         // Step size for lightmarching steps
+const LIGHT_STEP_SIZE: f32 = 90.0;                  // Step size for lightmarching steps
+const SUN_CONE_ANGLE: f32 = 0.005;                  // Angular radius of the sun / area light (radians). Increase for softer shadows
+const TWO_PI: f32 = 6.283185307179586;
 const AUR_LIGHT_DIR = vec3<f32>(0, 0, -1);          // Direction the aur light comes from (straight below)
 const AUR_LIGHT_DISTANCE = 60000;                   // How high before the aur light becomes negligable
 const AUR_LIGHT_COLOR = vec3(0.6, 0.3, 0.8) * 0.6;  // Color of the aur light from below
 const SHADOW_FADE_END: f32 = 80000;                 // Distance at which shadows from layers above are fully faded
 
 // --- Material Properties ---
-const EXTINCTION: f32 = 0.4;                    // Overall density/darkness of the cloud material
-const AUR_EXTINCTION: f32 = 0.2;                // Lower extinction for aur light to penetrate more
+const EXTINCTION: f32 = 0.2;                    // Overall density/darkness of the cloud material
+const AUR_EXTINCTION: f32 = 0.1;                // Lower extinction for aur light to penetrate more
 const SCATTERING_ALBEDO: f32 = 0.7;             // Color of the cloud. 0.9 is white, lower values are darker grey
 const AMBIENT_FLOOR: f32 = 0.1;                // Minimum ambient light to prevent pitch-black shadows
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000002;  // Density of the atmospheric fog
+
+// Precomputed disk samples (unit-disk offsets). These are cheap to index
+// and paired with per-pixel `dither` produce low-cost stochastic sampling.
+const DISK_SAMPLE_COUNT: u32 = 16u;
+const DISK_SAMPLES: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
+    vec2<f32>(0.000000, 0.000000),
+    vec2<f32>(0.707107, 0.000000),
+    vec2<f32>(-0.707107, 0.000000),
+    vec2<f32>(0.000000, 0.707107),
+    vec2<f32>(0.000000, -0.707107),
+    vec2<f32>(0.500000, 0.500000),
+    vec2<f32>(-0.500000, 0.500000),
+    vec2<f32>(0.500000, -0.500000),
+    vec2<f32>(-0.500000, -0.500000),
+    vec2<f32>(0.923880, 0.382683),
+    vec2<f32>(-0.923880, 0.382683),
+    vec2<f32>(0.382683, 0.923880),
+    vec2<f32>(-0.382683, 0.923880),
+    vec2<f32>(0.382683, -0.923880),
+    vec2<f32>(-0.382683, -0.923880),
+    vec2<f32>(0.000000, 0.000000)
+);
 
 // Samples the density, color, and emission from the various volumes
 struct VolumeSample {
@@ -81,11 +105,36 @@ fn sample_volume(pos: vec3<f32>, time: f32, clouds: bool, fog: bool, poles: bool
 }
 
 // Calculates the incoming light (in-scattering) at a given point within the volume
-fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler) -> vec3<f32> {
+fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler, dither: f32) -> vec3<f32> {
+    // Start with a conservative local optical depth term
     var optical_depth = step_density * EXTINCTION * LIGHT_STEP_SIZE * 0.5;
-    var lightmarch_pos = world_pos;
+
+    // Build an orthonormal basis around the sun direction for disk sampling
+    var up = vec3<f32>(0.0, 0.0, 1.0);
+    if (abs(sun_dir.z) > 0.999) {
+        up = vec3<f32>(1.0, 0.0, 0.0);
+    }
+    let tangent1 = normalize(cross(sun_dir, up));
+    let tangent2 = cross(sun_dir, tangent1);
+
+    // Stochastic cone sampling: for each step march a short distance along the sun,
+    // then sample within a disk whose radius grows with distance to approximate the
+    // solid-angle integration of an extended light source (softens shadows).
     for (var j: u32 = 0; j < LIGHT_STEPS; j++) {
-        lightmarch_pos += sun_dir * LIGHT_STEP_SIZE;
+        let step_index = f32(j) + 1.0;
+        let distance_along = step_index * LIGHT_STEP_SIZE;
+
+        // Disk radius proportional to distance (cone aperture)
+        let disk_radius = tan(SUN_CONE_ANGLE) * distance_along;
+
+        // Select a precomputed disk sample indexed by per-pixel dither + step index.
+        let nf = f32(DISK_SAMPLE_COUNT);
+        let idxf = fract(dither + step_index * 0.618034);
+        let idx = i32(floor(idxf * nf));
+        let sample_offset = DISK_SAMPLES[idx];
+        let disk_offset = tangent1 * (sample_offset.x * disk_radius) + tangent2 * (sample_offset.y * disk_radius);
+
+        let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
 
         let clouds = sample_clouds(lightmarch_pos, time, false, base_texture, details_texture, weather_texture, linear_sampler);
         let fog = sample_fog(lightmarch_pos, time, true, details_texture, linear_sampler).density;
@@ -108,14 +157,22 @@ fn sample_shadowing(world_pos: vec3<f32>, atmosphere: AtmosphereData, step_densi
             // Calculate a falloff factor based on the distance to the shadow-casting layer
             let shadow_falloff = 1.0 - (intersection_t / SHADOW_FADE_END);
 
-            // Sample at the layer midpoint
-            let lightmarch_pos = world_pos + sun_dir * intersection_t;
-            let light_sample_density = sample_clouds(lightmarch_pos, time, true, base_texture, details_texture, weather_texture, linear_sampler);
+            // Small jitter within the cone for layer sampling using the disk lookup table
+            let layer_disk_radius = tan(SUN_CONE_ANGLE) * intersection_t;
+            let nf = f32(DISK_SAMPLE_COUNT);
+            let idxf = fract(dither + f32(i) * 0.618034);
+            let idx = i32(floor(idxf * nf));
+            let sample_offset = DISK_SAMPLES[idx];
+            let disk_offset = tangent1 * (sample_offset.x * layer_disk_radius) + tangent2 * (sample_offset.y * layer_disk_radius);
+
+            let layer_sample_pos = world_pos + sun_dir * intersection_t + disk_offset;
+            let light_sample_density = sample_clouds(layer_sample_pos, time, true, base_texture, details_texture, weather_texture, linear_sampler);
 
             // Apply the falloff to the optical depth contribution.
             optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
         }
     }
+
     let sun_transmittance = exp(-optical_depth);
 
     // Calculate Single Scattering (Direct Light)
@@ -275,7 +332,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         if step_density > 0.0 {
             // Get the incoming light (in-scattering)
             let sun_dir = normalize(sun_world_pos - world_pos);
-            let in_scattering = sample_shadowing(world_pos, atmosphere, step_density, time, sun_dir, linear_sampler);
+            let in_scattering = sample_shadowing(world_pos, atmosphere, step_density, time, sun_dir, linear_sampler, dither);
 
             // Add the incoming aur light from below to the emission
             let emission = sample.emission * 1000.0 + sample_aur_lighting(world_pos, time, linear_sampler);
