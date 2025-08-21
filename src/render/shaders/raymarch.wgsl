@@ -2,9 +2,13 @@
 #import skybound::utils::{View, AtmosphereData, get_sun_position}
 
 // Raymarch parameters
-const MAX_STEPS: i32 = 128;
-const EPSILON: f32 = 0.001;
-const MIN_STEP: f32 = 0.01;
+const MAX_STEPS: i32 = 64;
+const EPSILON: f32 = 0.01;
+const MIN_STEP: f32 = 0.03;
+
+// Shared shape parameters
+const SPACING: f32 = 200.0;
+const RADIUS: f32 = 2.0;
 
 // Repeating cell helper: move 'p' into the nearest cell center for spacing 's'
 fn repeat_to_cell(p: vec3<f32>, s: f32) -> vec3<f32> {
@@ -17,25 +21,24 @@ fn sdf_sphere(p: vec3<f32>, r: f32) -> f32 {
     return length(p) - r;
 }
 
-// SDF for an infinite grid of spheres.
-// Spacing: 50 meters between centers in all axes.
-// Sphere diameter: 1 meter -> radius 0.5
+// SDF for an infinite grid of spheres
 fn sdf_repeating_spheres_world(p_world: vec3<f32>) -> f32 {
-    let spacing = 200.0;
-    let radius = 2.0;
-    let local = repeat_to_cell(p_world, spacing);
-    return sdf_sphere(local, radius);
+    let local = repeat_to_cell(p_world, SPACING);
+    return sdf_sphere(local, RADIUS);
 }
 
 // Numerical normal via central differences
 fn estimate_normal(p: vec3<f32>) -> vec3<f32> {
-    let e = 0.001;
-    let dx = vec3<f32>(e, 0.0, 0.0);
-    let dy = vec3<f32>(0.0, e, 0.0);
-    let dz = vec3<f32>(0.0, 0.0, e);
-    let nx = sdf_repeating_spheres_world(p + dx) - sdf_repeating_spheres_world(p - dx);
-    let ny = sdf_repeating_spheres_world(p + dy) - sdf_repeating_spheres_world(p - dy);
-    let nz = sdf_repeating_spheres_world(p + dz) - sdf_repeating_spheres_world(p - dz);
+    let dx = vec3<f32>(EPSILON, 0.0, 0.0);
+    let dy = vec3<f32>(0.0, EPSILON, 0.0);
+    let dz = vec3<f32>(0.0, 0.0, EPSILON);
+
+    // Approximate local cell once and evaluate the cheap sphere SDF directly.
+    // This avoids calling `repeat_to_cell` repeatedly inside sdf calls.
+    let local = repeat_to_cell(p, SPACING);
+    let nx = sdf_sphere(local + dx, RADIUS) - sdf_sphere(local - dx, RADIUS);
+    let ny = sdf_sphere(local + dy, RADIUS) - sdf_sphere(local - dy, RADIUS);
+    let nz = sdf_sphere(local + dz, RADIUS) - sdf_sphere(local - dz, RADIUS);
     return normalize(vec3<f32>(nx, ny, nz));
 }
 
