@@ -110,6 +110,38 @@ fn integrate_optical_depth(ray_start: vec3<f32>, ray_dir: vec3<f32>, view: View)
     return optical_depth;
 }
 
+// Check if a ray from `ray_start` along `ray_dir` will hit the planet (used for sun occlusion)
+fn is_occluded_by_planet(ray_start: vec3<f32>, ray_dir: vec3<f32>, planet_radius: f32) -> bool {
+    let p_isect = intersect_sphere(ray_start, ray_dir, planet_radius);
+    return (p_isect.y > 0.0 && p_isect.x > 0.0);
+}
+
+// Smooth occlusion factor in [0,1]. Returns 1.0 for fully occluded, 0.0 for fully visible.
+// This avoids hard binary transitions that create banding when sampling sparsely.
+fn occlusion_factor_smooth(pos: vec3<f32>, dir: vec3<f32>, planet_radius: f32) -> f32 {
+    // t_closest is the param (along dir) where the ray comes closest to the planet center
+    let t_closest = -dot(pos, dir);
+    if (t_closest <= 0.0) {
+        return 0.0; // closest approach is behind the start -> no occlusion in front
+    }
+
+    // distance from center to ray (closest approach)
+    let closest_point = pos + dir * t_closest;
+    let d_closest = length(closest_point);
+
+    // penetration depth under the planetary radius
+    let penetration = planet_radius - d_closest;
+    if (penetration <= 0.0) {
+        return 0.0;
+    }
+
+    // softening width (meters) - smooth over a small region around the terminator
+    let soft_width = 4000.0; // ~4 km soft transition to hide banding
+    let f = clamp(penetration / soft_width, 0.0, 1.0);
+    // cubic smoothstep for nicer falloff
+    return f * f * (3.0 - 2.0 * f);
+}
+
 // Main function to calculate scattered light (in-scattering)
 fn integrate_scattering(
     ray_start: vec3<f32>,
@@ -147,8 +179,17 @@ fn integrate_scattering(
         let view_transmittance = calculate_transmittance(optical_depth_view);
 
         // Transmittance from sun to sample point (light travelling through atmosphere)
-        let optical_depth_light = integrate_optical_depth(local_pos, sun_dir, view);
-        let light_transmittance = calculate_transmittance(optical_depth_light);
+        // Smooth occlusion to avoid banding: compute a soft occlusion factor in [0,1]
+        var light_transmittance = vec3<f32>(0.0);
+        let occ = occlusion_factor_smooth(local_pos, sun_dir, view.planet_radius);
+        if (occ < 1.0) {
+            let optical_depth_light = integrate_optical_depth(local_pos, sun_dir, view);
+            let lt = calculate_transmittance(optical_depth_light);
+            // scale light by visibility (1 - occ)
+            light_transmittance = lt * (1.0 - occ);
+        } else {
+            light_transmittance = vec3<f32>(0.0);
+        }
 
         // Accumulate scattered light
         rayleigh_scatter += view_transmittance * light_transmittance * phase_r * local_density.x * step_size;
@@ -157,7 +198,8 @@ fn integrate_scattering(
         prev_ray_time = ray_time;
     }
 
-    let sun_color = vec3<f32>(SUN_INTENSITY);
+    // Slightly warm spectral tint for more appealing sunsets
+    let sun_color = vec3<f32>(1.0, 0.97, 0.90) * SUN_INTENSITY;
     let radiance = sun_color * (rayleigh_scatter * C_RAYLEIGH * RAYLEIGH_STRENGTH + mie_scatter * C_MIE * MIE_STRENGTH);
 
     // Apply exposure to the final radiance
@@ -208,14 +250,20 @@ fn render_sky(rd: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
 fn get_sun_light_color(ro: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
     let ro_relative = view.world_position - view.planet_center;
 
+    // Use a smooth occlusion factor for the camera as well to avoid hard edges at the horizon
+    let cam_occ = occlusion_factor_smooth(ro_relative, sun_dir, view.planet_radius);
+
     // Calculate the optical depth from the camera position towards the sun
     let optical_depth_light = integrate_optical_depth(ro_relative, sun_dir, view);
 
     // Calculate the transmittance (how much light makes it through) based on the optical depth
-    let light_transmittance = calculate_transmittance(optical_depth_light);
+    let light_transmittance = calculate_transmittance(optical_depth_light) * (1.0 - cam_occ);
+
+    // Slightly warm spectral tint for the sun (more pleasing sunsets)
+    let sun_base = vec3<f32>(1.0, 0.97, 0.90) * SUN_INTENSITY;
 
     // The final sun color is the base intensity filtered by the atmospheric transmittance
-    let sun_color = vec3<f32>(SUN_INTENSITY) * light_transmittance;
+    let sun_color = sun_base * light_transmittance;
 
     // Return the raw HDR color multiplied by the exposure
     return sun_color * EXPOSURE;

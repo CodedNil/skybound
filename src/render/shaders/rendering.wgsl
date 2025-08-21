@@ -70,15 +70,15 @@ fn main(
     t_max = solids.depth;
 
     // Sample the volumetrics
-    let raymarch_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
-    let volumetrics_depth: f32 = raymarch_result.depth;
-    rendered_color = raymarch_result.color.rgb + rendered_color * raymarch_result.color.a;
+    let volumetrics_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
+    rendered_color = volumetrics_result.color.rgb + rendered_color * volumetrics_result.color.a;
 
     // Motion Vectors
     var motion_vector = vec2(0.0);
-    if volumetrics_depth < t_max {
+    let depth: f32 = min(solids.depth, volumetrics_result.depth);
+    if depth < t_max {
         // Find the world position of the point we rendered, project it into the previous frames screen space
-        let world_pos_current = ro + rd * volumetrics_depth;
+        let world_pos_current = ro + rd * depth;
 
         // Project to previous frame's clip space
         let clip_pos_prev = view.prev_clip_from_world * vec4<f32>(world_pos_current, 1.0);
@@ -91,7 +91,7 @@ fn main(
     }
 
     // Normalize depth to a [0, 1] range.
-    var final_volumetric_depth: f32 = select(0.0, volumetrics_depth / t_max, volumetrics_depth > 0.0);
+    var final_volumetric_depth: f32 = select(0.0, depth / t_max, depth > 0.0);
 
     // Write the final results to the output storage textures
     textureStore(output_color, id.xy, clamp(vec4<f32>(rendered_color, 1.0), vec4(0.0), vec4(1.0)));

@@ -1,5 +1,3 @@
-compute shader for noise gen
-
 give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator

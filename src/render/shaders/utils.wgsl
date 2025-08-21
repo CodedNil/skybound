@@ -169,5 +169,11 @@ fn get_sun_position(view: View) -> vec3<f32> {
 
     // Calculate the sun's position at a fixed altitude above the relevant pole
     let sun_altitude = view.planet_radius + MAGNETOSPHERE_HEIGHT;
-    return view.planet_center + sun_axis * sun_altitude;
+    var sun_pos = view.planet_center + sun_axis * sun_altitude;
+
+    // To smooth harsh switch on equator we progressively move the sun down in world-space Z as latitude approaches 0
+    let blend = clamp(abs(view.latitude) / 0.35, 0.0, 1.0);
+    sun_pos.z += mix(sun_altitude * -2.0, 0.0, blend);
+
+    return sun_pos;
 }

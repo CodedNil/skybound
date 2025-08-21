@@ -101,7 +101,8 @@ fn raymarch_solids(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32, time: f
         }
 
         let p = ro + rd * t;
-        let dist = sdf_repeating_spheres_world(p);
+        // let dist = sdf_repeating_spheres_world(p);
+        let dist = 1.0;
 
         if dist < EPSILON {
             // Hit the surface
