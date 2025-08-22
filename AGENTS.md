@@ -5,7 +5,7 @@ This repository is a Rust binary crate (package: `skybound`) built with Bevy. Us
 ## Project Structure & Module Organization
 - `Cargo.toml` / `Cargo.lock` — crate metadata and deps.
 - `src/` — main application code (entry: `src/main.rs`).
-- `assets/` — runtime assets (shaders, textures, models).
+- `src/render` — render code for the application, including shaders (overview.md shows its structure).
 - `justfile`, `shell.nix`, `.envrc` — developer shortcuts and environment config.
 - `target/` — build artifacts (ignored in VCS).
 

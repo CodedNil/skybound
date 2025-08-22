@@ -14,11 +14,13 @@
 - `rendering.wgsl` — Orchestrates per-pixel ray construction, Henyey–Greenstein phase functions, and final outputs. Calls into `raymarch_solids`, `raymarch_volumetrics`, and sky sampling.
 - `volumetrics.wgsl` — `raymarch_volumetrics`: adaptive raymarch integrator for clouds, fog, and poles. Handles entry/exit intervals, density sampling, light marching, transmittance accumulation, aur/aural lighting, and outputs color+alpha and weighted depth.
 - `raymarch.wgsl` — Simple SDF solids renderer (repeating spheres example), used to combine opaque geometry with volumetrics.
+  (Note: the solids SDF is currently a simple/example placeholder in the shader.)
 - `clouds.wgsl` — Cloud shape & density: layered cloud model, multi-layer parameters, base/detail/weather noises, wind vectors, layer scaling, returns density (and simple mode).
 - `aur_fog.wgsl` — Fog/aurora and lightning flashes: turbulence, Poisson-disk flashes, fog sampling that returns density, color, emission.
 - `poles.wgsl` — Polar aurora/poles sampling and pole-shaped volume intersection helper.
 - `sky.wgsl` — Physical atmosphere renderer (Rayleigh/Mie/ozone): integrates scattering along view ray and computes sun light color that volumetrics use as illumination.
 - `composite.wgsl` — Fullscreen upsample + TAA: bilateral upsample, motion reprojection, temporal blending with confidence metric, YCoCg variance clipping.
+  (Note: the composite pass writes two color attachments — the main view target and the full-resolution history buffer — and the history is ping-ponged between two textures based on frame parity.)
 - `utils.wgsl` — Shared helpers: hashing, blue-noise, matrix helpers, sphere/plane intersection helpers, ray-shell intersection, quaternion rotation, `View` / `AtmosphereData` structs.
 
 **Rust Modules (what runs the shaders and manages resources)**
@@ -68,8 +70,8 @@
 - To tune performance vs quality: adjust workgroup size (in compute shader), `MAX_STEPS`/`STEP_SIZE_*` in `volumetrics.wgsl`, and the low-res target scale in `raymarch.rs` (`primary_window.physical_* / 2`).
 - To debug: render low-res `color`, `motion`, or `depth` directly to a debug view; composite pass reads/writes history textures you can also inspect.
 
-**Quick File Reference (paths)**n- Shaders: `src/render/shaders/*.wgsl` (see registry above).
+**Quick File Reference (paths)**
+- Shaders: `src/render/shaders/*.wgsl` (see registry above).
 - Render glue: `src/render/raymarch.rs` and `src/render/composite.rs`.
 - Plugin entry: `src/render/mod.rs` (registers nodes, loads shaders).
 - Noise generation: `src/render/noise/{mod.rs,simplex.rs,worley.rs,utils.rs}`
-
