@@ -10,7 +10,7 @@ const SUN_INTENSITY: f32 = 22.0;
 const EXPOSURE: f32 = 3.0;
 
 // Atmosphere dimensions (in meters)
-const ATMOSPHERE_HEIGHT: f32 = 100000;
+const ATMOSPHERE_HEIGHT: f32 = 200000;
 const RAYLEIGH_SCALE_HEIGHT: f32 = 8000.0;  // ~8km
 const MIE_SCALE_HEIGHT: f32 = 1200.0;       // ~1.2km
 
@@ -26,8 +26,13 @@ const OZONE_STRENGTH: f32 = 1.0;
 const MIE_G: f32 = 0.85; // Mie scattering directionality (-1 = backscatter, 0 = uniform, 1 = forward scatter)
 
 // Raymarching settings
-const PRIMARY_STEPS: i32 = 32;  // Steps along the main view ray
-const LIGHT_STEPS: i32 = 16;     // Steps for the secondary light rays (to the sun)
+const PRIMARY_STEPS: i32 = 16; // Steps along the main view ray
+const LIGHT_STEPS: i32 = 8;    // Steps for the secondary light rays (to the sun)
+
+// Planet emissive glow (tweak to taste)
+const PLANET_EMISSION_COLOR: vec3<f32> = vec3<f32>(0.6, 0.3, 0.8) * 0.5;  // Gentle purple
+const PLANET_GLOW_ANGULAR_WIDTH: f32 = 0.03;  // Radians, soft angular falloff
+const PLANET_EMISSION_CHROMA_PRESERVE: f32 = 0.9;
 
 
 // Returns the near (x) and far (y) intersection distances
@@ -237,6 +242,22 @@ fn render_sky(rd: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
 
     // Get the final scattered light color
     var final_color = integrate_scattering(ray_start, rd, ray_length, sun_dir, view);
+
+    // Subtle planet emissive glow (scattered)
+    let to_center = normalize(-ro_relative);
+    let dist = length(ro_relative);
+    let disk_angle = asin(clamp(view.planet_radius / dist, 0.0, 1.0));
+    let angle = acos(clamp(dot(rd, to_center), -1.0, 1.0));
+
+    // Rim distance = angle outside the disk; apply a smooth gaussian-like falloff
+    let rim = max(0.0, angle - disk_angle);
+    let glow = exp(- (rim * rim) / (PLANET_GLOW_ANGULAR_WIDTH * PLANET_GLOW_ANGULAR_WIDTH));
+
+    // Attenuate by atmospheric transmittance along the view ray
+    let trans = calculate_transmittance(integrate_optical_depth(ro_relative, rd, view));
+    let trans_lum = dot(trans, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let atten = trans * (1.0 - PLANET_EMISSION_CHROMA_PRESERVE) + vec3<f32>(trans_lum) * PLANET_EMISSION_CHROMA_PRESERVE;
+    final_color += PLANET_EMISSION_COLOR * glow * atten;
 
     // Tonemapping & Gamma Correction
     final_color = 1.0 - exp(-final_color); // Reinhard tonemapping
