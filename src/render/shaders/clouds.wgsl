@@ -1,7 +1,7 @@
 #define_import_path skybound::clouds
 #import skybound::utils::{View, intersect_sphere}
 
-const BASE_SCALE = 0.003;
+const BASE_SCALE = 0.005;
 const BASE_TIME = 0.01;
 
 // Base Parameters
@@ -18,16 +18,16 @@ const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, 0.0, -1.0) * 0.2 * BASE_
 
 // Cloud scales
 const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
-const CLOUD_TOP_HEIGHT: f32 = 100000;
-const CLOUD_LAYER_HEIGHT: f32 = 6000;
+const CLOUD_TOP_HEIGHT: f32 = 33000;
+const CLOUD_LAYER_HEIGHT: f32 = 2000;
 const CLOUD_BASE_FRACTION: f32 = 0.2; // A lower value gives a flatter, more defined base.
 const CLOUD_TOTAL_LAYERS: u32 = 16u;
 // The vertical height of the layer
 const CLOUD_LAYER_HEIGHTS = array<f32, CLOUD_TOTAL_LAYERS>(
-    2800, 2700, 2700, 2800,
-    2700, 2500, 2300, 2200,
-    2000, 1600, 1300, 1100,
-    800, 700, 600, 500
+    1000, 950, 950, 1000,
+    950, 900, 850, 800,
+    700, 650, 600, 500,
+    300, 250, 200, 180
 );
 // Position offset for the weather coverage per layer
 const CLOUD_LAYER_OFFSETS = array<vec2<f32>, CLOUD_TOTAL_LAYERS>(
