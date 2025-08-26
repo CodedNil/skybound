@@ -1,8 +1,8 @@
 clean up and simplify clouds.wgsl
 softer brighter shadows that blend into the atmosphere better, give them fluffy soft edges too
 reduced noise
-finish making camera_offset adjust vertically too
 shadows at high altitude clouds are bad, they clip vertically weirdly, and dont seem to respect sun direction
+variable sky shading on clouds, perhaps update atmosphere.sky every x meters?
 
 
 give the layers random offsets on vertical positioning so they dont look so flat

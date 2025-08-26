@@ -14,7 +14,7 @@ struct View {
     clip_from_view: mat4x4<f32>,
     view_from_clip: mat4x4<f32>,
     world_position: vec3<f32>,
-    camera_offset: vec3<f32>,
+    camera_offset: vec2<f32>,
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: mat4x4<f32>,

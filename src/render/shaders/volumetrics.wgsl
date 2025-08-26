@@ -32,8 +32,8 @@ const AUR_LIGHT_COLOR = vec3(0.6, 0.3, 0.8) * 0.6;  // Color of the aur light fr
 const SHADOW_FADE_END: f32 = 80000;                 // Distance at which shadows from layers above are fully faded
 
 // --- Material Properties ---
-const EXTINCTION: f32 = 0.05;                    // Overall density/darkness of the cloud material
-const AUR_EXTINCTION: f32 = 0.05;                // Lower extinction for aur light to penetrate more
+const EXTINCTION: f32 = 0.05;                   // Overall density/darkness of the cloud material
+const AUR_EXTINCTION: f32 = 0.05;               // Lower extinction for aur light to penetrate more
 const SCATTERING_ALBEDO: f32 = 0.65;            // Scattering albedo (0..1)
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000004;  // Density of the atmospheric fog
 
@@ -261,7 +261,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
         transmittance = initial_fog_transmittance;
     }
-    let sun_world_pos = atmosphere.sun_pos + view.camera_offset;
+    let sun_world_pos = atmosphere.sun_pos + vec3(view.camera_offset, 0.0);
 
     for (var i = 0; i < MAX_STEPS; i++) {
         if t >= t_end || transmittance < 0.01 {
@@ -304,7 +304,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         // Sample the density
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let world_pos = vec3<f32>(pos_raw.xy, altitude) + view.camera_offset;
+        let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
         let sample = sample_volume(world_pos, view, time, inside_clouds, inside_fog, inside_poles, linear_sampler);
         let step_density = sample.density;
 

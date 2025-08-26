@@ -212,7 +212,7 @@ fn integrate_scattering(
 }
 
 fn render_sky(rd: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
-    let ro_relative = view.world_position + vec3(0.0, 0.0, view.camera_offset.z) - view.planet_center;
+    let ro_relative = view.world_position - view.planet_center;
     let atmosphere_radius = view.planet_radius + ATMOSPHERE_HEIGHT;
 
     // Find intersection distances with the atmosphere and planet from the cameras origin
@@ -269,7 +269,7 @@ fn render_sky(rd: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
 
 /// Calculates the direct sunlight color after it has passed through the atmosphere to the camera
 fn get_sun_light_color(ro: vec3<f32>, view: View, sun_dir: vec3<f32>) -> vec3<f32> {
-    let ro_relative = view.world_position + vec3(0.0, 0.0, view.camera_offset.z) - view.planet_center;
+    let ro_relative = view.world_position - view.planet_center;
 
     // Use a smooth occlusion factor for the camera as well to avoid hard edges at the horizon
     let cam_occ = occlusion_factor_smooth(ro_relative, sun_dir, view.planet_radius);
