@@ -15,6 +15,9 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
     "bevy_core_pipeline",
     "bevy_log",
     "bevy_window",
+    "bevy_render",
+    "bevy_ui",
+    "bevy_ui_render",
     "default_font",
     "hdr",
     "multi_threaded",
@@ -22,13 +25,6 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
     "zstd_rust",
 
     "debug",
-] }
-bevy_internal = { git = "https://github.com/bevyengine/bevy", package = "bevy_internal", default-features = false, features = [
-    "bevy_ui",
-    "bevy_ui_render",
-    "bevy_text",
-    "bevy_sprite",
-    "bevy_sprite_render",
 ] }
 bytemuck = "1.23.2"
 image = { version = "0.25.6", default-features = false, features = ["png"] }
