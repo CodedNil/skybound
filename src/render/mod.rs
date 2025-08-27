@@ -1,8 +1,10 @@
+mod clouds;
 mod composite;
 mod noise;
 mod raymarch;
 
 use crate::render::{
+    clouds::{setup_clouds, update_clouds, update_clouds_buffer},
     composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
     raymarch::{
@@ -37,7 +39,8 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/composite.wgsl");
 
         app.add_plugins(ExtractResourcePlugin::<NoiseTextures>::default())
-            .add_systems(Startup, setup_noise_textures);
+            .add_systems(Startup, (setup_clouds, setup_noise_textures))
+            .add_systems(Update, update_clouds);
 
         let render_app = app
             .get_sub_app_mut(RenderApp)
@@ -51,6 +54,7 @@ impl Plugin for WorldRenderingPlugin {
                 Render,
                 (
                     manage_textures.in_set(RenderSystems::Queue),
+                    update_clouds_buffer.in_set(RenderSystems::Prepare),
                     prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
                 ),
             )

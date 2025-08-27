@@ -3324,6 +3324,7 @@ dependencies = [
  "bevy",
  "bytemuck",
  "image",
+ "rand",
  "rayon",
  "wgpu-types",
 ]
