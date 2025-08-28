@@ -357,7 +357,7 @@ pub fn setup_clouds(mut commands: Commands) {
                 rng.random_range(40.0..=80.0),
             ),
             CloudForm::Cumulonimbus => (
-                rng.random_range(8000.0..=16000.0),
+                rng.random_range(3000.0..=7000.0),
                 rng.random_range(0.9..=1.0),
                 rng.random_range(6000.0..=10000.0),
             ),

@@ -15,15 +15,15 @@ struct CloudsBuffer {
 }
 
 // Cloud packed as four u32s matching the CPU layout:
-// d0: len(14) | x_pos (signed 18)
-// d1: height(14) | y_pos (signed 18)
-// d2: seed(7)| width(5)| form(2)| density(4)| detail(4)| brightness(4)| yaw(6)
-// d3: altitude(15)
+// data_a: len(14) | x_pos (signed 18)
+// data_b: height(14) | y_pos (signed 18)
+// data_c: seed(7)| width(5)| form(2)| density(4)| detail(4)| brightness(4)| yaw(6)
+// data_d: altitude(15)
 struct Cloud {
-    d0: u32,
-    d1: u32,
-    d2: u32,
-    d3: u32,
+    data_a: u32,
+    data_b: u32,
+    data_c: u32,
+    data_d: u32,
 }
 
 // --- Constants ---
@@ -215,12 +215,12 @@ const SIZE_WIDTH_BITS: u32 = WIDTH_BITS;
 
 // shifts
 const SIZE_LEN_SHIFT: u32 = 0u;
-const X_SHIFT: u32 = SIZE_LEN_SHIFT + SIZE_LEN_BITS; // in u0
+const X_SHIFT: u32 = SIZE_LEN_SHIFT + SIZE_LEN_BITS; // in data_a
 
 const SIZE_HEIGHT_SHIFT: u32 = 0u;
-const Y_SHIFT: u32 = SIZE_HEIGHT_SHIFT + SIZE_HEIGHT_BITS; // in u1
+const Y_SHIFT: u32 = SIZE_HEIGHT_SHIFT + SIZE_HEIGHT_BITS; // in data_b
 
-// u2 shifts
+// data_c shifts
 const SEED_SHIFT: u32 = 0u;
 const WIDTH_SHIFT: u32 = SEED_SHIFT + SEED_BITS; // 7
 const FORM_SHIFT: u32 = WIDTH_SHIFT + SIZE_WIDTH_BITS; // 12
@@ -229,7 +229,7 @@ const DETAIL_SHIFT: u32 = DENSITY_SHIFT + DENSITY_BITS; // 18
 const BRIGHTNESS_SHIFT: u32 = DETAIL_SHIFT + DETAIL_BITS; // 22
 const YAW_SHIFT: u32 = BRIGHTNESS_SHIFT + BRIGHTNESS_BITS; // 26
 
-// altitude in u3
+// altitude in data_d
 const ALT_SHIFT: u32 = 0u;
 
 // masks
@@ -264,17 +264,17 @@ fn get_signed_field(container: u32, bits: u32, shift: u32) -> i32 {
 
 // Decode cloud position
 fn get_cloud_pos(c: Cloud) -> vec3<f32> {
-    let alt_raw = get_bits_field(c.d3, ALT_MASK, ALT_SHIFT);
-    let x_raw = get_signed_field(c.d0, 18u, X_SHIFT);
-    let y_raw = get_signed_field(c.d1, 18u, Y_SHIFT);
+    let alt_raw = get_bits_field(c.data_d, ALT_MASK, ALT_SHIFT);
+    let x_raw = get_signed_field(c.data_a, 18u, X_SHIFT);
+    let y_raw = get_signed_field(c.data_b, 18u, Y_SHIFT);
     return vec3<f32>(f32(x_raw), f32(y_raw), f32(alt_raw));
 }
 
 // Decode cloud scale as a vec3<f32>
 fn get_cloud_scale(c: Cloud) -> vec3<f32> {
-    let len_raw = get_bits_field(c.d0, SIZE_LEN_MASK, SIZE_LEN_SHIFT);
-    let width_raw = get_bits_field(c.d2, SIZE_WIDTH_MASK, WIDTH_SHIFT);
-    let height_raw = get_bits_field(c.d1, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
+    let len_raw = get_bits_field(c.data_a, SIZE_LEN_MASK, SIZE_LEN_SHIFT);
+    let width_raw = get_bits_field(c.data_c, SIZE_WIDTH_MASK, WIDTH_SHIFT);
+    let height_raw = get_bits_field(c.data_b, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
     let length_m = f32(len_raw);
     let width_frac = f32(width_raw) * SIZE_WIDTH_INV_F;
     // width is stored as a fraction of length
@@ -286,7 +286,7 @@ fn get_cloud_scale(c: Cloud) -> vec3<f32> {
 // Get cloud yaw in radians (0..2PI)
 const TWO_PI: f32 = 6.283185307179586;
 fn get_cloud_yaw(c: Cloud) -> f32 {
-    let yaw_raw = get_bits_field(c.d2, YAW_MASK, YAW_SHIFT);
+    let yaw_raw = get_bits_field(c.data_c, YAW_MASK, YAW_SHIFT);
     return f32(yaw_raw) * (TWO_PI / f32(1u << YAW_BITS));
 }
 
@@ -432,7 +432,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         }
 
         // Raymarch until next_event
-        while t < next_event && transmittance < 0.01 {
+        while t < next_event && transmittance > 0.01 {
             // Check if we are inside any volume
             let inside_clouds = true;
             let inside_fog = t >= fog_entry_exit.x && t <= fog_entry_exit.y; // TODO
