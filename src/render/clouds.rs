@@ -1,5 +1,6 @@
 use bevy::{
     camera::primitives::{Frustum, Sphere},
+    math::I16Vec3,
     prelude::*,
     render::{
         extract_resource::ExtractResource,
@@ -23,7 +24,7 @@ pub struct CloudsState {
 #[repr(C)]
 pub struct CloudsBufferData {
     clouds: [Cloud; MAX_VISIBLE],
-    num_clouds: u32,
+    total: u32,
 }
 
 /// Represents a cloud with its properties
@@ -41,6 +42,8 @@ struct Cloud {
                // 3 bits for density (Overall fill, 0=almost empty mist, 1=solid cloud mass), 0..1 in 8 steps
                // 3 bits for detail (Noise detail power, 0=smooth blob, 1=lots of little puffs), 0..1 in 8 steps
                // 3 bits for brightness, 0..1 in 8 steps
+
+               // TODO needs yaw
 }
 
 enum CloudForm {
@@ -51,31 +54,22 @@ enum CloudForm {
 }
 
 impl Cloud {
-    // --- layout (data u32) ---
-    // altitude : 15 bits  (0..32767 meters)
-    // seed     :  6 bits  (0..63)
-    // form     :  2 bits  (0..3)
-    // density  :  3 bits  (0..7)
-    // detail   :  3 bits  (0..7)
-    // brightness: 3 bits  (0..7)
-    const ALT_BITS: u32 = 15;
+    // Data u32 layout
     const SEED_BITS: u32 = 6;
+    const ALT_BITS: u32 = 15;
     const FORM_BITS: u32 = 2;
     const DENSITY_BITS: u32 = 3;
     const DETAIL_BITS: u32 = 3;
     const BRIGHTNESS_BITS: u32 = 3;
 
-    const ALT_SHIFT: u32 = 0;
-    const SEED_SHIFT: u32 = Self::ALT_SHIFT + Self::ALT_BITS;
-    const FORM_SHIFT: u32 = Self::SEED_SHIFT + Self::SEED_BITS;
+    const SEED_SHIFT: u32 = 0;
+    const ALT_SHIFT: u32 = Self::SEED_SHIFT + Self::SEED_BITS;
+    const FORM_SHIFT: u32 = Self::ALT_SHIFT + Self::ALT_BITS;
     const DENSITY_SHIFT: u32 = Self::FORM_SHIFT + Self::FORM_BITS;
     const DETAIL_SHIFT: u32 = Self::DENSITY_SHIFT + Self::DENSITY_BITS;
     const BRIGHTNESS_SHIFT: u32 = Self::DETAIL_SHIFT + Self::DETAIL_BITS;
 
-    // --- layout (size u32) ---
-    // length : 14 bits (0..16383)
-    // height : 14 bits (0..16383)
-    // width  :  4 bits (0..15) -> normalized as 0..1
+    // Size u32 layout
     const SIZE_LEN_BITS: u32 = 14;
     const SIZE_HEIGHT_BITS: u32 = 14;
     const SIZE_WIDTH_BITS: u32 = 4;
@@ -100,12 +94,12 @@ impl Cloud {
         (container >> shift) & Self::max_for_bits(bits)
     }
 
-    // pos: Vec3(x, altitude, z) -> x_pos, altitude packed into data, y_pos stores z
+    // pos: Vec3(x, y, altitude)
     pub const fn set_pos(mut self, pos: Vec3) -> Self {
         self.x_pos = pos.x.round() as i32;
-        self.y_pos = pos.z.round() as i32; // store z into y_pos field (legacy naming)
+        self.y_pos = pos.y.round() as i32;
         let alt_raw = pos
-            .y
+            .z
             .clamp(0.0, Self::max_for_bits(Self::ALT_BITS) as f32)
             .round() as u32;
         Self::set_bits_field(&mut self.data, alt_raw, Self::ALT_BITS, Self::ALT_SHIFT);
@@ -114,7 +108,7 @@ impl Cloud {
 
     pub const fn get_pos(&self) -> Vec3 {
         let alt_raw = Self::get_bits_field(self.data, Self::ALT_BITS, Self::ALT_SHIFT);
-        Vec3::new(self.x_pos as f32, alt_raw as f32, self.y_pos as f32)
+        Vec3::new(self.x_pos as f32, self.y_pos as f32, alt_raw as f32)
     }
 
     // size: Vec3(length_meters, height_meters, width_factor_0to1)
@@ -123,12 +117,12 @@ impl Cloud {
             .x
             .clamp(0.0, Self::max_for_bits(Self::SIZE_LEN_BITS) as f32)
             .round() as u32;
-        let height_raw = size
-            .y
-            .clamp(0.0, Self::max_for_bits(Self::SIZE_HEIGHT_BITS) as f32)
-            .round() as u32;
-        let width_raw = (size.z.clamp(0.0, 1.0)
+        let width_raw = (size.y.clamp(0.0, 1.0)
             * (Self::max_for_bits(Self::SIZE_WIDTH_BITS) as f32))
+            .round() as u32;
+        let height_raw = size
+            .z
+            .clamp(0.0, Self::max_for_bits(Self::SIZE_HEIGHT_BITS) as f32)
             .round() as u32;
 
         Self::set_bits_field(
@@ -151,17 +145,16 @@ impl Cloud {
         );
         self
     }
-
     pub const fn get_size(&self) -> Vec3 {
         let len_raw = Self::get_bits_field(self.size, Self::SIZE_LEN_BITS, Self::SIZE_LEN_SHIFT);
-        let height_raw =
-            Self::get_bits_field(self.size, Self::SIZE_HEIGHT_BITS, Self::SIZE_HEIGHT_SHIFT);
         let width_raw =
             Self::get_bits_field(self.size, Self::SIZE_WIDTH_BITS, Self::SIZE_WIDTH_SHIFT);
+        let height_raw =
+            Self::get_bits_field(self.size, Self::SIZE_HEIGHT_BITS, Self::SIZE_HEIGHT_SHIFT);
         Vec3::new(
             len_raw as f32,
-            height_raw as f32,
             (width_raw as f32) / (Self::max_for_bits(Self::SIZE_WIDTH_BITS) as f32),
+            height_raw as f32,
         )
     }
 
@@ -176,7 +169,6 @@ impl Cloud {
         Self::set_bits_field(&mut self.data, raw, Self::FORM_BITS, Self::FORM_SHIFT);
         self
     }
-
     pub const fn get_form(&self) -> CloudForm {
         match Self::get_bits_field(self.data, Self::FORM_BITS, Self::FORM_SHIFT) {
             0 => CloudForm::Cumulus,
@@ -296,7 +288,7 @@ pub fn setup_clouds(mut commands: Commands) {
         // Determine position within the defined field extent
         let x = rng.random_range(-field_extent..=field_extent);
         let y = rng.random_range(-field_extent..=field_extent);
-        let position = Vec3::new(x, y, altitude);
+
         // Determine density and detail based on form and turbulence
         let density = match form {
             CloudForm::Cumulus => rng.random_range(0.8..=1.0),
@@ -314,8 +306,8 @@ pub fn setup_clouds(mut commands: Commands) {
         // Create and configure the cloud, then add to the list
         clouds.push(
             Cloud::default()
-                .set_pos(position)
-                .set_size(Vec3::new(length, height, width_factor))
+                .set_pos(Vec3::new(x, y, altitude))
+                .set_size(Vec3::new(length, width_factor, height))
                 .set_seed(rng.random_range(0..64))
                 .set_form(form)
                 .set_density(density)
@@ -328,7 +320,7 @@ pub fn setup_clouds(mut commands: Commands) {
     commands.insert_resource(CloudsState { clouds });
     commands.insert_resource(CloudsBufferData {
         clouds: [Cloud::default(); MAX_VISIBLE], // Initialize with default clouds
-        num_clouds: 0,
+        total: 0,
     });
 }
 
@@ -341,7 +333,7 @@ pub fn update_clouds(
 ) {
     // Get camera data for frustum culling and sorting
     let Ok((camera_transform, camera_frustum)) = camera_query.single() else {
-        buffer.num_clouds = 0;
+        buffer.total = 0;
         error!("No camera found, clearing clouds buffer");
         return;
     };
@@ -384,7 +376,7 @@ pub fn update_clouds(
     });
 
     // Update the number of clouds to be rendered
-    buffer.num_clouds = u32::try_from(visible_cloud_count).unwrap_or_else(|e| {
+    buffer.total = u32::try_from(visible_cloud_count).unwrap_or_else(|e| {
         error!("Failed to convert visible cloud count to u32: {}", e);
         0
     });
