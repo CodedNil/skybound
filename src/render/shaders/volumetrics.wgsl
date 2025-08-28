@@ -14,12 +14,16 @@ struct CloudsBuffer {
     total: u32,
 }
 
+// Cloud packed as four u32s matching the CPU layout:
+// d0: len(14) | x_pos (signed 18)
+// d1: height(14) | y_pos (signed 18)
+// d2: seed(7)| width(5)| form(2)| density(4)| detail(4)| brightness(4)| yaw(6)
+// d3: altitude(15)
 struct Cloud {
-    // 16 bytes
-    x_pos: i32, // X position (4 bytes)
-    y_pos: i32, // Y position (4 bytes)
-    size: u32, // 14 bits length 0..16383, 14 bits height 0..16383, 4 bits width factor 0..16 (4 bytes)
-    data: u32, // Seed, altitude, form, density, detail, brightness (4 bytes)
+    d0: u32,
+    d1: u32,
+    d2: u32,
+    d3: u32,
 }
 
 // --- Constants ---
@@ -192,22 +196,53 @@ fn sample_aur_lighting(world_pos: vec3<f32>, view: View, time: f32, linear_sampl
     return AUR_LIGHT_COLOR * transmittance * altitude_fade;
 }
 
-// Pre-baked masks/denominators
-const SEED_BITS: u32 = 6u;
-const ALT_BITS: u32 = 15u;
-const ALT_SHIFT: u32 = 6u;
-const ALT_MASK: u32 = (1u << ALT_BITS) - 1u;
 
+// Bit layout constants (must match CPU packing)
+const SEED_BITS: u32 = 7u;
+const WIDTH_BITS: u32 = 5u;
+const FORM_BITS: u32 = 2u;
+const DENSITY_BITS: u32 = 4u;
+const DETAIL_BITS: u32 = 4u;
+const BRIGHTNESS_BITS: u32 = 4u;
+const YAW_BITS: u32 = 6u;
+
+const ALT_BITS: u32 = 15u;
+
+// size bits
 const SIZE_LEN_BITS: u32 = 14u;
 const SIZE_HEIGHT_BITS: u32 = 14u;
-const SIZE_WIDTH_BITS: u32 = 4u;
-const SIZE_LEN_SHIFT: u32 = 0u;
-const SIZE_HEIGHT_SHIFT: u32 = SIZE_LEN_SHIFT + SIZE_LEN_BITS;
-const SIZE_WIDTH_SHIFT: u32 = SIZE_HEIGHT_SHIFT + SIZE_HEIGHT_BITS;
+const SIZE_WIDTH_BITS: u32 = WIDTH_BITS;
 
+// shifts
+const SIZE_LEN_SHIFT: u32 = 0u;
+const X_SHIFT: u32 = SIZE_LEN_SHIFT + SIZE_LEN_BITS; // in u0
+
+const SIZE_HEIGHT_SHIFT: u32 = 0u;
+const Y_SHIFT: u32 = SIZE_HEIGHT_SHIFT + SIZE_HEIGHT_BITS; // in u1
+
+// u2 shifts
+const SEED_SHIFT: u32 = 0u;
+const WIDTH_SHIFT: u32 = SEED_SHIFT + SEED_BITS; // 7
+const FORM_SHIFT: u32 = WIDTH_SHIFT + SIZE_WIDTH_BITS; // 12
+const DENSITY_SHIFT: u32 = FORM_SHIFT + FORM_BITS; // 14
+const DETAIL_SHIFT: u32 = DENSITY_SHIFT + DENSITY_BITS; // 18
+const BRIGHTNESS_SHIFT: u32 = DETAIL_SHIFT + DETAIL_BITS; // 22
+const YAW_SHIFT: u32 = BRIGHTNESS_SHIFT + BRIGHTNESS_BITS; // 26
+
+// altitude in u3
+const ALT_SHIFT: u32 = 0u;
+
+// masks
 const SIZE_LEN_MASK: u32 = (1u << SIZE_LEN_BITS) - 1u;
 const SIZE_HEIGHT_MASK: u32 = (1u << SIZE_HEIGHT_BITS) - 1u;
 const SIZE_WIDTH_MASK: u32 = (1u << SIZE_WIDTH_BITS) - 1u;
+const SEED_MASK: u32 = (1u << SEED_BITS) - 1u;
+const FORM_MASK: u32 = (1u << FORM_BITS) - 1u;
+const DENSITY_MASK: u32 = (1u << DENSITY_BITS) - 1u;
+const DETAIL_MASK: u32 = (1u << DETAIL_BITS) - 1u;
+const BRIGHTNESS_MASK: u32 = (1u << BRIGHTNESS_BITS) - 1u;
+const YAW_MASK: u32 = (1u << YAW_BITS) - 1u;
+const ALT_MASK: u32 = (1u << ALT_BITS) - 1u;
 
 // Precompute float inverse of the width max so shader does one multiply instead of a division
 const SIZE_WIDTH_INV_F: f32 = 1.0 / f32(SIZE_WIDTH_MASK);
@@ -217,33 +252,69 @@ fn get_bits_field(container: u32, mask: u32, shift: u32) -> u32 {
     return (container >> shift) & mask;
 }
 
+// Signed extractor for two's complement signed fields stored in bits
+fn get_signed_field(container: u32, bits: u32, shift: u32) -> i32 {
+    let raw = get_bits_field(container, (1u << bits) - 1u, shift);
+    let sign_bit = 1u << (bits - 1u);
+    if (raw & sign_bit) != 0u {
+        return i32(raw) - i32(1u << bits);
+    }
+    return i32(raw);
+}
+
 // Decode cloud position
 fn get_cloud_pos(c: Cloud) -> vec3<f32> {
-    let alt_raw = get_bits_field(c.data, ALT_MASK, ALT_SHIFT);
-    return vec3<f32>(f32(c.x_pos), f32(c.y_pos), f32(alt_raw));
+    let alt_raw = get_bits_field(c.d3, ALT_MASK, ALT_SHIFT);
+    let x_raw = get_signed_field(c.d0, 18u, X_SHIFT);
+    let y_raw = get_signed_field(c.d1, 18u, Y_SHIFT);
+    return vec3<f32>(f32(x_raw), f32(y_raw), f32(alt_raw));
 }
 
 // Decode cloud scale as a vec3<f32>
 fn get_cloud_scale(c: Cloud) -> vec3<f32> {
-    let len_raw = get_bits_field(c.size, SIZE_LEN_MASK, SIZE_LEN_SHIFT);
-    let height_raw = get_bits_field(c.size, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
-    let width_raw = get_bits_field(c.size, SIZE_WIDTH_MASK, SIZE_WIDTH_SHIFT);
-
+    let len_raw = get_bits_field(c.d0, SIZE_LEN_MASK, SIZE_LEN_SHIFT);
+    let width_raw = get_bits_field(c.d2, SIZE_WIDTH_MASK, WIDTH_SHIFT);
+    let height_raw = get_bits_field(c.d1, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
     let length_m = f32(len_raw);
-    // Multiply by precomputed inverse instead of dividing
     let width_frac = f32(width_raw) * SIZE_WIDTH_INV_F;
+    // width is stored as a fraction of length
     let width_m = length_m * width_frac;
     let height_m = f32(height_raw);
-
     return vec3<f32>(length_m, width_m, height_m);
+}
+
+// Get cloud yaw in radians (0..2PI)
+const TWO_PI: f32 = 6.283185307179586;
+fn get_cloud_yaw(c: Cloud) -> f32 {
+    let yaw_raw = get_bits_field(c.d2, YAW_MASK, YAW_SHIFT);
+    return f32(yaw_raw) * (TWO_PI / f32(1u << YAW_BITS));
 }
 
 // Returns (near, far), the intersection points
 fn cloud_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
-    // Transform ray into the unit‐sphere space of our ellipsoid
-    let inv_radius = 2.0 / get_cloud_scale(cloud); // = 1.0/(scale*0.5)
-    let local_origin = (ro - get_cloud_pos(cloud)) * inv_radius;
-    let local_dir = rd * inv_radius;
+    // Transform ray into the cloud local frame, applying yaw then scaling into unit-sphere space
+    let center = get_cloud_pos(cloud);
+    let scale = get_cloud_scale(cloud); // (length, width, height) in meters
+
+    // Rotate world -> cloud local by -yaw (so cloud's local X aligns with unrotated axis)
+    let yaw = get_cloud_yaw(cloud);
+    let cy = cos(yaw);
+    let sy = sin(yaw);
+
+    let to_local = ro - center;
+    // inverse rotation R(-yaw): [ c  s; -s  c ]
+    let lx = cy * to_local.x + sy * to_local.y;
+    let ly = -sy * to_local.x + cy * to_local.y;
+    let lz = to_local.z;
+
+    let dir_lx = cy * rd.x + sy * rd.y;
+    let dir_ly = -sy * rd.x + cy * rd.y;
+    let dir_lz = rd.z;
+
+    // Scale to unit sphere based on half-extents (scale is diameter-ish)
+    let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
+    let local_origin = vec3<f32>(lx, ly, lz) * inv_radius;
+    let local_dir = vec3<f32>(dir_lx, dir_ly, dir_lz) * inv_radius;
 
     // Build the quadratic
     let a = dot(local_dir, local_dir);

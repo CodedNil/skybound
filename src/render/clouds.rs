@@ -1,6 +1,5 @@
 use bevy::{
     camera::primitives::{Frustum, Sphere},
-    math::I16Vec3,
     prelude::*,
     render::{
         extract_resource::ExtractResource,
@@ -19,7 +18,7 @@ pub struct CloudsState {
     clouds: Vec<Cloud>,
 }
 
-/// Buffer for visible cloud data, extracted to the render world and sent to the GPU.
+/// Buffer for visible cloud data, extracted to the render world and the GPU
 #[derive(Resource, ExtractResource, Clone, Copy, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct CloudsBufferData {
@@ -27,23 +26,35 @@ pub struct CloudsBufferData {
     total: u32,
 }
 
-/// Represents a cloud with its properties
+/// Represents a cloud packed into exactly 16 bytes for GPU upload
 #[derive(Default, Clone, Copy, ShaderType, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct Cloud {
-    // 16 bytes
-    x_pos: i32, // X position (4 bytes)
-    y_pos: i32, // Y position (4 bytes)
-    size: u32, // 14 bits length 0..16383, 14 bits height 0..16383, 4 bits width factor 0..16 (4 bytes)
-    data: u32, // Packed data (4 bytes)
-               // 6 bits for seed, as a number 0..64
-               // 15 bits for altitude, as a number 0..32767
-               // 2 bits for form, 0..4 from CloudForm enum
-               // 3 bits for density (Overall fill, 0=almost empty mist, 1=solid cloud mass), 0..1 in 8 steps
-               // 3 bits for detail (Noise detail power, 0=smooth blob, 1=lots of little puffs), 0..1 in 8 steps
-               // 3 bits for brightness, 0..1 in 8 steps
-
-               // TODO needs yaw
+    /// u0 (bits 0..31):
+    ///  - `len` (14 bits, bits 0..13): cloud length in meters, 0..16383
+    ///  - `x_pos` (18 bits signed, bits 14..31): X world position, two's complement, range approx
+    ///    -131072..131071
+    d0: u32,
+    /// u1 (bits 0..31):
+    ///  - `height` (14 bits, bits 0..13): cloud vertical thickness in meters, 0..16383
+    ///  - `y_pos` (18 bits signed, bits 14..31): Y world position, two's complement, range approx
+    ///    -131072..131071
+    d1: u32,
+    /// u2 (bits 0..31): packed properties (exact bit widths):
+    ///  - `seed` (7 bits, bits 0..6): integer seed used by noise/variation, 0..127
+    ///  - `width` (5 bits, bits 7..11): width factor quantized to 32 steps (0..31) representing
+    ///    0.0..1.0
+    ///  - `form` (2 bits, bits 12..13): `CloudForm` enum
+    ///    (0=cumulus,1=stratus,2=cirrus,3=cumulonimbus)
+    ///  - `density` (4 bits, bits 14..17): overall fill 0..1 quantized in 16 steps
+    ///  - `detail` (4 bits, bits 18..21): noise/detail level 0..1 quantized in 16 steps
+    ///  - `brightness` (4 bits, bits 22..25): brightness 0..1 quantized in 16 steps
+    ///  - `yaw` (6 bits, bits 26..31): horizontal rotation in 64 discrete steps (0..63)
+    d2: u32,
+    /// u3 (bits 0..31):
+    ///  - `altitude` (15 bits, bits 0..14): cloud base altitude in meters, 0..32767
+    ///  - remaining bits in u3 are unused/reserved
+    d3: u32,
 }
 
 enum CloudForm {
@@ -53,30 +64,51 @@ enum CloudForm {
     Cumulonimbus,
 }
 
+#[allow(dead_code)]
 impl Cloud {
-    // Data u32 layout
-    const SEED_BITS: u32 = 6;
     const ALT_BITS: u32 = 15;
-    const FORM_BITS: u32 = 2;
-    const DENSITY_BITS: u32 = 3;
-    const DETAIL_BITS: u32 = 3;
-    const BRIGHTNESS_BITS: u32 = 3;
-
-    const SEED_SHIFT: u32 = 0;
-    const ALT_SHIFT: u32 = Self::SEED_SHIFT + Self::SEED_BITS;
-    const FORM_SHIFT: u32 = Self::ALT_SHIFT + Self::ALT_BITS;
-    const DENSITY_SHIFT: u32 = Self::FORM_SHIFT + Self::FORM_BITS;
-    const DETAIL_SHIFT: u32 = Self::DENSITY_SHIFT + Self::DENSITY_BITS;
+    // 21
+    // u3 layout (altitude stored entirely in u3)
+    const ALT_HIGH_SHIFT: u32 = 0;
+    const BRIGHTNESS_BITS: u32 = 4;
+    // 15
     const BRIGHTNESS_SHIFT: u32 = Self::DETAIL_SHIFT + Self::DETAIL_BITS;
+    const DENSITY_BITS: u32 = 4;
+    // 10
+    const DENSITY_SHIFT: u32 = Self::FORM_SHIFT + Self::FORM_BITS;
+    const DETAIL_BITS: u32 = 4;
+    // 12
+    const DETAIL_SHIFT: u32 = Self::DENSITY_SHIFT + Self::DENSITY_BITS;
+    const FORM_BITS: u32 = 2;
+    // 6
+    const FORM_SHIFT: u32 = Self::WIDTH_SHIFT + Self::SIZE_WIDTH_BITS;
+    // in u0
 
-    // Size u32 layout
-    const SIZE_LEN_BITS: u32 = 14;
+    const HEIGHT_SHIFT: u32 = 0;
+    // layout shifts
+    const LEN_SHIFT: u32 = 0;
+    // pos bits (signed)
+    const POS_BITS: u32 = 18;
+    // seed uses remaining bits in u2: 32 - (5+2+4+4+4+6) = 7
+    const SEED_BITS: u32 = 7;
+    // in u1
+
+    // u2 layout shifts
+    const SEED_SHIFT: u32 = 0;
     const SIZE_HEIGHT_BITS: u32 = 14;
-    const SIZE_WIDTH_BITS: u32 = 4;
-
-    const SIZE_LEN_SHIFT: u32 = 0;
-    const SIZE_HEIGHT_SHIFT: u32 = Self::SIZE_LEN_SHIFT + Self::SIZE_LEN_BITS;
-    const SIZE_WIDTH_SHIFT: u32 = Self::SIZE_HEIGHT_SHIFT + Self::SIZE_HEIGHT_BITS;
+    // size bits
+    const SIZE_LEN_BITS: u32 = 14;
+    const SIZE_WIDTH_BITS: u32 = Self::WIDTH_BITS;
+    // fixed bit widths for u2 packing (sum must be 32)
+    const WIDTH_BITS: u32 = 5;
+    const WIDTH_SHIFT: u32 = Self::SEED_SHIFT + Self::SEED_BITS;
+    // u0 low
+    const X_SHIFT: u32 = Self::LEN_SHIFT + Self::SIZE_LEN_BITS;
+    const YAW_BITS: u32 = 6;
+    // 18
+    const YAW_SHIFT: u32 = Self::BRIGHTNESS_SHIFT + Self::BRIGHTNESS_BITS;
+    // u1 low
+    const Y_SHIFT: u32 = Self::HEIGHT_SHIFT + Self::SIZE_HEIGHT_BITS;
 
     #[inline]
     const fn max_for_bits(bits: u32) -> u32 {
@@ -94,21 +126,58 @@ impl Cloud {
         (container >> shift) & Self::max_for_bits(bits)
     }
 
+    // signed field helpers for POS_BITS
+    #[inline]
+    const fn set_signed_field(container: &mut u32, value: i32, bits: u32, shift: u32) {
+        let mask = Self::max_for_bits(bits) << shift;
+        let max_mask = Self::max_for_bits(bits);
+        // clamp value to signed range
+        let half = 1i32 << (bits - 1);
+        let min = -half;
+        let max = half - 1;
+        let v = if value < min {
+            min
+        } else if value > max {
+            max
+        } else {
+            value
+        };
+        let encoded = (v as u32) & max_mask;
+        *container = (*container & !mask) | (encoded << shift);
+    }
+
+    #[inline]
+    const fn get_signed_field(container: u32, bits: u32, shift: u32) -> i32 {
+        let raw = Self::get_bits_field(container, bits, shift);
+        let sign_bit = 1u32 << (bits - 1);
+        if (raw & sign_bit) != 0 {
+            // negative
+            (raw as i32) - (1i32 << bits)
+        } else {
+            raw as i32
+        }
+    }
+
     // pos: Vec3(x, y, altitude)
     pub const fn set_pos(mut self, pos: Vec3) -> Self {
-        self.x_pos = pos.x.round() as i32;
-        self.y_pos = pos.y.round() as i32;
+        // x and y are signed POS_BITS
+        let x = pos.x.round() as i32;
+        let y = pos.y.round() as i32;
+        Self::set_signed_field(&mut self.d0, x, Self::POS_BITS, Self::X_SHIFT);
+        Self::set_signed_field(&mut self.d1, y, Self::POS_BITS, Self::Y_SHIFT);
         let alt_raw = pos
             .z
             .clamp(0.0, Self::max_for_bits(Self::ALT_BITS) as f32)
             .round() as u32;
-        Self::set_bits_field(&mut self.data, alt_raw, Self::ALT_BITS, Self::ALT_SHIFT);
+        Self::set_bits_field(&mut self.d3, alt_raw, Self::ALT_BITS, Self::ALT_HIGH_SHIFT);
         self
     }
 
     pub const fn get_pos(&self) -> Vec3 {
-        let alt_raw = Self::get_bits_field(self.data, Self::ALT_BITS, Self::ALT_SHIFT);
-        Vec3::new(self.x_pos as f32, self.y_pos as f32, alt_raw as f32)
+        let x = Self::get_signed_field(self.d0, Self::POS_BITS, Self::X_SHIFT) as f32;
+        let y = Self::get_signed_field(self.d1, Self::POS_BITS, Self::Y_SHIFT) as f32;
+        let alt_raw = Self::get_bits_field(self.d3, Self::ALT_BITS, Self::ALT_HIGH_SHIFT);
+        Vec3::new(x, y, alt_raw as f32)
     }
 
     // size: Vec3(length_meters, height_meters, width_factor_0to1)
@@ -125,32 +194,26 @@ impl Cloud {
             .clamp(0.0, Self::max_for_bits(Self::SIZE_HEIGHT_BITS) as f32)
             .round() as u32;
 
+        Self::set_bits_field(&mut self.d0, len_raw, Self::SIZE_LEN_BITS, Self::LEN_SHIFT);
         Self::set_bits_field(
-            &mut self.size,
-            len_raw,
-            Self::SIZE_LEN_BITS,
-            Self::SIZE_LEN_SHIFT,
-        );
-        Self::set_bits_field(
-            &mut self.size,
+            &mut self.d1,
             height_raw,
             Self::SIZE_HEIGHT_BITS,
-            Self::SIZE_HEIGHT_SHIFT,
+            Self::HEIGHT_SHIFT,
         );
         Self::set_bits_field(
-            &mut self.size,
+            &mut self.d2,
             width_raw,
             Self::SIZE_WIDTH_BITS,
-            Self::SIZE_WIDTH_SHIFT,
+            Self::WIDTH_SHIFT,
         );
         self
     }
+
     pub const fn get_size(&self) -> Vec3 {
-        let len_raw = Self::get_bits_field(self.size, Self::SIZE_LEN_BITS, Self::SIZE_LEN_SHIFT);
-        let width_raw =
-            Self::get_bits_field(self.size, Self::SIZE_WIDTH_BITS, Self::SIZE_WIDTH_SHIFT);
-        let height_raw =
-            Self::get_bits_field(self.size, Self::SIZE_HEIGHT_BITS, Self::SIZE_HEIGHT_SHIFT);
+        let len_raw = Self::get_bits_field(self.d0, Self::SIZE_LEN_BITS, Self::LEN_SHIFT);
+        let width_raw = Self::get_bits_field(self.d2, Self::SIZE_WIDTH_BITS, Self::WIDTH_SHIFT);
+        let height_raw = Self::get_bits_field(self.d1, Self::SIZE_HEIGHT_BITS, Self::HEIGHT_SHIFT);
         Vec3::new(
             len_raw as f32,
             (width_raw as f32) / (Self::max_for_bits(Self::SIZE_WIDTH_BITS) as f32),
@@ -166,11 +229,12 @@ impl Cloud {
             CloudForm::Cirrus => 2,
             CloudForm::Cumulonimbus => 3,
         };
-        Self::set_bits_field(&mut self.data, raw, Self::FORM_BITS, Self::FORM_SHIFT);
+        Self::set_bits_field(&mut self.d2, raw, Self::FORM_BITS, Self::FORM_SHIFT);
         self
     }
+
     pub const fn get_form(&self) -> CloudForm {
-        match Self::get_bits_field(self.data, Self::FORM_BITS, Self::FORM_SHIFT) {
+        match Self::get_bits_field(self.d2, Self::FORM_BITS, Self::FORM_SHIFT) {
             0 => CloudForm::Cumulus,
             1 => CloudForm::Stratus,
             2 => CloudForm::Cirrus,
@@ -178,26 +242,28 @@ impl Cloud {
         }
     }
 
-    // density/detail/brightness: mapped 0..7 -> 0.0..1.0
+    // density/detail/brightness: mapped 0..max -> 0.0..1.0
     pub const fn set_density(mut self, density: f32) -> Self {
         let raw = (density.clamp(0.0, 1.0) * (Self::max_for_bits(Self::DENSITY_BITS) as f32))
             .round() as u32;
-        Self::set_bits_field(&mut self.data, raw, Self::DENSITY_BITS, Self::DENSITY_SHIFT);
+        Self::set_bits_field(&mut self.d2, raw, Self::DENSITY_BITS, Self::DENSITY_SHIFT);
         self
     }
+
     pub const fn get_density(&self) -> f32 {
-        Self::get_bits_field(self.data, Self::DENSITY_BITS, Self::DENSITY_SHIFT) as f32
+        Self::get_bits_field(self.d2, Self::DENSITY_BITS, Self::DENSITY_SHIFT) as f32
             / (Self::max_for_bits(Self::DENSITY_BITS) as f32)
     }
 
     pub const fn set_detail(mut self, detail: f32) -> Self {
         let raw = (detail.clamp(0.0, 1.0) * (Self::max_for_bits(Self::DETAIL_BITS) as f32)).round()
             as u32;
-        Self::set_bits_field(&mut self.data, raw, Self::DETAIL_BITS, Self::DETAIL_SHIFT);
+        Self::set_bits_field(&mut self.d2, raw, Self::DETAIL_BITS, Self::DETAIL_SHIFT);
         self
     }
+
     pub const fn get_detail(&self) -> f32 {
-        Self::get_bits_field(self.data, Self::DETAIL_BITS, Self::DETAIL_SHIFT) as f32
+        Self::get_bits_field(self.d2, Self::DETAIL_BITS, Self::DETAIL_SHIFT) as f32
             / (Self::max_for_bits(Self::DETAIL_BITS) as f32)
     }
 
@@ -205,25 +271,37 @@ impl Cloud {
         let raw = (brightness.clamp(0.0, 1.0) * (Self::max_for_bits(Self::BRIGHTNESS_BITS) as f32))
             .round() as u32;
         Self::set_bits_field(
-            &mut self.data,
+            &mut self.d2,
             raw,
             Self::BRIGHTNESS_BITS,
             Self::BRIGHTNESS_SHIFT,
         );
         self
     }
+
     pub const fn get_brightness(&self) -> f32 {
-        Self::get_bits_field(self.data, Self::BRIGHTNESS_BITS, Self::BRIGHTNESS_SHIFT) as f32
+        Self::get_bits_field(self.d2, Self::BRIGHTNESS_BITS, Self::BRIGHTNESS_SHIFT) as f32
             / (Self::max_for_bits(Self::BRIGHTNESS_BITS) as f32)
     }
 
-    // optional: seed getter/setter (6 bits)
-    pub const fn set_seed(mut self, seed: u32) -> Self {
-        Self::set_bits_field(&mut self.data, seed, Self::SEED_BITS, Self::SEED_SHIFT);
+    // yaw: 0..(2^YAW_BITS-1) representing discrete horizontal rotation
+    pub const fn set_yaw(mut self, yaw: u32) -> Self {
+        Self::set_bits_field(&mut self.d2, yaw, Self::YAW_BITS, Self::YAW_SHIFT);
         self
     }
+
+    pub const fn get_yaw(&self) -> u32 {
+        Self::get_bits_field(self.d2, Self::YAW_BITS, Self::YAW_SHIFT)
+    }
+
+    // seed getter/setter (remaining bits)
+    pub const fn set_seed(mut self, seed: u32) -> Self {
+        Self::set_bits_field(&mut self.d2, seed, Self::SEED_BITS, Self::SEED_SHIFT);
+        self
+    }
+
     pub const fn get_seed(&self) -> u32 {
-        Self::get_bits_field(self.data, Self::SEED_BITS, Self::SEED_SHIFT)
+        Self::get_bits_field(self.d2, Self::SEED_BITS, Self::SEED_SHIFT)
     }
 }
 
@@ -308,7 +386,8 @@ pub fn setup_clouds(mut commands: Commands) {
             Cloud::default()
                 .set_pos(Vec3::new(x, y, altitude))
                 .set_size(Vec3::new(length, width_factor, height))
-                .set_seed(rng.random_range(0..64))
+                .set_seed(rng.random_range(0..=Cloud::max_for_bits(Cloud::SEED_BITS)))
+                .set_yaw(rng.random_range(0..=Cloud::max_for_bits(Cloud::YAW_BITS)))
                 .set_form(form)
                 .set_density(density)
                 .set_detail(detail)
@@ -324,7 +403,7 @@ pub fn setup_clouds(mut commands: Commands) {
     });
 }
 
-/// Main world system: Updates cloud positions and identifies visible clouds for rendering.
+/// Main world system: Updates cloud positions and identifies visible clouds
 pub fn update_clouds(
     time: Res<Time>,
     mut state: ResMut<CloudsState>,
@@ -367,7 +446,7 @@ pub fn update_clouds(
         }
     }
 
-    // Sort visible clouds by distance from the camera (for proper alpha blending/overdraw)
+    // Sort visible clouds by distance from the camera
     buffer.clouds[..visible_cloud_count].sort_unstable_by(|a, b| {
         let dist_a_sq = (a.get_pos() - cam_pos).length_squared();
         let dist_b_sq = (b.get_pos() - cam_pos).length_squared();
@@ -409,5 +488,48 @@ pub fn update_clouds_buffer(
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
         commands.insert_resource(CloudsBuffer { buffer });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pack_unpack_pos_size() {
+        let c = Cloud::default()
+            .set_pos(Vec3::new(12345.0, -54321.0, 25000.0))
+            .set_size(Vec3::new(2000.0, 0.75, 600.0));
+        let pos = c.get_pos();
+        assert!((pos.x - 12345.0).abs() < 0.001);
+        assert!((pos.y - -54321.0).abs() < 0.001);
+        assert!((pos.z - 25000.0).abs() < 0.001);
+        let size = c.get_size();
+        assert_eq!(size.x as i32, 2000);
+        assert!((size.y - 0.75).abs() < 0.01);
+        assert_eq!(size.z as i32, 600);
+    }
+
+    #[test]
+    fn pack_unpack_properties() {
+        let mut c = Cloud::default();
+        c = c
+            .set_density(0.5)
+            .set_detail(0.25)
+            .set_brightness(0.75)
+            .set_yaw(33);
+        c = c
+            .set_form(CloudForm::Cirrus)
+            .set_seed(Cloud::max_for_bits(Cloud::SEED_BITS));
+
+        assert!((c.get_density() - 0.5).abs() < 0.08);
+        assert!((c.get_detail() - 0.25).abs() < 0.08);
+        assert!((c.get_brightness() - 0.75).abs() < 0.08);
+        assert_eq!(c.get_yaw(), 33);
+        assert_eq!(c.get_seed(), Cloud::max_for_bits(Cloud::SEED_BITS));
+        match c.get_form() {
+            CloudForm::Cirrus => {}
+            _ => panic!("form mismatch"),
+        }
     }
 }

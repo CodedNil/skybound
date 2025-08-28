@@ -49,7 +49,8 @@ impl WorldData {
         }
     }
 
-    /// Calculates the rotation caused by the camera's current translation from the origin.
+    /// Calculates the rotation caused by the camera's current translation from
+    /// the origin.
     fn rotation_from_translation(translation: Vec3) -> Quat {
         let delta_xy = translation.xy();
         if delta_xy.length_squared() > f32::EPSILON {
