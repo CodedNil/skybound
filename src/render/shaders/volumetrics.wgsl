@@ -4,9 +4,9 @@
 #import skybound::aur_fog::{FOG_TOP_HEIGHT, sample_fog}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
-@group(0) @binding(2) var base_texture: texture_3d<f32>;
-@group(0) @binding(3) var details_texture: texture_3d<f32>;
-@group(0) @binding(4) var weather_texture: texture_2d<f32>;
+@group(0) @binding(3) var base_texture: texture_3d<f32>;
+@group(0) @binding(4) var details_texture: texture_3d<f32>;
+@group(0) @binding(5) var weather_texture: texture_2d<f32>;
 
 // --- Constants ---
 const DENSITY: f32 = 0.2;             // Base density for lighting

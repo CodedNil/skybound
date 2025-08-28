@@ -1,5 +1,8 @@
 use crate::{
-    render::noise::NoiseTextures,
+    render::{
+        clouds::{CloudsBuffer, CloudsBufferData},
+        noise::NoiseTextures,
+    },
     world::{PLANET_RADIUS, WorldData},
 };
 use bevy::{
@@ -19,7 +22,10 @@ use bevy::{
             SamplerDescriptor, ShaderStages, ShaderType, StorageTextureAccess, TextureDescriptor,
             TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
             TextureViewDescriptor,
-            binding_types::{sampler, texture_2d, texture_3d, texture_storage_2d, uniform_buffer},
+            binding_types::{
+                sampler, storage_buffer_read_only, texture_2d, texture_3d, texture_storage_2d,
+                uniform_buffer,
+            },
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -353,6 +359,7 @@ impl ViewNode for RaymarchNode {
             Some(color_view),
             Some(motion_view),
             Some(depth_view),
+            Some(clouds_buffer),
             Some(base_noise),
             Some(detail_noise),
             Some(weather_noise),
@@ -362,6 +369,7 @@ impl ViewNode for RaymarchNode {
             cloud_render_texture.color_view.as_ref(),
             cloud_render_texture.motion_view.as_ref(),
             cloud_render_texture.depth_view.as_ref(),
+            world.get_resource::<CloudsBuffer>(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.weather),
@@ -377,6 +385,7 @@ impl ViewNode for RaymarchNode {
             &BindGroupEntries::sequential((
                 view_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
+                clouds_buffer.buffer.as_entire_binding(),
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &weather_noise.texture_view,
@@ -430,6 +439,7 @@ impl FromWorld for RaymarchPipeline {
                 (
                     uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                     sampler(SamplerBindingType::Filtering),    // Linear sampler
+                    storage_buffer_read_only::<CloudsBufferData>(false), // Clouds data buffer
                     texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
                     texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture

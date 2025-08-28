@@ -393,7 +393,7 @@ pub fn update_clouds(
 /// Resource holding the GPU buffer for cloud data.
 #[derive(Resource)]
 pub struct CloudsBuffer {
-    buffer: Buffer,
+    pub buffer: Buffer,
 }
 
 /// Render world system: Uploads the `CloudsBufferData` to the GPU.

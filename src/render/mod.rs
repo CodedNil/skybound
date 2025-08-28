@@ -4,7 +4,7 @@ mod noise;
 mod raymarch;
 
 use crate::render::{
-    clouds::{setup_clouds, update_clouds, update_clouds_buffer},
+    clouds::{CloudsBufferData, setup_clouds, update_clouds, update_clouds_buffer},
     composite::{CompositeLabel, CompositeNode, CompositePipeline},
     noise::{NoiseTextures, setup_noise_textures},
     raymarch::{
@@ -39,6 +39,7 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/composite.wgsl");
 
         app.add_plugins(ExtractResourcePlugin::<NoiseTextures>::default())
+            .add_plugins(ExtractResourcePlugin::<CloudsBufferData>::default())
             .add_systems(Startup, (setup_clouds, setup_noise_textures))
             .add_systems(Update, update_clouds);
 

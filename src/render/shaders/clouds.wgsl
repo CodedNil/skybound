@@ -1,6 +1,21 @@
 #define_import_path skybound::clouds
 #import skybound::utils::{View, intersect_sphere}
 
+@group(0) @binding(2) var<storage, read> cloudsBuffer: CloudsBuffer;
+
+struct CloudsBuffer {
+    clouds: array<Cloud, 1024>,
+    numClouds: u32,
+}
+
+struct Cloud {
+    // 16 bytes
+    x_pos: i32, // X position (4 bytes)
+    y_pos: i32, // Y position (4 bytes)
+    size: u32, // 14 bits length 0..16383, 14 bits height 0..16383, 4 bits width factor 0..16 (4 bytes)
+    data: u32, // Seed, altitude, form, density, detail, brightness (4 bytes)
+}
+
 const BASE_SCALE = 0.005;
 const BASE_TIME = 0.01;
 
