@@ -62,10 +62,13 @@ fn camera_controller(
 
         // Rotation with right-click drag
         if mouse_button_input.pressed(MouseButton::Right) {
+            let mut delta = Vec2::ZERO;
             for event in mouse_motion_events.read() {
-                controller.yaw -= event.delta.x * controller.sensitivity;
-                controller.pitch -= event.delta.y * controller.sensitivity;
-                controller.pitch = controller.pitch.clamp(
+                delta += event.delta;
+            }
+            if delta != Vec2::ZERO {
+                controller.yaw -= delta.x * controller.sensitivity;
+                controller.pitch = (controller.pitch - delta.y * controller.sensitivity).clamp(
                     -std::f32::consts::FRAC_PI_2 + 0.01,
                     std::f32::consts::FRAC_PI_2 - 0.01,
                 );

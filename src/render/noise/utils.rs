@@ -49,15 +49,14 @@ pub fn save_noise_layer(data: &[f32], filename: &str, size: usize) {
 
 /// Helper to interleave multiple noise vectors into a combined `Vec<u8>`.
 pub fn interleave_channels<const N: usize>(noise_data: [Vec<f32>; N]) -> Vec<u8> {
-    (0..noise_data[0].len())
-        .flat_map(|i| {
-            let mut channels = Vec::with_capacity(N);
-            (0..N).for_each(|j| {
-                channels.push((noise_data[j][i] * 255.0).round() as u8);
-            });
-            channels
-        })
-        .collect()
+    let len = noise_data[0].len();
+    let mut out = Vec::with_capacity(len * N);
+    for i in 0..len {
+        for channel in &noise_data {
+            out.push((channel[i] * 255.0).round() as u8);
+        }
+    }
+    out
 }
 
 /// Creates a new Bevy `Image` from noise data.

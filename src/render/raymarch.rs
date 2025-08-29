@@ -125,20 +125,19 @@ pub fn prepare_clouds_view_uniforms(
     data: Res<ExtractedViewData>,
     mut prev_view_data: ResMut<PreviousViewData>,
 ) {
-    // Halton sequence (2, 3) - 0.5
+    // Halton (2,3) sequence for jitter
     const HALTON_SEQUENCE: [Vec2; 8] = [
         vec2(0.0, 0.0),
-        vec2(0.0, -0.166_666_66),
-        vec2(-0.25, 0.166_666_69),
-        vec2(0.25, -0.388_888_9),
-        vec2(-0.375, -0.055_555_552),
-        vec2(0.125, 0.277_777_8),
-        vec2(-0.125, -0.277_777_8),
-        vec2(0.375, 0.055_555_582),
+        vec2(0.0, -1.0 / 6.0),
+        vec2(-0.25, 1.0 / 6.0),
+        vec2(0.25, -7.0 / 18.0),
+        vec2(-0.375, -1.0 / 18.0),
+        vec2(0.125, 5.0 / 18.0),
+        vec2(-0.125, -5.0 / 18.0),
+        vec2(0.375, 1.0 / 18.0),
     ];
 
-    let view_iter = views.iter();
-    let view_count = view_iter.len();
+    let view_count = views.iter().len();
     let Some(mut writer) =
         view_uniforms
             .uniforms
@@ -166,31 +165,32 @@ pub fn prepare_clouds_view_uniforms(
         let world_from_clip = world_from_view * view_from_clip;
         let world_position = extracted_view.world_from_view.translation();
 
-        commands.entity(entity).insert(CloudsViewUniformOffset {
-            offset: writer.write(&CloudsViewUniform {
-                time: time.elapsed_secs_wrapped(),
-                frame_count: frame_count.0,
+        let offset = writer.write(&CloudsViewUniform {
+            time: time.elapsed_secs_wrapped(),
+            frame_count: frame_count.0,
 
-                clip_from_world,
-                world_from_clip,
-                world_from_view,
-                view_from_world,
+            clip_from_world,
+            world_from_clip,
+            world_from_view,
+            view_from_world,
 
-                clip_from_view,
-                view_from_clip,
-                world_position,
-                camera_offset: data.camera_offset,
+            clip_from_view,
+            view_from_clip,
+            world_position,
+            camera_offset: data.camera_offset,
 
-                // Previous frame matrices for motion vectors
-                prev_clip_from_world: prev_view_data.clip_from_world,
+            prev_clip_from_world: prev_view_data.clip_from_world,
 
-                planet_rotation: data.planet_rotation,
-                planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
-                planet_radius: data.planet_radius,
-                latitude: data.latitude,
-                longitude: data.longitude,
-            }),
+            planet_rotation: data.planet_rotation,
+            planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
+            planet_radius: data.planet_radius,
+            latitude: data.latitude,
+            longitude: data.longitude,
         });
+
+        commands
+            .entity(entity)
+            .insert(CloudsViewUniformOffset { offset });
 
         prev_view_data.clip_from_world = extracted_view
             .clip_from_world
@@ -222,57 +222,39 @@ pub fn manage_textures(
         return;
     };
 
-    // Low res textures
-    let low_res_size = Extent3d {
+    let window_size = Extent3d {
         width: primary_window.physical_width,
         height: primary_window.physical_height,
         depth_or_array_layers: 1,
     };
+
+    // Low-res render targets (color, motion, depth)
     let current_low_res_size = cloud_render_texture
         .color_view
         .as_ref()
         .map(|t| t.texture().size());
-    if current_low_res_size != Some(low_res_size) {
-        let texture_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
+    if current_low_res_size != Some(window_size) {
+        let usage = TextureUsages::TEXTURE_BINDING | TextureUsages::STORAGE_BINDING;
 
-        let texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("cloud_render_texture"),
-            size: low_res_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba16Float,
-            usage: texture_usage,
-            view_formats: &[],
-        });
+        let mk = |label: &str, format: TextureFormat| {
+            let tex = render_device.create_texture(&TextureDescriptor {
+                label: Some(label),
+                size: window_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            });
+            tex.create_view(&TextureViewDescriptor::default())
+        };
+
         cloud_render_texture.color_view =
-            Some(texture.create_view(&TextureViewDescriptor::default()));
-
-        let motion_texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("cloud_motion_texture"),
-            size: low_res_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rg16Float,
-            usage: texture_usage,
-            view_formats: &[],
-        });
+            Some(mk("cloud_render_texture", TextureFormat::Rgba16Float));
         cloud_render_texture.motion_view =
-            Some(motion_texture.create_view(&TextureViewDescriptor::default()));
-
-        let depth_texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("cloud_depth_texture"),
-            size: low_res_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::R32Float,
-            usage: texture_usage,
-            view_formats: &[],
-        });
-        cloud_render_texture.depth_view =
-            Some(depth_texture.create_view(&TextureViewDescriptor::default()));
+            Some(mk("cloud_motion_texture", TextureFormat::Rg16Float));
+        cloud_render_texture.depth_view = Some(mk("cloud_depth_texture", TextureFormat::R32Float));
 
         cloud_render_texture.sampler = Some(render_device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
@@ -281,45 +263,31 @@ pub fn manage_textures(
         }));
     }
 
-    // Full-resolution history textures
-    let full_res_size = Extent3d {
-        width: primary_window.physical_width,
-        height: primary_window.physical_height,
-        depth_or_array_layers: 1,
-    };
+    // Full-resolution history textures for TAA
     let current_history_size = cloud_render_texture
         .history_a_view
         .as_ref()
         .map(|t| t.texture().size());
-    if current_history_size != Some(full_res_size) {
-        let texture_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
-        let texture_format = TextureFormat::Rgba16Float;
+    if current_history_size != Some(window_size) {
+        let usage = TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
+        let fmt = TextureFormat::Rgba16Float;
 
-        // Create History Texture A
-        let history_a_texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("taa_history_a_texture"),
-            size: full_res_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: texture_format,
-            usage: texture_usage,
-            view_formats: &[],
-        });
-        cloud_render_texture.history_a_view = Some(history_a_texture.create_view(&default()));
+        let mk_history = |label: &str| {
+            let tex = render_device.create_texture(&TextureDescriptor {
+                label: Some(label),
+                size: window_size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: fmt,
+                usage,
+                view_formats: &[],
+            });
+            tex.create_view(&default())
+        };
 
-        // Create History Texture B
-        let history_b_texture = render_device.create_texture(&TextureDescriptor {
-            label: Some("taa_history_b_texture"),
-            size: full_res_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: texture_format,
-            usage: texture_usage,
-            view_formats: &[],
-        });
-        cloud_render_texture.history_b_view = Some(history_b_texture.create_view(&default()));
+        cloud_render_texture.history_a_view = Some(mk_history("taa_history_a_texture"));
+        cloud_render_texture.history_b_view = Some(mk_history("taa_history_b_texture"));
     }
 }
 
