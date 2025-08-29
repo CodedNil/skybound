@@ -8,165 +8,208 @@ const BASE_TIME = 0.01;
 const BASE_NOISE_SCALE: f32 = 0.01 * BASE_SCALE;
 const WIND_DIRECTION_BASE: vec3<f32> = vec3<f32>(1.0, 0.0, 0.2) * 0.1 * BASE_TIME; // Main wind for base shape
 
-// Weather Parameters
-const WEATHER_NOISE_SCALE: f32 = 0.001 * BASE_SCALE;
-const WIND_DIRECTION_WEATHER: vec2<f32> = vec2<f32>(1.0, 0.0) * 0.02 * BASE_TIME; // Weather wind for weather shape
-
 // Detail Parameters
 const DETAIL_NOISE_SCALE: f32 = 0.2 * BASE_SCALE;
 const WIND_DIRECTION_DETAIL: vec3<f32> = vec3<f32>(1.0, 0.0, -1.0) * 0.2 * BASE_TIME; // Details move faster
 
-// Cloud scales
-const CLOUD_BOTTOM_HEIGHT: f32 = 1000;
-const CLOUD_TOP_HEIGHT: f32 = 33000;
-const CLOUD_LAYER_HEIGHT: f32 = 2000;
-const CLOUD_BASE_FRACTION: f32 = 0.2; // A lower value gives a flatter, more defined base.
-const CLOUD_TOTAL_LAYERS: u32 = 16u;
-// The vertical height of the layer
-const CLOUD_LAYER_HEIGHTS = array<f32, CLOUD_TOTAL_LAYERS>(
-    1000, 950, 950, 1000,
-    950, 900, 850, 800,
-    700, 650, 600, 500,
-    300, 250, 200, 180
-);
-// Position offset for the weather coverage per layer
-const CLOUD_LAYER_OFFSETS = array<vec2<f32>, CLOUD_TOTAL_LAYERS>(
-    vec2(0.8, -0.6), vec2(-0.4, 0.9), vec2(0.1, -0.8), vec2(0.6, 0.4),
-    vec2(-0.2, 0.2), vec2(0.3, -0.9), vec2(0.9, -0.7), vec2(0.5, 0.1),
-    vec2(-0.7, 0.3), vec2(0.0, -0.2), vec2(-0.6, 0.5), vec2(1.0, -0.5),
-    vec2(0.7, -0.3), vec2(-0.1, 0.8), vec2(-0.9, -0.4), vec2(0.4, 0.6),
-);
-// Multiplier for the noises scale factor per layer
-const CLOUD_LAYER_SCALES = array<f32, CLOUD_TOTAL_LAYERS>(
-    1.0, 0.9, 0.85, 0.85,
-    0.8, 0.8, 0.75, 0.75,
-    0.7, 0.7, 0.7, 0.6,
-    0.5, 0.45, 0.3, 0.3
-);
-// Scale stretch on the x axis for the layer
-const CLOUD_LAYER_STRETCH = array<f32, CLOUD_TOTAL_LAYERS>(
-    1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.0, 1.0,
-    1.0, 1.0, 1.2, 1.8,
-    2.5, 3.0, 4.0, 4.0
-);
-// How much to increase the detail noise in the layer
-const CLOUD_LAYER_DETAILS = array<f32, CLOUD_TOTAL_LAYERS>(
-    0.1, 0.1, 0.1, 0.1,
-    0.1, 0.1, 0.1, 0.1,
-    0.15, 0.15, 0.2, 0.25,
-    0.3, 0.5, 0.6, 0.6
-);
 
-
-fn get_height_fraction(altitude: f32) -> f32 {
-    return clamp((altitude - CLOUD_BOTTOM_HEIGHT) / (CLOUD_TOP_HEIGHT - CLOUD_BOTTOM_HEIGHT), 0.0, 1.0);
+// --- Cloud packed as four u32s matching the CPU layout ---
+// data_a: len(14) | x_pos (signed 18)
+// data_b: height(14) | y_pos (signed 18)
+// data_c: seed(7)| width(5)| form(2)| density(4)| detail(4)| brightness(4)| yaw(6)
+// data_d: altitude(15)
+struct Cloud {
+    data_a: u32,
+    data_b: u32,
+    data_c: u32,
+    data_d: u32,
 }
 
-// Gets the current cloud layers index, bottom and top height
-struct CloudLayer {
-    index: u32,
-    bottom: f32,
-    height: f32,
+// Bit layout constants (must match CPU packing)
+const SEED_BITS: u32 = 7u;
+const WIDTH_BITS: u32 = 5u;
+const FORM_BITS: u32 = 2u;
+const DENSITY_BITS: u32 = 4u;
+const DETAIL_BITS: u32 = 4u;
+const BRIGHTNESS_BITS: u32 = 4u;
+const YAW_BITS: u32 = 6u;
+
+const ALT_BITS: u32 = 15u;
+
+// size bits
+const SIZE_LEN_BITS: u32 = 14u;
+const SIZE_HEIGHT_BITS: u32 = 14u;
+const SIZE_WIDTH_BITS: u32 = WIDTH_BITS;
+
+// shifts
+const SIZE_LEN_SHIFT: u32 = 0u;
+const X_SHIFT: u32 = SIZE_LEN_SHIFT + SIZE_LEN_BITS; // in data_a
+
+const SIZE_HEIGHT_SHIFT: u32 = 0u;
+const Y_SHIFT: u32 = SIZE_HEIGHT_SHIFT + SIZE_HEIGHT_BITS; // in data_b
+
+// data_c shifts
+const SEED_SHIFT: u32 = 0u;
+const WIDTH_SHIFT: u32 = SEED_SHIFT + SEED_BITS; // 7
+const FORM_SHIFT: u32 = WIDTH_SHIFT + SIZE_WIDTH_BITS; // 12
+const DENSITY_SHIFT: u32 = FORM_SHIFT + FORM_BITS; // 14
+const DETAIL_SHIFT: u32 = DENSITY_SHIFT + DENSITY_BITS; // 18
+const BRIGHTNESS_SHIFT: u32 = DETAIL_SHIFT + DETAIL_BITS; // 22
+const YAW_SHIFT: u32 = BRIGHTNESS_SHIFT + BRIGHTNESS_BITS; // 26
+
+// altitude in data_d
+const ALT_SHIFT: u32 = 0u;
+
+// masks
+const SIZE_LEN_MASK: u32 = (1u << SIZE_LEN_BITS) - 1u;
+const SIZE_HEIGHT_MASK: u32 = (1u << SIZE_HEIGHT_BITS) - 1u;
+const SIZE_WIDTH_MASK: u32 = (1u << SIZE_WIDTH_BITS) - 1u;
+const SEED_MASK: u32 = (1u << SEED_BITS) - 1u;
+const FORM_MASK: u32 = (1u << FORM_BITS) - 1u;
+const DENSITY_MASK: u32 = (1u << DENSITY_BITS) - 1u;
+const DETAIL_MASK: u32 = (1u << DETAIL_BITS) - 1u;
+const BRIGHTNESS_MASK: u32 = (1u << BRIGHTNESS_BITS) - 1u;
+const YAW_MASK: u32 = (1u << YAW_BITS) - 1u;
+const ALT_MASK: u32 = (1u << ALT_BITS) - 1u;
+
+// Precomputed float inverse of the width max so shader does one multiply instead of a division
+const SIZE_WIDTH_INV_F: f32 = 1.0 / f32(SIZE_WIDTH_MASK);
+
+// Small inline helper using precomputed masks
+fn get_bits_field(container: u32, mask: u32, shift: u32) -> u32 {
+    return (container >> shift) & mask;
 }
-fn get_cloud_layer(pos: vec3<f32>) -> CloudLayer {
-    let index: u32 = u32((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT);
-    let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(index) * CLOUD_LAYER_HEIGHT;
 
-    // Branchless validity check, height becomes 0 if invalid
-    let is_valid_layer: bool = (pos.z > CLOUD_BOTTOM_HEIGHT) && (index < CLOUD_TOTAL_LAYERS);
-    let height: f32 = select(0.0, CLOUD_LAYER_HEIGHTS[index], is_valid_layer);
-    let is_within_thickness: f32 = f32(pos.z <= bottom + height * 2.0);
-
-    return CloudLayer(index, bottom, height * is_within_thickness);
+// Signed extractor for two's complement signed fields stored in bits
+fn get_signed_field(container: u32, bits: u32, shift: u32) -> i32 {
+    let raw = get_bits_field(container, (1u << bits) - 1u, shift);
+    let sign_bit = 1u << (bits - 1u);
+    if (raw & sign_bit) != 0u {
+        return i32(raw) - i32(1u << bits);
+    }
+    return i32(raw);
 }
 
-// Get midpoint height of the cloud layer above
-fn get_cloud_layer_above(altitude: f32, above: f32) -> f32 {
-    let above_height: f32 = altitude + CLOUD_LAYER_HEIGHT * above;
-    let layer_index: u32 = u32(max((above_height - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_HEIGHT, 0.0));
-    let is_valid = f32(layer_index < CLOUD_TOTAL_LAYERS);
-
-    let bottom: f32 = CLOUD_BOTTOM_HEIGHT + f32(layer_index) * CLOUD_LAYER_HEIGHT;
-    let midpoint: f32 = bottom + CLOUD_LAYER_HEIGHTS[layer_index] * 0.4;
-    return mix(-1.0, midpoint, is_valid);
+// Decode cloud position
+fn get_cloud_pos(c: Cloud) -> vec3<f32> {
+    let alt_raw = get_bits_field(c.data_d, ALT_MASK, ALT_SHIFT);
+    let x_raw = get_signed_field(c.data_a, 18u, X_SHIFT);
+    let y_raw = get_signed_field(c.data_b, 18u, Y_SHIFT);
+    return vec3<f32>(f32(x_raw), f32(y_raw), f32(alt_raw));
 }
 
-fn sample_clouds(pos: vec3<f32>, view: View, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, weather_texture: texture_2d<f32>, linear_sampler: sampler) -> f32 {
-    var cloud_layer = get_cloud_layer(pos);
-    if cloud_layer.height == 0.0 { return 0.0; } // Early exit if we are not in a valid cloud layer
-    let layer_i = cloud_layer.index;
+// Decode cloud scale as a vec3<f32>
+fn get_cloud_scale(c: Cloud) -> vec3<f32> {
+    let len_raw = get_bits_field(c.data_a, SIZE_LEN_MASK, SIZE_LEN_SHIFT);
+    let width_raw = get_bits_field(c.data_c, SIZE_WIDTH_MASK, WIDTH_SHIFT);
+    let height_raw = get_bits_field(c.data_b, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
+    let length_m = f32(len_raw);
+    let width_frac = f32(width_raw) * SIZE_WIDTH_INV_F;
+    // width is stored as a fraction of length
+    let width_m = length_m * width_frac;
+    let height_m = f32(height_raw);
+    return vec3<f32>(length_m, width_m, height_m);
+}
 
-    // --- Weather & Coverage ---
-    let weather_pos_2d = (pos.xy + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
-    let weather_noise = textureSampleLevel(weather_texture, linear_sampler, weather_pos_2d, 0.0);
+// Get cloud yaw in radians (0..2PI)
+const TWO_PI: f32 = 6.283185307179586;
+fn get_cloud_yaw(c: Cloud) -> f32 {
+    let yaw_raw = get_bits_field(c.data_c, YAW_MASK, YAW_SHIFT);
+    return f32(yaw_raw) * (TWO_PI / f32(1u << YAW_BITS));
+}
 
-    // Initial weather coverage from texture.
-    var weather_coverage = mix(weather_noise.r, weather_noise.g, weather_noise.b) + mix(weather_noise.r, weather_noise.g, weather_noise.b) * 0.5;
+// Returns (near, far), the intersection points
+fn cloud_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
+    // Transform ray into the cloud local frame, applying yaw then scaling into unit-sphere space
+    let center = get_cloud_pos(cloud);
+    let scale = get_cloud_scale(cloud); // (length, width, height) in meters
 
-    // Further refine coverage based on which vertical layer we are in.
-    let layer_fraction = f32(layer_i) / f32(CLOUD_TOTAL_LAYERS);
-    let cloud_layer_coverage_a = 1.0 - smoothstep(0.0, 0.5, distance(weather_noise.b, layer_fraction));
-    let cloud_layer_coverage_b = 1.0 - smoothstep(0.0, weather_noise.b * 0.4, distance(1.0, layer_fraction));
+    // Rotate world -> cloud local by -yaw (so cloud's local X aligns with unrotated axis)
+    let yaw = get_cloud_yaw(cloud);
+    let cy = cos(yaw);
+    let sy = sin(yaw);
 
-    // Bias the clouds coverage to the highest levels
-    let lf_sq = layer_fraction * layer_fraction;
-    weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b) * (0.5 + lf_sq * lf_sq * 0.5);
+    let to_local = ro - center;
+    // inverse rotation R(-yaw): [ c  s; -s  c ]
+    let lx = cy * to_local.x + sy * to_local.y;
+    let ly = -sy * to_local.x + cy * to_local.y;
+    let lz = to_local.z;
 
-    // Latitude-based sparsity applied to weather coverage: sparser at equator
-    let lat_norm = saturate(abs(view.latitude) * 0.8);
-    let equator_scale = mix(0.5, 1.0, lat_norm);
-    let upper_layer_bias = 1.0 + (1.0 - lat_norm) * 0.5 * smoothstep(0.6, 1.0, layer_fraction);
-    weather_coverage = weather_coverage * equator_scale * upper_layer_bias;
+    let dir_lx = cy * rd.x + sy * rd.y;
+    let dir_ly = -sy * rd.x + cy * rd.y;
+    let dir_lz = rd.z;
 
-    if weather_coverage <= 0.0 { return 0.0; } // Early exit if coverage is too low
+    // Scale to unit sphere based on half-extents (scale is diameter-ish)
+    let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
+    let local_origin = vec3<f32>(lx, ly, lz) * inv_radius;
+    let local_dir = vec3<f32>(dir_lx, dir_ly, dir_lz) * inv_radius;
 
-    // --- Height Gradient ---
-    let cloud_height = cloud_layer.height * (0.6 + weather_noise.a * 2.0);
-    let height_fraction = clamp((pos.z - cloud_layer.bottom) / cloud_height, 0.0, 1.0);
-    let rise = smoothstep(0.0, CLOUD_BASE_FRACTION, height_fraction);
-    let fall = smoothstep(1.0, CLOUD_BASE_FRACTION, height_fraction);
-    let height_gradient = rise * fall;
-    if height_gradient <= 0.0 { return 0.0; } // Early exit if density is too low
+    // Build the quadratic
+    let a = dot(local_dir, local_dir);
+    let b = dot(local_origin, local_dir);
+    let c = dot(local_origin, local_origin) - 1.0;
 
-    // --- Base Cloud Shape ---
-    // Wind-aligned base shape (single sample, simpler stretch).
-    let stretch = CLOUD_LAYER_STRETCH[layer_i];
-    let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_i];
-    let base_time = time * WIND_DIRECTION_BASE;
-    var wind = normalize(WIND_DIRECTION_BASE.xy);
-    if (length(wind) < 1e-6) { wind = vec2<f32>(1.0, 0.0); }
-    let wind_perp = vec2<f32>(-wind.y, wind.x);
-    let coord_along = dot(pos.xy, wind);
-    let coord_perp = dot(pos.xy, wind_perp);
-    let base_time_along = dot(base_time.xy, wind);
-    let base_time_perp = dot(base_time.xy, wind_perp);
-    let base_time_vec = vec3<f32>(base_time_along, base_time_perp, base_time.z);
-    let sample_pos = vec3<f32>(coord_along * stretch, coord_perp, pos.z) * base_scale + base_time_vec;
-    let base_noise = textureSampleLevel(base_texture, linear_sampler, sample_pos, 0.0);
-    var base_cloud = (base_noise.r * height_gradient) + weather_coverage - 1.0;
-    if base_cloud <= 0.0 { return 0.0; } // Early exit if density is too low
-    if simple { return base_cloud; }
+    // If the ray origin is outside the sphere (c>0) and the ray is pointing away from it (b>0), there is no intersection
+    if c > 0.0 && b > 0.0 {
+        return vec2<f32>(1.0, 0.0); // No intersection
+    }
 
-    // --- High Frequency Detail ---
-    let detail_time = time * WIND_DIRECTION_DETAIL;
-    var dw = normalize(WIND_DIRECTION_DETAIL.xy);
-    if (length(dw) < 1e-6) { dw = wind; }
-    let dperp = vec2<f32>(-dw.y, dw.x);
-    let dalong = dot(pos.xy, dw);
-    let dperp_coord = dot(pos.xy, dperp);
-    let detail_stretch = max(1.0, stretch * 0.5);
-    let dtime_vec = vec3<f32>(dot(detail_time.xy, dw), dot(detail_time.xy, dperp), detail_time.z);
-    let dpos = vec3<f32>(dalong * detail_stretch, dperp_coord, pos.z) * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_i] - dtime_vec;
-    let detail_noise = textureSampleLevel(details_texture, linear_sampler, dpos, 0.0).r;
+    // Compute the discriminant
+    let disc = b * b - a * c;
+    if disc <= 0.0 {
+        return vec2<f32>(1.0, 0.0); // No real roots → no intersection
+    }
 
-    // Apply more less noise to the lower portion of the cloud, reduced at higher altitudes
-    let detail_amount = mix(height_fraction, 1.0, CLOUD_LAYER_DETAILS[layer_i]);
-    let hfbm = mix(detail_noise, 1.0 - detail_noise, clamp(detail_amount * 4.0, 0.0, 1.0));
+    // Solve for the two roots
+    let sqrt_disc = sqrt(disc);
+    let inv_a = 1.0 / a;
+    let near = (-b - sqrt_disc) * inv_a;
+    let far = (-b + sqrt_disc) * inv_a;
+    return vec2<f32>(near, far);
+}
 
-    let erosion = hfbm * 0.4 * detail_amount;
-    let inv_erosion_range = 1.0 / (1.0 - erosion + 1e-6); // Add epsilon to avoid div by zero
-    base_cloud = saturate((base_cloud - erosion) * inv_erosion_range);
+// Sample a single cloud (ellipsoid) at a world position. Keeps the noise sampling simple
+// and offsets the base noise by the cloud's seed so different clouds sample different regions.
+fn sample_cloud(cloud: Cloud, pos: vec3<f32>, view: View, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, linear_sampler: sampler) -> f32 {
+    let center = get_cloud_pos(cloud);
+    let scale = get_cloud_scale(cloud);
+    let yaw = get_cloud_yaw(cloud);
 
-    return clamp(base_cloud, 0.0, 1.0);
+    // Rotate world -> cloud local by -yaw
+    let cy = cos(yaw);
+    let sy = sin(yaw);
+    let to_local = pos - center;
+    let lx = cy * to_local.x + sy * to_local.y;
+    let ly = -sy * to_local.x + cy * to_local.y;
+    let lz = to_local.z;
+
+    // Normalized local position inside unit sphere (ellipsoid -> unit sphere)
+    let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
+    let local_unit = vec3<f32>(lx, ly, lz) * inv_radius;
+
+    // Quick vertical falloff: from cloud center.z up to top (center + half-height)
+    let half_height = scale.z * 0.5;
+    let height_fraction = clamp((pos.z - center.z) / half_height, 0.0, 1.0);
+    if height_fraction <= 0.0 { return 0.0; }
+
+    // Seed-derived large offset so each cloud samples a distinct region of the 3D noise texture
+    let seed = get_bits_field(cloud.data_c, SEED_MASK, SEED_SHIFT);
+    let seed_f = f32(seed);
+    let seed_offset = vec3<f32>(seed_f * 1234567.0, seed_f * 891011.0, seed_f * 3141592.0);
+
+    // Base noise sample coordinates: use local (so noise is local to the cloud) plus seed offset
+    let base_coord = local_unit * BASE_NOISE_SCALE + seed_offset;
+    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_coord, 0.0).r;
+
+    // Simple density combining base noise and vertical fraction
+    var density = base_noise * height_fraction;
+    if simple { return clamp(density, 0.0, 1.0); }
+
+    // Optionally add a small high-frequency detail sample
+    let detail_coord = local_unit * DETAIL_NOISE_SCALE + seed_offset * 0.001 - vec3<f32>(time * 0.01);
+    let detail = textureSampleLevel(details_texture, linear_sampler, detail_coord, 0.0).r;
+
+    // Mix detail in — keep it subtle
+    density = density - detail * 0.25;
+    return clamp(density, 0.0, 1.0);
 }

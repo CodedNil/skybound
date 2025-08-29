@@ -23,8 +23,7 @@ use bevy::{
             TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
             TextureViewDescriptor,
             binding_types::{
-                sampler, storage_buffer_read_only, texture_2d, texture_3d, texture_storage_2d,
-                uniform_buffer,
+                sampler, storage_buffer_read_only, texture_3d, texture_storage_2d, uniform_buffer,
             },
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -330,7 +329,6 @@ impl ViewNode for RaymarchNode {
             Some(clouds_buffer),
             Some(base_noise),
             Some(detail_noise),
-            Some(weather_noise),
         ) = (
             pipeline_cache.get_compute_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
@@ -340,7 +338,6 @@ impl ViewNode for RaymarchNode {
             world.get_resource::<CloudsBuffer>(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
-            gpu_images.get(&noise_texture_handle.weather),
         )
         else {
             return Ok(());
@@ -356,7 +353,6 @@ impl ViewNode for RaymarchNode {
                 clouds_buffer.buffer.as_entire_binding(),
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
-                &weather_noise.texture_view,
                 color_view,
                 motion_view,
                 depth_view,
@@ -410,7 +406,6 @@ impl FromWorld for RaymarchPipeline {
                     storage_buffer_read_only::<CloudsBufferData>(false), // Clouds data buffer
                     texture_3d(TextureSampleType::Float { filterable: true }), // Base noise texture
                     texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise texture
-                    texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
                     // --- Bind output textures for writing ---
                     texture_storage_2d(TextureFormat::Rgba16Float, StorageTextureAccess::WriteOnly), // Output Color
                     texture_storage_2d(TextureFormat::Rg16Float, StorageTextureAccess::WriteOnly), // Output Motion

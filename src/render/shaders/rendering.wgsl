@@ -7,9 +7,9 @@
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 
-@group(0) @binding(6) var output_color: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(7) var output_motion: texture_storage_2d<rg16float, write>;
-@group(0) @binding(8) var output_depth: texture_storage_2d<r32float, write>;
+@group(0) @binding(5) var output_color: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var output_motion: texture_storage_2d<rg16float, write>;
+@group(0) @binding(7) var output_depth: texture_storage_2d<r32float, write>;
 
 const INV_4_PI: f32 = 0.07957747154;
 fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {

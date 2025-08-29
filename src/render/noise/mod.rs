@@ -14,7 +14,6 @@ use worley::worley_3d;
 pub struct NoiseTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
-    pub weather: Handle<Image>,
 }
 
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
@@ -55,46 +54,9 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
-    let size = 512;
-    let depth = 1;
-    let weather_texture = load_or_generate_texture(
-        "weather_texture",
-        size,
-        depth,
-        TextureFormat::Rgba8Unorm,
-        || {
-            let weather1 = spread(&simplex_3d(size, depth, 5, 0.45, Vec2::new(5.0, 2.0), 2.0))
-                .iter()
-                .map(|&x| x * 1.1 - 0.1)
-                .collect::<Vec<f32>>();
-            let weather2 = spread(&worley_3d(size, depth, 3, 0.5, 8.0, 0.4))
-                .iter()
-                .zip(spread(&simplex_3d(size, depth, 5, 0.8, Vec2::new(8.0, 2.0), 1.0)).iter())
-                .map(|(&a, &b)| (a * 1.7 - 0.5) + b * 0.1)
-                .collect::<Vec<f32>>();
-            let weather3 = spread(&simplex_3d(size, depth, 6, 0.8, Vec2::splat(2.0), 0.5))
-                .iter()
-                .zip(spread(&worley_3d(size, depth, 3, 0.5, 2.0, 1.0)).iter())
-                .map(|(&a, &b)| (a * 1.2 - 0.2) - b * 0.1)
-                .collect::<Vec<f32>>();
-            let height = spread(&simplex_3d(size, depth, 6, 0.8, Vec2::splat(8.0), 0.5))
-                .iter()
-                .zip(spread(&worley_3d(size, depth, 3, 0.5, 7.0, 1.0)).iter())
-                .map(|(&a, &b)| (a * 1.2 - 0.2) - b * 0.1)
-                .collect::<Vec<f32>>();
-
-            save_noise_layer(&weather1, "weather1.png", size);
-            save_noise_layer(&weather2, "weather2.png", size);
-            save_noise_layer(&weather3, "weather3.png", size);
-            save_noise_layer(&height, "height.png", size);
-            interleave_channels([weather1, weather2, weather3, height])
-        },
-    );
-
     println!("Noise generation took: {:?}", start.elapsed());
     commands.insert_resource(NoiseTextures {
         base: images.add(base_texture),
         detail: images.add(detail_texture),
-        weather: images.add(weather_texture),
     });
 }
