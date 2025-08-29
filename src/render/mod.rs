@@ -33,7 +33,7 @@ impl Plugin for WorldRenderingPlugin {
         load_shader_library!(app, "shaders/raymarch.wgsl");
         load_shader_library!(app, "shaders/volumetrics.wgsl");
         load_shader_library!(app, "shaders/clouds.wgsl");
-        load_shader_library!(app, "shaders/aur_fog.wgsl");
+        load_shader_library!(app, "shaders/aur_ocean.wgsl");
         load_shader_library!(app, "shaders/poles.wgsl");
 
         load_shader_library!(app, "shaders/composite.wgsl");

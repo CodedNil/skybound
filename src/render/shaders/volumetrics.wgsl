@@ -1,7 +1,7 @@
 #define_import_path skybound::volumetrics
 #import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect, intersect_sphere}
 #import skybound::clouds::{sample_clouds}
-#import skybound::aur_fog::{FOG_TOP_HEIGHT, sample_fog}
+#import skybound::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
 @group(0) @binding(2) var<storage, read> clouds_buffer: CloudsBuffer;
@@ -37,7 +37,7 @@ const STEP_SIZE_OUTSIDE: f32 = 240;
 const SCALING_END: f32 = 200000;      // Distance from camera to use max step size
 const SCALING_MAX: f32 = 6;           // Maximum scaling factor to increase by
 const SCALING_MAX_VERTICAL: f32 = 2;  // Scale less if the ray is vertical
-const SCALING_MAX_FOG: f32 = 2;       // Scale less if the ray is through fog
+const SCALING_MAX_OCEAN: f32 = 2;       // Scale less if the ray is through ocean
 const CLOSE_THRESHOLD: f32 = 2000;    // Distance from solid objects to begin more precise raymarching
 
 // --- Lighting Constants ---
@@ -110,8 +110,8 @@ fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
 
         let clouds = sample_clouds(lightmarch_pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
-        let fog = sample_fog(lightmarch_pos, time, true, details_texture, linear_sampler).density;
-        let light_sample_density = clouds + fog;
+        let ocean = sample_ocean(lightmarch_pos, time, true, details_texture, linear_sampler).density;
+        let light_sample_density = clouds + ocean;
 
         optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE;
     }
@@ -312,7 +312,7 @@ struct CloudIntersect {
 
 fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
-    let fog_entry_exit = intersect_sphere(ro - view.planet_center, rd, view.planet_radius + FOG_TOP_HEIGHT);
+    let ocean_entry_exit = intersect_sphere(ro - view.planet_center, rd, view.planet_radius + OCEAN_TOP_HEIGHT);
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Arrays to track entry and exit points for each cloud
@@ -359,9 +359,9 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             next_cloud_index++;
         }
 
-        // Find the next boundary > t across clouds, fog, and poles
+        // Find the next boundary > t across clouds, ocean, and poles
         var active_count: u32 = 0u;
-        var in_fog: bool = false;
+        var in_ocean: bool = false;
         var in_poles: bool = false;
         var next_event: f32 = t_max;
 
@@ -382,18 +382,18 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             }
         }
 
-        // Consider fog sphere entry/exit
-        let fog_entry = fog_entry_exit.x;
-        let fog_exit = fog_entry_exit.y;
-        if fog_entry < fog_exit {
-            if fog_entry <= t && t <= fog_exit {
-                in_fog = true;
+        // Consider ocean sphere entry/exit
+        let ocean_entry = ocean_entry_exit.x;
+        let ocean_exit = ocean_entry_exit.y;
+        if ocean_entry < ocean_exit {
+            if ocean_entry <= t && t <= ocean_exit {
+                in_ocean = true;
             }
-            if fog_entry > t && fog_entry < next_event {
-                next_event = fog_entry;
+            if ocean_entry > t && ocean_entry < next_event {
+                next_event = ocean_entry;
             }
-            if fog_exit > t && fog_exit < next_event {
-                next_event = fog_exit;
+            if ocean_exit > t && ocean_exit < next_event {
+                next_event = ocean_exit;
             }
         }
 
@@ -413,7 +413,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         }
 
         // If no active volumes, fast-forward t to the next_event
-        if active_count == 0u && !in_fog && !in_poles {
+        if active_count == 0u && !in_ocean && !in_poles {
             if next_event < t_max {
                 t = next_event + (dither * STEP_SIZE_INSIDE); // Add dither to reduce banding
                 continue;
@@ -430,7 +430,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             // Scale step size based on distance from camera
             let distance_scale = saturate(t / SCALING_END);
             let directional_max_scale = mix(SCALING_MAX, SCALING_MAX_VERTICAL, abs(rd.z));
-            let max_scale = select(directional_max_scale, SCALING_MAX_FOG, in_fog);
+            let max_scale = select(directional_max_scale, SCALING_MAX_OCEAN, in_ocean);
             var step_scaler = 1.0 + distance_scale * distance_scale * max_scale;
 
             // Reduce scaling when close to solid surfaces
@@ -453,12 +453,12 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
                     sample_density += cloud_sample;
                 }
             }
-            if in_fog {
-                let fog_s = sample_fog(world_pos, time, false, details_texture, linear_sampler);
-                if fog_s.density > 0.0 {
-                    blended_color += fog_s.color * fog_s.density;
-                    sample_density += fog_s.density;
-                    sample_emission += fog_s.emission * fog_s.density;
+            if in_ocean {
+                let ocean_s = sample_ocean(world_pos, time, false, details_texture, linear_sampler);
+                if ocean_s.density > 0.0 {
+                    blended_color += ocean_s.color * ocean_s.density;
+                    sample_density += ocean_s.density;
+                    sample_emission += ocean_s.emission * ocean_s.density;
                 }
             }
             if in_poles {

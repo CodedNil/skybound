@@ -1,4 +1,4 @@
-#define_import_path skybound::aur_fog
+#define_import_path skybound::aur_ocean
 #import skybound::utils::{View, mod1, hash12, hash13, intersect_sphere}
 
 const COLOR_A: vec3<f32> = vec3(0.6, 0.3, 0.8);
@@ -6,10 +6,10 @@ const COLOR_B: vec3<f32> = vec3(0.4, 0.1, 0.6);
 const FLASH_COLOR: vec3<f32> = vec3(0.6, 0.6, 1.0) * 5.0;
 const SUN_COLOR: vec3<f32> = vec3(0.99, 0.97, 0.96);
 
-const FOG_TOP_HEIGHT: f32 = 0.0;
+const OCEAN_TOP_HEIGHT: f32 = 0.0;
 
 
-// Fog turbulence calculations
+// Ocean turbulence calculations
 const ROTATION_MATRIX = mat2x2<f32>(vec2<f32>(0.6, -0.8), vec2<f32>(0.8, 0.6));
 const TURB_ROTS = array<mat2x2<f32>, 10>(
     mat2x2<f32>(vec2<f32>(0.600, 0.800), vec2<f32>(-0.800, 0.600)),
@@ -122,16 +122,16 @@ fn flash_emission(pos: vec2<f32>, time: f32) -> vec3<f32> {
     return total;
 }
 
-/// Sample from the fog
-struct FogSample {
+/// Sample from the ocean
+struct OceanSample {
     density: f32,
     color: vec3<f32>,
     emission: vec3<f32>,
 }
-fn sample_fog(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> FogSample {
-    var sample: FogSample;
+fn sample_ocean(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: texture_3d<f32>, linear_sampler: sampler) -> OceanSample {
+    var sample: OceanSample;
 
-    if pos.z > FOG_TOP_HEIGHT { return sample; }
+    if pos.z > OCEAN_TOP_HEIGHT { return sample; }
 
     let height_noise = textureSampleLevel(noise_texture, linear_sampler, vec3<f32>(pos.xy * 0.00002, time * 0.04), 0.0).g * -1200.0;
     let altitude = pos.z - height_noise;
@@ -149,13 +149,13 @@ fn sample_fog(pos: vec3<f32>, time: f32, only_density: bool, noise_texture: text
     }
     if only_density || sample.density <= 0.0 { return sample; }
 
-    // Compute fog color based on turbulent flow
+    // Compute ocean color based on turbulent flow
     sample.color = mix(COLOR_A, COLOR_B, fbm_value);
     // Apply artificial shadowing: darken towards black as altitude decreases
     let shadow_factor = 1.0 - smoothstep(-30.0, -500.0, altitude);
     sample.color = mix(sample.color * 0.1, sample.color, shadow_factor);
 
-    // Add emission from the fog color and lightning flashes
+    // Add emission from the ocean color and lightning flashes
     let emission_amount = smoothstep(-20.0, -1000.0, altitude);
     sample.emission = sample.color * emission_amount * sample.density;
     sample.emission += flash_emission(pos.xy, time) * smoothstep(-100.0, -800.0, altitude) * sample.density;
