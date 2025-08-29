@@ -42,7 +42,7 @@ fn main(
     // Ray origin & dir
     let ro = view.world_position;
     let rd = normalize(world_pos_far - ro);
-    var t_max = 10000000.0;
+    var t_max = 1000000.0;
     let sun_pos = get_sun_position(view);
     let sun_dir = normalize(sun_pos - ro);
 

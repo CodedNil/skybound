@@ -412,10 +412,18 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             }
         }
 
-        // If no active volumes, fast-forward t to the next_event
+        // If no active volumes, fast-forward t to the next_event and account for atmospheric fog across the skipped empty space.
         if active_count == 0u && !in_ocean && !in_poles {
             if next_event < t_max {
-                t = next_event + (dither * STEP_SIZE_INSIDE); // Add dither to reduce banding
+                let skip_dist = next_event - t;
+                if skip_dist > 0.0 {
+                    // Accumulate fog in the skipped segment and update transmittance
+                    let fog_trans_skip = exp(-ATMOSPHERIC_FOG_DENSITY * skip_dist);
+                    acc_color += atmosphere.sky * (1.0 - fog_trans_skip) * transmittance;
+                    transmittance = transmittance * fog_trans_skip;
+                }
+                // Advance to the next event with a small dither offset to reduce banding
+                t = next_event + (dither * STEP_SIZE_INSIDE);
                 continue;
             } else {
                 break; // No more volumes to march
