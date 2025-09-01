@@ -1,15 +1,11 @@
 clean up and simplify clouds.wgsl
-softer brighter shadows that blend into the atmosphere better, give them fluffy soft edges too
-reduced noise
-shadows at high altitude clouds are bad, they clip vertically weirdly, and dont seem to respect sun direction
+softer brighter shadows that blend into the atmosphere better, give them fluffy soft edges
 variable sky shading on clouds, perhaps update atmosphere.sky every x meters?
 
-
-give the layers random offsets on vertical positioning so they dont look so flat
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator
 
-test the cloud layers directly instead of an overarching segment for all clouds
+improve aur light glow, make it part of the atmospheric fog
 
 remove the base geometry, use sdfs instead, remove shadows etc from scene
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
@@ -22,7 +18,6 @@ https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 sky goes far too red at night, and it snaps between the two suns sharply
 planet cutout is too harsh for sky
 sunsets look meh
-implement aur light into the sky somehow, strong purple glow from the ground
 
 
 froxels:

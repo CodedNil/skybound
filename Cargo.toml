@@ -10,6 +10,7 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
 
     "std",
     "async_executor",
+    "bevy_anti_aliasing",
     "bevy_asset",
     "bevy_color",
     "bevy_core_pipeline",
