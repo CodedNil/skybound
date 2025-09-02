@@ -7,9 +7,11 @@ use std::time::Duration;
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Plugin that displays FPS and camera world coordinates on-screen.
 pub struct DebugTextPlugin;
 
 impl Plugin for DebugTextPlugin {
+    /// Register debug text systems and diagnostics plugin.
     fn build(&self, app: &mut App) {
         app.add_plugins(FrameTimeDiagnosticsPlugin::new(3))
             .add_systems(Startup, spawn_text)
@@ -24,6 +26,7 @@ struct FpsCounter {
 }
 
 impl Default for FpsCounter {
+    /// Create the default fps update timer resource.
     fn default() -> Self {
         Self {
             timer: Timer::new(UPDATE_INTERVAL, TimerMode::Repeating),
@@ -34,6 +37,7 @@ impl Default for FpsCounter {
 #[derive(Component)]
 struct FpsCounterText;
 
+/// Periodically updates the on-screen debug text (FPS and camera coords).
 fn update(
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
@@ -42,16 +46,14 @@ fn update(
     camera_query: Query<&Transform, With<Camera>>,
     mut display: Single<&mut Text, With<FpsCounterText>>,
 ) {
-    let fps_res = diagnostics
+    let fps = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FPS)
-        .and_then(Diagnostic::average);
+        .and_then(Diagnostic::average)
+        .unwrap_or(0.0);
 
-    let should_update = fps_state.timer.tick(time.delta()).just_finished();
-    if !should_update {
+    if !fps_state.timer.tick(time.delta()).just_finished() {
         return;
     }
-
-    let fps = fps_res.unwrap_or(0.0);
 
     let (lat_deg, lon_deg, alt) = camera_query
         .single()
@@ -76,6 +78,7 @@ fn update(
     );
 }
 
+/// Spawns the UI text node used for displaying debug information.
 fn spawn_text(mut commands: Commands) {
     commands.spawn((
         Text::default(),

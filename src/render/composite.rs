@@ -30,6 +30,7 @@ pub struct CompositeNode;
 impl ViewNode for CompositeNode {
     type ViewQuery = &'static ViewTarget;
 
+    /// Composite pass: compose cloud targets into the main view and update history.
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -72,7 +73,8 @@ impl ViewNode for CompositeNode {
         };
 
         // Create the bind group for the composite shader
-        let bind_group = render_context.render_device().create_bind_group(
+        let device = render_context.render_device();
+        let bind_group = device.create_bind_group(
             "composite_bind_group",
             &composite_pipeline.layout,
             &BindGroupEntries::sequential((
@@ -135,6 +137,7 @@ pub struct CompositePipeline {
 }
 
 impl FromWorld for CompositePipeline {
+    /// Build the composite pipeline and its sampler/layout resources from the render world.
     fn from_world(world: &mut World) -> Self {
         let shader =
             load_embedded_asset!(world.resource::<AssetServer>(), "shaders/composite.wgsl");

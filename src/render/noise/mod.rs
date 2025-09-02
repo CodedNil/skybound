@@ -16,6 +16,7 @@ pub struct NoiseTextures {
     pub detail: Handle<Image>,
 }
 
+/// Generates or loads procedural noise textures and inserts them as resources.
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let start = std::time::Instant::now();
 

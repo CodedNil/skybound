@@ -1,7 +1,6 @@
 use bevy::math::{IVec3, Vec2, Vec3A};
 use rayon::prelude::*;
 
-// Generate a 3D Simplex Noise Texture
 pub fn simplex_3d(
     size: usize,
     depth: usize,
@@ -35,11 +34,9 @@ pub fn simplex_3d(
         .collect()
 }
 
-// FBM Simplex Noise
+/// Fractal Brownian Motion over simplex3 to combine octaves.
 fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, persistence: f32) -> f32 {
-    let mut total = 0.0;
-    let mut amp = 1.0;
-    let mut norm = 0.0;
+    let (mut total, mut amp, mut norm) = (0.0, 1.0, 0.0);
 
     for _ in 0..octaves {
         total += simplex3_seamless(pos * freq, freq) * amp;
@@ -51,6 +48,7 @@ fn simplex_fbm3(pos: Vec3A, octaves: usize, mut freq: Vec3A, persistence: f32) -
     total / norm
 }
 
+/// Compute seamless simplex noise by blending tiled samples.
 fn simplex3_seamless(pos: Vec3A, period: Vec3A) -> f32 {
     let fpos = (pos % period) / period;
     let wx = fpos.x;
@@ -111,6 +109,7 @@ const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
     IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
 ];
 
+/// Evaluate simplex noise at a 3D point.
 fn simplex3(point: Vec3A) -> f32 {
     // Transform point from real space to simplex space
     let to_simplex_offset = (point.x + point.y + point.z) * TO_SIMPLEX_CONSTANT_3D;
@@ -184,6 +183,7 @@ fn simplex3(point: Vec3A) -> f32 {
 }
 
 #[rustfmt::skip]
+/// Gradient selection for simplex lattice contributions.
 fn grad3(index: usize) -> [f32; 3] {
     // Vectors are combinations of -1, 0, and 1
     // Precompute the normalized elements
@@ -216,12 +216,35 @@ fn grad3(index: usize) -> [f32; 3] {
     }
 }
 
-// 3D hashing function
 const HASH_MULTIPLIER: f32 = 1.0 / 268_435_455.0;
+/// Hash a lattice point to an index used by the gradient table.
 fn hash3(p: IVec3) -> usize {
     let mut n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
     n = ((n << 13) ^ n)
         .wrapping_mul(n.wrapping_mul(n).wrapping_mul(15731).wrapping_add(789_221))
         .wrapping_add(1_376_312_589);
     ((n & 268_435_455) as f32 * HASH_MULTIPLIER * 255.0) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simplex_basic_properties() {
+        let size = 6usize;
+        let depth = 2usize;
+        let out = simplex_3d(size, depth, 3, 0.5, Vec2::new(1.0, 1.0), 1.0);
+        assert_eq!(out.len(), size * size * depth);
+        for v in out {
+            assert!((0.0..=1.0).contains(&v), "simplex value out of range: {v}");
+        }
+    }
+
+    #[test]
+    fn simplex_deterministic() {
+        let a = simplex_3d(5, 2, 2, 0.6, Vec2::new(1.0, 1.0), 1.0);
+        let b = simplex_3d(5, 2, 2, 0.6, Vec2::new(1.0, 1.0), 1.0);
+        assert_eq!(a, b);
+    }
 }

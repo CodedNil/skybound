@@ -9,7 +9,6 @@ use bevy::{
     render::{render_resource::TextureUsages, view::Hdr},
     window::WindowRef,
 };
-use core::default::Default;
 use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
@@ -22,6 +21,7 @@ pub struct WorldData {
     pub camera_offset: Vec2,
 }
 impl Default for WorldData {
+    /// Initialize world data with a quantized camera offset based on planet radius.
     fn default() -> Self {
         let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Z * PLANET_RADIUS);
         Self {
@@ -49,8 +49,7 @@ impl WorldData {
         }
     }
 
-    /// Calculates the rotation caused by the camera's current translation from
-    /// the origin.
+    /// Compute a rotation quaternion from an X/Y translation on the planet surface.
     fn rotation_from_translation(translation: Vec3) -> Quat {
         let delta_xy = translation.xy();
         if delta_xy.length_squared() > f32::EPSILON {
@@ -63,7 +62,7 @@ impl WorldData {
         }
     }
 
-    /// Calculates the effective rotation of the planet at a given position.
+    /// Return the planet rotation quaternion at the given local position.
     pub fn planet_rotation(&self, pos: Vec3) -> Quat {
         Self::rotation_from_translation(self.camera_offset.extend(0.0) + pos)
     }
@@ -72,6 +71,7 @@ impl WorldData {
 // --- Plugin ---
 pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
+    /// Initialize world resources and systems.
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldData>()
             .add_systems(Startup, setup)
@@ -79,7 +79,7 @@ impl Plugin for WorldPlugin {
     }
 }
 
-// --- Systems ---
+/// Spawns the main camera and initial world entities.
 fn setup(mut commands: Commands) {
     // Camera
     commands.spawn((
@@ -121,6 +121,7 @@ fn setup(mut commands: Commands) {
     ));
 }
 
+/// Snaps camera world coordinates into the world offset grid to prevent precision loss.
 fn update(
     mut world_coords: ResMut<WorldData>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
@@ -128,16 +129,21 @@ fn update(
     let Ok(mut camera_transform) = camera_query.single_mut() else {
         return;
     };
+    // Camera Snapping
+    let apply_snap = |coord: &mut f32, off: &mut f32| {
+        if coord.abs() > CAMERA_RESET_THRESHOLD {
+            let snap = CAMERA_RESET_THRESHOLD * coord.signum();
+            *off += snap;
+            *coord -= snap;
+        }
+    };
 
-    // --- Camera Snapping Logic ---
-    if camera_transform.translation.x.abs() > CAMERA_RESET_THRESHOLD {
-        let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.x.signum();
-        world_coords.camera_offset.x += snap_amount;
-        camera_transform.translation.x -= snap_amount;
-    }
-    if camera_transform.translation.y.abs() > CAMERA_RESET_THRESHOLD {
-        let snap_amount = CAMERA_RESET_THRESHOLD * camera_transform.translation.y.signum();
-        world_coords.camera_offset.y += snap_amount;
-        camera_transform.translation.y -= snap_amount;
-    }
+    apply_snap(
+        &mut camera_transform.translation.x,
+        &mut world_coords.camera_offset.x,
+    );
+    apply_snap(
+        &mut camera_transform.translation.y,
+        &mut world_coords.camera_offset.y,
+    );
 }

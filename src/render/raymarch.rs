@@ -68,6 +68,7 @@ pub struct CloudsViewUniforms {
 }
 
 impl FromWorld for CloudsViewUniforms {
+    /// Create dynamic uniform storage for per-view cloud uniforms.
     fn from_world(world: &mut World) -> Self {
         let mut uniforms = DynamicUniformBuffer::default();
         uniforms.set_label(Some("view_uniforms_buffer"));
@@ -95,6 +96,7 @@ pub struct ExtractedViewData {
     camera_offset: Vec2,
 }
 
+/// Extract per-frame view and world data for cloud rendering into the render world.
 pub fn extract_clouds_view_uniform(
     mut commands: Commands,
     time: Extract<Res<Time>>,
@@ -113,6 +115,7 @@ pub fn extract_clouds_view_uniform(
     }
 }
 
+/// Prepare and write per-view cloud uniform blocks (matrices, jitter, TAA data).
 pub fn prepare_clouds_view_uniforms(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -209,6 +212,7 @@ pub struct CloudRenderTexture {
     pub history_b_view: Option<TextureView>,
 }
 
+/// Ensure render targets and history textures match the current window size.
 pub fn manage_textures(
     mut cloud_render_texture: ResMut<CloudRenderTexture>,
     render_device: Res<RenderDevice>,
@@ -306,6 +310,7 @@ pub struct RaymarchPipeline {
 impl ViewNode for RaymarchNode {
     type ViewQuery = &'static CloudsViewUniformOffset;
 
+    /// Dispatch the volumetric cloud compute shader for a view using prepared resources.
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -344,7 +349,8 @@ impl ViewNode for RaymarchNode {
         };
 
         // Create the bind group for the clouds shader
-        let bind_group = render_context.render_device().create_bind_group(
+        let device = render_context.render_device();
+        let bind_group = device.create_bind_group(
             "volumetric_clouds_bind_group",
             &volumetric_clouds_pipeline.layout,
             &BindGroupEntries::sequential((
@@ -382,6 +388,7 @@ impl ViewNode for RaymarchNode {
 }
 
 impl FromWorld for RaymarchPipeline {
+    /// Create the compute pipeline, bind group layout and samplers used for raymarching.
     fn from_world(world: &mut World) -> Self {
         let shader =
             load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");

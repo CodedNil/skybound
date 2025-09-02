@@ -3,9 +3,11 @@ use bevy::{
     prelude::*,
 };
 
+/// Plugin that adds the camera controller system.
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
+    /// Register systems required for the camera controller.
     fn build(&self, app: &mut App) {
         app.add_systems(PreUpdate, camera_controller);
     }
@@ -19,6 +21,7 @@ pub struct CameraController {
     pub pitch: f32,
 }
 
+/// Handles camera movement, rotation, and speed adjustments from input.
 fn camera_controller(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
@@ -30,42 +33,34 @@ fn camera_controller(
     for (mut transform, mut controller) in &mut query {
         // Movement with WASDQE
         let mut movement = Vec3::ZERO;
-        if keyboard_input.pressed(KeyCode::KeyW) {
-            movement += *transform.forward();
-        }
-        if keyboard_input.pressed(KeyCode::KeyS) {
-            movement += -*transform.forward();
-        }
-        if keyboard_input.pressed(KeyCode::KeyA) {
-            movement += -*transform.right();
-        }
-        if keyboard_input.pressed(KeyCode::KeyD) {
-            movement += *transform.right();
-        }
-        if keyboard_input.pressed(KeyCode::KeyQ) {
-            movement += *transform.down();
-        }
-        if keyboard_input.pressed(KeyCode::KeyE) {
-            movement += *transform.up();
-        }
+        let mut add_dir = |key: KeyCode, v: Vec3| {
+            if keyboard_input.pressed(key) {
+                movement += v;
+            }
+        };
+        add_dir(KeyCode::KeyW, *transform.forward());
+        add_dir(KeyCode::KeyS, -*transform.forward());
+        add_dir(KeyCode::KeyA, -*transform.right());
+        add_dir(KeyCode::KeyD, *transform.right());
+        add_dir(KeyCode::KeyQ, *transform.down());
+        add_dir(KeyCode::KeyE, *transform.up());
         if movement.length_squared() > 0.0 {
             movement = movement.normalize();
         }
-        transform.translation += movement
-            * controller.speed
-            * time.delta_secs()
-            * (if keyboard_input.pressed(KeyCode::ShiftLeft) {
-                10.0
-            } else {
-                1.0
-            });
 
-        // Rotation with right-click drag
+        let sprint = if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            10.0
+        } else {
+            1.0
+        };
+        transform.translation += movement * controller.speed * time.delta_secs() * sprint;
+
+        // Rotation with right-click drag — accumulate mouse deltas
         if mouse_button_input.pressed(MouseButton::Right) {
-            let mut delta = Vec2::ZERO;
-            for event in mouse_motion_events.read() {
-                delta += event.delta;
-            }
+            let delta = mouse_motion_events.read().fold(Vec2::ZERO, |mut acc, e| {
+                acc += e.delta;
+                acc
+            });
             if delta != Vec2::ZERO {
                 controller.yaw -= delta.x * controller.sensitivity;
                 controller.pitch = (controller.pitch - delta.y * controller.sensitivity).clamp(

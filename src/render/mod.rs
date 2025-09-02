@@ -24,8 +24,10 @@ use bevy::{
     shader::load_shader_library,
 };
 
+/// Plugin that sets up shaders, extraction, and render graph nodes for world rendering.
 pub struct WorldRenderingPlugin;
 impl Plugin for WorldRenderingPlugin {
+    /// Register shaders, resources, and render graph nodes for cloud rendering.
     fn build(&self, app: &mut App) {
         load_shader_library!(app, "shaders/rendering.wgsl");
         load_shader_library!(app, "shaders/utils.wgsl");
@@ -72,6 +74,7 @@ impl Plugin for WorldRenderingPlugin {
             );
     }
 
+    /// Finalize by initializing render-only resources in the `RenderApp`.
     fn finish(&self, app: &mut App) {
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app

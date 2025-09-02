@@ -110,23 +110,27 @@ impl Cloud {
     // u1 low
     const Y_SHIFT: u32 = Self::HEIGHT_SHIFT + Self::SIZE_HEIGHT_BITS;
 
+    /// Return the maximum unsigned value representable with `bits` bits.
     #[inline]
     const fn max_for_bits(bits: u32) -> u32 {
         (1u32 << bits) - 1
     }
 
+    /// Set an unsigned bitfield inside a u32 container.
     #[inline]
     const fn set_bits_field(container: &mut u32, value: u32, bits: u32, shift: u32) {
         let mask = Self::max_for_bits(bits) << shift;
         *container = (*container & !mask) | ((value & Self::max_for_bits(bits)) << shift);
     }
 
+    /// Read an unsigned bitfield from a u32 container.
     #[inline]
     const fn get_bits_field(container: u32, bits: u32, shift: u32) -> u32 {
         (container >> shift) & Self::max_for_bits(bits)
     }
 
     // signed field helpers for POS_BITS
+    /// Set a signed bitfield inside a u32 container using two's complement.
     #[inline]
     const fn set_signed_field(container: &mut u32, value: i32, bits: u32, shift: u32) {
         let mask = Self::max_for_bits(bits) << shift;
@@ -146,6 +150,7 @@ impl Cloud {
         *container = (*container & !mask) | (encoded << shift);
     }
 
+    /// Read a signed bitfield from a u32 container interpreting two's complement.
     #[inline]
     const fn get_signed_field(container: u32, bits: u32, shift: u32) -> i32 {
         let raw = Self::get_bits_field(container, bits, shift);
@@ -159,6 +164,7 @@ impl Cloud {
     }
 
     // pos: Vec3(x, y, altitude)
+    /// Pack a Vec3 position into the Cloud bitfields.
     pub const fn set_pos(mut self, pos: Vec3) -> Self {
         // x and y are signed POS_BITS
         let x = pos.x.round() as i32;
@@ -173,6 +179,7 @@ impl Cloud {
         self
     }
 
+    /// Unpack a Vec3 position from the Cloud bitfields.
     pub const fn get_pos(&self) -> Vec3 {
         let x = Self::get_signed_field(self.d0, Self::POS_BITS, Self::X_SHIFT) as f32;
         let y = Self::get_signed_field(self.d1, Self::POS_BITS, Self::Y_SHIFT) as f32;
@@ -181,6 +188,7 @@ impl Cloud {
     }
 
     // size: Vec3(length_meters, height_meters, width_factor_0to1)
+    /// Pack cloud size (len, width factor, height) into the bitfields.
     pub const fn set_size(mut self, size: Vec3) -> Self {
         let len_raw = size
             .x
@@ -210,6 +218,7 @@ impl Cloud {
         self
     }
 
+    /// Unpack cloud size into a Vec3 (len, width factor, height).
     pub const fn get_size(&self) -> Vec3 {
         let len_raw = Self::get_bits_field(self.d0, Self::SIZE_LEN_BITS, Self::LEN_SHIFT);
         let width_raw = Self::get_bits_field(self.d2, Self::SIZE_WIDTH_BITS, Self::WIDTH_SHIFT);
@@ -221,7 +230,7 @@ impl Cloud {
         )
     }
 
-    // form (enum)
+    /// Set the cloud form enum into the packed fields.
     pub const fn set_form(mut self, form: CloudForm) -> Self {
         let raw = match form {
             CloudForm::Cumulus => 0,
@@ -233,6 +242,7 @@ impl Cloud {
         self
     }
 
+    /// Read the cloud form enum from the packed fields.
     pub const fn get_form(&self) -> CloudForm {
         match Self::get_bits_field(self.d2, Self::FORM_BITS, Self::FORM_SHIFT) {
             0 => CloudForm::Cumulus,
@@ -242,7 +252,7 @@ impl Cloud {
         }
     }
 
-    // density/detail/brightness: mapped 0..max -> 0.0..1.0
+    /// Pack a normalized density (0..1) into the fields.
     pub const fn set_density(mut self, density: f32) -> Self {
         let raw = (density.clamp(0.0, 1.0) * (Self::max_for_bits(Self::DENSITY_BITS) as f32))
             .round() as u32;
@@ -250,11 +260,13 @@ impl Cloud {
         self
     }
 
+    /// Unpack normalized density (0..1) from the fields.
     pub const fn get_density(&self) -> f32 {
         Self::get_bits_field(self.d2, Self::DENSITY_BITS, Self::DENSITY_SHIFT) as f32
             / (Self::max_for_bits(Self::DENSITY_BITS) as f32)
     }
 
+    /// Pack a normalized detail value (0..1) into the fields.
     pub const fn set_detail(mut self, detail: f32) -> Self {
         let raw = (detail.clamp(0.0, 1.0) * (Self::max_for_bits(Self::DETAIL_BITS) as f32)).round()
             as u32;
@@ -262,11 +274,13 @@ impl Cloud {
         self
     }
 
+    /// Unpack normalized detail (0..1) from the fields.
     pub const fn get_detail(&self) -> f32 {
         Self::get_bits_field(self.d2, Self::DETAIL_BITS, Self::DETAIL_SHIFT) as f32
             / (Self::max_for_bits(Self::DETAIL_BITS) as f32)
     }
 
+    /// Pack a normalized brightness (0..1) into the fields.
     pub const fn set_brightness(mut self, brightness: f32) -> Self {
         let raw = (brightness.clamp(0.0, 1.0) * (Self::max_for_bits(Self::BRIGHTNESS_BITS) as f32))
             .round() as u32;
@@ -279,33 +293,36 @@ impl Cloud {
         self
     }
 
+    /// Unpack normalized brightness (0..1) from the fields.
     pub const fn get_brightness(&self) -> f32 {
         Self::get_bits_field(self.d2, Self::BRIGHTNESS_BITS, Self::BRIGHTNESS_SHIFT) as f32
             / (Self::max_for_bits(Self::BRIGHTNESS_BITS) as f32)
     }
 
-    // yaw: 0..(2^YAW_BITS-1) representing discrete horizontal rotation
+    /// Set quantized yaw value for the cloud.
     pub const fn set_yaw(mut self, yaw: u32) -> Self {
         Self::set_bits_field(&mut self.d2, yaw, Self::YAW_BITS, Self::YAW_SHIFT);
         self
     }
 
+    /// Get quantized yaw value for the cloud.
     pub const fn get_yaw(&self) -> u32 {
         Self::get_bits_field(self.d2, Self::YAW_BITS, Self::YAW_SHIFT)
     }
 
-    // seed getter/setter (remaining bits)
+    /// Set integer seed used by procedural variations.
     pub const fn set_seed(mut self, seed: u32) -> Self {
         Self::set_bits_field(&mut self.d2, seed, Self::SEED_BITS, Self::SEED_SHIFT);
         self
     }
 
+    /// Get integer seed used by procedural variations.
     pub const fn get_seed(&self) -> u32 {
         Self::get_bits_field(self.d2, Self::SEED_BITS, Self::SEED_SHIFT)
     }
 }
 
-/// Sets up the initial state of clouds in the world.
+/// Create a randomized set of clouds and insert cloud resources.
 pub fn setup_clouds(mut commands: Commands) {
     let mut rng = rand::rng();
 
@@ -403,7 +420,7 @@ pub fn setup_clouds(mut commands: Commands) {
     });
 }
 
-/// Main world system: Updates cloud positions and identifies visible clouds
+/// Update cloud positions, perform frustum culling, and fill the GPU buffer.
 pub fn update_clouds(
     time: Res<Time>,
     mut state: ResMut<CloudsState>,
@@ -421,7 +438,7 @@ pub fn update_clouds(
     let cam_pos = camera_transform.translation();
 
     // Iterate through all clouds, update position, and check visibility
-    for ref mut cloud in &mut state.clouds {
+    for cloud in &mut state.clouds {
         let mut pos = cloud.get_pos();
         pos.x += time.delta_secs() * 10.0;
         cloud.set_pos(pos);
@@ -434,14 +451,14 @@ pub fn update_clouds(
         if visible_cloud_count < MAX_VISIBLE
             && camera_frustum.intersects_sphere(
                 &Sphere {
-                    center: cloud.get_pos().into(),
+                    center: pos.into(),
                     radius,
                 },
                 false,
             )
         {
             // If visible and space available, add to the buffer
-            buffer.clouds[visible_cloud_count] = **cloud;
+            buffer.clouds[visible_cloud_count] = *cloud;
             visible_cloud_count += 1;
         }
     }
@@ -467,7 +484,7 @@ pub struct CloudsBuffer {
     pub buffer: Buffer,
 }
 
-/// Render world system: Uploads the `CloudsBufferData` to the GPU.
+/// Upload the current `CloudsBufferData` into a GPU buffer for the render world.
 pub fn update_clouds_buffer(
     mut commands: Commands,
     clouds_data: Res<CloudsBufferData>,
@@ -496,6 +513,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Test packing and unpacking of position and size fields.
     fn pack_unpack_pos_size() {
         let c = Cloud::default()
             .set_pos(Vec3::new(12345.0, -54321.0, 25000.0))
@@ -511,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    /// Test packing and unpacking of cloud property bitfields.
     fn pack_unpack_properties() {
         let mut c = Cloud::default();
         c = c
