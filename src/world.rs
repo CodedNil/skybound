@@ -1,10 +1,14 @@
 use crate::camera::CameraController;
 use bevy::{
+    anti_aliasing::taa::TemporalAntiAliasing,
     camera::{
         Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, RenderTarget,
         ScreenSpaceTransmissionQuality,
     },
-    core_pipeline::bloom::Bloom,
+    core_pipeline::{
+        bloom::Bloom,
+        prepass::{DepthPrepass, MotionVectorPrepass},
+    },
     prelude::*,
     render::{render_resource::TextureUsages, view::Hdr},
     window::WindowRef,
@@ -109,6 +113,10 @@ fn setup(mut commands: Commands) {
             far: 1000.0,
             aspect_ratio: 1.0,
         }),
+        DepthPrepass,
+        MotionVectorPrepass,
+        TemporalAntiAliasing::default(),
+        Msaa::Off,
         Hdr,
         Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),

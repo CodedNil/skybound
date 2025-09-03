@@ -1,5 +1,5 @@
 clean up and simplify clouds.wgsl
-softer brighter shadows that blend into the atmosphere better, give them fluffy soft edges
+softer brighter clouds that blend into the atmosphere better, give them fluffy soft edges
 variable sky shading on clouds, perhaps update atmosphere.sky every x meters?
 
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
@@ -7,7 +7,8 @@ much less dense, mostly upper atmosphere clouds on the equator
 
 improve aur light glow, make it part of the atmospheric fog
 
-remove the base geometry, use sdfs instead, remove shadows etc from scene
+
+sdf creatures and plants:
 https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
 https://github.com/klownie/bevy_sdf_klown
 

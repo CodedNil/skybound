@@ -333,7 +333,7 @@ pub fn setup_clouds(mut commands: Commands) {
     let field_extent = 6000.0; // Distance to cover in meters for x/z plane
 
     // Calculate approximate number of clouds based on coverage and field size
-    let num_clouds = ((field_extent * field_extent) / 50_000.0 * cloudiness).round() as usize;
+    let num_clouds = ((field_extent * field_extent) / 250_000.0 * cloudiness).round() as usize;
 
     let mut clouds = Vec::with_capacity(num_clouds);
     for _ in 0..num_clouds {

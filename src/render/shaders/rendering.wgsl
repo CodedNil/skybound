@@ -1,3 +1,4 @@
+#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position}
 #import skybound::volumetrics::raymarch_volumetrics
 #import skybound::raymarch::raymarch_solids
@@ -7,35 +8,26 @@
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 
-@group(0) @binding(5) var output_color: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var output_motion: texture_storage_2d<rg16float, write>;
-@group(0) @binding(7) var output_depth: texture_storage_2d<r32float, write>;
-
 const INV_4_PI: f32 = 0.07957747154;
 fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
     let g2 = g * g;
     return INV_4_PI * (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5);
 }
 
-@compute @workgroup_size(8, 8, 1)
-fn main(
-    @builtin(global_invocation_id) id: vec3<u32>,
-    @builtin(local_invocation_id) local_id: vec3<u32>,
-    @builtin(local_invocation_index) local_index: u32
-) {
-    let texture_size = textureDimensions(output_color);
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+    @location(1) motion: vec4<f32>,
+    @builtin(frag_depth) frag_depth: f32,
+};
 
-    // Boundary check: Stop execution if the thread is outside the texture's dimensions
-    if (id.x >= texture_size.x || id.y >= texture_size.y) {
-        return;
-    }
+@fragment
+fn main(in: FullscreenVertexOutput) -> FragmentOutput {
+    let uv = in.uv;
 
-    // Calculate the pixel coordinate and UV for the current thread
-    let pix = vec2<f32>(id.xy);
-    let uv = (pix + 0.5) / vec2<f32>(texture_size);
-    let dither = fract(blue_noise(pix));
+    // Dither based on UV to approximate per-pixel blue noise
+    let dither = fract(blue_noise(uv * 1024));
 
-    // Reconstruct world-space position for the ray
+    // Reconstruct world-space position for a ray through the far plane
     let ndc = uv_to_ndc(uv);
     let world_pos_far = position_ndc_to_world(vec3(ndc, 0.01), view.world_from_clip);
 
@@ -48,11 +40,9 @@ fn main(
 
     // Phase functions for silver and back scattering
     let cos_theta = dot(sun_dir, rd);
-    // phase components: forward scattering (bulk), narrow silver highlight, and slight backscatter
     let hg_forward = henyey_greenstein(cos_theta, 0.4);
-    let hg_silver = henyey_greenstein(cos_theta, 0.95) * 0.003; // narrow, low-intensity silver rim
+    let hg_silver = henyey_greenstein(cos_theta, 0.95) * 0.003;
     let hg_back = henyey_greenstein(cos_theta, -0.05);
-    // Blend phase terms rather than taking a hard max so highlights blend into sky
     let phase = hg_forward + hg_back * 0.15 + hg_silver * 0.2;
 
 	// Precalculate sun, sky and ambient colors
@@ -62,7 +52,7 @@ fn main(
     atmosphere.sun = (get_sun_light_color(ro, view, sun_dir) * 0.45 + atmosphere.sky * 0.18) * phase;
     atmosphere.ambient = atmosphere.sky * 0.8 + render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir) * 0.2;
 
-    // Run solids raymarch in the rendering pass (solids are independent of volumetrics)
+    // Run solids raymarch (solids are independent of volumetrics)
     let solids = raymarch_solids(ro, rd, view, t_max, view.time);
     var rendered_color = select(atmosphere.sky, solids.color, solids.depth < t_max);
     t_max = solids.depth;
@@ -91,10 +81,11 @@ fn main(
     // Normalize depth to a [0, 1] range.
     var final_volumetric_depth: f32 = select(0.0, depth / t_max, depth > 0.0);
 
-    // Write the final results to the output storage textures
-    textureStore(output_color, id.xy, clamp(vec4<f32>(rendered_color, 1.0), vec4(0.0), vec4(1.0)));
-    textureStore(output_motion, id.xy, vec4<f32>(motion_vector, 0.0, 0.0));
-    textureStore(output_depth, id.xy, vec4<f32>(final_volumetric_depth, 0.0, 0.0, 0.0));
+    var out: FragmentOutput;
+    out.color = clamp(vec4<f32>(rendered_color, 1.0), vec4(0.0), vec4(1.0));
+    out.motion = vec4<f32>(motion_vector, 0.0, 0.0);
+    out.frag_depth = final_volumetric_depth;
+    return out;
 }
 
 /// Convert a ndc space position to world space
