@@ -1,14 +1,12 @@
 use crate::camera::CameraController;
 use bevy::{
-    anti_aliasing::taa::TemporalAntiAliasing,
+    anti_alias::taa::TemporalAntiAliasing,
     camera::{
         Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, RenderTarget,
         ScreenSpaceTransmissionQuality,
     },
-    core_pipeline::{
-        bloom::Bloom,
-        prepass::{DepthPrepass, MotionVectorPrepass},
-    },
+    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
+    post_process::bloom::Bloom,
     prelude::*,
     render::{render_resource::TextureUsages, view::Hdr},
     window::WindowRef,
