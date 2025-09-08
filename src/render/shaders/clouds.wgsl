@@ -139,7 +139,7 @@ fn cloud_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
     let dir_ly = -sy * rd.x + cy * rd.y;
     let dir_lz = rd.z;
 
-    // Scale to unit sphere based on half-extents (scale is diameter-ish)
+    // Scale to unit sphere based on half-extents
     let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
     let local_origin = vec3<f32>(lx, ly, lz) * inv_radius;
     let local_dir = vec3<f32>(dir_lx, dir_ly, dir_lz) * inv_radius;
@@ -186,30 +186,25 @@ fn sample_cloud(cloud: Cloud, pos: vec3<f32>, view: View, time: f32, simple: boo
     // Normalized local position inside unit sphere (ellipsoid -> unit sphere)
     let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
     let local_unit = vec3<f32>(lx, ly, lz) * inv_radius;
-
-    // Quick vertical falloff: from cloud center.z up to top (center + half-height)
-    let half_height = scale.z * 0.5;
-    let height_fraction = clamp((pos.z - center.z) / half_height, 0.0, 1.0);
-    if height_fraction <= 0.0 { return 0.0; }
+    let local_dist = saturate(1.0 - length(local_unit));
 
     // Seed-derived large offset so each cloud samples a distinct region of the 3D noise texture
     let seed = get_bits_field(cloud.data_c, SEED_MASK, SEED_SHIFT);
     let seed_f = f32(seed);
-    let seed_offset = vec3<f32>(seed_f * 1234567.0, seed_f * 891011.0, seed_f * 3141592.0);
+    let seed_offset = vec3<f32>(seed_f * 0.1234, seed_f * 0.8910, seed_f * 0.31415);
 
     // Base noise sample coordinates: use local (so noise is local to the cloud) plus seed offset
     let base_coord = local_unit * BASE_NOISE_SCALE + seed_offset;
     let base_noise = textureSampleLevel(base_texture, linear_sampler, base_coord, 0.0).r;
 
-    // Simple density combining base noise and vertical fraction
-    var density = base_noise * height_fraction;
-    if simple { return clamp(density, 0.0, 1.0); }
+    // Simple density combining base noise and radius falloff
+    var density = base_noise + local_dist;
+    if simple { return saturate(density); }
 
-    // Optionally add a small high-frequency detail sample
-    let detail_coord = local_unit * DETAIL_NOISE_SCALE + seed_offset * 0.001 - vec3<f32>(time * 0.01);
-    let detail = textureSampleLevel(details_texture, linear_sampler, detail_coord, 0.0).r;
+    // Add a small high-frequency detail sample
+    // let detail_coord = local_unit * DETAIL_NOISE_SCALE + seed_offset * 0.001 - vec3<f32>(time * 0.01);
+    // let detail = textureSampleLevel(details_texture, linear_sampler, detail_coord, 0.0).r;
+    // density = density - detail * 0.25;
 
-    // Mix detail in — keep it subtle
-    density = density - detail * 0.25;
-    return clamp(density, 0.0, 1.0);
+    return saturate(density);
 }
