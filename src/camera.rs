@@ -27,8 +27,8 @@ fn camera_controller(
     mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
-    mut mouse_wheel_events: EventReader<MouseWheel>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
+    mut mouse_wheel_events: MessageReader<MouseWheel>,
 ) {
     for (mut transform, mut controller) in &mut query {
         // Movement with WASDQE
