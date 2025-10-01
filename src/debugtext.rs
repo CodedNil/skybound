@@ -86,7 +86,7 @@ fn spawn_text(mut commands: Commands) {
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(12.0),
-            left: Val::Px(12.0),
+            right: Val::Px(12.0),
             ..default()
         },
         FpsCounterText,

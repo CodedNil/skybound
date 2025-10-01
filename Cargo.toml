@@ -27,6 +27,7 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
     "zstd_rust",
 
     "debug",
+    "bevy_dev_tools",
 ] }
 bytemuck = "1.23.2"
 image = { version = "0.25.8", default-features = false, features = ["png"] }

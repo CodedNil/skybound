@@ -1,6 +1,11 @@
 #![feature(portable_simd, default_field_values)]
 
-use bevy::prelude::*;
+use std::time::Duration;
+
+use bevy::{
+    dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig},
+    prelude::*,
+};
 
 mod render;
 use crate::render::WorldRenderingPlugin;
@@ -21,6 +26,19 @@ fn main() {
             CameraPlugin,
             WorldRenderingPlugin,
             DebugTextPlugin,
+            FpsOverlayPlugin {
+                config: FpsOverlayConfig {
+                    text_config: TextFont {
+                        font: Handle::<Font>::default(),
+                        font_size: 32.0,
+                        ..Default::default()
+                    },
+                    text_color: Color::WHITE,
+                    enabled: true,
+                    refresh_interval: Duration::from_millis(100),
+                    frame_time_graph_config: FrameTimeGraphConfig::target_fps(60.0),
+                },
+            },
         ))
         .run();
 }

@@ -14,9 +14,10 @@ use bevy::{
     core_pipeline::core_3d::graph::{Core3d, Node3d},
     prelude::*,
     render::{
-        Render, RenderApp, RenderSystems,
+        Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::ExtractResourcePlugin,
         render_graph::{RenderGraphExt, ViewNodeRunner},
+        renderer::RenderDevice,
     },
     shader::load_shader_library,
 };
@@ -46,6 +47,7 @@ impl Plugin for WorldRenderingPlugin {
 
         render_app
             .init_resource::<PreviousViewData>()
+            .add_systems(RenderStartup, init_resources)
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)
             .add_systems(
                 Render,
@@ -60,13 +62,9 @@ impl Plugin for WorldRenderingPlugin {
                 (Node3d::StartMainPass, RaymarchLabel, Node3d::Bloom),
             );
     }
+}
 
-    /// Finalize by initializing render-only resources in the `RenderApp`.
-    fn finish(&self, app: &mut App) {
-        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-            render_app
-                .init_resource::<CloudsViewUniforms>()
-                .init_resource::<RaymarchPipeline>();
-        }
-    }
+fn init_resources(mut commands: Commands, _: Res<RenderDevice>) {
+    commands.init_resource::<CloudsViewUniforms>();
+    commands.init_resource::<RaymarchPipeline>();
 }
