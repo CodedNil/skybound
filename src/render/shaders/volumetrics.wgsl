@@ -297,9 +297,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             step_scaler = mix(step_scaler, 0.1, proximity_factor);
 
             // Sample the density
-            let pos_raw = ro + rd * (t + dither * step);
-            let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-            let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
+            let world_pos = ro + rd * (t + dither * step);
 
             var sample_density = 0.0;
             var sample_emission = vec3<f32>(0.0);

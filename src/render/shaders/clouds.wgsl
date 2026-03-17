@@ -25,7 +25,7 @@ struct Cloud {
     data_d: u32,
 }
 
-// Bit layout constants (must match CPU packing)
+// Bit layout constants
 const SEED_BITS: u32 = 7u;
 const WIDTH_BITS: u32 = 5u;
 const FORM_BITS: u32 = 2u;
@@ -33,7 +33,6 @@ const DENSITY_BITS: u32 = 4u;
 const DETAIL_BITS: u32 = 4u;
 const BRIGHTNESS_BITS: u32 = 4u;
 const YAW_BITS: u32 = 6u;
-
 const ALT_BITS: u32 = 15u;
 
 // size bits
@@ -104,9 +103,7 @@ fn get_cloud_scale(c: Cloud) -> vec3<f32> {
     let width_raw = get_bits_field(c.data_c, SIZE_WIDTH_MASK, WIDTH_SHIFT);
     let height_raw = get_bits_field(c.data_b, SIZE_HEIGHT_MASK, SIZE_HEIGHT_SHIFT);
     let length_m = f32(len_raw);
-    let width_frac = f32(width_raw) * SIZE_WIDTH_INV_F;
-    // width is stored as a fraction of length
-    let width_m = length_m * width_frac;
+    let width_m = length_m * (f32(width_raw) * SIZE_WIDTH_INV_F);
     let height_m = f32(height_raw);
     return vec3<f32>(length_m, width_m, height_m);
 }
@@ -140,7 +137,7 @@ fn cloud_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
     let dir_lz = rd.z;
 
     // Scale to unit sphere based on half-extents
-    let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
+    let inv_radius = 1.0 / (scale * 0.65);
     let local_origin = vec3<f32>(lx, ly, lz) * inv_radius;
     let local_dir = vec3<f32>(dir_lx, dir_ly, dir_lz) * inv_radius;
 
@@ -168,6 +165,10 @@ fn cloud_intersect(ro: vec3<f32>, rd: vec3<f32>, cloud: Cloud) -> vec2<f32> {
     return vec2<f32>(near, far);
 }
 
+fn remap(v: f32, low: f32, high: f32, new_low: f32, new_high: f32) -> f32 {
+    return new_low + (v - low) * (new_high - new_low) / (high - low);
+}
+
 // Sample a single cloud (ellipsoid) at a world position. Keeps the noise sampling simple
 // and offsets the base noise by the cloud's seed so different clouds sample different regions.
 fn sample_cloud(cloud: Cloud, pos: vec3<f32>, view: View, time: f32, simple: bool, base_texture: texture_3d<f32>, details_texture: texture_3d<f32>, linear_sampler: sampler) -> f32 {
@@ -183,28 +184,54 @@ fn sample_cloud(cloud: Cloud, pos: vec3<f32>, view: View, time: f32, simple: boo
     let ly = -sy * to_local.x + cy * to_local.y;
     let lz = to_local.z;
 
-    // Normalized local position inside unit sphere (ellipsoid -> unit sphere)
-    let inv_radius = vec3<f32>(2.0 / scale.x, 2.0 / scale.y, 2.0 / scale.z);
-    let local_unit = vec3<f32>(lx, ly, lz) * inv_radius;
-    let local_dist = saturate(1.0 - length(local_unit));
-
-    // Seed-derived large offset so each cloud samples a distinct region of the 3D noise texture
+    // 1. Seed and Wind
     let seed = get_bits_field(cloud.data_c, SEED_MASK, SEED_SHIFT);
     let seed_f = f32(seed);
-    let seed_offset = vec3<f32>(seed_f * 0.1234, seed_f * 0.8910, seed_f * 0.31415);
+    let seed_offset = vec3<f32>(seed_f * 0.123, seed_f * 0.456, seed_f * 0.789);
+    let wind = WIND_DIRECTION_BASE * time;
 
-    // Base noise sample coordinates: use local (so noise is local to the cloud) plus seed offset
-    let base_coord = local_unit * BASE_NOISE_SCALE + seed_offset;
-    let base_noise = textureSampleLevel(base_texture, linear_sampler, base_coord, 0.0).r;
+    // 2. Coordinate Warping (Domain Warping)
+    // This breaks the geometric silhouette by distorting the lookup space.
+    let warp_coord = vec3<f32>(lx, ly, lz) * 0.003 + seed_offset + wind * 0.5;
+    let warp = textureSampleLevel(base_texture, linear_sampler, warp_coord, 0.0).rgb * 2.0 - 1.0;
 
-    // Simple density combining base noise and radius falloff
-    var density = base_noise + local_dist;
-    if simple { return saturate(density); }
+    // Distort the local position
+    let distorted_p = vec3<f32>(lx, ly, lz) + warp * 120.0;
+    let inv_radius = 1.0 / (scale * 0.5);
+    let p = distorted_p * inv_radius;
 
-    // Add a small high-frequency detail sample
-    // let detail_coord = local_unit * DETAIL_NOISE_SCALE + seed_offset * 0.001 - vec3<f32>(time * 0.01);
-    // let detail = textureSampleLevel(details_texture, linear_sampler, detail_coord, 0.0).r;
-    // density = density - detail * 0.25;
+    // 3. Height-based shaping
+    let height_grad = p.z * 0.5 + 0.5;
 
-    return saturate(density);
+    // Dramatic flat bottom and billowy top
+    // We use a power function on the top falloff to make it more "dome-like"
+    let bottom_shape = smoothstep(0.0, 0.2, height_grad);
+    let top_shape = saturate(pow(1.0 - height_grad, 0.5) * 1.5);
+    let vertical_shape = bottom_shape * top_shape;
+
+    // Horizontal shape with noise-driven radius
+    let horizontal_dist = length(p.xy);
+    let horizontal_shape = smoothstep(1.0, 0.5, horizontal_dist);
+
+    let container = vertical_shape * horizontal_shape;
+    if container <= 0.01 { return 0.0; }
+
+    // 4. Multi-scale Noise for Density
+    let noise_coord = p * 0.6 + seed_offset + wind;
+    let noise = textureSampleLevel(base_texture, linear_sampler, noise_coord, 0.0).r;
+
+    // 5. Density Construction
+    // Threshold increases with height to make the top more "shredded"
+    let threshold = mix(0.1, 0.45, height_grad);
+    var density = saturate(remap(noise * container, threshold, 1.0, 0.0, 1.0));
+    density = smoothstep(0.0, 1.0, density);
+
+    if simple { return density; }
+
+    // 6. Detail Erosion
+    let detail_coord = p * 3.5 + seed_offset * 0.2 + WIND_DIRECTION_DETAIL * time;
+    let detail_noise = textureSampleLevel(details_texture, linear_sampler, detail_coord, 0.0).r;
+    density = saturate(density - detail_noise * 0.4 * (1.0 - density));
+
+    return density;
 }
