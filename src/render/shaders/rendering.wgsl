@@ -8,6 +8,10 @@
 @group(0) @binding(0) var<uniform> view: View;
 @group(0) @binding(1) var linear_sampler: sampler;
 
+@group(0) @binding(2) var base_texture: texture_3d<f32>;
+@group(0) @binding(3) var details_texture: texture_3d<f32>;
+@group(0) @binding(4) var weather_texture: texture_2d<f32>;
+
 const INV_4_PI: f32 = 0.07957747154;
 fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
     let g2 = g * g;

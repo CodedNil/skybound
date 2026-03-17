@@ -1,17 +1,12 @@
 #define_import_path skybound::volumetrics
 #import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect, intersect_sphere}
-#import skybound::clouds::{sample_cloud, Cloud, cloud_intersect}
+#import skybound::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds, get_cloud_layer_above}
 #import skybound::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
 
-@group(0) @binding(2) var<storage, read> clouds_buffer: CloudsBuffer;
-@group(0) @binding(3) var base_texture: texture_3d<f32>;
-@group(0) @binding(4) var details_texture: texture_3d<f32>;
-
-struct CloudsBuffer {
-    clouds: array<Cloud, 1024>,
-    total: u32,
-}
+@group(0) @binding(2) var base_texture: texture_3d<f32>;
+@group(0) @binding(3) var details_texture: texture_3d<f32>;
+@group(0) @binding(4) var weather_texture: texture_2d<f32>;
 
 // --- Constants ---
 const DENSITY: f32 = 0.2;             // Base density for lighting
@@ -64,10 +59,53 @@ const DISK_SAMPLES: array<vec2<f32>, 16> = array<vec2<f32>, 16>(
     vec2<f32>(0.000000, 0.000000)
 );
 
+// Samples the density, color, and emission from the various volumes
+struct VolumeSample {
+    density: f32,
+    color: vec3<f32>,
+    emission: vec3<f32>,
+}
+fn sample_volume(pos: vec3<f32>, view: View, time: f32, clouds: bool, ocean: bool, poles: bool, linear_sampler: sampler) -> VolumeSample {
+    var sample: VolumeSample;
+    sample.color = vec3<f32>(1.0);
+
+    var blended_color: vec3<f32> = vec3(0.0);
+    if clouds {
+        let cloud_sample = sample_clouds(pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
+        if cloud_sample > 0.0 {
+            blended_color += vec3<f32>(1.0) * cloud_sample;
+            sample.density += cloud_sample;
+        }
+    }
+    if ocean {
+        let ocean_sample = sample_ocean(pos, time, false, details_texture, linear_sampler);
+        if ocean_sample.density > 0.0 {
+            blended_color += ocean_sample.color * ocean_sample.density;
+            sample.density += ocean_sample.density;
+            sample.emission += ocean_sample.emission * ocean_sample.density;
+        }
+    }
+    if poles {
+        let poles_sample = sample_poles(pos, time, linear_sampler);
+        if poles_sample.density > 0.0 {
+            blended_color += poles_sample.color * poles_sample.density;
+            sample.density += poles_sample.density;
+            sample.emission += poles_sample.emission * poles_sample.density;
+        }
+    }
+
+    if sample.density > 0.0001 {
+        let mix_factor = saturate(sample.density);
+        sample.color = blended_color / sample.density;
+        sample.emission = (sample.emission / sample.density) * mix_factor;
+    }
+    return sample;
+}
+
 // Calculates the incoming light (in-scattering) at a given point within the volume
-fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData, sample_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler, dither: f32, cloud_queue_list: array<CloudIntersect, MAX_QUEUED>, cloud_queue_count: u32) -> vec3<f32> {
+fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData, step_density: f32, time: f32, sun_dir: vec3<f32>, linear_sampler: sampler, dither: f32) -> vec3<f32> {
     // Start with a conservative local optical depth term
-    var optical_depth = sample_density * EXTINCTION * LIGHT_STEP_SIZE * 0.5;
+    var optical_depth = step_density * EXTINCTION * LIGHT_STEP_SIZE * 0.5;
 
     // Build an orthonormal basis around the sun direction for disk sampling
     var up = vec3<f32>(0.0, 0.0, 1.0);
@@ -77,7 +115,10 @@ fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData
     let tangent1 = normalize(cross(sun_dir, up));
     let tangent2 = cross(sun_dir, tangent1);
 
-    for (var j: u32 = 0u; j < LIGHT_STEPS; j = j + 1u) {
+    // Stochastic cone sampling: for each step march a short distance along the sun,
+    // then sample within a disk whose radius grows with distance to approximate the
+    // solid-angle integration of an extended light source (softens shadows).
+    for (var j: u32 = 0; j < LIGHT_STEPS; j++) {
         let step_index = f32(j) + 1.0;
         let distance_along = step_index * LIGHT_STEP_SIZE;
 
@@ -93,16 +134,41 @@ fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData
 
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
 
-        // Sum only queued clouds (cheap, bounded by MAX_QUEUED)
-        var clouds_sum: f32 = 0.0;
-        for (var k: u32 = 0u; k < cloud_queue_count; k = k + 1u) {
-            let ci = cloud_queue_list[k];
-            clouds_sum = clouds_sum + sample_cloud(clouds_buffer.clouds[ci.idx], lightmarch_pos, view, time, false, base_texture, details_texture, linear_sampler);
-        }
+        let clouds = sample_clouds(lightmarch_pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
         let ocean = sample_ocean(lightmarch_pos, time, true, details_texture, linear_sampler).density;
-        let light_sample_density = clouds_sum + ocean;
+        let light_sample_density = clouds + ocean;
 
         optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE;
+    }
+
+    // Optimised sampling of cloud layers above for shadows
+    if step_density > 0.0 {
+        for (var i: u32 = 1; i <= 16; i++) {
+            let next_layer = get_cloud_layer_above(world_pos.z, f32(i));
+            if next_layer <= 0.0 { break; }
+
+            // Find intersection with the layer midpoint plane
+            let intersection_t = intersect_plane(world_pos, sun_dir, next_layer);
+            // If the intersection is beyond our fade distance, we can stop checking further layers
+            if intersection_t <= 0.0 || intersection_t > SHADOW_FADE_END { continue; }
+
+            // Calculate a falloff factor based on the distance to the shadow-casting layer
+            let shadow_falloff = 1.0 - (intersection_t / SHADOW_FADE_END);
+
+            // Small jitter within the cone for layer sampling using the disk lookup table
+            let layer_disk_radius = tan(SUN_CONE_ANGLE) * intersection_t;
+            let nf = f32(DISK_SAMPLE_COUNT);
+            let idxf = fract(dither + f32(i) * 0.618034);
+            let idx = i32(floor(idxf * nf));
+            let sample_offset = DISK_SAMPLES[idx];
+            let disk_offset = tangent1 * (sample_offset.x * layer_disk_radius) + tangent2 * (sample_offset.y * layer_disk_radius);
+
+            let layer_sample_pos = world_pos + sun_dir * intersection_t + disk_offset;
+            let light_sample_density = sample_clouds(layer_sample_pos, view, time, true, base_texture, details_texture, weather_texture, linear_sampler);
+
+            // Apply the falloff to the optical depth contribution.
+            optical_depth += max(0.0, light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
+        }
     }
 
     let sun_transmittance = exp(-optical_depth);
@@ -115,7 +181,7 @@ fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData
 
     // Compute a dynamic ambient floor
     let shadow_boost = (1.0 - sun_transmittance);
-    let ambient_base = 0.12 + 0.6 * saturate(sample_density * 3.0);
+    let ambient_base = 0.12 + 0.6 * saturate(step_density * 3.0);
     let ambient_floor_vec = atmosphere.ambient * ambient_base * (0.6 + 0.4 * shadow_boost) + atmosphere.sky * 0.03;
 
     let in_scattering = (single_scattering + multiple_scattering + ambient_floor_vec) * SCATTERING_ALBEDO;
@@ -123,7 +189,7 @@ fn sample_shadowing(world_pos: vec3<f32>, view: View, atmosphere: AtmosphereData
 }
 
 // Calculates the aur light contribution from below.
-fn sample_aur_lighting(world_pos: vec3<f32>, view: View, time: f32, linear_sampler: sampler, cloud_queue_list: array<CloudIntersect, MAX_QUEUED>, cloud_queue_count: u32) -> vec3<f32> {
+fn sample_aur_lighting(world_pos: vec3<f32>, view: View, time: f32, linear_sampler: sampler) -> vec3<f32> {
     // Fade out the light intensity with altitude
     let altitude_fade = 1.0 - saturate(pow(world_pos.z / AUR_LIGHT_DISTANCE, 0.2));
     if altitude_fade <= 0.0 {
@@ -132,14 +198,9 @@ fn sample_aur_lighting(world_pos: vec3<f32>, view: View, time: f32, linear_sampl
 
     // Perform a single light step upwards to check for density that would shadow the point
     let lightmarch_pos = world_pos + AUR_LIGHT_DIR * LIGHT_STEP_SIZE;
+    let light_sample_density = sample_clouds(lightmarch_pos, view, time, false, base_texture, details_texture, weather_texture, linear_sampler);
 
-    var clouds_sum: f32 = 0.0;
-    for (var k: u32 = 0u; k < cloud_queue_count; k = k + 1u) {
-        let ci = cloud_queue_list[k];
-        clouds_sum = clouds_sum + sample_cloud(clouds_buffer.clouds[ci.idx], lightmarch_pos, view, time, false, base_texture, details_texture, linear_sampler);
-    }
-    let light_sample_density = clouds_sum;
-
+    // Calculate optical depth from this single sample
     let optical_depth = max(0.0, light_sample_density) * AUR_EXTINCTION * LIGHT_STEP_SIZE;
     let transmittance = exp(-optical_depth);
 
@@ -152,226 +213,146 @@ struct RaymarchResult {
     color: vec4<f32>,
     depth: f32
 }
-
-const MAX_QUEUED: u32 = 6u; // Total number of clouds to consider ahead at a time
-struct CloudIntersect {
-    idx: u32,
-    enter: f32,
-    exit: f32,
-};
-
 fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData, view: View, t_max: f32, dither: f32, time: f32, linear_sampler: sampler) -> RaymarchResult {
     // Get entry exit points for each volume
+    let clouds_entry_exit = ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
+    let clouds_entry_exit1 = vec2<f32>(clouds_entry_exit.x, clouds_entry_exit.y);
+    let clouds_entry_exit2 = vec2<f32>(clouds_entry_exit.z, clouds_entry_exit.w);
     let ocean_entry_exit = intersect_sphere(ro - view.planet_center, rd, view.planet_radius + OCEAN_TOP_HEIGHT);
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
-    // Arrays to track entry and exit points for each cloud
-    var next_cloud_index: u32 = 0u; // Next cloud index
-    var cloud_queue_count: u32 = 0u; // Number of queued clouds
-    var cloud_queue_list: array<CloudIntersect, MAX_QUEUED>;
+    // Get initial start and end of the volumes
+    var t_start = t_max;
+    var t_end = 0.0;
+    if clouds_entry_exit1.y > 0.0 && clouds_entry_exit1.x < clouds_entry_exit1.y {
+        t_start = min(clouds_entry_exit1.x, t_start);
+        t_end = max(clouds_entry_exit1.y, t_end);
+    }
+    if clouds_entry_exit2.y > 0.0 && clouds_entry_exit2.x < clouds_entry_exit2.y {
+        t_start = min(clouds_entry_exit2.x, t_start);
+        t_end = max(clouds_entry_exit2.y, t_end);
+    }
+    if ocean_entry_exit.y > 0.0 && ocean_entry_exit.x < ocean_entry_exit.y {
+        t_start = min(ocean_entry_exit.x, t_start);
+        t_end = max(ocean_entry_exit.y, t_end);
+    }
+    if poles_entry_exit.y > 0.0 && poles_entry_exit.x < poles_entry_exit.y {
+        t_start = min(poles_entry_exit.x, t_start);
+        t_end = max(poles_entry_exit.y, t_end);
+    }
+    t_start = max(t_start, 0.0) + dither * STEP_SIZE_OUTSIDE;
+    t_end = min(t_end, t_max);
+
+    if t_start >= t_end {
+        return RaymarchResult(vec4<f32>(0.0, 0.0, 0.0, 1.0), t_max);
+    }
 
     // Accumulation variables
     var acc_color = vec3(0.0);
     var step = STEP_SIZE_OUTSIDE;
-    var t = 0.0;
-    var transmittance = 1.0;
+    var t = max(t_start, 0.0);
     var accumulated_weighted_depth = 0.0;
     var accumulated_density = 0.0;
 
-    // Pre-calculated variables
+    // Pre-calculate fog for the initial empty space from camera (t=0) to t_start.
+    var transmittance = 1.0;
+    if t_start > 0.0 {
+        let initial_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * t_start);
+        acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
+        transmittance = initial_fog_transmittance;
+    }
     let sun_world_pos = atmosphere.sun_pos + vec3(view.camera_offset, 0.0);
 
     for (var i = 0; i < MAX_STEPS; i++) {
-        if t >= t_max || transmittance < 0.01 {
+        if t >= t_end || transmittance < 0.01 {
             break;
         }
 
-        // Remove any expired clouds (exit ≤ t)
-        var dst: u32 = 0u;
-        for (var i: u32 = 0u; i < cloud_queue_count; i = i + 1u) {
-            if cloud_queue_list[i].exit > t {
-                cloud_queue_list[dst] = cloud_queue_list[i];
-                dst++;
-            }
-        }
-        cloud_queue_count = dst;
+        // Check if we are inside any volume
+        let inside_clouds = t >= clouds_entry_exit1.x && t <= clouds_entry_exit1.y || t >= clouds_entry_exit2.x && t <= clouds_entry_exit2.y;
+        let inside_ocean = t >= ocean_entry_exit.x && t <= ocean_entry_exit.y;
+        let inside_poles = t >= poles_entry_exit.x && t <= poles_entry_exit.y;
 
-        // Pull in new clouds to fill the cloud_queue_list
-        while cloud_queue_count < MAX_QUEUED && next_cloud_index < clouds_buffer.total {
-            let cloud = clouds_buffer.clouds[next_cloud_index];
-            let ts = cloud_intersect(ro, rd, cloud);
-            let entry = max(ts.x, 0.0);
-            let exit = min(ts.y, t_max); // Limit exit by scene depth
-            if entry < exit {
-                cloud_queue_list[cloud_queue_count] = CloudIntersect(next_cloud_index, entry, exit);
-                cloud_queue_count++;
+        // If not inside any volume, skip to the next entry point
+        if !inside_clouds && !inside_ocean && !inside_poles {
+            var next_t = t_end;
+            if clouds_entry_exit1.x > t {
+                next_t = min(next_t, clouds_entry_exit1.x);
             }
-            next_cloud_index++;
-        }
+            if clouds_entry_exit2.x > t {
+                next_t = min(next_t, clouds_entry_exit2.x);
+            }
+            if ocean_entry_exit.x > t {
+                next_t = min(next_t, ocean_entry_exit.x);
+            }
+            if poles_entry_exit.x > t {
+                next_t = min(next_t, poles_entry_exit.x);
+            }
 
-        // Find the next boundary > t across clouds, ocean, and poles
-        var active_count: u32 = 0u;
-        var in_ocean: bool = false;
-        var in_poles: bool = false;
-        var next_event: f32 = t_max;
+            // Account for atmospheric fog across the empty, skipped space
+            let segment_length = next_t - t;
+            if segment_length > 0.0 {
+                let segment_fog_transmittance = exp(-ATMOSPHERIC_FOG_DENSITY * segment_length);
+                acc_color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
+                transmittance *= segment_fog_transmittance;
+            }
 
-        // Consider queued clouds
-        for (var i: u32 = 0u; i < cloud_queue_count; i = i + 1u) {
-            let entry = cloud_queue_list[i].enter;
-            let exit = cloud_queue_list[i].exit;
-
-            if entry <= t && t <= exit {
-                active_count++;
-            }
-            // Next event must be > t
-            if entry > t && entry < next_event {
-                next_event = entry;
-            }
-            if exit > t && exit < next_event {
-                next_event = exit;
-            }
+            t = next_t;
+            continue;
         }
 
-        // Consider ocean sphere entry/exit
-        let ocean_entry = ocean_entry_exit.x;
-        let ocean_exit = ocean_entry_exit.y;
-        if ocean_entry < ocean_exit {
-            if ocean_entry <= t && t <= ocean_exit {
-                in_ocean = true;
-            }
-            if ocean_entry > t && ocean_entry < next_event {
-                next_event = ocean_entry;
-            }
-            if ocean_exit > t && ocean_exit < next_event {
-                next_event = ocean_exit;
-            }
+        // Sample the density
+        let pos_raw = ro + rd * (t + dither * step);
+        let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
+        let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
+        let sample = sample_volume(world_pos, view, time, inside_clouds, inside_ocean, inside_poles, linear_sampler);
+        let step_density = sample.density;
+
+        // Scale step size based on distance from camera
+        let distance_scale = saturate(t / SCALING_END);
+        let directional_max_scale = mix(SCALING_MAX, SCALING_MAX_VERTICAL, abs(rd.z));
+        let max_scale = select(directional_max_scale, SCALING_MAX_OCEAN, inside_ocean);
+        var step_scaler = 1.0 + distance_scale * distance_scale * max_scale;
+
+        // Reduce scaling when close to surfaces
+        let distance_to_surface = t_max - t;
+        let proximity_factor = 1.0 - saturate(distance_to_surface / CLOSE_THRESHOLD);
+        step_scaler = mix(step_scaler, 0.1, proximity_factor);
+
+        // Base step size is small in dense areas, large in sparse ones.
+        let base_step = mix(STEP_SIZE_OUTSIDE, STEP_SIZE_INSIDE, saturate(step_density * 10.0));
+        step = base_step * step_scaler;
+
+        // Determine the total density for this step by combining cloud and atmospheric fog
+        let volume_transmittance = exp(-(DENSITY * step_density) * step);
+        let fog_transmittance_step = exp(-ATMOSPHERIC_FOG_DENSITY * step);
+        let alpha_step = 1.0 - volume_transmittance;
+
+        // Add the in-scattered light from the atmospheric fog in this step
+        acc_color += atmosphere.sky * (1.0 - fog_transmittance_step) * transmittance;
+
+        if step_density > 0.0 {
+            // Get the incoming light (in-scattering)
+            let sun_dir = normalize(sun_world_pos - world_pos);
+            let in_scattering = sample_shadowing(world_pos, view, atmosphere, step_density, time, sun_dir, linear_sampler, dither);
+
+            // Add the incoming aur light from below to the emission
+            let emission = sample.emission * 1000.0 + sample_aur_lighting(world_pos, view, time, linear_sampler);
+
+            // Calculate the color of the volume at this point
+            let volume_color = in_scattering * sample.color + emission;
+
+            // Accumulate the color, weighted by its contribution
+            acc_color += volume_color * transmittance * alpha_step;
+
+            // The contribution of this step towards depth average
+            let contribution = step_density * alpha_step * transmittance;
+            accumulated_weighted_depth += t * contribution;
+            accumulated_density += contribution;
         }
 
-        // Consider poles entry/exit
-        let poles_entry = poles_entry_exit.x;
-        let poles_exit = poles_entry_exit.y;
-        if poles_entry < poles_exit {
-            if poles_entry <= t && t <= poles_exit {
-                in_poles = true;
-            }
-            if poles_entry > t && poles_entry < next_event {
-                next_event = poles_entry;
-            }
-            if poles_exit > t && poles_exit < next_event {
-                next_event = poles_exit;
-            }
-        }
-
-        // If no active volumes, fast-forward t to the next_event and account for atmospheric fog across the skipped empty space.
-        if active_count == 0u && !in_ocean && !in_poles {
-            if next_event < t_max {
-                let skip_dist = next_event - t;
-                if skip_dist > 0.0 {
-                    // Accumulate fog in the skipped segment and update transmittance
-                    let fog_trans_skip = exp(-ATMOSPHERIC_FOG_DENSITY * skip_dist);
-                    acc_color += atmosphere.sky * (1.0 - fog_trans_skip) * transmittance;
-                    transmittance = transmittance * fog_trans_skip;
-                }
-                // Advance to the next event with a small dither offset to reduce banding
-                t = next_event + (dither * STEP_SIZE_INSIDE);
-                continue;
-            } else {
-                break; // No more volumes to march
-            }
-        }
-
-        // Raymarch until next_event
-        while t < next_event && transmittance > 0.01 {
-            // Check if we are inside any volume (may be inside multiple simultaneously)
-            let inside_clouds = active_count > 0u;
-
-            // Scale step size based on distance from camera
-            let distance_scale = saturate(t / SCALING_END);
-            let directional_max_scale = mix(SCALING_MAX, SCALING_MAX_VERTICAL, abs(rd.z));
-            let max_scale = select(directional_max_scale, SCALING_MAX_OCEAN, in_ocean);
-            var step_scaler = 1.0 + distance_scale * distance_scale * max_scale;
-
-            // Reduce scaling when close to solid surfaces
-            let distance_to_surface = t_max - t;
-            let proximity_factor = 1.0 - saturate(distance_to_surface / CLOSE_THRESHOLD);
-            step_scaler = mix(step_scaler, 0.1, proximity_factor);
-
-            // Sample the density
-            let world_pos = ro + rd * (t + dither * step);
-
-            var sample_density = 0.0;
-            var sample_emission = vec3<f32>(0.0);
-            var blended_color: vec3<f32> = vec3<f32>(0.0);
-            if inside_clouds {
-                var cloud_sample: f32 = 0.0;
-                for (var k: u32 = 0u; k < cloud_queue_count; k = k + 1u) {
-                    let cloud = clouds_buffer.clouds[cloud_queue_list[k].idx];
-                    cloud_sample = cloud_sample + sample_cloud(cloud, world_pos, view, time, false, base_texture, details_texture, linear_sampler);
-                }
-                if cloud_sample > 0.0 {
-                    blended_color += vec3<f32>(1.0) * cloud_sample;
-                    sample_density += cloud_sample;
-                }
-            }
-            if in_ocean {
-                let ocean_s = sample_ocean(world_pos, time, false, details_texture, linear_sampler);
-                if ocean_s.density > 0.0 {
-                    blended_color += ocean_s.color * ocean_s.density;
-                    sample_density += ocean_s.density;
-                    sample_emission += ocean_s.emission * ocean_s.density;
-                }
-            }
-            if in_poles {
-                let poles_s = sample_poles(world_pos, time, linear_sampler);
-                if poles_s.density > 0.0 {
-                    blended_color += poles_s.color * poles_s.density;
-                    sample_density += poles_s.density;
-                    sample_emission += poles_s.emission * poles_s.density;
-                }
-            }
-
-            var sample_color = vec3<f32>(1.0);
-            if sample_density > 0.0 {
-                let mix_factor = saturate(sample_density);
-                sample_color = blended_color / sample_density;
-                sample_emission = (sample_emission / sample_density) * mix_factor;
-            }
-
-            // Base step size is small in dense areas, large in sparse ones.
-            let base_step = mix(STEP_SIZE_OUTSIDE, STEP_SIZE_INSIDE, saturate(sample_density * 5.0));
-            step = base_step * step_scaler;
-
-            // Determine the total density for this step by combining cloud and atmospheric fog
-            let volume_transmittance = exp(-(DENSITY * sample_density) * step);
-            let fog_transmittance_step = exp(-ATMOSPHERIC_FOG_DENSITY * step);
-            let alpha_step = 1.0 - volume_transmittance;
-
-            // Add the in-scattered light from the atmospheric fog in this step
-            acc_color += atmosphere.sky * (1.0 - fog_transmittance_step) * transmittance;
-
-            if sample_density > 0.0 {
-                // Get the incoming light (in-scattering)
-                let sun_dir = normalize(sun_world_pos - world_pos);
-                let in_scattering = sample_shadowing(world_pos, view, atmosphere, sample_density, time, sun_dir, linear_sampler, dither, cloud_queue_list, cloud_queue_count);
-
-                // Add the incoming aur light from below to the emission
-                let emission = sample_emission * 1000.0 + sample_aur_lighting(world_pos, view, time, linear_sampler, cloud_queue_list, cloud_queue_count);
-
-                // Calculate the color of the volume at this point
-                let volume_color = in_scattering * sample_color + emission;
-
-                // Accumulate the color, weighted by its contribution
-                acc_color += volume_color * transmittance * alpha_step;
-
-                // The contribution of this step towards depth average
-                let contribution = sample_density * alpha_step * transmittance;
-                accumulated_weighted_depth += t * contribution;
-                accumulated_density += contribution;
-            }
-
-            transmittance *= volume_transmittance * fog_transmittance_step;
-            t += step;
-        }
+        transmittance *= volume_transmittance * fog_transmittance_step;
+        t += step;
     }
 
     // Calculate weighted average depth if a volume was hit, otherwise default to t_max.

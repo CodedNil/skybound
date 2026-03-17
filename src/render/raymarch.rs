@@ -1,8 +1,5 @@
 use crate::{
-    render::{
-        clouds::{CloudsBuffer, CloudsBufferData},
-        noise::NoiseTextures,
-    },
+    render::noise::NoiseTextures,
     world::{PLANET_RADIUS, WorldData},
 };
 use bevy::{
@@ -19,20 +16,22 @@ use bevy::{
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
-            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
-            ColorWrites, CompareFunction, DepthStencilState, DynamicUniformBuffer, FilterMode,
-            FragmentState, MultisampleState, PipelineCache, RenderPassColorAttachment,
+            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, DynamicUniformBuffer,
+            FilterMode, FragmentState, PipelineCache, RenderPassColorAttachment,
             RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
             Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType,
             TextureFormat, TextureSampleType,
-            binding_types::{sampler, storage_buffer_read_only, texture_3d, uniform_buffer},
+            binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
         view::ExtractedView,
     },
 };
-use wgpu_types::{LoadOp, Operations, StoreOp};
+use wgpu_types::{
+    ColorTargetState, ColorWrites, CompareFunction, DepthStencilState, LoadOp, MultisampleState,
+    Operations, StoreOp,
+};
 
 #[derive(Clone, ShaderType)]
 pub struct CloudsViewUniform {
@@ -70,7 +69,6 @@ pub struct CloudsViewUniforms {
 }
 
 impl FromWorld for CloudsViewUniforms {
-    /// Create dynamic uniform storage for per-view cloud uniforms.
     fn from_world(world: &mut World) -> Self {
         let mut uniforms = DynamicUniformBuffer::default();
         uniforms.set_label(Some("view_uniforms_buffer"));
@@ -98,7 +96,6 @@ pub struct ExtractedViewData {
     camera_offset: Vec2,
 }
 
-/// Extract per-frame view and world data for cloud rendering into the render world.
 pub fn extract_clouds_view_uniform(
     mut commands: Commands,
     time: Extract<Res<Time>>,
@@ -117,7 +114,6 @@ pub fn extract_clouds_view_uniform(
     }
 }
 
-/// Prepare and write per-view cloud uniform blocks (matrices, jitter, TAA data).
 pub fn prepare_clouds_view_uniforms(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -205,7 +201,6 @@ impl ViewNode for RaymarchNode {
         &'static ViewPrepassTextures,
     );
 
-    /// Render the volumetric clouds in a fragment shader.
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -222,19 +217,19 @@ impl ViewNode for RaymarchNode {
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(clouds_buffer),
             Some(base_noise),
             Some(detail_noise),
             Some(depth_view),
             Some(motion_view),
+            Some(weather_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<CloudsViewUniforms>().uniforms.binding(),
-            world.get_resource::<CloudsBuffer>(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             prepass_textures.depth_view(),
             prepass_textures.motion_vectors_view(),
+            gpu_images.get(&noise_texture_handle.weather),
         )
         else {
             return Ok(());
@@ -248,9 +243,9 @@ impl ViewNode for RaymarchNode {
             &BindGroupEntries::sequential((
                 view_binding.clone(),
                 &volumetric_clouds_pipeline.linear_sampler,
-                clouds_buffer.buffer.as_entire_binding(),
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
+                &weather_noise.texture_view,
             )),
         );
 
@@ -299,7 +294,6 @@ impl ViewNode for RaymarchNode {
 }
 
 impl FromWorld for RaymarchPipeline {
-    /// Create the render pipeline, bind group layout and samplers used for raymarching.
     fn from_world(world: &mut World) -> Self {
         let shader =
             load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");
@@ -320,9 +314,9 @@ impl FromWorld for RaymarchPipeline {
             (
                 uniform_buffer::<CloudsViewUniform>(true), // View uniforms
                 sampler(SamplerBindingType::Filtering),    // Linear sampler
-                storage_buffer_read_only::<CloudsBufferData>(false), // Clouds data buffer
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
+                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
             ),
         );
         let layout_descriptor =
