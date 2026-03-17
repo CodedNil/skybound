@@ -2,14 +2,12 @@ use crate::camera::CameraController;
 use bevy::{
     anti_alias::taa::TemporalAntiAliasing,
     camera::{
-        Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, RenderTarget,
-        ScreenSpaceTransmissionQuality,
+        Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, ScreenSpaceTransmissionQuality,
     },
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     post_process::bloom::Bloom,
     prelude::*,
     render::{render_resource::TextureUsages, view::Hdr},
-    window::WindowRef,
 };
 use std::f32::consts::FRAC_PI_4;
 
@@ -92,24 +90,25 @@ fn setup(mut commands: Commands) {
             screen_space_specular_transmission_quality: ScreenSpaceTransmissionQuality::Low,
         },
         Camera {
-            is_active: true,
-            order: 0,
             viewport: None,
+            order: 0,
+            is_active: true,
             computed: ComputedCameraValues::default(),
-            target: RenderTarget::Window(WindowRef::Primary),
             output_mode: CameraOutputMode::Write {
                 blend_state: None,
                 clear_color: ClearColorConfig::Default,
             },
-            msaa_writeback: false,
+            msaa_writeback: MsaaWriteback::Auto,
             clear_color: ClearColorConfig::Default,
+            invert_culling: false,
             sub_camera_view: None,
         },
         Projection::Perspective(PerspectiveProjection {
             fov: FRAC_PI_4,
+            aspect_ratio: 1.0,
             near: 0.1,
             far: 1000.0,
-            aspect_ratio: 1.0,
+            near_clip_plane: vec4(0.0, 0.0, -1.0, -0.1),
         }),
         DepthPrepass,
         MotionVectorPrepass,

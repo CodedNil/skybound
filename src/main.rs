@@ -1,11 +1,8 @@
-#![feature(portable_simd, default_field_values)]
-
-use std::time::Duration;
-
 use bevy::{
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig},
     prelude::*,
 };
+use std::time::Duration;
 
 mod render;
 use crate::render::WorldRenderingPlugin;

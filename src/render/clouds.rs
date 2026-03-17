@@ -7,7 +7,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
     },
 };
-use rand::Rng;
+use rand::RngExt;
 use std::cmp::Ordering;
 
 const MAX_VISIBLE: usize = 1024;

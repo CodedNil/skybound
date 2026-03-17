@@ -18,12 +18,13 @@ use bevy::{
         render_asset::RenderAssets,
         render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
-            AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, BufferUsages,
-            CachedRenderPipelineId, ColorTargetState, ColorWrites, CompareFunction,
-            DepthStencilState, DynamicUniformBuffer, FilterMode, FragmentState, MultisampleState,
-            PipelineCache, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
-            SamplerDescriptor, ShaderStages, ShaderType, TextureFormat, TextureSampleType,
+            AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
+            ColorWrites, CompareFunction, DepthStencilState, DynamicUniformBuffer, FilterMode,
+            FragmentState, MultisampleState, PipelineCache, RenderPassColorAttachment,
+            RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+            Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType,
+            TextureFormat, TextureSampleType,
             binding_types::{sampler, storage_buffer_read_only, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -314,24 +315,25 @@ impl FromWorld for RaymarchPipeline {
             ..default()
         });
 
-        let layout = render_device.create_bind_group_layout(
-            "volumetric_clouds_bind_group_layout",
-            &BindGroupLayoutEntries::sequential(
-                ShaderStages::FRAGMENT,
-                (
-                    uniform_buffer::<CloudsViewUniform>(true), // View uniforms
-                    sampler(SamplerBindingType::Filtering),    // Linear sampler
-                    storage_buffer_read_only::<CloudsBufferData>(false), // Clouds data buffer
-                    texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
-                    texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
-                ),
+        let layout_entries = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                uniform_buffer::<CloudsViewUniform>(true), // View uniforms
+                sampler(SamplerBindingType::Filtering),    // Linear sampler
+                storage_buffer_read_only::<CloudsBufferData>(false), // Clouds data buffer
+                texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
+                texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
             ),
         );
+        let layout_descriptor =
+            BindGroupLayoutDescriptor::new("volumetric_clouds_bind_group_layout", &layout_entries);
+        let layout = render_device
+            .create_bind_group_layout("volumetric_clouds_bind_group_layout", &layout_entries);
 
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
-            layout: vec![layout.clone()],
+            layout: vec![layout_descriptor],
             vertex: fullscreen_shader.to_vertex_state(),
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
