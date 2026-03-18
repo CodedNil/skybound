@@ -1,15 +1,16 @@
 use crate::camera::CameraController;
 use bevy::{
-    anti_alias::taa::TemporalAntiAliasing,
-    camera::{
-        Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, ScreenSpaceTransmissionQuality,
+    anti_alias::{
+        dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
+        taa::TemporalAntiAliasing,
     },
+    camera::{Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, Hdr},
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     post_process::bloom::Bloom,
     prelude::*,
-    render::{render_resource::TextureUsages, view::Hdr},
+    render::render_resource::TextureUsages,
 };
-use std::f32::consts::FRAC_PI_4;
+use std::{f32::consts::FRAC_PI_4, marker::PhantomData};
 
 // --- Constants ---
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
@@ -86,8 +87,6 @@ fn setup(mut commands: Commands) {
         Camera3d {
             depth_load_op: Camera3dDepthLoadOp::Clear(0.0),
             depth_texture_usages: TextureUsages::RENDER_ATTACHMENT.into(),
-            screen_space_specular_transmission_steps: 0,
-            screen_space_specular_transmission_quality: ScreenSpaceTransmissionQuality::Low,
         },
         Camera {
             viewport: None,
@@ -114,6 +113,11 @@ fn setup(mut commands: Commands) {
         MotionVectorPrepass,
         TemporalAntiAliasing::default(),
         Msaa::Off,
+        // Dlss::<DlssSuperResolutionFeature> {
+        //     perf_quality_mode: DlssPerfQualityMode::Performance,
+        //     reset: false,
+        //     _phantom_data: PhantomData,
+        // },
         Hdr,
         Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),

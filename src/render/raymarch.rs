@@ -6,31 +6,26 @@ use bevy::{
     asset::load_embedded_asset,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
-    ecs::query::QueryItem,
     prelude::*,
     render::{
         Extract,
         camera::TemporalJitter,
         extract_resource::ExtractResource,
         render_asset::RenderAssets,
-        render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
-            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, DynamicUniformBuffer,
-            FilterMode, FragmentState, PipelineCache, RenderPassColorAttachment,
-            RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
-            Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, ShaderType,
-            TextureFormat, TextureSampleType,
+            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
+            ColorWrites, CompareFunction, DepthStencilState, DynamicUniformBuffer, FilterMode,
+            FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
+            RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
+            ShaderType, StoreOp, TextureFormat, TextureSampleType,
             binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
-        view::ExtractedView,
+        view::{ExtractedView, ViewTarget},
     },
-};
-use wgpu_types::{
-    ColorTargetState, ColorWrites, CompareFunction, DepthStencilState, LoadOp, MultisampleState,
-    Operations, StoreOp,
 };
 
 #[derive(Clone, ShaderType)]
@@ -126,13 +121,12 @@ pub fn prepare_clouds_view_uniforms(
     mut prev_view_data: ResMut<PreviousViewData>,
 ) {
     let view_count = views.iter().len();
-    let Some(mut writer) =
-        view_uniforms
-            .uniforms
-            .get_writer(view_count, &render_device, &render_queue)
-    else {
+    if view_count == 0 {
+        error!("prepare_clouds_view_uniforms: No views found");
         return;
-    };
+    }
+
+    view_uniforms.uniforms.clear();
 
     for (entity, extracted_view, temporal_jitter) in &views {
         let viewport = extracted_view.viewport.as_vec4();
@@ -148,7 +142,7 @@ pub fn prepare_clouds_view_uniforms(
         let world_from_clip = world_from_view * view_from_clip;
         let world_position = extracted_view.world_from_view.translation();
 
-        let offset = writer.write(&CloudsViewUniform {
+        let offset = view_uniforms.uniforms.push(&CloudsViewUniform {
             time: time.elapsed_secs_wrapped(),
             frame_count: frame_count.0,
 
@@ -179,13 +173,11 @@ pub fn prepare_clouds_view_uniforms(
             .clip_from_world
             .unwrap_or_else(|| extracted_view.clip_from_view * view_from_world);
     }
+
+    view_uniforms
+        .uniforms
+        .write_buffer(&render_device, &render_queue);
 }
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct RaymarchLabel;
-
-#[derive(Default)]
-pub struct RaymarchNode;
 
 #[derive(Resource)]
 pub struct RaymarchPipeline {
@@ -194,20 +186,12 @@ pub struct RaymarchPipeline {
     linear_sampler: Sampler,
 }
 
-impl ViewNode for RaymarchNode {
-    type ViewQuery = (
-        &'static CloudsViewUniformOffset,
-        &'static bevy::render::view::ViewTarget,
-        &'static ViewPrepassTextures,
-    );
-
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        (view_uniform_offset, view_target, prepass_textures): QueryItem<Self::ViewQuery>,
-        world: &World,
-    ) -> Result<(), NodeRunError> {
+pub fn raymarch_pass(
+    world: &World,
+    mut render_context: RenderContext,
+    view_query: Query<(&CloudsViewUniformOffset, &ViewTarget, &ViewPrepassTextures)>,
+) {
+    for (view_uniform_offset, view_target, prepass_textures) in &view_query {
         let volumetric_clouds_pipeline = world.resource::<RaymarchPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
@@ -232,7 +216,7 @@ impl ViewNode for RaymarchNode {
             gpu_images.get(&noise_texture_handle.weather),
         )
         else {
-            return Ok(());
+            continue;
         };
 
         // Create bind group for the fragment shader
@@ -283,13 +267,12 @@ impl ViewNode for RaymarchNode {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
         render_pass.draw(0..3, 0..1);
-
-        Ok(())
     }
 }
 

@@ -4,23 +4,22 @@ mod raymarch;
 use crate::render::{
     noise::{NoiseTextures, setup_noise_textures},
     raymarch::{
-        CloudsViewUniforms, PreviousViewData, RaymarchLabel, RaymarchNode, RaymarchPipeline,
-        extract_clouds_view_uniform, prepare_clouds_view_uniforms,
+        CloudsViewUniforms, PreviousViewData, RaymarchPipeline, extract_clouds_view_uniform,
+        prepare_clouds_view_uniforms, raymarch_pass,
     },
 };
 use bevy::{
-    core_pipeline::core_3d::graph::{Core3d, Node3d},
+    core_pipeline::{Core3dSystems, core_3d::main_opaque_pass_3d},
     prelude::*,
     render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
-        extract_resource::ExtractResourcePlugin,
-        render_graph::{RenderGraphExt, ViewNodeRunner},
+        Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
         renderer::RenderDevice,
     },
     shader::load_shader_library,
 };
 
 pub struct WorldRenderingPlugin;
+
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
         load_shader_library!(app, "shaders/rendering.wgsl");
@@ -45,12 +44,12 @@ impl Plugin for WorldRenderingPlugin {
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)
             .add_systems(
                 Render,
-                (prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),),
-            )
-            .add_render_graph_node::<ViewNodeRunner<RaymarchNode>>(Core3d, RaymarchLabel)
-            .add_render_graph_edges(
-                Core3d,
-                (Node3d::StartMainPass, RaymarchLabel, Node3d::Bloom),
+                (
+                    prepare_clouds_view_uniforms.in_set(RenderSystems::PrepareResources),
+                    raymarch_pass
+                        .in_set(Core3dSystems::MainPass)
+                        .after(main_opaque_pass_3d),
+                ),
             );
     }
 }

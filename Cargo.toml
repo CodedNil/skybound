@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
-    "dynamic_linking", # Don't enable when building for release
+bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, features = [
     "wayland",
 
     "std",
     "async_executor",
     "bevy_anti_alias",
+    "dlss",
     "bevy_asset",
     "bevy_color",
     "bevy_core_pipeline",
@@ -21,19 +21,18 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_ui",
     "bevy_ui_render",
     "default_font",
-    "hdr",
     "multi_threaded",
     "tonemapping_luts",
+    "hdr",
     "zstd_rust",
 
     "debug",
-    "bevy_dev_tools",
 ] }
 bytemuck = "1.25.0"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 rand = "0.10.0"
 rayon = "1.11.0"
-wgpu-types = "27.0.1"
+wgpu-types = "28.0.0"
 
 [lints.rust]
 unsafe_code = "forbid"

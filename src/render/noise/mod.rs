@@ -10,7 +10,7 @@ use simplex::simplex_3d;
 use utils::{interleave_channels, load_or_generate_texture, map_range, save_noise_layer, spread};
 use worley::worley_3d;
 
-#[derive(Resource, Component, ExtractResource, Clone)]
+#[derive(Resource, ExtractResource, Clone)]
 pub struct NoiseTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
