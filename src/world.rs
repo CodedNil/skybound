@@ -1,15 +1,12 @@
 use crate::camera::CameraController;
 use bevy::{
-    anti_alias::taa::TemporalAntiAliasing,
-    camera::{
-        Camera3dDepthLoadOp, CameraOutputMode, ComputedCameraValues, ScreenSpaceTransmissionQuality,
-    },
+    anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
+    camera::Hdr,
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     post_process::bloom::Bloom,
     prelude::*,
-    render::{render_resource::TextureUsages, view::Hdr},
 };
-use std::f32::consts::FRAC_PI_4;
+use std::{f32::consts::FRAC_PI_4, marker::PhantomData};
 
 // --- Constants ---
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
@@ -83,37 +80,17 @@ impl Plugin for WorldPlugin {
 fn setup(mut commands: Commands) {
     // Camera
     commands.spawn((
-        Camera3d {
-            depth_load_op: Camera3dDepthLoadOp::Clear(0.0),
-            depth_texture_usages: TextureUsages::RENDER_ATTACHMENT.into(),
-            screen_space_specular_transmission_steps: 0,
-            screen_space_specular_transmission_quality: ScreenSpaceTransmissionQuality::Low,
-        },
-        Camera {
-            viewport: None,
-            order: 0,
-            is_active: true,
-            computed: ComputedCameraValues::default(),
-            output_mode: CameraOutputMode::Write {
-                blend_state: None,
-                clear_color: ClearColorConfig::Default,
-            },
-            msaa_writeback: MsaaWriteback::Auto,
-            clear_color: ClearColorConfig::Default,
-            invert_culling: false,
-            sub_camera_view: None,
-        },
-        Projection::Perspective(PerspectiveProjection {
-            fov: FRAC_PI_4,
-            aspect_ratio: 1.0,
-            near: 0.1,
-            far: 1000.0,
-            near_clip_plane: vec4(0.0, 0.0, -1.0, -0.1),
-        }),
+        Camera3d::default(),
+        Camera::default(),
+        Projection::default(),
         DepthPrepass,
         MotionVectorPrepass,
-        TemporalAntiAliasing::default(),
         Msaa::Off,
+        Dlss::<DlssSuperResolutionFeature> {
+            perf_quality_mode: DlssPerfQualityMode::UltraPerformance,
+            reset: false,
+            _phantom_data: PhantomData,
+        },
         Hdr,
         Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
