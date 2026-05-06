@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, features = [
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "a74ad33a05ab1b37316fb53559ef7b24ae83b806", default-features = false, features = [
     "wayland",
 
     "std",
@@ -30,9 +30,8 @@ bevy = { git = "https://github.com/bevyengine/bevy", default-features = false, f
 ] }
 bytemuck = "1.25.0"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-rand = "0.10.0"
-rayon = "1.11.0"
-wgpu-types = "28.0.0"
+rand = "0.10.1"
+rayon = "1.12.0"
 
 [lints.rust]
 unsafe_code = "forbid"

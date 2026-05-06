@@ -114,7 +114,7 @@ pub fn prepare_clouds_view_uniforms(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
-    views: Query<(Entity, &ExtractedView, &ViewTarget, &TemporalJitter), With<Camera3d>>,
+    views: Query<(Entity, &ExtractedView, &ViewTarget, Option<&TemporalJitter>), With<Camera3d>>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
@@ -132,11 +132,10 @@ pub fn prepare_clouds_view_uniforms(
         let viewport = extracted_view.viewport.as_vec4();
         let view_size = viewport.zw();
 
-        let texture_size = view_target.main_texture().size();
-        println!("texture_size: {texture_size:?}, viewport_size: {view_size:?}");
-
         let mut clip_from_view = extracted_view.clip_from_view;
-        temporal_jitter.jitter_projection(&mut clip_from_view, view_size);
+        if let Some(jitter) = temporal_jitter {
+            jitter.jitter_projection(&mut clip_from_view, view_size);
+        }
 
         let view_from_clip = clip_from_view.inverse();
         let world_from_view = extracted_view.world_from_view.to_matrix();
@@ -199,6 +198,11 @@ pub fn raymarch_pass(
         &ViewPrepassTextures,
     )>,
 ) {
+    if view_query.is_empty() {
+        error!("raymarch_pass: view_query is empty (missing CloudsViewUniformOffset?)");
+        return;
+    }
+
     for (view, view_uniform_offset, view_target, prepass_textures) in &view_query {
         let volumetric_clouds_pipeline = world.resource::<RaymarchPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -246,22 +250,11 @@ pub fn raymarch_pass(
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("volumetric_clouds_fragment_pass"),
             color_attachments: &[
-                Some(RenderPassColorAttachment {
-                    view: view_target.main_texture_view(),
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(wgpu_types::Color::BLACK),
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                }),
+                Some(view_target.get_color_attachment()),
                 Some(RenderPassColorAttachment {
                     view: motion_view,
                     resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(wgpu_types::Color::BLACK),
-                        store: StoreOp::Store,
-                    },
+                    ops: Operations::default(),
                     depth_slice: None,
                 }),
             ],
@@ -326,6 +319,7 @@ impl FromWorld for RaymarchPipeline {
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
                 shader,
+                entry_point: Some("main".into()),
                 targets: vec![
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,
@@ -342,8 +336,8 @@ impl FromWorld for RaymarchPipeline {
             }),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(CompareFunction::LessEqual),
                 stencil: default(),
                 bias: default(),
             }),
