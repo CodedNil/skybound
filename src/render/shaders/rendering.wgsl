@@ -28,8 +28,9 @@ struct FragmentOutput {
 fn main(in: FullscreenVertexOutput) -> FragmentOutput {
     let uv = in.uv;
 
-    // Dither based on UV to approximate per-pixel blue noise
-    let dither = fract(blue_noise(uv * 1024));
+    // Spatially-varying blue noise offset by a per-frame golden-ratio step so each
+    let frame_offset = fract(f32(view.frame_count) * 0.618033989);
+    let dither = fract(blue_noise(uv * 1024.0) + frame_offset);
 
     // Reconstruct world-space position for a ray through the far plane
     let ndc = uv_to_ndc(uv);
@@ -65,30 +66,34 @@ fn main(in: FullscreenVertexOutput) -> FragmentOutput {
     let volumetrics_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
     rendered_color = volumetrics_result.color.rgb + rendered_color * volumetrics_result.color.a;
 
-    // Motion Vectors
+    // Motion vectors + depth
     var motion_vector = vec2(0.0);
+    var frag_depth: f32 = 0.0; // default: far plane (sky, reverse-Z)
     let depth: f32 = min(solids.depth, volumetrics_result.depth);
     if depth < t_max {
-        // Find the world position of the point we rendered, project it into the previous frames screen space
-        let world_pos_current = ro + rd * depth;
+        let world_pos_far_unjittered = position_ndc_to_world(vec3(ndc, 0.01), view.world_from_clip_unjittered);
+        let rd_unjittered = normalize(world_pos_far_unjittered - ro);
+        let world_pos_mv = ro + rd_unjittered * depth;
 
-        // Project to previous frame's clip space
-        let clip_pos_prev = view.prev_clip_from_world * vec4<f32>(world_pos_current, 1.0);
-        // Perform perspective divide to get Normalized Device Coordinates (NDC)
+        // Motion vector: current UV minus where this world point was last frame
+        let clip_pos_prev = view.prev_clip_from_world * vec4<f32>(world_pos_mv, 1.0);
         let ndc_prev = clip_pos_prev.xyz / clip_pos_prev.w;
-        // Convert NDC [-1, 1] to UV [0, 1]
         let uv_prev = ndc_prev.xy * vec2<f32>(0.5, -0.5) + 0.5;
-
         motion_vector = uv - uv_prev;
-    }
 
-    // Normalize depth to a [0, 1] range.
-    var final_volumetric_depth: f32 = select(0.0, depth / t_max, depth > 0.0);
+        // Clip-space depth for the depth buffer (reverse-Z NDC)
+        let clip_curr = view.clip_from_world * vec4<f32>(world_pos_mv, 1.0);
+        frag_depth = clip_curr.z / clip_curr.w;
+    }
 
     var out: FragmentOutput;
     out.color = clamp(vec4<f32>(rendered_color, 1.0), vec4(0.0), vec4(1.0));
     out.motion = vec4<f32>(motion_vector, 0.0, 0.0);
-    out.frag_depth = final_volumetric_depth;
+    out.frag_depth = frag_depth;
+
+    // out.color = vec4<f32>(vec3<f32>(frag_depth * 2000.0), 1.0); // DEBUG: depth
+    // out.color = vec4<f32>(motion_vector * 200.0 + 0.5, 0.5, 1.0); // DEBUG: motion vectors
+
     return out;
 }
 

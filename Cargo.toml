@@ -25,8 +25,6 @@ bevy = { git = "https://github.com/bevyengine/bevy", rev = "a74ad33a05ab1b37316f
     "multi_threaded",
     "tonemapping_luts",
     "zstd_rust",
-
-    "debug",
 ] }
 bytemuck = "1.25.0"
 image = { version = "0.25.10", default-features = false, features = ["png"] }

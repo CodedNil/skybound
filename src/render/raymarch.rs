@@ -4,6 +4,7 @@ use crate::{
 };
 use bevy::{
     asset::load_embedded_asset,
+    camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
     prelude::*,
@@ -45,6 +46,8 @@ pub struct CloudsViewUniform {
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: Mat4,
+    // Unjittered inverse-projection for jitter-free motion vector reconstruction
+    world_from_clip_unjittered: Mat4,
 
     planet_rotation: Vec4,
     planet_center: Vec3,
@@ -109,28 +112,29 @@ pub fn extract_clouds_view_uniform(
     }
 }
 
+type ViewQuery = (
+    Entity,
+    &'static ExtractedView,
+    Option<&'static TemporalJitter>,
+    Option<&'static MainPassResolutionOverride>,
+);
+
 pub fn prepare_clouds_view_uniforms(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     mut view_uniforms: ResMut<CloudsViewUniforms>,
-    views: Query<(Entity, &ExtractedView, &ViewTarget, Option<&TemporalJitter>), With<Camera3d>>,
+    views: Query<ViewQuery, With<Camera3d>>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
     data: Res<ExtractedViewData>,
     mut prev_view_data: ResMut<PreviousViewData>,
 ) {
-    let view_count = views.iter().len();
-    if view_count == 0 {
-        error!("prepare_clouds_view_uniforms: No views found");
-        return;
-    }
-
     view_uniforms.uniforms.clear();
 
-    for (entity, extracted_view, view_target, temporal_jitter) in &views {
+    for (entity, extracted_view, temporal_jitter, resolution_override) in &views {
         let viewport = extracted_view.viewport.as_vec4();
-        let view_size = viewport.zw();
+        let view_size = resolution_override.map_or_else(|| viewport.zw(), |r| r.as_vec2());
 
         let mut clip_from_view = extracted_view.clip_from_view;
         if let Some(jitter) = temporal_jitter {
@@ -143,6 +147,9 @@ pub fn prepare_clouds_view_uniforms(
         let clip_from_world = clip_from_view * view_from_world;
         let world_from_clip = world_from_view * view_from_clip;
         let world_position = extracted_view.world_from_view.translation();
+
+        // Unjittered inverse-projection used for motion vector ray reconstruction only
+        let world_from_clip_unjittered = world_from_view * extracted_view.clip_from_view.inverse();
 
         let offset = view_uniforms.uniforms.push(&CloudsViewUniform {
             time: time.elapsed_secs_wrapped(),
@@ -159,6 +166,7 @@ pub fn prepare_clouds_view_uniforms(
             camera_offset: data.camera_offset,
 
             prev_clip_from_world: prev_view_data.clip_from_world,
+            world_from_clip_unjittered,
 
             planet_rotation: data.planet_rotation,
             planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
@@ -196,14 +204,12 @@ pub fn raymarch_pass(
         &CloudsViewUniformOffset,
         &ViewTarget,
         &ViewPrepassTextures,
+        Option<&MainPassResolutionOverride>,
     )>,
 ) {
-    if view_query.is_empty() {
-        error!("raymarch_pass: view_query is empty (missing CloudsViewUniformOffset?)");
-        return;
-    }
-
-    for (view, view_uniform_offset, view_target, prepass_textures) in &view_query {
+    for (view, view_uniform_offset, view_target, prepass_textures, resolution_override) in
+        &view_query
+    {
         let volumetric_clouds_pipeline = world.resource::<RaymarchPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
@@ -261,7 +267,7 @@ pub fn raymarch_pass(
             depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
                 view: depth_view,
                 depth_ops: Some(Operations {
-                    load: LoadOp::Clear(1.0),
+                    load: LoadOp::Load,
                     store: StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -272,7 +278,11 @@ pub fn raymarch_pass(
         });
 
         let vp = view.viewport;
-        render_pass.set_viewport(vp.x as f32, vp.y as f32, vp.z as f32, vp.w as f32, 0.0, 1.0);
+        let (vp_x, vp_y, vp_w, vp_h) = resolution_override
+            .map_or((vp.x, vp.y, vp.z, vp.w), |override_size| {
+                (0u32, 0u32, override_size.x, override_size.y)
+            });
+        render_pass.set_viewport(vp_x as f32, vp_y as f32, vp_w as f32, vp_h as f32, 0.0, 1.0);
 
         render_pass.set_render_pipeline(pipeline);
         render_pass.set_bind_group(0, &bind_group, &[view_uniform_offset.offset]);
@@ -336,8 +346,8 @@ impl FromWorld for RaymarchPipeline {
             }),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(CompareFunction::LessEqual),
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::GreaterEqual),
                 stencil: default(),
                 bias: default(),
             }),

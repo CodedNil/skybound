@@ -253,6 +253,9 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
     var t = max(t_start, 0.0);
     var accumulated_weighted_depth = 0.0;
     var accumulated_density = 0.0;
+    // Depth at 50% opacity: stable front-face, unaffected by distant clouds behind.
+    var threshold_depth: f32 = t_max;
+    var threshold_captured: bool = false;
 
     // Pre-calculate fog for the initial empty space from camera (t=0) to t_start.
     var transmittance = 1.0;
@@ -345,19 +348,28 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
             // Accumulate the color, weighted by its contribution
             acc_color += volume_color * transmittance * alpha_step;
 
-            // The contribution of this step towards depth average
-            let contribution = step_density * alpha_step * transmittance;
+            let contribution = alpha_step * transmittance;
             accumulated_weighted_depth += t * contribution;
             accumulated_density += contribution;
         }
 
         transmittance *= volume_transmittance * fog_transmittance_step;
+
+        if !threshold_captured && transmittance < 0.5 {
+            threshold_captured = true;
+            threshold_depth = t;
+        }
+
         t += step;
     }
 
-    // Calculate weighted average depth if a volume was hit, otherwise default to t_max.
+    // Prefer threshold depth; fall back to weighted average for thin volumes; t_max for sky.
     let avg_depth = accumulated_weighted_depth / max(accumulated_density, 0.0001);
-    let final_depth = select(t_max, avg_depth, accumulated_density > 0.0001);
+    let final_depth = select(
+        select(t_max, avg_depth, accumulated_density > 0.0001),
+        threshold_depth,
+        threshold_captured
+    );
 
     var output: RaymarchResult;
     output.color = clamp(vec4<f32>(acc_color, transmittance), vec4(0.0), vec4(1.0));

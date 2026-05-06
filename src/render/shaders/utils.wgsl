@@ -18,6 +18,8 @@ struct View {
 
     // Previous frame matrices for motion vectors
     prev_clip_from_world: mat4x4<f32>,
+    // Unjittered inverse-projection for jitter-free motion vector reconstruction
+    world_from_clip_unjittered: mat4x4<f32>,
 
     planet_rotation: vec4<f32>,
     planet_center: vec3<f32>,
