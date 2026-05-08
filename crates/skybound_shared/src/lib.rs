@@ -8,7 +8,7 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 )]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct CloudsViewUniform {
+pub struct ViewUniform {
     pub clip_from_world: Mat4,
     pub world_from_clip: Mat4,
     pub world_from_view: Mat4,

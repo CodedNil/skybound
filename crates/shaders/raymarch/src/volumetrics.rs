@@ -1,7 +1,8 @@
 use crate::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
 use crate::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, get_cloud_layer_above, sample_clouds};
 use crate::poles::{poles_raymarch_entry, sample_poles};
-use crate::utils::{AtmosphereData, View, intersect_plane, intersect_sphere, ray_shell_intersect};
+use crate::utils::{AtmosphereData, intersect_plane, intersect_sphere, ray_shell_intersect};
+use skybound_shared::ViewUniform;
 use spirv_std::glam::{Vec2, Vec3, Vec4};
 use spirv_std::num_traits::Float;
 
@@ -9,7 +10,7 @@ const MAX_STEPS: i32 = 512;
 const STEP_SIZE_INSIDE: f32 = 120.0;
 const STEP_SIZE_OUTSIDE: f32 = 240.0;
 
-const SCALING_END: f32 = 200000.0;
+const SCALING_END: f32 = 200_000.0;
 const SCALING_MAX: f32 = 6.0;
 const SCALING_MAX_VERTICAL: f32 = 2.0;
 const SCALING_MAX_OCEAN: f32 = 2.0;
@@ -20,10 +21,12 @@ const LIGHT_STEP_SIZE: f32 = 90.0;
 const SUN_CONE_ANGLE: f32 = 0.005;
 const AUR_LIGHT_DIR: Vec3 = Vec3::new(0.0, 0.0, -1.0);
 const AUR_LIGHT_DISTANCE: f32 = 60000.0;
-const AUR_LIGHT_COLOR: Vec3 = Vec3::new(0.36, 0.18, 0.48); // 0.6, 0.3, 0.8 * 0.6
+const AUR_LIGHT_COLOR: Vec3 = Vec3::new(0.6 * 0.6, 0.3 * 0.6, 0.8 * 0.6);
 
 const EXTINCTION: f32 = 0.05;
+const AUR_EXTINCTION: f32 = 0.05;
 const SCATTERING_ALBEDO: f32 = 0.65;
+const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000_004;
 const SHADOW_FADE_END: f32 = 80000.0;
 
 const DISK_SAMPLES: [Vec2; 16] = [
@@ -53,7 +56,7 @@ pub struct VolumeSample {
 
 pub fn sample_volume(
     pos: Vec3,
-    view: &View,
+    view: &ViewUniform,
     time: f32,
     clouds: bool,
     ocean: bool,
@@ -111,9 +114,41 @@ pub fn sample_volume(
     sample
 }
 
+fn sample_aur_lighting(
+    world_pos: Vec3,
+    view: &ViewUniform,
+    time: f32,
+    base_texture: &spirv_std::Image!(3D, type=f32, sampled=true),
+    details_texture: &spirv_std::Image!(3D, type=f32, sampled=true),
+    weather_texture: &spirv_std::Image!(2D, type=f32, sampled=true),
+    sampler: &spirv_std::Sampler,
+) -> Vec3 {
+    let altitude_fade = 1.0 - (world_pos.z / AUR_LIGHT_DISTANCE).powf(0.2).clamp(0.0, 1.0);
+    if altitude_fade <= 0.0 {
+        return Vec3::ZERO;
+    }
+
+    let lightmarch_pos = world_pos + AUR_LIGHT_DIR * LIGHT_STEP_SIZE;
+    let light_sample_density = sample_clouds(
+        lightmarch_pos,
+        view,
+        time,
+        false,
+        base_texture,
+        details_texture,
+        weather_texture,
+        sampler,
+    );
+
+    let optical_depth = light_sample_density.max(0.0) * AUR_EXTINCTION * LIGHT_STEP_SIZE;
+    let transmittance = (-optical_depth).exp();
+
+    AUR_LIGHT_COLOR * transmittance * altitude_fade
+}
+
 fn sample_shadowing(
     world_pos: Vec3,
-    view: &View,
+    view: &ViewUniform,
     atmosphere: &AtmosphereData,
     step_density: f32,
     time: f32,
@@ -139,7 +174,7 @@ fn sample_shadowing(
         let distance_along = step_index * LIGHT_STEP_SIZE;
         let disk_radius = SUN_CONE_ANGLE.tan() * distance_along;
 
-        let idxf = (dither + step_index * 0.618034).fract();
+        let idxf = (dither + step_index * 0.618_034).fract();
         let idx = (idxf * 16.0).floor() as usize;
         let sample_offset = DISK_SAMPLES[idx % 16];
         let disk_offset =
@@ -174,7 +209,7 @@ fn sample_shadowing(
 
             let shadow_falloff = 1.0 - (intersection_t / SHADOW_FADE_END);
             let layer_disk_radius = SUN_CONE_ANGLE.tan() * intersection_t;
-            let idxf = (dither + i as f32 * 0.618034).fract();
+            let idxf = (dither + i as f32 * 0.618_034).fract();
             let idx = (idxf * 16.0).floor() as usize;
             let sample_offset = DISK_SAMPLES[idx % 16];
             let disk_offset = tangent1 * (sample_offset.x * layer_disk_radius)
@@ -198,12 +233,12 @@ fn sample_shadowing(
 
     let sun_transmittance = (-optical_depth).exp();
     let single_scattering = sun_transmittance * atmosphere.sun;
-    let multiple_scattering = atmosphere.sky * sun_transmittance;
+    let multiple_scattering = atmosphere.ambient * sun_transmittance;
 
     let shadow_boost = 1.0 - sun_transmittance;
     let ambient_base = 0.12 + 0.6 * (step_density * 3.0).clamp(0.0, 1.0);
     let ambient_floor_vec =
-        atmosphere.sky * ambient_base * (0.6 + 0.4 * shadow_boost) + atmosphere.sky * 0.03;
+        atmosphere.ambient * ambient_base * (0.6 + 0.4 * shadow_boost) + atmosphere.sky * 0.03;
 
     (single_scattering + multiple_scattering + ambient_floor_vec) * SCATTERING_ALBEDO
 }
@@ -217,7 +252,7 @@ pub fn raymarch_volumetrics(
     ro: Vec3,
     rd: Vec3,
     atmosphere: &AtmosphereData,
-    view: &View,
+    view: &ViewUniform,
     t_max: f32,
     dither: f32,
     time: f32,
@@ -259,9 +294,9 @@ pub fn raymarch_volumetrics(
         t_start = t_start.min(ocean_isect.x.max(0.0));
         t_end = t_end.max(ocean_isect.y);
     }
-    if poles_isect.1 > 0.0 {
-        t_start = t_start.min(poles_isect.0.max(0.0));
-        t_end = t_end.max(poles_isect.1);
+    if poles_isect.y > 0.0 {
+        t_start = t_start.min(poles_isect.x.max(0.0));
+        t_end = t_end.max(poles_isect.y);
     }
 
     t_end = t_end.min(t_max);
@@ -272,8 +307,14 @@ pub fn raymarch_volumetrics(
         };
     }
 
-    let mut t = t_start + dither * STEP_SIZE_INSIDE;
+    let mut t = t_start;
     let sun_dir = (atmosphere.sun_pos - ro).normalize();
+
+    if t_start > 0.0 {
+        let initial_fog_transmittance = (-ATMOSPHERIC_FOG_DENSITY * t_start).exp();
+        color = atmosphere.sky * (1.0 - initial_fog_transmittance);
+        transmittance = initial_fog_transmittance;
+    }
 
     for _ in 0..MAX_STEPS {
         if t >= t_end || transmittance < 0.01 {
@@ -281,9 +322,35 @@ pub fn raymarch_volumetrics(
         }
 
         let pos = ro + rd * t;
-        let in_clouds = pos.z >= CLOUD_BOTTOM_HEIGHT - 500.0 && pos.z <= CLOUD_TOP_HEIGHT + 500.0;
-        let in_ocean = pos.z <= OCEAN_TOP_HEIGHT;
-        let in_poles = (pos - view.planet_center).length() > view.planet_radius + 50000.0;
+        let in_clouds = (t >= cloud_shell.x && t <= cloud_shell.y)
+            || (t >= cloud_shell.z && t <= cloud_shell.w);
+        let in_ocean = t >= ocean_isect.x && t <= ocean_isect.y;
+        let in_poles = t >= poles_isect.x && t <= poles_isect.y;
+
+        if !in_clouds && !in_ocean && !in_poles {
+            let mut next_t = t_end;
+            if cloud_shell.x > t {
+                next_t = next_t.min(cloud_shell.x);
+            }
+            if cloud_shell.z > t {
+                next_t = next_t.min(cloud_shell.z);
+            }
+            if ocean_isect.x > t {
+                next_t = next_t.min(ocean_isect.x);
+            }
+            if poles_isect.x > t {
+                next_t = next_t.min(poles_isect.x);
+            }
+
+            let segment_length = next_t - t;
+            if segment_length > 0.0 {
+                let segment_fog_transmittance = (-ATMOSPHERIC_FOG_DENSITY * segment_length).exp();
+                color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
+                transmittance *= segment_fog_transmittance;
+            }
+            t = next_t;
+            continue;
+        }
 
         let sample = sample_volume(
             pos,
@@ -303,7 +370,7 @@ pub fn raymarch_volumetrics(
         } else {
             STEP_SIZE_OUTSIDE
         };
-        let dist_scale = (1.0 + (t / SCALING_END).clamp(0.0, 1.0) * (SCALING_MAX - 1.0));
+        let dist_scale = 1.0 + (t / SCALING_END).clamp(0.0, 1.0) * (SCALING_MAX - 1.0);
         step_size *= dist_scale;
 
         if sample.density > 0.001 {
@@ -325,9 +392,19 @@ pub fn raymarch_volumetrics(
                 sampler,
                 dither,
             );
+            let aur_lighting = sample_aur_lighting(
+                pos,
+                view,
+                time,
+                base_texture,
+                details_texture,
+                weather_texture,
+                sampler,
+            );
 
             let step_light =
-                (shadowing * sample.color + sample.emission) * (1.0 - step_transmittance);
+                (shadowing * sample.color + sample.emission + aur_lighting * sample.color)
+                    * (1.0 - step_transmittance);
             color += step_light * transmittance;
             transmittance *= step_transmittance;
         }
@@ -338,16 +415,5 @@ pub fn raymarch_volumetrics(
     VolumetricsResult {
         color: color.extend(transmittance),
         depth: first_hit_depth,
-    }
-}
-
-trait Smoothstep {
-    fn smoothstep(self, edge0: Self, edge1: Self) -> Self;
-}
-
-impl Smoothstep for f32 {
-    fn smoothstep(self, edge0: f32, edge1: f32) -> f32 {
-        let t = ((self - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
     }
 }

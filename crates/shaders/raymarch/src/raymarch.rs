@@ -1,4 +1,5 @@
-use crate::utils::{AtmosphereData, View, get_sun_position};
+use crate::utils::{AtmosphereData, get_sun_position};
+use skybound_shared::ViewUniform;
 use spirv_std::glam::Vec3;
 use spirv_std::num_traits::Float;
 
@@ -35,15 +36,23 @@ pub struct ShadeResult {
     pub spec: f32,
 }
 
-fn shade_basic(p: Vec3, n: Vec3, rd: Vec3, view: &View) -> ShadeResult {
+fn shade_basic(p: Vec3, n: Vec3, rd: Vec3, view: &ViewUniform) -> ShadeResult {
+    // Green base color for spheres
     let base_color = Vec3::new(0.1, 0.8, 0.2);
+
+    // Sun direction from view; fall back to a reasonable default if identical position
     let sun_pos = get_sun_position(view);
     let sun_dir = (sun_pos - p).normalize();
 
+    // Lambert
     let lam = n.dot(sun_dir).max(0.0);
+
+    // Ambient + lambert
     let ambient = 0.12;
     let mut color = base_color * (ambient + lam * 0.9);
 
+    // Specular controlled by hemisphere: top half only (world +Z)
+    // Here "top" is defined as normal.z > 0.
     let hemi_mask = if n.z > 0.0 { 1.0 } else { 0.0 };
     let spec = hemi_mask;
 
@@ -60,14 +69,23 @@ pub struct SolidsResult {
     pub depth: f32,
     pub specular: f32,
     pub normal: Vec3,
+    pub hit: f32,
 }
 
-pub fn raymarch_solids(ro: Vec3, rd: Vec3, view: &View, t_max: f32, _time: f32) -> SolidsResult {
+pub fn raymarch_solids(
+    ro: Vec3,
+    rd: Vec3,
+    view: &ViewUniform,
+    t_max: f32,
+    _time: f32,
+) -> SolidsResult {
     let mut t = 0.0;
+
     let mut out_color = Vec3::ZERO;
     let mut out_spec = 0.0;
     let mut out_normal = Vec3::ZERO;
     let mut out_depth = t_max;
+    let mut hit = 0.0;
 
     for _ in 0..MAX_STEPS {
         if t >= t_max {
@@ -79,13 +97,20 @@ pub fn raymarch_solids(ro: Vec3, rd: Vec3, view: &View, t_max: f32, _time: f32) 
         let dist = 1.0;
 
         if dist < EPSILON {
+            // Hit the surface
             out_depth = t;
             out_normal = estimate_normal(p);
+
+            // Shade
             let shade = shade_basic(p, out_normal, rd, view);
             out_color = shade.color;
             out_spec = shade.spec;
+            hit = 1.0;
+
             break;
         }
+
+        // advance by the signed distance (clamp to min step)
         t += dist.max(MIN_STEP);
     }
 
@@ -94,5 +119,6 @@ pub fn raymarch_solids(ro: Vec3, rd: Vec3, view: &View, t_max: f32, _time: f32) 
         depth: out_depth,
         specular: out_spec,
         normal: out_normal,
+        hit,
     }
 }

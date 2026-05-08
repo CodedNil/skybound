@@ -1,18 +1,18 @@
-use crate::utils::{View, intersect_sphere};
-use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, Vec4Swizzles};
+use skybound_shared::ViewUniform;
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
 use spirv_std::num_traits::Float;
 
 const BASE_SCALE: f32 = 0.005;
 const BASE_TIME: f32 = 0.01;
 
 const BASE_NOISE_SCALE: f32 = 0.01 * BASE_SCALE;
-const WIND_DIRECTION_BASE: Vec3 = Vec3::new(0.1 * BASE_TIME, 0.0, 0.02 * BASE_TIME);
+const WIND_DIRECTION_BASE: Vec3 = Vec3::new(1.0 * 0.1 * BASE_TIME, 0.0, 0.2 * 0.1 * BASE_TIME);
 
 const WEATHER_NOISE_SCALE: f32 = 0.001 * BASE_SCALE;
-const WIND_DIRECTION_WEATHER: Vec2 = Vec2::new(0.02 * BASE_TIME, 0.0);
+const WIND_DIRECTION_WEATHER: Vec2 = Vec2::new(1.0 * 0.02 * BASE_TIME, 0.0);
 
 const DETAIL_NOISE_SCALE: f32 = 0.2 * BASE_SCALE;
-const WIND_DIRECTION_DETAIL: Vec3 = Vec3::new(0.2 * BASE_TIME, 0.0, -0.2 * BASE_TIME);
+const WIND_DIRECTION_DETAIL: Vec3 = Vec3::new(1.0 * 0.2 * BASE_TIME, 0.0, -1.0 * 0.2 * BASE_TIME);
 
 pub const CLOUD_BOTTOM_HEIGHT: f32 = 1000.0;
 pub const CLOUD_TOP_HEIGHT: f32 = 33000.0;
@@ -69,7 +69,7 @@ fn calculate_layer_v_offset(
     weather_texture: &spirv_std::Image!(2D, type=f32, sampled=true),
     sampler: &spirv_std::Sampler,
 ) -> f32 {
-    let disp_coord = pos_xy * 0.000005 + Vec2::splat(index_u as f32 * 0.23);
+    let disp_coord = pos_xy * 0.000_005 + Vec2::splat(index_u as f32 * 0.23);
     let disp_noise: f32 = weather_texture.sample_by_lod(*sampler, disp_coord, 0.0).x;
     (disp_noise - 0.5) * CLOUD_LAYER_SPACING * 0.85
 }
@@ -78,9 +78,10 @@ pub fn get_cloud_layer(
     pos: Vec3,
     weather_texture: &spirv_std::Image!(2D, type=f32, sampled=true),
     sampler: &spirv_std::Sampler,
+    _time: f32,
 ) -> CloudLayer {
     let raw_index = (pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_SPACING;
-    let index_u = raw_index.floor().max(0.0) as u32;
+    let index_u = (raw_index.floor().max(0.0) as u32).min(CLOUD_TOTAL_LAYERS as u32 - 1);
 
     if pos.z < CLOUD_BOTTOM_HEIGHT - CLOUD_LAYER_SPACING || index_u >= CLOUD_TOTAL_LAYERS as u32 {
         return CloudLayer {
@@ -119,7 +120,7 @@ pub fn get_cloud_layer_above(altitude: f32, above_count: f32) -> f32 {
 
 pub fn sample_clouds(
     pos: Vec3,
-    view: &View,
+    view: &ViewUniform,
     time: f32,
     simple: bool,
     base_texture: &spirv_std::Image!(3D, type=f32, sampled=true),
@@ -127,7 +128,7 @@ pub fn sample_clouds(
     weather_texture: &spirv_std::Image!(2D, type=f32, sampled=true),
     sampler: &spirv_std::Sampler,
 ) -> f32 {
-    let cloud_layer = get_cloud_layer(pos, weather_texture, sampler);
+    let cloud_layer = get_cloud_layer(pos, weather_texture, sampler, time);
     if cloud_layer.height <= 0.0 {
         return 0.0;
     }
@@ -135,34 +136,29 @@ pub fn sample_clouds(
     let layer_i = cloud_layer.index as usize;
     let weather_pos_2d = (pos.xy() + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE
         + time * WIND_DIRECTION_WEATHER;
-    let weather_noise: Vec3 = weather_texture
-        .sample_by_lod(*sampler, weather_pos_2d, 0.0)
-        .xyz();
+    let weather_noise: Vec4 = weather_texture.sample_by_lod(*sampler, weather_pos_2d, 0.0);
 
     let mut weather_coverage = weather_noise.x * 1.2 - 0.4;
     let layer_fraction = layer_i as f32 / CLOUD_TOTAL_LAYERS as f32;
     let cloud_layer_coverage_a = 1.0
-        - ((weather_noise.z - layer_fraction).abs() / 0.6)
-            .clamp(0.0, 1.0)
-            .smoothstep(0.0, 1.0);
+        - (weather_noise.z - layer_fraction)
+            .abs()
+            .smoothstep(0.0, 0.6);
     let cloud_layer_coverage_b = 1.0
-        - ((1.0 - layer_fraction).abs() / (weather_noise.z * 0.5))
-            .clamp(0.0, 1.0)
-            .smoothstep(0.0, 1.0);
+        - (1.0 - layer_fraction)
+            .abs()
+            .smoothstep(0.0, weather_noise.z * 0.5);
     weather_coverage *= cloud_layer_coverage_a + cloud_layer_coverage_b;
     weather_coverage *= 1.0 - layer_fraction * 0.3;
 
     let lat_norm = (view.latitude.abs() * 0.8).clamp(0.0, 1.0);
-    weather_coverage *= 0.5 + 0.5 * lat_norm;
+    weather_coverage *= 0.5.lerp(1.0, lat_norm);
 
     if weather_coverage <= 0.0 {
         return 0.0;
     }
 
-    let weather_a: f32 = weather_texture
-        .sample_by_lod(*sampler, weather_pos_2d, 0.0)
-        .w;
-    let cloud_height = cloud_layer.height * (0.8 + weather_a * 1.5);
+    let cloud_height = cloud_layer.height * (0.8 + weather_noise.w * 1.5);
     let h_coord = ((pos.z - cloud_layer.bottom) / cloud_height).clamp(0.0, 1.0);
 
     let mut h_profile = if cloud_layer.is_cirrus {

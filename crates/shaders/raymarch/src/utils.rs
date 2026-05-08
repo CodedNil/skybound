@@ -1,5 +1,5 @@
-pub use skybound_shared::CloudsViewUniform as View;
-use spirv_std::glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
+use skybound_shared::ViewUniform;
+use spirv_std::glam::{FloatExt, Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 use spirv_std::num_traits::Float;
 
 pub const MAGNETOSPHERE_HEIGHT: f32 = 400_000.0;
@@ -11,8 +11,48 @@ pub struct AtmosphereData {
     pub ambient: Vec3,
 }
 
+pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+pub fn step(edge: f32, x: f32) -> f32 {
+    if x < edge { 0.0 } else { 1.0 }
+}
+
 pub fn remap(x: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
     (((x - a) / (b - a)) * (d - c)) + c
+}
+
+// Modulo functions
+pub fn mod1(x: f32, y: f32) -> f32 {
+    x - y * (x / y).floor()
+}
+
+pub fn mod3(x: Vec3, y: f32) -> Vec3 {
+    x - (x / y).floor() * y
+}
+
+// White noise hash: f32 → f32 [0,1]
+pub fn hash11(p: f32) -> f32 {
+    let mut v = (p * 0.1031).fract();
+    v *= v + 33.33;
+    v *= v + v;
+    v.fract()
+}
+
+// White noise hash: f32 → vec2 [0,1]
+pub fn hash12(p: f32) -> Vec2 {
+    let mut v = (Vec2::splat(p) * Vec2::new(0.1031, 0.1030)).fract();
+    v += v.dot(Vec2::new(v.y, v.x) + 33.33);
+    ((v.x + v.y) * v).fract()
+}
+
+// White noise hash: f32 → vec3 [0,1]
+pub fn hash13(p: f32) -> Vec3 {
+    let mut v = (Vec3::splat(p) * Vec3::new(0.1031, 0.1030, 0.1029)).fract();
+    v += v.dot(Vec3::new(v.y, v.z, v.x) + 33.33);
+    ((v.x + v.y + v.z) * v).fract()
 }
 
 pub fn hash21(p: Vec2) -> f32 {
@@ -31,8 +71,9 @@ pub fn blue_noise(uv: Vec2) -> f32 {
 }
 
 pub fn quat_rotate(q: Vec4, v: Vec3) -> Vec3 {
-    let quat = Quat::from_vec4(q);
-    quat * v
+    let u = q.xyz();
+    let uv = u.cross(v);
+    v + 2.0 * (q.w * uv + u.cross(uv))
 }
 
 pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
@@ -60,7 +101,7 @@ pub fn intersect_plane(ro: Vec3, rd: Vec3, plane_height: f32) -> f32 {
 pub fn ray_shell_intersect(
     ro: Vec3,
     rd: Vec3,
-    view: &View,
+    view: &ViewUniform,
     bottom_altitude: f32,
     top_altitude: f32,
 ) -> Vec4 {
@@ -83,7 +124,7 @@ pub fn ray_shell_intersect(
     )
 }
 
-pub fn get_sun_position(view: &View) -> Vec3 {
+pub fn get_sun_position(view: &ViewUniform) -> Vec3 {
     let north_axis = quat_rotate(view.planet_rotation, Vec3::new(0.0, 0.0, 1.0)).normalize();
     let up_vector = (view.world_position - view.planet_center).normalize();
     let is_in_northern_hemisphere = north_axis.dot(up_vector) > 0.0;
@@ -97,7 +138,7 @@ pub fn get_sun_position(view: &View) -> Vec3 {
     let mut sun_pos = view.planet_center + sun_axis * sun_altitude;
 
     let blend = (view.latitude.abs() / 0.35).clamp(0.0, 1.0);
-    sun_pos.z += (sun_altitude * -2.0) * (1.0 - blend);
+    sun_pos.z += 0.0.lerp(sun_altitude * -2.0, 1.0 - blend);
 
     sun_pos
 }

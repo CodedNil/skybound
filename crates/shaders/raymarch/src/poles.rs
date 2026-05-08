@@ -1,5 +1,6 @@
-use crate::utils::{MAGNETOSPHERE_HEIGHT, View, quat_rotate};
-use spirv_std::glam::Vec3;
+use crate::utils::{MAGNETOSPHERE_HEIGHT, quat_rotate, smoothstep};
+use skybound_shared::ViewUniform;
+use spirv_std::glam::{Vec2, Vec3};
 use spirv_std::num_traits::Float;
 
 pub const POLE_WIDTH: f32 = 10000.0;
@@ -12,10 +13,11 @@ pub struct PolesSample {
 
 pub fn sample_poles(pos: Vec3, _time: f32, _sampler: &spirv_std::Sampler) -> PolesSample {
     let mut color = Vec3::new(0.0, 0.5, 1.0);
-    let atmosphere_dist =
-        (5000.0 - (pos.z - MAGNETOSPHERE_HEIGHT).abs()).clamp(0.0, 4900.0) / 4900.0;
+
+    // Make it more intense at the top of the atmosphere
+    let atmosphere_dist = smoothstep(5000.0, 100.0, (pos.z - MAGNETOSPHERE_HEIGHT).abs());
     if atmosphere_dist > 0.0 {
-        color += Vec3::splat(atmosphere_dist.smoothstep(0.0, 1.0));
+        color += Vec3::splat(atmosphere_dist);
     }
 
     PolesSample {
@@ -25,7 +27,7 @@ pub fn sample_poles(pos: Vec3, _time: f32, _sampler: &spirv_std::Sampler) -> Pol
     }
 }
 
-pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &View, t_max: f32) -> (f32, f32) {
+pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -> Vec2 {
     let axis = quat_rotate(view.planet_rotation, Vec3::new(0.0, 0.0, 1.0)).normalize();
     let oc = ro - view.planet_center;
     let ad = axis.dot(rd);
@@ -35,8 +37,8 @@ pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &View, t_max: f32) -> (f32
     let c = oc.dot(oc) - ao * ao - POLE_WIDTH * POLE_WIDTH;
 
     let disc = b * b - 4.0 * a * c;
-    if disc < 0.0 || a.abs() < 1e-6 {
-        return (t_max, 0.0);
+    if disc < 0.0 || a == 0.0 {
+        return Vec2::new(t_max, 0.0);
     }
 
     let s = disc.sqrt();
@@ -47,9 +49,9 @@ pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &View, t_max: f32) -> (f32
     let exit = t0.max(t1);
 
     if exit <= 0.0 {
-        return (t_max, 0.0);
+        return Vec2::new(t_max, 0.0);
     }
-    (entry, exit)
+    Vec2::new(entry, exit)
 }
 
 trait Smoothstep {

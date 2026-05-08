@@ -28,7 +28,7 @@ use bevy::{
         view::{ExtractedView, ViewTarget},
     },
 };
-pub use skybound_shared::CloudsViewUniform;
+pub use skybound_shared::ViewUniform;
 
 #[derive(Resource, Default)]
 pub struct PreviousViewData {
@@ -37,7 +37,7 @@ pub struct PreviousViewData {
 
 #[derive(Resource)]
 pub struct CloudsViewUniforms {
-    pub uniforms: DynamicUniformBuffer<CloudsViewUniform>,
+    pub uniforms: DynamicUniformBuffer<ViewUniform>,
 }
 
 impl FromWorld for CloudsViewUniforms {
@@ -125,7 +125,7 @@ pub fn prepare_clouds_view_uniforms(
         // Unjittered inverse-projection used for motion vector ray reconstruction only
         let world_from_clip_unjittered = world_from_view * extracted_view.clip_from_view.inverse();
 
-        let offset = view_uniforms.uniforms.push(&CloudsViewUniform {
+        let offset = view_uniforms.uniforms.push(&ViewUniform {
             clip_from_world,
             world_from_clip,
             world_from_view,
@@ -280,8 +280,8 @@ impl FromWorld for RaymarchPipeline {
         let layout_entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<CloudsViewUniform>(true), // View uniforms
-                sampler(SamplerBindingType::Filtering),    // Linear sampler
+                uniform_buffer::<ViewUniform>(true),    // View uniforms
+                sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
