@@ -3,10 +3,10 @@ use crate::{
     world::{PLANET_RADIUS, WorldData},
 };
 use bevy::{
-    asset::load_embedded_asset,
     camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
+    material::descriptor::VertexState,
     prelude::*,
     render::{
         Extract,
@@ -20,7 +20,7 @@ use bevy::{
             FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
             RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
             RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-            ShaderType, StoreOp, TextureFormat, TextureSampleType,
+            StoreOp, TextureFormat, TextureSampleType,
             binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -28,33 +28,7 @@ use bevy::{
         view::{ExtractedView, ViewTarget},
     },
 };
-
-#[derive(Clone, ShaderType)]
-pub struct CloudsViewUniform {
-    time: f32,
-    frame_count: u32,
-
-    clip_from_world: Mat4,
-    world_from_clip: Mat4,
-    world_from_view: Mat4,
-    view_from_world: Mat4,
-
-    clip_from_view: Mat4,
-    view_from_clip: Mat4,
-    world_position: Vec3,
-    camera_offset: Vec2,
-
-    // Previous frame matrices for motion vectors
-    prev_clip_from_world: Mat4,
-    // Unjittered inverse-projection for jitter-free motion vector reconstruction
-    world_from_clip_unjittered: Mat4,
-
-    planet_rotation: Vec4,
-    planet_center: Vec3,
-    planet_radius: f32,
-    latitude: f32,
-    longitude: f32,
-}
+pub use skybound_shared::CloudsViewUniform;
 
 #[derive(Resource, Default)]
 pub struct PreviousViewData {
@@ -152,27 +126,25 @@ pub fn prepare_clouds_view_uniforms(
         let world_from_clip_unjittered = world_from_view * extracted_view.clip_from_view.inverse();
 
         let offset = view_uniforms.uniforms.push(&CloudsViewUniform {
-            time: time.elapsed_secs_wrapped(),
-            frame_count: frame_count.0,
-
             clip_from_world,
             world_from_clip,
             world_from_view,
             view_from_world,
-
             clip_from_view,
             view_from_clip,
-            world_position,
-            camera_offset: data.camera_offset,
-
             prev_clip_from_world: prev_view_data.clip_from_world,
             world_from_clip_unjittered,
-
+            time: time.elapsed_secs_wrapped(),
+            frame_count: frame_count.0,
+            camera_offset: data.camera_offset,
+            world_position,
+            _padding1: 0,
             planet_rotation: data.planet_rotation,
             planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
             planet_radius: data.planet_radius,
             latitude: data.latitude,
             longitude: data.longitude,
+            _padding2: Vec2::NAN,
         });
 
         commands
@@ -292,10 +264,9 @@ pub fn raymarch_pass(
 
 impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
-        let shader =
-            load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");
+        let asset_server = world.resource::<AssetServer>();
+        let shader = asset_server.load("shaders/raymarch.spv");
         let render_device = world.resource::<RenderDevice>();
-        let fullscreen_shader = world.resource::<bevy::core_pipeline::FullscreenShader>();
 
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
@@ -325,11 +296,16 @@ impl FromWorld for RaymarchPipeline {
         let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout_descriptor],
-            vertex: fullscreen_shader.to_vertex_state(),
+            vertex: VertexState {
+                shader: shader.clone(),
+                entry_point: Some("main_vs".into()),
+                buffers: vec![],
+                shader_defs: vec![],
+            },
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
                 shader,
-                entry_point: Some("main".into()),
+                entry_point: Some("main_fs".into()),
                 targets: vec![
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,
