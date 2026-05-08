@@ -1,7 +1,6 @@
-use crate::utils::intersect_sphere;
 use core::f32::consts::PI;
 use skybound_shared::ViewUniform;
-use spirv_std::glam::{FloatExt, Vec3, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 use spirv_std::num_traits::Float;
 
 // Precomputed Constants
@@ -35,6 +34,21 @@ const LIGHT_STEPS: i32 = 8; // Steps for the secondary light rays (to the sun)
 const PLANET_EMISSION_COLOR: Vec3 = vec3(0.3, 0.15, 0.4); // Gentle purple
 const PLANET_GLOW_ANGULAR_WIDTH: f32 = 0.03; // Radians, soft angular falloff
 const PLANET_EMISSION_CHROMA_PRESERVE: f32 = 0.9;
+
+// Returns the near (x) and far (y) intersection distances
+fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
+    let a = rd.dot(rd);
+    let b = 2.0 * rd.dot(ro);
+    let c = ro.dot(ro) - (radius * radius);
+    let disc = b * b - 4.0 * a * c;
+
+    if disc < 0.0 {
+        return Vec2::splat(-1.0); // No real intersection
+    }
+
+    let sqrt_disc = disc.sqrt();
+    vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
+}
 
 // Rayleigh phase function
 fn phase_rayleigh(cos_theta: f32) -> f32 {

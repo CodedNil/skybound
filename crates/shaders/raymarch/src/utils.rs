@@ -68,6 +68,8 @@ pub fn quat_rotate(q: Vec4, v: Vec3) -> Vec3 {
     v + 2.0 * (q.w * uv + u.cross(uv))
 }
 
+// Returns the near (x) and far (y) intersection distances
+// If the ray misses, returns vec2(1.0, -1.0)
 pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     let a = rd.dot(rd);
     let b = 2.0 * rd.dot(ro);
@@ -79,7 +81,7 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     }
 
     let sqrt_disc = disc.sqrt();
-    vec2((-b - sqrt_disc) / (2.0 * a), (-b + sqrt_disc) / (2.0 * a))
+    vec2((-b - sqrt_disc), -b + sqrt_disc) / (2.0 * a)
 }
 
 pub fn intersect_plane(ro: Vec3, rd: Vec3, plane_height: f32) -> f32 {
