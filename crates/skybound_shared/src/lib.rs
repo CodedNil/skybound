@@ -25,10 +25,9 @@ pub struct ViewUniform {
     pub world_position: Vec3,
     pub padding1: u32,
 
-    pub planet_rotation: Vec4,
-
     pub planet_center: Vec3,
     pub planet_radius: f32,
+    pub planet_rotation: Vec4,
 
     pub latitude: f32,
     pub longitude: f32,

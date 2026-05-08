@@ -8,6 +8,9 @@ members = [
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+unexpected_cfgs = { level = "allow", check-cfg = [
+    'cfg(target_arch, values("spirv"))',
+] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -24,6 +27,7 @@ many_single_char_names = "allow"
 inline_always = "allow"
 too-many-lines = "allow"
 too-many-arguments = "allow"
+needless_range_loop = "allow"
 
 [profile.dev]
 opt-level = 1

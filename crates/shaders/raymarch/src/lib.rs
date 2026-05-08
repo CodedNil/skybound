@@ -32,7 +32,7 @@ fn main_vs(
     *out_uv = vec2(uv.x, 1.0 - uv.y);
 }
 
-#[spirv(fragment)]
+#[spirv(fragment(depth_replacing))]
 fn main_fs(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] view: &ViewUniform,
@@ -42,7 +42,7 @@ fn main_fs(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
-    // #[spirv(frag_depth)] out_frag_depth: &mut f32,
+    #[spirv(frag_depth)] out_frag_depth: &mut f32,
 ) {
     // Spatially-varying blue noise offset by a per-frame golden-ratio step so each
     let frame_offset = (view.frame_count as f32 * 0.618_034).fract();
@@ -123,7 +123,7 @@ fn main_fs(
 
     *out_color = rendered_color.extend(1.0).saturate();
     *out_motion = motion_vector.extend(0.0).extend(0.0);
-    // *out_frag_depth = frag_depth;
+    *out_frag_depth = frag_depth;
 
     // *out_color = Vec3::splat(frag_depth * 2000.0).extend(1.0); // DEBUG: depth
     // *out_color = (motion_vector * 200.0 + 0.5).extend(0.5).extend(1.0); // DEBUG: motion vectors

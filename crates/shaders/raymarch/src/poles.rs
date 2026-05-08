@@ -1,6 +1,7 @@
 use crate::utils::{MAGNETOSPHERE_HEIGHT, quat_rotate, smoothstep};
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{Vec2, Vec3, vec2, vec3};
+#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const POLE_WIDTH: f32 = 10000.0;

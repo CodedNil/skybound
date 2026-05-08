@@ -1,6 +1,7 @@
 use core::f32::consts::PI;
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
+#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 // Precomputed Constants

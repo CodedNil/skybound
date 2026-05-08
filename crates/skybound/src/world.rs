@@ -1,6 +1,6 @@
 use crate::camera::CameraController;
 use bevy::{
-    anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
+    // anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     post_process::bloom::Bloom,

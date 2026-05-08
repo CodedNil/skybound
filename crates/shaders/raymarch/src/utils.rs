@@ -2,6 +2,7 @@ use skybound_shared::ViewUniform;
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
 };
+#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const MAGNETOSPHERE_HEIGHT: f32 = 400_000.0;

@@ -1,6 +1,7 @@
 use crate::utils::{hash12, hash13, mod1, smoothstep};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
+#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
