@@ -13,7 +13,6 @@ use bevy::{
     prelude::*,
     render::{
         Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
-        renderer::RenderDevice,
     },
 };
 
@@ -45,7 +44,7 @@ impl Plugin for WorldRenderingPlugin {
     }
 }
 
-fn init_resources(mut commands: Commands, _: Res<RenderDevice>) {
+fn init_resources(mut commands: Commands) {
     commands.init_resource::<CloudsViewUniforms>();
     commands.init_resource::<RaymarchPipeline>();
 }

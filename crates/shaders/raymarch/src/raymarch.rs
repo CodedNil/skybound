@@ -1,7 +1,6 @@
-use crate::utils::{AtmosphereData, get_sun_position};
+use crate::utils::get_sun_position;
 use skybound_shared::ViewUniform;
-use spirv_std::glam::Vec3;
-use spirv_std::num_traits::Float;
+use spirv_std::glam::{Vec3, vec3};
 
 const MAX_STEPS: i32 = 64;
 const EPSILON: f32 = 0.01;
@@ -20,15 +19,15 @@ fn sdf_sphere(p: Vec3, r: f32) -> f32 {
 }
 
 fn estimate_normal(p: Vec3) -> Vec3 {
-    let dx = Vec3::new(EPSILON, 0.0, 0.0);
-    let dy = Vec3::new(0.0, EPSILON, 0.0);
-    let dz = Vec3::new(0.0, 0.0, EPSILON);
+    let dx = vec3(EPSILON, 0.0, 0.0);
+    let dy = vec3(0.0, EPSILON, 0.0);
+    let dz = vec3(0.0, 0.0, EPSILON);
 
     let local = repeat_to_cell(p, SPACING);
     let nx = sdf_sphere(local + dx, RADIUS) - sdf_sphere(local - dx, RADIUS);
     let ny = sdf_sphere(local + dy, RADIUS) - sdf_sphere(local - dy, RADIUS);
     let nz = sdf_sphere(local + dz, RADIUS) - sdf_sphere(local - dz, RADIUS);
-    Vec3::new(nx, ny, nz).normalize()
+    vec3(nx, ny, nz).normalize()
 }
 
 pub struct ShadeResult {
@@ -36,9 +35,9 @@ pub struct ShadeResult {
     pub spec: f32,
 }
 
-fn shade_basic(p: Vec3, n: Vec3, rd: Vec3, view: &ViewUniform) -> ShadeResult {
+pub fn shade_basic(p: Vec3, n: Vec3, view: &ViewUniform) -> ShadeResult {
     // Green base color for spheres
-    let base_color = Vec3::new(0.1, 0.8, 0.2);
+    let base_color = vec3(0.1, 0.8, 0.2);
 
     // Sun direction from view; fall back to a reasonable default if identical position
     let sun_pos = get_sun_position(view);
@@ -72,13 +71,7 @@ pub struct SolidsResult {
     pub hit: f32,
 }
 
-pub fn raymarch_solids(
-    ro: Vec3,
-    rd: Vec3,
-    view: &ViewUniform,
-    t_max: f32,
-    _time: f32,
-) -> SolidsResult {
+pub fn raymarch_solids(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -> SolidsResult {
     let mut t = 0.0;
 
     let mut out_color = Vec3::ZERO;
@@ -102,7 +95,7 @@ pub fn raymarch_solids(
             out_normal = estimate_normal(p);
 
             // Shade
-            let shade = shade_basic(p, out_normal, rd, view);
+            let shade = shade_basic(p, out_normal, view);
             out_color = shade.color;
             out_spec = shade.spec;
             hit = 1.0;
@@ -115,7 +108,7 @@ pub fn raymarch_solids(
     }
 
     SolidsResult {
-        color: out_color.clamp(Vec3::ZERO, Vec3::ONE),
+        color: out_color.saturate(),
         depth: out_depth,
         specular: out_spec,
         normal: out_normal,

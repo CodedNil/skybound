@@ -23,7 +23,7 @@ pub struct ViewUniform {
     pub camera_offset: Vec2,
 
     pub world_position: Vec3,
-    pub _padding1: u32,
+    pub padding1: u32,
 
     pub planet_rotation: Vec4,
 
@@ -32,5 +32,5 @@ pub struct ViewUniform {
 
     pub latitude: f32,
     pub longitude: f32,
-    pub _padding2: Vec2,
+    pub padding2: Vec2,
 }

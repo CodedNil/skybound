@@ -1,7 +1,7 @@
 use crate::utils::intersect_sphere;
 use core::f32::consts::PI;
 use skybound_shared::ViewUniform;
-use spirv_std::glam::Vec3;
+use spirv_std::glam::{FloatExt, Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 // Precomputed Constants
@@ -17,9 +17,9 @@ const RAYLEIGH_SCALE_HEIGHT: f32 = 8000.0; // ~8km
 const MIE_SCALE_HEIGHT: f32 = 1200.0; // ~1.2km
 
 // Wavelength-dependent scattering coefficients (in meters^-1) for Rayleigh (air), Mie (aerosols), and Ozone
-const C_RAYLEIGH: Vec3 = Vec3::new(5.802e-6, 13.558e-6, 33.100e-6);
-const C_MIE: Vec3 = Vec3::new(3.996e-6, 3.996e-6, 3.996e-6);
-const C_OZONE: Vec3 = Vec3::new(0.650e-6, 1.881e-6, 0.085e-6);
+const C_RAYLEIGH: Vec3 = vec3(5.802e-6, 13.558e-6, 33.100e-6);
+const C_MIE: Vec3 = vec3(3.996e-6, 3.996e-6, 3.996e-6);
+const C_OZONE: Vec3 = vec3(0.650e-6, 1.881e-6, 0.085e-6);
 
 // Tweakable Parameters
 const RAYLEIGH_STRENGTH: f32 = 1.0;
@@ -32,7 +32,7 @@ const PRIMARY_STEPS: i32 = 16; // Steps along the main view ray
 const LIGHT_STEPS: i32 = 8; // Steps for the secondary light rays (to the sun)
 
 // Planet emissive glow
-const PLANET_EMISSION_COLOR: Vec3 = Vec3::new(0.3, 0.15, 0.4); // Gentle purple
+const PLANET_EMISSION_COLOR: Vec3 = vec3(0.3, 0.15, 0.4); // Gentle purple
 const PLANET_GLOW_ANGULAR_WIDTH: f32 = 0.03; // Radians, soft angular falloff
 const PLANET_EMISSION_CHROMA_PRESERVE: f32 = 0.9;
 
@@ -71,7 +71,7 @@ fn density_ozone(h: f32) -> f32 {
 
 // Combines densities into a single vector for easier calculation
 fn density_atmosphere(h: f32) -> Vec3 {
-    Vec3::new(density_rayleigh(h), density_mie(h), density_ozone(h))
+    vec3(density_rayleigh(h), density_mie(h), density_ozone(h))
 }
 
 // Converts optical depth to transmittance via Beer-Lambert law
@@ -99,13 +99,7 @@ fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3, view: &ViewUniform) -
             optical_depth += density_atmosphere(altitude) * step_size;
         }
     }
-    return optical_depth;
-}
-
-// Check if a ray from `ray_start` along `ray_dir` will hit the planet (used for sun occlusion)
-fn is_occluded_by_planet(ray_start: Vec3, ray_dir: Vec3, planet_radius: f32) -> bool {
-    let p_isect = intersect_sphere(ray_start, ray_dir, planet_radius);
-    return p_isect.y > 0.0 && p_isect.x > 0.0;
+    optical_depth
 }
 
 // Smooth occlusion factor in [0,1]. Returns 1.0 for fully occluded, 0.0 for fully visible.
@@ -129,9 +123,9 @@ fn occlusion_factor_smooth(pos: Vec3, dir: Vec3, planet_radius: f32) -> f32 {
 
     // softening width (meters) - smooth over a small region around the terminator
     let soft_width = 4000.0; // ~4 km soft transition to hide banding
-    let f = (penetration / soft_width).clamp(0.0, 1.0);
+    let f = (penetration / soft_width).saturate();
     // cubic smoothstep for nicer falloff
-    return f * f * (3.0 - 2.0 * f);
+    f * f * (3.0 - 2.0 * f)
 }
 
 // Main function to calculate scattered light (in-scattering)
@@ -153,7 +147,7 @@ fn integrate_scattering(
     // Non-uniform sampling: concentrate samples closer to the camera for better quality
     let ray_height = atmosphere_height(ray_start, view.planet_radius);
     let sample_distribution_exponent =
-        1.0 + (1.0 - ray_height / ATMOSPHERE_HEIGHT).clamp(0.0, 1.0) * 8.0;
+        1.0 + (1.0 - ray_height / ATMOSPHERE_HEIGHT).saturate() * 8.0;
 
     let mut prev_ray_time = 0.0;
     for i in 0..PRIMARY_STEPS {
@@ -196,12 +190,12 @@ fn integrate_scattering(
     }
 
     // Slightly warm spectral tint for more appealing sunsets
-    let sun_color = Vec3::new(1.0, 0.97, 0.90) * SUN_INTENSITY;
+    let sun_color = vec3(1.0, 0.97, 0.90) * SUN_INTENSITY;
     let radiance = sun_color
         * (rayleigh_scatter * C_RAYLEIGH * RAYLEIGH_STRENGTH + mie_scatter * C_MIE * MIE_STRENGTH);
 
     // Apply exposure to the final radiance
-    return radiance * EXPOSURE;
+    radiance * EXPOSURE
 }
 
 pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
@@ -239,7 +233,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     // Subtle planet emissive glow (scattered)
     let to_center = -ro_relative.normalize();
     let dist = ro_relative.length();
-    let disk_angle = (view.planet_radius / dist).clamp(0.0, 1.0).asin();
+    let disk_angle = (view.planet_radius / dist).saturate().asin();
     let angle = (rd.dot(to_center).clamp(-1.0, 1.0)).acos();
 
     // Rim distance = angle outside the disk; apply a smooth gaussian-like falloff
@@ -248,7 +242,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
 
     // Attenuate by atmospheric transmittance along the view ray
     let trans = calculate_transmittance(integrate_optical_depth(ro_relative, rd, view));
-    let trans_lum = trans.dot(Vec3::new(0.2126, 0.7152, 0.0722));
+    let trans_lum = trans.dot(vec3(0.2126, 0.7152, 0.0722));
     let atten = trans * (1.0 - PLANET_EMISSION_CHROMA_PRESERVE)
         + Vec3::splat(trans_lum) * PLANET_EMISSION_CHROMA_PRESERVE;
     final_color += PLANET_EMISSION_COLOR * glow * atten;
@@ -257,7 +251,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     final_color = 1.0 - (-final_color).exp(); // Reinhard tonemapping
     final_color = final_color.powf(1.0 / 2.2); // Gamma correction
 
-    return final_color;
+    final_color
 }
 
 /// Calculates the direct sunlight color after it has passed through the atmosphere to the camera
@@ -274,11 +268,11 @@ pub fn get_sun_light_color(view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     let light_transmittance = calculate_transmittance(optical_depth_light) * (1.0 - cam_occ);
 
     // Slightly warm spectral tint for the sun (more pleasing sunsets)
-    let sun_base = Vec3::new(1.0, 0.97, 0.90) * SUN_INTENSITY;
+    let sun_base = vec3(1.0, 0.97, 0.90) * SUN_INTENSITY;
 
     // The final sun color is the base intensity filtered by the atmospheric transmittance
     let sun_color = sun_base * light_transmittance;
 
     // Return the raw HDR color multiplied by the exposure
-    return sun_color * EXPOSURE;
+    sun_color * EXPOSURE
 }

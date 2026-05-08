@@ -138,13 +138,13 @@ pub fn prepare_clouds_view_uniforms(
             frame_count: frame_count.0,
             camera_offset: data.camera_offset,
             world_position,
-            _padding1: 0,
+            padding1: 0,
             planet_rotation: data.planet_rotation,
-            planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
+            planet_center: vec3(world_position.x, world_position.y, -data.planet_radius),
             planet_radius: data.planet_radius,
             latitude: data.latitude,
             longitude: data.longitude,
-            _padding2: Vec2::NAN,
+            padding2: Vec2::ZERO,
         });
 
         commands

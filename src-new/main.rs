@@ -2,11 +2,11 @@ use bevy::{
     core_pipeline::{Core3d, Core3dSystems},
     prelude::*,
     render::{
-        Render, RenderApp, RenderSystems,
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_resource::*,
         renderer::RenderContext,
         view::{ExtractedView, ViewTarget},
+        Render, RenderApp, RenderSystems,
     },
 };
 use bytemuck::{Pod, Zeroable};
@@ -142,7 +142,7 @@ fn sky_pass(
     };
     let constants = world.resource::<ShaderConstants>();
 
-    for (_entity, _view, view_target) in &view_query {
+    for (entity, view, view_target) in &view_query {
         if let Some(pipeline) = pipeline_cache.get_render_pipeline(sky_pipeline.pipeline_id) {
             let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
                 label: Some("Sky Pass"),

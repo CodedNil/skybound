@@ -26,7 +26,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
     let base_texture =
         load_or_generate_texture("base_texture", size, depth, TextureFormat::R8Unorm, || {
             let perlinworley = spread(
-                &simplex_3d(size, depth, 7, 0.7, Vec2::new(8.0, 6.0), 1.5)
+                &simplex_3d(size, depth, 7, 0.7, vec2(8.0, 6.0), 1.5)
                     .iter()
                     .zip(worley_3d(size, depth, 5, 0.7, 12.0, 0.5))
                     .map(|(&perlin, worley)| map_range(perlin, -(1.0 - worley), 1.0, 0.0, 1.0))
@@ -46,8 +46,8 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         TextureFormat::Rgba8Unorm,
         || {
             let detail1 = worley_3d(size, depth, 6, 0.8, 8.0, 0.6);
-            let fog1 = spread(&simplex_3d(size, depth, 4, 0.2, Vec2::new(7.0, 7.0), 1.0));
-            let fog2 = spread(&simplex_3d(size, depth, 6, 0.4, Vec2::new(6.0, 4.0), 1.0));
+            let fog1 = spread(&simplex_3d(size, depth, 4, 0.2, vec2(7.0, 7.0), 1.0));
+            let fog2 = spread(&simplex_3d(size, depth, 6, 0.4, vec2(6.0, 4.0), 1.0));
 
             save_noise_layer(&detail1, "detail1.png", size);
             save_noise_layer(&fog1, "fog1.png", size);
@@ -64,13 +64,13 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         depth,
         TextureFormat::Rgba8Unorm,
         || {
-            let weather1 = spread(&simplex_3d(size, depth, 5, 0.45, Vec2::new(5.0, 2.0), 2.0))
+            let weather1 = spread(&simplex_3d(size, depth, 5, 0.45, vec2(5.0, 2.0), 2.0))
                 .iter()
                 .map(|&x| x * 1.1 - 0.1)
                 .collect::<Vec<f32>>();
             let weather2 = spread(&worley_3d(size, depth, 3, 0.5, 8.0, 0.4))
                 .iter()
-                .zip(spread(&simplex_3d(size, depth, 5, 0.8, Vec2::new(8.0, 2.0), 1.0)).iter())
+                .zip(spread(&simplex_3d(size, depth, 5, 0.8, vec2(8.0, 2.0), 1.0)).iter())
                 .map(|(&a, &b)| (a * 1.7 - 0.5) + b * 0.1)
                 .collect::<Vec<f32>>();
             let weather3 = spread(&simplex_3d(size, depth, 6, 0.8, Vec2::splat(2.0), 0.5))
