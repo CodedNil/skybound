@@ -168,9 +168,7 @@ pub fn sample_clouds(
         let top = (1.0 - h_coord).smoothstep(0.0, 0.6);
         (base * top).powf(0.7)
     } else {
-        let base = h_coord.smoothstep(0.0, 0.2);
-        let top = (1.0 - h_coord).smoothstep(0.0, 0.8);
-        base * top
+        h_coord.smoothstep(0.0, 0.2) * (1.0 - h_coord).smoothstep(0.0, 0.8)
     };
 
     h_profile *= h_coord.smoothstep(0.0, 0.1) * (1.0 - h_coord).smoothstep(0.0, 0.1);

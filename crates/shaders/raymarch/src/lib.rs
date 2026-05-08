@@ -15,6 +15,7 @@ use crate::volumetrics::raymarch_volumetrics;
 use core::f32::consts::PI;
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3};
+#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
@@ -69,7 +70,7 @@ fn main_fs(
     let sky = render_sky(rd, view, sun_dir);
     let atmosphere = AtmosphereData {
         sun_pos,
-        sky: render_sky(rd, view, sun_dir),
+        sky,
         sun: (get_sun_light_color(view, sun_dir) * 0.45 + sky * 0.18) * phase,
         ambient: sky * 0.8 + render_sky(vec3(1.0, 0.0, 1.0).normalize(), view, sun_dir) * 0.2,
     };
@@ -120,12 +121,12 @@ fn main_fs(
         frag_depth = clip_curr.z / clip_curr.w;
     }
 
-    // out.color = vec4<f32>(vec3<f32>(frag_depth * 2000.0), 1.0); // DEBUG: depth
-    // out.color = vec4<f32>(motion_vector * 200.0 + 0.5, 0.5, 1.0); // DEBUG: motion vectors
-
     *out_color = rendered_color.extend(1.0).saturate();
     *out_motion = motion_vector.extend(0.0).extend(0.0);
-    // *out.frag_depth = frag_depth;
+    // *out_frag_depth = frag_depth;
+
+    // *out_color = Vec3::splat(frag_depth * 2000.0).extend(1.0); // DEBUG: depth
+    // *out_color = (motion_vector * 200.0 + 0.5).extend(0.5).extend(1.0); // DEBUG: motion vectors
 }
 
 const INV_4_PI: f32 = 0.25 * (1.0 / PI);
@@ -135,12 +136,12 @@ fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
 }
 
 /// Convert a ndc space position to world space
-pub fn position_ndc_to_world(ndc_pos: Vec3, world_from_clip: Mat4) -> Vec3 {
+fn position_ndc_to_world(ndc_pos: Vec3, world_from_clip: Mat4) -> Vec3 {
     let world_pos = world_from_clip * ndc_pos.extend(1.0);
     world_pos.xyz() / world_pos.w
 }
 
 /// Convert uv [0.0 .. 1.0] coordinate to ndc space xy [-1.0 .. 1.0]
-pub fn uv_to_ndc(uv: Vec2) -> Vec2 {
+fn uv_to_ndc(uv: Vec2) -> Vec2 {
     uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0)
 }

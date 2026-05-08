@@ -1,5 +1,7 @@
 use skybound_shared::ViewUniform;
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
+use spirv_std::glam::{
+    FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
+};
 use spirv_std::num_traits::Float;
 
 pub const MAGNETOSPHERE_HEIGHT: f32 = 400_000.0;
@@ -36,20 +38,20 @@ pub fn hash11(p: f32) -> f32 {
 // White noise hash: f32 → vec2 [0,1]
 pub fn hash12(p: f32) -> Vec2 {
     let mut v = (Vec2::splat(p) * vec2(0.1031, 0.1030)).fract();
-    v += v.dot(vec2(v.y, v.x) + 33.33);
+    v += v.dot(v.yx() + 33.33);
     ((v.x + v.y) * v).fract()
 }
 
 // White noise hash: f32 → vec3 [0,1]
 pub fn hash13(p: f32) -> Vec3 {
     let mut v = (Vec3::splat(p) * vec3(0.1031, 0.1030, 0.1029)).fract();
-    v += v.dot(vec3(v.y, v.z, v.x) + 33.33);
+    v += v.dot(v.yzx() + 33.33);
     ((v.x + v.y + v.z) * v).fract()
 }
 
 pub fn hash21(p: Vec2) -> f32 {
-    let mut v3 = (vec3(p.x, p.y, p.x) * 0.1031).fract();
-    v3 += v3.dot(vec3(v3.y, v3.z, v3.x) + 33.33);
+    let mut v3 = (p.xyx() * 0.1031).fract();
+    v3 += v3.dot(v3.yzx() + 33.33);
     ((v3.x + v3.y) * v3.z).fract()
 }
 
@@ -81,7 +83,7 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     }
 
     let sqrt_disc = disc.sqrt();
-    vec2((-b - sqrt_disc), -b + sqrt_disc) / (2.0 * a)
+    vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
 }
 
 pub fn intersect_plane(ro: Vec3, rd: Vec3, plane_height: f32) -> f32 {

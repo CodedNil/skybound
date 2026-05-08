@@ -104,8 +104,7 @@ fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3, view: &ViewUniform) -
     let intersection = intersect_sphere(ray_start, ray_dir, atmosphere_radius);
     let ray_length = intersection.y.max(0.0);
     let step_size = ray_length / LIGHT_STEPS as f32;
-
-    let mut optical_depth = Vec3::splat(0.0);
+    let mut optical_depth = Vec3::ZERO;
     for i in 0..LIGHT_STEPS {
         let local_pos = ray_start + ray_dir * (i as f32 + 0.5) * step_size;
         let altitude = atmosphere_height(local_pos, view.planet_radius);
@@ -153,10 +152,9 @@ fn integrate_scattering(
     let cos_theta = ray_dir.dot(sun_dir);
     let phase_r = phase_rayleigh(cos_theta);
     let phase_m = phase_mie(cos_theta, MIE_G);
-
-    let mut optical_depth_view = Vec3::splat(0.0);
-    let mut rayleigh_scatter = Vec3::splat(0.0);
-    let mut mie_scatter = Vec3::splat(0.0);
+    let mut optical_depth_view = Vec3::ZERO;
+    let mut rayleigh_scatter = Vec3::ZERO;
+    let mut mie_scatter = Vec3::ZERO;
 
     // Non-uniform sampling: concentrate samples closer to the camera for better quality
     let ray_height = atmosphere_height(ray_start, view.planet_radius);
@@ -169,7 +167,6 @@ fn integrate_scattering(
         let ray_time =
             ((i + 1) as f32 / PRIMARY_STEPS as f32).powf(sample_distribution_exponent) * ray_length;
         let step_size = ray_time - prev_ray_time;
-
         let local_pos = ray_start + ray_dir * ray_time;
         let altitude = atmosphere_height(local_pos, view.planet_radius);
         if altitude > ATMOSPHERE_HEIGHT {
@@ -222,7 +219,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
 
     // If the ray completely misses the atmosphere, there's nothing to render
     if atmosphere_isect.y < 0.0 {
-        return Vec3::splat(0.0);
+        return Vec3::ZERO;
     }
 
     // Determine the integration interval [ray_start_dist, ray_end_dist] along the ray
@@ -237,7 +234,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     // Calculate the final length and start position for the raymarching
     let ray_length = (ray_end_dist - ray_start_dist).max(0.0);
     if ray_length <= 0.0 {
-        return Vec3::splat(0.0);
+        return Vec3::ZERO;
     }
     let ray_start = ro_relative + rd * ray_start_dist;
 
