@@ -6,7 +6,10 @@ pub const PLANET_RADIUS: f32 = 1_000_000.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
-#[cfg_attr(feature = "cpu", derive(bevy::render::render_resource::ShaderType))]
+#[cfg_attr(
+    feature = "cpu",
+    derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
+)]
 pub struct ViewUniform {
     pub clip_from_world: Mat4,
     pub world_from_clip: Mat4,

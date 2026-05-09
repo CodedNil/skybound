@@ -86,11 +86,11 @@ fn setup(mut commands: Commands) {
         DepthPrepass,
         MotionVectorPrepass,
         Msaa::Off,
-        // Dlss::<DlssSuperResolutionFeature> {
-        //     perf_quality_mode: DlssPerfQualityMode::Quality,
-        //     reset: false,
-        //     _phantom_data: std::marker::PhantomData,
-        // },
+        Dlss::<DlssSuperResolutionFeature> {
+            perf_quality_mode: DlssPerfQualityMode::UltraPerformance,
+            reset: false,
+            _phantom_data: std::marker::PhantomData,
+        },
         Hdr,
         Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),

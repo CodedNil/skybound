@@ -27,6 +27,7 @@ fn main() {
 
     let result = SpirvBuilder::new(shader_project_path, "spirv-unknown-vulkan1.1")
         .spirv_metadata(SpirvMetadata::None)
+        .release(true)
         .uniform_buffer_standard_layout(true)
         .relax_block_layout(true)
         .scalar_block_layout(true)

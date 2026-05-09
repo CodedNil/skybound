@@ -29,11 +29,19 @@ too-many-lines = "allow"
 too-many-arguments = "allow"
 needless_range_loop = "allow"
 
+[profile.release]
+incremental = true
+codegen-units = 256
+lto = true
+
+[profile.release.build-override]
+opt-level = 3
+incremental = true
+codegen-units = 256
+
 [profile.dev]
 opt-level = 1
+codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3
-
-[profile.release]
-lto = true

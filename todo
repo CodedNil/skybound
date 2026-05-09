@@ -56,8 +56,3 @@ aur particles in air going up, wind speed based on height going to poles, maybe 
 aur fog:
 make it wildly more turbulent around the lightning flashes, make actual bolts of lightning flash out of them
 water like caustics on the light that gets emitted up to make it look special
-
-
-long term:
-implement intel xess for performance wins
-switch to wesl
