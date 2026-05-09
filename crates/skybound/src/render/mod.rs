@@ -4,7 +4,7 @@ mod raymarch;
 use crate::render::{
     noise::{NoiseTextures, setup_noise_textures},
     raymarch::{
-        CloudsViewUniforms, PreviousViewData, RaymarchPipeline, extract_clouds_view_uniform,
+        PreviousViewData, RaymarchPipeline, ViewUniforms, extract_clouds_view_uniform,
         prepare_clouds_view_uniforms, raymarch_pass,
     },
 };
@@ -52,6 +52,6 @@ impl Plugin for WorldRenderingPlugin {
 }
 
 fn init_resources(mut commands: Commands) {
-    commands.init_resource::<CloudsViewUniforms>();
+    commands.init_resource::<ViewUniforms>();
     commands.init_resource::<RaymarchPipeline>();
 }

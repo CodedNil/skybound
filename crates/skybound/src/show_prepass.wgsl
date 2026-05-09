@@ -45,7 +45,7 @@ fn fragment(
     var depth = textureLoad(depth_prepass_texture, vec2<i32>(in.position.xy), 0);
     #endif
 
-    depth = depth * show_prepass.depth_power;
+    depth = pow(depth, show_prepass.depth_power);
     return vec4(depth, depth, depth, 1.0);
     #endif
 

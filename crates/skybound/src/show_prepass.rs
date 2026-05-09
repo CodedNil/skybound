@@ -88,16 +88,20 @@ struct ShowPrepassUniform {
     delta_time: f32,
 }
 
+#[allow(clippy::type_complexity)]
 fn show_prepass_render_system(
     mut render_context: RenderContext,
     pipeline_cache: Res<PipelineCache>,
-    views: Query<(
-        &ViewTarget,
-        &ExtractedCamera,
-        &CachedShowPrepassPipeline,
-        &ShowPrepassBindGroup,
-        &DynamicUniformIndex<ShowPrepassUniform>,
-    )>,
+    views: Query<
+        (
+            &ViewTarget,
+            &ExtractedCamera,
+            &CachedShowPrepassPipeline,
+            &ShowPrepassBindGroup,
+            &DynamicUniformIndex<ShowPrepassUniform>,
+        ),
+        With<ShowPrepass>,
+    >,
 ) {
     for (view_target, camera, pipeline_id, bind_group, uniform_index) in &views {
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id.0) else {
@@ -284,18 +288,24 @@ fn prepare_pipelines(
     pipeline_cache: Res<PipelineCache>,
     mut pipelines: ResMut<SpecializedRenderPipelines<ShowPrepassPipeline>>,
     pipeline: Res<ShowPrepassPipeline>,
-    views: Query<(Entity, &ExtractedView, &ShowPrepass, Option<&Msaa>)>,
+    views: Query<(Entity, &ExtractedView, Option<&ShowPrepass>, Option<&Msaa>)>,
 ) {
     for (view_entity, view, show_prepass, msaa) in &views {
-        let key = ShowPrepassPipelineKey {
-            show_prepass: *show_prepass,
-            hdr: view.target_format == TextureFormat::Rgba16Float,
-            multisampled: msaa.is_some_and(|msaa| msaa.samples() > 1),
-        };
-        let pipeline = pipelines.specialize(&pipeline_cache, &pipeline, key);
-        commands
-            .entity(view_entity)
-            .insert(CachedShowPrepassPipeline(pipeline));
+        if let Some(show_prepass) = show_prepass {
+            let key = ShowPrepassPipelineKey {
+                show_prepass: *show_prepass,
+                hdr: view.target_format == TextureFormat::Rgba16Float,
+                multisampled: msaa.is_some_and(|msaa| msaa.samples() > 1),
+            };
+            let pipeline_id = pipelines.specialize(&pipeline_cache, &pipeline, key);
+            commands
+                .entity(view_entity)
+                .insert(CachedShowPrepassPipeline(pipeline_id));
+        } else {
+            commands
+                .entity(view_entity)
+                .remove::<CachedShowPrepassPipeline>();
+        }
     }
 }
 

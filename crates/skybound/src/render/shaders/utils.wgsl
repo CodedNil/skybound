@@ -1,32 +1,47 @@
 #define_import_path skybound::utils
 
 const MAGNETOSPHERE_HEIGHT: f32 = 400000;
+const PLANET_RADIUS: f32 = 1000000.0;
 
 struct View {
-    time: f32,
-    frame_count: u32,
-
     clip_from_world: mat4x4<f32>,
     world_from_clip: mat4x4<f32>,
     world_from_view: mat4x4<f32>,
     view_from_world: mat4x4<f32>,
-
     clip_from_view: mat4x4<f32>,
     view_from_clip: mat4x4<f32>,
-    world_position: vec3<f32>,
-    camera_offset: vec2<f32>,
-
-    // Previous frame matrices for motion vectors
     prev_clip_from_world: mat4x4<f32>,
-    // Unjittered inverse-projection for jitter-free motion vector reconstruction
     world_from_clip_unjittered: mat4x4<f32>,
+    world_position: vec4<f32>, // Ray origin
 
+    camera_position: vec4<f32>, // latitude, longitude, offset_x, offset_y
     planet_rotation: vec4<f32>,
-    planet_center: vec3<f32>,
-    planet_radius: f32,
-    latitude: f32,
-    longitude: f32,
-};
+    times: vec4<f32>, // time, frame_count
+}
+
+fn planet_center(view: View) -> vec3<f32> {
+    return vec3<f32>(view.world_position.xy, -PLANET_RADIUS);
+}
+
+fn latitude(view: View) -> f32 {
+    return view.camera_position.x;
+}
+
+fn longitude(view: View) -> f32 {
+    return view.camera_position.y;
+}
+
+fn camera_offset(view: View) -> vec2<f32> {
+    return view.camera_position.zy;
+}
+
+fn time(view: View) -> f32 {
+    return view.times.x;
+}
+
+fn frame_count(view: View) -> f32 {
+    return view.times.y;
+}
 
 struct AtmosphereData {
     sun_pos: vec3<f32>,
@@ -132,17 +147,17 @@ fn intersect_plane(ro: vec3<f32>, rd: vec3<f32>, plane_height: f32) -> f32 {
 // z, w = second intersection segment (entry, exit)
 // An invalid segment is represented by entry > exit (e.g., 1.0, 0.0)
 fn ray_shell_intersect(ro: vec3<f32>, rd: vec3<f32>, view: View, bottom_altitude: f32, top_altitude: f32) -> vec4<f32> {
-    let local_ro = ro - view.planet_center;
+    let local_ro = ro - planet_center(view);
 
     // The entry point is the nearest intersection with the top sphere
-    let top_radius = view.planet_radius + top_altitude;
+    let top_radius = PLANET_RADIUS + top_altitude;
     let top_interval = intersect_sphere(local_ro, rd, top_radius);
     if top_interval.x > top_interval.y {
         return vec4<f32>(1.0, 0.0, 1.0, 0.0); // If we miss the top sphere, we miss the shell entirely
     }
 
     // The exit point is the nearest intersection with the bottom sphere
-    let bottom_radius = view.planet_radius + bottom_altitude;
+    let bottom_radius = PLANET_RADIUS + bottom_altitude;
     let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
     if bottom_interval.x > bottom_interval.y {
         return vec4<f32>(top_interval.x, top_interval.y, 1.0, 0.0); // Glancing shot that hits the top layer but misses the bottom, exit is the far side of the top layer
@@ -161,7 +176,7 @@ fn get_sun_position(view: View) -> vec3<f32> {
     let north_axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 0.0, 1.0)));
 
     // The "up" direction is the vector from the planet's center to the camera
-    let up_vector = normalize(view.world_position - view.planet_center);
+    let up_vector = normalize(view.world_position.xyz - planet_center(view));
 
     // The sign of the dot product tells us which hemisphere the camera is in
     let is_in_northern_hemisphere = dot(north_axis, up_vector) > 0.0;
@@ -170,11 +185,11 @@ fn get_sun_position(view: View) -> vec3<f32> {
     let sun_axis = select(-north_axis, north_axis, is_in_northern_hemisphere);
 
     // Calculate the sun's position at a fixed altitude above the relevant pole
-    let sun_altitude = view.planet_radius + MAGNETOSPHERE_HEIGHT;
-    var sun_pos = view.planet_center + sun_axis * sun_altitude;
+    let sun_altitude = PLANET_RADIUS + MAGNETOSPHERE_HEIGHT;
+    var sun_pos = planet_center(view) + sun_axis * sun_altitude;
 
     // To smooth harsh switch on equator we progressively move the sun down in world-space Z as latitude approaches 0
-    let blend = clamp(abs(view.latitude) / 0.35, 0.0, 1.0);
+    let blend = clamp(abs(latitude(view)) / 0.35, 0.0, 1.0);
     sun_pos.z += mix(sun_altitude * -2.0, 0.0, blend);
 
     return sun_pos;

@@ -3,7 +3,6 @@ use bevy::{
     camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
-    material::descriptor::VertexState,
     prelude::*,
     render::{
         Extract,
@@ -34,11 +33,11 @@ pub struct PreviousViewData {
 }
 
 #[derive(Resource)]
-pub struct CloudsViewUniforms {
+pub struct ViewUniforms {
     pub uniforms: DynamicUniformBuffer<ViewUniform>,
 }
 
-impl FromWorld for CloudsViewUniforms {
+impl FromWorld for ViewUniforms {
     fn from_world(world: &mut World) -> Self {
         let mut uniforms = DynamicUniformBuffer::default();
         uniforms.set_label(Some("view_uniforms_buffer"));
@@ -93,7 +92,7 @@ pub fn prepare_clouds_view_uniforms(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    mut view_uniforms: ResMut<CloudsViewUniforms>,
+    mut view_uniforms: ResMut<ViewUniforms>,
     views: Query<ViewQuery, With<Camera3d>>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
@@ -192,7 +191,7 @@ pub fn raymarch_pass(
             Some(weather_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
-            world.resource::<CloudsViewUniforms>().uniforms.binding(),
+            world.resource::<ViewUniforms>().uniforms.binding(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             prepass_textures.depth_view(),
@@ -263,7 +262,9 @@ impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
         let asset_server = world.resource::<AssetServer>();
         let shader = asset_server.load("shaders/raymarch.spv");
+        // let shader = bevy::asset::load_embedded_asset!(asset_server, "shaders/rendering.wgsl");
         let render_device = world.resource::<RenderDevice>();
+        let fullscreen_shader = world.resource::<bevy::core_pipeline::FullscreenShader>();
 
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
@@ -294,12 +295,7 @@ impl FromWorld for RaymarchPipeline {
             label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout_descriptor],
             immediate_size: 0,
-            vertex: VertexState {
-                shader: shader.clone(),
-                entry_point: Some("main_vs".into()),
-                buffers: vec![],
-                shader_defs: vec![],
-            },
+            vertex: fullscreen_shader.to_vertex_state(),
             primitive: PrimitiveState::default(),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
@@ -311,7 +307,7 @@ impl FromWorld for RaymarchPipeline {
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
                 shader,
-                entry_point: Some("main_fs".into()),
+                entry_point: Some("main".into()),
                 targets: vec![
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,

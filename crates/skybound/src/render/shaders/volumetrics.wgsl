@@ -1,5 +1,5 @@
 #define_import_path skybound::volumetrics
-#import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect, intersect_sphere}
+#import skybound::utils::{AtmosphereData, View, intersect_plane, ray_shell_intersect, intersect_sphere, PLANET_RADIUS, planet_center, camera_offset}
 #import skybound::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds, get_cloud_layer_above}
 #import skybound::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean}
 #import skybound::poles::{poles_raymarch_entry, sample_poles}
@@ -218,7 +218,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
     let clouds_entry_exit = ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
     let clouds_entry_exit1 = vec2<f32>(clouds_entry_exit.x, clouds_entry_exit.y);
     let clouds_entry_exit2 = vec2<f32>(clouds_entry_exit.z, clouds_entry_exit.w);
-    let ocean_entry_exit = intersect_sphere(ro - view.planet_center, rd, view.planet_radius + OCEAN_TOP_HEIGHT);
+    let ocean_entry_exit = intersect_sphere(ro - planet_center(view), rd, PLANET_RADIUS + OCEAN_TOP_HEIGHT);
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Get initial start and end of the volumes
@@ -264,7 +264,7 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
         acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
         transmittance = initial_fog_transmittance;
     }
-    let sun_world_pos = atmosphere.sun_pos + vec3(view.camera_offset, 0.0);
+    let sun_world_pos = atmosphere.sun_pos + vec3<f32>(camera_offset(view), 0.0);
 
     for (var i = 0; i < MAX_STEPS; i++) {
         if t >= t_end || transmittance < 0.01 {
@@ -306,8 +306,8 @@ fn raymarch_volumetrics(ro: vec3<f32>, rd: vec3<f32>, atmosphere: AtmosphereData
 
         // Sample the density
         let pos_raw = ro + rd * (t + dither * step);
-        let altitude = distance(pos_raw, view.planet_center) - view.planet_radius;
-        let world_pos = vec3<f32>(pos_raw.xy + view.camera_offset, altitude);
+        let altitude = distance(pos_raw, planet_center(view)) - PLANET_RADIUS;
+        let world_pos = vec3<f32>(pos_raw.xy + camera_offset(view), altitude);
         let sample = sample_volume(world_pos, view, time, inside_clouds, inside_ocean, inside_poles, linear_sampler);
         let step_density = sample.density;
 

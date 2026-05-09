@@ -19,21 +19,8 @@ use spirv_std::glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, 
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
-#[spirv(vertex)]
-fn main_vs(
-    #[spirv(vertex_index)] vert_idx: i32,
-    #[spirv(position)] out_pos: &mut Vec4,
-    #[spirv(location = 0)] out_uv: &mut Vec2,
-) {
-    let uv = vec2(((vert_idx << 1) & 2) as f32, (vert_idx & 2) as f32);
-    let pos: Vec2 = 2.0 * uv - Vec2::ONE;
-
-    *out_pos = pos.extend(0.0).extend(1.0);
-    *out_uv = vec2(uv.x, 1.0 - uv.y);
-}
-
 #[spirv(fragment(depth_replacing))]
-fn main_fs(
+fn main(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] view: &ViewUniform,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),

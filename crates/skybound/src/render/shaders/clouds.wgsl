@@ -1,5 +1,5 @@
 #define_import_path skybound::clouds
-#import skybound::utils::{View, intersect_sphere}
+#import skybound::utils::{View, intersect_sphere, latitude}
 
 const BASE_SCALE = 0.005;
 const BASE_TIME = 0.01;
@@ -115,7 +115,7 @@ fn sample_clouds(pos: vec3<f32>, view: View, time: f32, simple: bool, base_textu
     weather_coverage *= (cloud_layer_coverage_a + cloud_layer_coverage_b);
     weather_coverage *= (1.0 - layer_fraction * 0.3);
 
-    let lat_norm = saturate(abs(view.latitude) * 0.8);
+    let lat_norm = saturate(abs(latitude(view)) * 0.8);
     weather_coverage *= mix(0.5, 1.0, lat_norm);
 
     if weather_coverage <= 0.0 { return 0.0; }

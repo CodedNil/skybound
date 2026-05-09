@@ -1,5 +1,5 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
-#import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position}
+#import skybound::utils::{View, AtmosphereData, blue_noise, get_sun_position, frame_count, time}
 #import skybound::volumetrics::raymarch_volumetrics
 #import skybound::raymarch::raymarch_solids
 #import skybound::sky::{render_sky, get_sun_light_color}
@@ -29,7 +29,7 @@ fn main(in: FullscreenVertexOutput) -> FragmentOutput {
     let uv = in.uv;
 
     // Spatially-varying blue noise offset by a per-frame golden-ratio step so each
-    let frame_offset = fract(f32(view.frame_count) * 0.618033989);
+    let frame_offset = fract(f32(frame_count(view)) * 0.618033989);
     let dither = fract(blue_noise(uv * 1024.0) + frame_offset);
 
     // Reconstruct world-space position for a ray through the far plane
@@ -37,7 +37,7 @@ fn main(in: FullscreenVertexOutput) -> FragmentOutput {
     let world_pos_far = position_ndc_to_world(vec3(ndc, 0.01), view.world_from_clip);
 
     // Ray origin & dir
-    let ro = view.world_position;
+    let ro = view.world_position.xyz;
     let rd = normalize(world_pos_far - ro);
     var t_max = 1000000.0;
     let sun_pos = get_sun_position(view);
@@ -58,12 +58,12 @@ fn main(in: FullscreenVertexOutput) -> FragmentOutput {
     atmosphere.ambient = atmosphere.sky * 0.8 + render_sky(normalize(vec3<f32>(1.0, 0.0, 1.0)), view, sun_dir) * 0.2;
 
     // Run solids raymarch (solids are independent of volumetrics)
-    let solids = raymarch_solids(ro, rd, view, t_max, view.time);
+    let solids = raymarch_solids(ro, rd, view, t_max, time(view));
     var rendered_color = select(atmosphere.sky, solids.color, solids.depth < t_max);
     t_max = solids.depth;
 
     // Sample the volumetrics
-    let volumetrics_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, view.time, linear_sampler);
+    let volumetrics_result = raymarch_volumetrics(ro, rd, atmosphere, view, t_max, dither, time(view), linear_sampler);
     rendered_color = volumetrics_result.color.rgb + rendered_color * volumetrics_result.color.a;
 
     // Motion vectors + depth

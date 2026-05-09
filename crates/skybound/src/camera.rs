@@ -92,13 +92,15 @@ fn choose_show_prepass_mode(
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     if keyboard.just_pressed(KeyCode::Digit1) {
-        commands.entity(*camera).remove::<ShowPrepass>();
-        commands.entity(*camera).remove::<ShowPrepassDepthPower>();
-    } else if keyboard.just_pressed(KeyCode::Digit2) {
-        commands.entity(*camera).insert(ShowPrepass::Depth);
         commands
             .entity(*camera)
-            .insert(ShowPrepassDepthPower(2000.0));
+            .remove::<ShowPrepass>()
+            .remove::<ShowPrepassDepthPower>();
+    } else if keyboard.just_pressed(KeyCode::Digit2) {
+        commands
+            .entity(*camera)
+            .insert(ShowPrepass::Depth)
+            .insert(ShowPrepassDepthPower(0.5));
     } else if keyboard.just_pressed(KeyCode::Digit3) {
         commands.entity(*camera).insert(ShowPrepass::Normals);
     } else if keyboard.just_pressed(KeyCode::Digit4) {

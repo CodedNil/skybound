@@ -1,5 +1,5 @@
 #define_import_path skybound::poles
-#import skybound::utils::{MAGNETOSPHERE_HEIGHT, View, quat_rotate}
+#import skybound::utils::{MAGNETOSPHERE_HEIGHT, View, quat_rotate, planet_center}
 
 const POLE_WIDTH: f32 = 10000.0;
 
@@ -27,7 +27,7 @@ fn sample_poles(pos: vec3<f32>, time: f32, linear_sampler: sampler) -> PolesSamp
 fn poles_raymarch_entry(ro: vec3<f32>, rd: vec3<f32>, view: View, t_max: f32) -> vec2<f32> {
     let axis = normalize(quat_rotate(view.planet_rotation, vec3<f32>(0.0, 0.0, 1.0)));
 
-    let oc = ro - view.planet_center;
+    let oc = ro - planet_center(view);
     let ad = dot(axis, rd);
     let ao = dot(axis, oc);
     let a = 1.0 - ad * ad;
