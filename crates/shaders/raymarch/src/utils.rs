@@ -14,9 +14,16 @@ pub struct AtmosphereData {
     pub ambient: Vec3,
 }
 
-pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).saturate();
-    t * t * (3.0 - 2.0 * t)
+pub trait Smoothstep {
+    #[must_use]
+    fn smoothstep(self, edge0: Self, edge1: Self) -> Self;
+}
+
+impl Smoothstep for f32 {
+    fn smoothstep(self, edge0: Self, edge1: Self) -> Self {
+        let t = ((self - edge0) / (edge1 - edge0)).saturate();
+        t * t * (3.0 - 2.0 * t)
+    }
 }
 
 // Modulo functions

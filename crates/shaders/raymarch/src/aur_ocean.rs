@@ -1,4 +1,4 @@
-use crate::utils::{hash12, hash13, mod1, smoothstep};
+use crate::utils::{Smoothstep, hash12, hash13, mod1};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
@@ -122,7 +122,7 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
             let pulse = 0.5 + 0.5 * (life * PI).sin();
             let scaled_distance = d * FLASH_SCALE * base_scale * pulse;
 
-            let fade = smoothstep(0.0, 0.1, life) * (1.0 - smoothstep(0.9, 1.0, life));
+            let fade = life.smoothstep(0.0, 0.1) * (1.0 - life.smoothstep(0.9, 1.0));
             let flicker_time = time * FLASH_FLICKER * rate + h.x * 100.0;
             let flicker = if (flicker_time.fract()) >= 0.5 {
                 1.0
@@ -162,7 +162,7 @@ pub fn sample_ocean(
         .y
         * -1200.0;
     let altitude = pos.z - height_noise;
-    let density_mask = smoothstep(0.0, -500.0, altitude);
+    let density_mask = altitude.smoothstep(0.0, -500.0);
 
     if density_mask <= 0.0 {
         return ocean_sample;
@@ -179,7 +179,7 @@ pub fn sample_ocean(
         );
         fbm_value = b_noise.z * 2.0 - 1.0;
         ocean_sample.density =
-            fbm_value.powf(2.0) * density_mask + smoothstep(-50.0, -1000.0, altitude);
+            fbm_value.powf(2.0) * density_mask + altitude.smoothstep(-50.0, -1000.0);
     }
 
     if only_density || ocean_sample.density <= 0.0 {
@@ -187,12 +187,12 @@ pub fn sample_ocean(
     }
 
     ocean_sample.color = Vec3::lerp(COLOR_A, COLOR_B, fbm_value);
-    let shadow_factor = 1.0 - smoothstep(-30.0, -500.0, altitude);
+    let shadow_factor = 1.0 - altitude.smoothstep(-30.0, -500.0);
     ocean_sample.color = Vec3::lerp(ocean_sample.color * 0.1, ocean_sample.color, shadow_factor);
-    let emission_amount = smoothstep(-20.0, -1000.0, altitude);
+    let emission_amount = altitude.smoothstep(-20.0, -1000.0);
     ocean_sample.emission = ocean_sample.color * emission_amount * ocean_sample.density;
     ocean_sample.emission += flash_emission(pos.truncate(), time)
-        * smoothstep(-100.0, -800.0, altitude)
+        * altitude.smoothstep(-100.0, -800.0)
         * ocean_sample.density;
     ocean_sample
 }

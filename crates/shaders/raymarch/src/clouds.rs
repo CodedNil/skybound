@@ -4,6 +4,8 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
+use crate::utils::Smoothstep;
+
 const BASE_SCALE: f32 = 0.005;
 const BASE_TIME: f32 = 0.01;
 
@@ -16,54 +18,28 @@ const WIND_DIRECTION_WEATHER: Vec2 = vec2(1.0 * 0.02 * BASE_TIME, 0.0);
 const DETAIL_NOISE_SCALE: f32 = 0.2 * BASE_SCALE;
 const WIND_DIRECTION_DETAIL: Vec3 = vec3(1.0 * 0.2 * BASE_TIME, 0.0, -0.2 * BASE_TIME);
 
+// --- Cloud scales
 pub const CLOUD_BOTTOM_HEIGHT: f32 = 1000.0;
 pub const CLOUD_TOP_HEIGHT: f32 = 33000.0;
-pub const CLOUD_LAYER_SPACING: f32 = 2000.0;
-pub const CLOUD_TOTAL_LAYERS: usize = 16;
+const CLOUD_LAYER_SPACING: f32 = 1400.0;
+const CLOUD_TOTAL_LAYERS: usize = 16;
 
 const CLOUD_LAYER_HEIGHTS: [f32; 16] = [
-    1950.0, 1900.0, 1850.0, 1800.0, 1750.0, 1600.0, 1550.0, 1500.0, 1400.0, 1350.0, 1200.0, 1100.0,
-    900.0, 850.0, 700.0, 680.0,
-];
-
-const CLOUD_LAYER_OFFSETS: [Vec2; 16] = [
-    vec2(0.8, -0.6),
-    vec2(-0.4, 0.9),
-    vec2(0.1, -0.8),
-    vec2(0.6, 0.4),
-    vec2(-0.2, 0.2),
-    vec2(0.3, -0.9),
-    vec2(0.9, -0.7),
-    vec2(0.5, 0.1),
-    vec2(-0.7, 0.3),
-    vec2(0.0, -0.2),
-    vec2(-0.6, 0.5),
-    vec2(1.0, -0.5),
-    vec2(0.7, -0.3),
-    vec2(-0.1, 0.8),
-    vec2(-0.9, -0.4),
-    vec2(0.4, 0.6),
+    2200.0, 2150.0, 2100.0, 2050.0, 2000.0, 1950.0, 1900.0, 1850.0, 1750.0, 1600.0, 1500.0, 1400.0,
+    1300.0, 1200.0, 1100.0, 1050.0,
 ];
 
 const CLOUD_LAYER_SCALES: [f32; 16] = [
-    1.0, 0.9, 0.85, 0.85, 0.8, 0.8, 0.75, 0.75, 0.7, 0.7, 0.7, 0.6, 0.5, 0.45, 0.3, 0.3,
+    1.0, 0.98, 0.95, 0.92, 0.9, 0.88, 0.85, 0.82, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45,
 ];
 
 const CLOUD_LAYER_STRETCH: [f32; 16] = [
-    1.0, 1.0, 1.0, 1.1, 1.1, 1.2, 1.2, 1.3, 1.5, 1.8, 2.5, 3.5, 6.0, 10.0, 14.0, 18.0,
+    1.0, 1.0, 1.0, 1.0, 1.1, 1.1, 1.2, 1.3, 1.5, 1.8, 2.5, 3.5, 6.0, 10.0, 14.0, 18.0,
 ];
 
 const CLOUD_LAYER_DETAILS: [f32; 16] = [
-    0.1, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15, 0.15, 0.2, 0.25, 0.3, 0.4, 0.6, 0.8, 0.9, 0.95,
+    0.1, 0.1, 0.1, 0.1, 0.12, 0.12, 0.15, 0.15, 0.2, 0.25, 0.3, 0.4, 0.6, 0.8, 0.9, 0.95,
 ];
-
-pub struct CloudLayer {
-    pub index: u32,
-    pub bottom: f32,
-    pub height: f32,
-    pub is_cirrus: bool,
-    pub displacement: f32,
-}
 
 fn calculate_layer_v_offset(
     pos_xy: Vec2,
@@ -71,52 +47,14 @@ fn calculate_layer_v_offset(
     weather_texture: Image!(2D, type=f32, sampled=true),
     sampler: Sampler,
 ) -> f32 {
-    let disp_coord = pos_xy * 0.000_005 + Vec2::splat(index_u as f32 * 0.23);
+    let layer_seed = index_u as f32 * 137.415;
+    let disp_coord = pos_xy * WEATHER_NOISE_SCALE * 0.15 + Vec2::splat(layer_seed);
     let disp_noise: f32 = weather_texture.sample(sampler, disp_coord).x;
-    (disp_noise - 0.5) * CLOUD_LAYER_SPACING * 0.85
-}
 
-pub fn get_cloud_layer(
-    pos: Vec3,
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
-) -> CloudLayer {
-    let raw_index = (pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_SPACING;
-    let index_u = (raw_index.floor().max(0.0) as u32).min(CLOUD_TOTAL_LAYERS as u32 - 1);
+    let variance = (disp_noise - 0.5) * CLOUD_LAYER_SPACING * 8.0;
+    let dist_to_floor = index_u as f32 * CLOUD_LAYER_SPACING;
 
-    if pos.z < CLOUD_BOTTOM_HEIGHT - CLOUD_LAYER_SPACING || index_u >= CLOUD_TOTAL_LAYERS as u32 {
-        return CloudLayer {
-            index: 0,
-            bottom: 0.0,
-            height: 0.0,
-            is_cirrus: false,
-            displacement: 0.0,
-        };
-    }
-
-    let displacement = calculate_layer_v_offset(pos.xy(), index_u, weather_texture, sampler);
-    let layer_bottom = CLOUD_BOTTOM_HEIGHT + index_u as f32 * CLOUD_LAYER_SPACING + displacement;
-    let height = CLOUD_LAYER_HEIGHTS[index_u as usize];
-
-    let is_within = pos.z >= layer_bottom && pos.z <= layer_bottom + height;
-    let is_cirrus = index_u >= 12;
-
-    CloudLayer {
-        index: index_u,
-        bottom: layer_bottom,
-        height: if is_within { height } else { 0.0 },
-        is_cirrus,
-        displacement,
-    }
-}
-
-pub fn get_cloud_layer_above(altitude: f32, above_count: f32) -> f32 {
-    let target_index =
-        ((altitude - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_SPACING + above_count).floor() as i32;
-    if target_index < 0 || target_index >= CLOUD_TOTAL_LAYERS as i32 {
-        return -1.0;
-    }
-    CLOUD_BOTTOM_HEIGHT + target_index as f32 * CLOUD_LAYER_SPACING
+    variance.max(-dist_to_floor)
 }
 
 pub fn sample_clouds(
@@ -129,134 +67,117 @@ pub fn sample_clouds(
     weather_texture: Image!(2D, type=f32, sampled=true),
     sampler: Sampler,
 ) -> f32 {
-    let cloud_layer = get_cloud_layer(pos, weather_texture, sampler);
-    if cloud_layer.height <= 0.0 {
+    let weather_uv = pos.xy() * WEATHER_NOISE_SCALE + time * WIND_DIRECTION_WEATHER;
+    let weather_sample: Vec4 = weather_texture.sample(sampler, weather_uv);
+    let global_coverage = (weather_sample.x * 1.3 - 0.2).saturate();
+    if global_coverage <= 0.0 {
         return 0.0;
     }
 
-    let layer_i = cloud_layer.index as usize;
-    let weather_pos_2d = (pos.xy() + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE
-        + time * WIND_DIRECTION_WEATHER;
-    let weather_noise: Vec4 = weather_texture.sample(sampler, weather_pos_2d);
+    let approx_idx = ((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_SPACING).floor() as i32;
 
-    let mut weather_coverage = weather_noise.x * 1.2 - 0.4;
-    let layer_fraction = layer_i as f32 / CLOUD_TOTAL_LAYERS as f32;
-    let cloud_layer_coverage_a = 1.0
-        - (weather_noise.z - layer_fraction)
-            .abs()
-            .smoothstep(0.0, 0.6);
-    let cloud_layer_coverage_b = 1.0
-        - (1.0 - layer_fraction)
-            .abs()
-            .smoothstep(0.0, weather_noise.z * 0.5);
-    weather_coverage *= cloud_layer_coverage_a + cloud_layer_coverage_b;
-    weather_coverage *= 1.0 - layer_fraction * 0.3;
+    let mut total_cloud_val: f32 = 0.0;
 
-    let lat_norm = (view.latitude().abs() * 0.8).saturate();
-    weather_coverage *= 0.5.lerp(1.0, lat_norm);
+    // Search a wide enough range to catch any layer that could be displaced to this altitude.
+    for i in -9..=9 {
+        let idx_i = approx_idx + i;
+        if idx_i < 0 || idx_i >= CLOUD_TOTAL_LAYERS as i32 {
+            continue;
+        }
+        let u_idx = idx_i as u32;
+        let layer_idx = u_idx as usize;
 
-    if weather_coverage <= 0.0 {
-        return 0.0;
+        let disp = calculate_layer_v_offset(pos.xy(), u_idx, weather_texture, sampler);
+
+        // Add horizontal jitter per layer based on the index to break up the vertical stack
+        let layer_hash = ((u_idx as f32 * 127.1).sin() * 43_758.547).fract();
+        let layer_offset = vec2(
+            (u_idx as f32 * 0.13 + layer_hash).cos(),
+            (u_idx as f32 * 0.17 + layer_hash).sin(),
+        ) * 25000.0;
+
+        let bottom = CLOUD_BOTTOM_HEIGHT + u_idx as f32 * CLOUD_LAYER_SPACING + disp;
+        let layer_h = CLOUD_LAYER_HEIGHTS[layer_idx];
+
+        if pos.z < bottom || pos.z > bottom + layer_h {
+            continue;
+        }
+
+        let is_cirrus = u_idx >= 12;
+        let alt_dominance = weather_sample.y;
+        let local_coverage = if layer_idx < 8 {
+            global_coverage * (1.0 - alt_dominance).smoothstep(0.2, 0.6)
+        } else {
+            global_coverage * alt_dominance.smoothstep(0.4, 0.8)
+        };
+
+        if local_coverage <= 0.0 {
+            continue;
+        }
+
+        // --- Shaping Profile ---
+        let h_coord = ((pos.z - bottom) / layer_h).saturate();
+        let mut h_profile = h_coord.smoothstep(0.01, 0.45) * (1.0 - h_coord).smoothstep(0.05, 0.95);
+
+        if is_cirrus {
+            h_profile = h_profile.powf(6.0);
+        } else {
+            h_profile = h_profile.powf(0.5.lerp(1.3, layer_idx as f32 / 16.0));
+        }
+
+        if h_profile <= 0.0 {
+            continue;
+        }
+
+        let stretch_base = CLOUD_LAYER_STRETCH[layer_idx];
+        let stretch = if is_cirrus {
+            stretch_base * 5.0
+        } else {
+            stretch_base
+        };
+        let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx];
+        let base_time_vec = time * WIND_DIRECTION_BASE;
+
+        let mut wind = WIND_DIRECTION_BASE.xy().normalize();
+        if wind.length_squared() < 1e-12 {
+            wind = vec2(1.0, 0.0);
+        }
+        let wind_perp = vec2(-wind.y, wind.x);
+        let coord_pos = pos.xy() + layer_offset; // Apply the horizontal offset
+        let coord_along = coord_pos.dot(wind);
+        let coord_perp = coord_pos.dot(wind_perp);
+        let lean = h_coord * 150.0 * stretch_base * (1.0 - layer_idx as f32 / 16.0);
+
+        let sample_pos = if is_cirrus {
+            vec3(coord_along * stretch * 6.0, coord_perp * 0.1, pos.z * 35.0) * (base_scale * 0.1)
+                + base_time_vec * 0.05
+        } else {
+            vec3(coord_along * stretch + lean, coord_perp, pos.z) * base_scale + base_time_vec
+        };
+
+        let base_noise = base_texture.sample(sampler, sample_pos).x;
+        let mut density = base_noise;
+        if is_cirrus {
+            density = (density * 0.8).powf(6.0) * 0.15;
+        } else {
+            density = (density * 1.6.lerp(2.4, weather_sample.z) - (0.1 + weather_sample.z * 0.2))
+                .saturate();
+        }
+
+        let mut cloud_val = (density * h_profile) + local_coverage - 1.0;
+        if cloud_val > 0.0 {
+            if !simple {
+                let det_pos = (pos * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx])
+                    - (time * WIND_DIRECTION_DETAIL);
+                let detail_noise = details_texture.sample(sampler, det_pos).x;
+                let edge_mask = (1.0 - h_profile).lerp(1.0 - cloud_val, 0.5);
+                let erosion =
+                    detail_noise * 0.4 * CLOUD_LAYER_DETAILS[layer_idx] * (1.2 + edge_mask);
+                cloud_val = (cloud_val - erosion).saturate();
+            }
+            total_cloud_val = total_cloud_val.max(cloud_val);
+        }
     }
 
-    let cloud_height = cloud_layer.height * (0.8 + weather_noise.w * 1.5);
-    let h_coord = ((pos.z - cloud_layer.bottom) / cloud_height).saturate();
-
-    let mut h_profile = if cloud_layer.is_cirrus {
-        (h_coord.smoothstep(0.0, 0.4) * (1.0 - h_coord).smoothstep(0.0, 0.7)).powf(1.5)
-    } else if layer_i < 5 {
-        let base = h_coord.smoothstep(0.0, 0.15);
-        let top = (1.0 - h_coord).smoothstep(0.0, 0.6);
-        (base * top).powf(0.7)
-    } else {
-        h_coord.smoothstep(0.0, 0.2) * (1.0 - h_coord).smoothstep(0.0, 0.8)
-    };
-
-    h_profile *= h_coord.smoothstep(0.0, 0.1) * (1.0 - h_coord).smoothstep(0.0, 0.1);
-    if h_profile <= 0.0 {
-        return 0.0;
-    }
-
-    let stretch = CLOUD_LAYER_STRETCH[layer_i];
-    let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_i];
-    let base_time = time * WIND_DIRECTION_BASE;
-
-    let mut wind = WIND_DIRECTION_BASE.xy().normalize();
-    if wind.length_squared() < 1e-12 {
-        wind = vec2(1.0, 0.0);
-    }
-    let wind_perp = vec2(-wind.y, wind.x);
-    let coord_along = pos.xy().dot(wind);
-    let coord_perp = pos.xy().dot(wind_perp);
-    let base_time_vec = vec3(
-        base_time.xy().dot(wind),
-        base_time.xy().dot(wind_perp),
-        base_time.z,
-    );
-
-    if simple {
-        let shadow_pos =
-            vec3(coord_along * stretch, coord_perp, pos.z) * base_scale + base_time_vec;
-        let shadow_noise: f32 = base_texture.sample(sampler, shadow_pos).x;
-        return (shadow_noise * h_profile) + weather_coverage - 1.0;
-    }
-
-    let noise_sample_pos = if cloud_layer.is_cirrus {
-        vec3(coord_along * stretch, coord_perp * 0.4, pos.z * 4.0) * (base_scale * 0.4)
-            + base_time_vec
-    } else {
-        let leaning = h_coord * 150.0 * stretch;
-        vec3(coord_along * stretch + leaning, coord_perp, pos.z) * base_scale + base_time_vec
-    };
-
-    let base_noise: f32 = base_texture.sample(sampler, noise_sample_pos).x;
-    let mut density = base_noise;
-    if cloud_layer.is_cirrus {
-        density = density.powf(3.5) * 0.5;
-    } else if layer_i < 5 {
-        density = (density * 1.4 - 0.1).saturate();
-    }
-
-    let mut cloud_val = (density * h_profile) + weather_coverage - 1.0;
-    if cloud_val <= 0.0 {
-        return 0.0;
-    }
-
-    let detail_time = time * WIND_DIRECTION_DETAIL;
-    let mut dw = WIND_DIRECTION_DETAIL.xy().normalize();
-    if dw.length_squared() < 1e-12 {
-        dw = wind;
-    }
-    let dperp = vec2(-dw.y, dw.x);
-    let dtime_vec = vec3(
-        detail_time.xy().dot(dw),
-        detail_time.xy().dot(dperp),
-        detail_time.z,
-    );
-
-    let dpos = vec3(
-        pos.xy().dot(dw) * stretch.max(1.0) * 0.5,
-        pos.xy().dot(dperp),
-        pos.z,
-    ) * DETAIL_NOISE_SCALE
-        * CLOUD_LAYER_SCALES[layer_i]
-        - dtime_vec;
-    let detail_noise: f32 = details_texture.sample(sampler, dpos).x;
-
-    let erosion_mask = if layer_i < 5 { 1.0 - h_coord } else { h_coord };
-    let erosion = detail_noise * 0.4 * CLOUD_LAYER_DETAILS[layer_i] * (1.1 + erosion_mask);
-
-    cloud_val = (cloud_val - erosion).saturate();
-    cloud_val
-}
-
-trait Smoothstep {
-    fn smoothstep(self, edge0: Self, edge1: Self) -> Self;
-}
-
-impl Smoothstep for f32 {
-    fn smoothstep(self, edge0: Self, edge1: Self) -> Self {
-        let t = ((self - edge0) / (edge1 - edge0)).saturate();
-        t * t * (3.0 - 2.0 * t)
-    }
+    total_cloud_val
 }

@@ -1,4 +1,4 @@
-use crate::utils::{MAGNETOSPHERE_HEIGHT, quat_rotate, smoothstep};
+use crate::utils::{MAGNETOSPHERE_HEIGHT, Smoothstep, quat_rotate};
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
@@ -16,7 +16,9 @@ pub fn sample_poles(pos: Vec3) -> PolesSample {
     let mut color = vec3(0.0, 0.5, 1.0);
 
     // Make it more intense at the top of the atmosphere
-    let atmosphere_dist = smoothstep(5000.0, 100.0, (pos.z - MAGNETOSPHERE_HEIGHT).abs());
+    let atmosphere_dist = (pos.z - MAGNETOSPHERE_HEIGHT)
+        .abs()
+        .smoothstep(5000.0, 100.0);
     if atmosphere_dist > 0.0 {
         color += Vec3::splat(atmosphere_dist);
     }
