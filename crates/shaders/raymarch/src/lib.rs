@@ -45,7 +45,7 @@ fn main_fs(
     #[spirv(frag_depth)] out_frag_depth: &mut f32,
 ) {
     // Spatially-varying blue noise offset by a per-frame golden-ratio step so each
-    let frame_offset = (view.frame_count as f32 * 0.618_034).fract();
+    let frame_offset = (view.frame_count() * 0.618_034).fract();
     let dither = (blue_noise(uv * 1024.0) + frame_offset).fract();
 
     // Reconstruct world-space position for a ray through the far plane
@@ -53,7 +53,7 @@ fn main_fs(
     let world_pos_far = position_ndc_to_world(ndc.extend(0.01), view.world_from_clip);
 
     // Ray origin & dir
-    let ro = view.world_position;
+    let ro = view.world_position.xyz();
     let rd = (world_pos_far - ro).normalize();
     let mut t_max = 1_000_000.0;
     let sun_pos = get_sun_position(view);
@@ -92,7 +92,6 @@ fn main_fs(
         view,
         t_max,
         dither,
-        view.time,
         *base_texture,
         *details_texture,
         *weather_texture,
@@ -104,7 +103,7 @@ fn main_fs(
     let mut motion_vector = Vec2::ZERO;
     let mut frag_depth = 0.0;
     let depth = solids.depth.min(volumetrics.depth);
-    if depth < 1_000_000.0 {
+    if depth < t_max {
         let world_pos_far_unjittered =
             position_ndc_to_world(ndc.extend(0.01), view.world_from_clip_unjittered);
         let rd_unjittered = (world_pos_far_unjittered - ro).normalize();

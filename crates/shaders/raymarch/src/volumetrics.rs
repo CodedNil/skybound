@@ -2,8 +2,8 @@ use crate::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
 use crate::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, get_cloud_layer_above, sample_clouds};
 use crate::poles::{poles_raymarch_entry, sample_poles};
 use crate::utils::{AtmosphereData, intersect_plane, intersect_sphere, ray_shell_intersect};
-use skybound_shared::ViewUniform;
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
+use skybound_shared::{PLANET_RADIUS, ViewUniform};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
@@ -184,7 +184,7 @@ pub fn sample_shadowing(
         let ocean = sample_ocean(lightmarch_pos, time, true, details_texture, sampler).density;
         let light_sample_density = clouds + ocean;
 
-        optical_depth += 0.0f32.max(light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE;
+        optical_depth += light_sample_density.max(0.0) * EXTINCTION * LIGHT_STEP_SIZE;
     }
 
     // Optimised sampling of cloud layers above for shadows
@@ -228,7 +228,7 @@ pub fn sample_shadowing(
 
             // Apply the falloff to the optical depth contribution.
             optical_depth +=
-                0.0f32.max(light_sample_density) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
+                light_sample_density.max(0.0) * EXTINCTION * LIGHT_STEP_SIZE * shadow_falloff;
         }
     }
 
@@ -299,7 +299,6 @@ pub fn raymarch_volumetrics(
     view: &ViewUniform,
     t_max: f32,
     dither: f32,
-    time: f32,
     base_texture: Image!(3D, type=f32, sampled=true),
     details_texture: Image!(3D, type=f32, sampled=true),
     weather_texture: Image!(2D, type=f32, sampled=true),
@@ -311,15 +310,16 @@ pub fn raymarch_volumetrics(
     let clouds_entry_exit1 = clouds_entry_exit.xy();
     let clouds_entry_exit2 = clouds_entry_exit.zw();
     let ocean_entry_exit = intersect_sphere(
-        ro - view.planet_center,
+        ro - view.planet_center(),
         rd,
-        view.planet_radius + OCEAN_TOP_HEIGHT,
+        PLANET_RADIUS + OCEAN_TOP_HEIGHT,
     );
     let poles_entry_exit = poles_raymarch_entry(ro, rd, view, t_max);
 
     // Get initial start and end of the volumes
     let mut t_start = t_max;
     let mut t_end = 0.0;
+    let time = view.time();
     if clouds_entry_exit1.y > 0.0 && clouds_entry_exit1.x < clouds_entry_exit1.y {
         t_start = t_start.min(clouds_entry_exit1.x);
         t_end = t_end.max(clouds_entry_exit1.y);
@@ -364,7 +364,7 @@ pub fn raymarch_volumetrics(
     } else {
         1.0
     };
-    let sun_world_pos = atmosphere.sun_pos + vec3(view.camera_offset.x, view.camera_offset.y, 0.0);
+    let sun_world_pos = atmosphere.sun_pos + view.camera_offset().extend(0.0);
 
     for _ in 0..MAX_STEPS {
         if t >= t_end || transmittance < 0.01 {
@@ -407,12 +407,8 @@ pub fn raymarch_volumetrics(
 
         // Sample the density
         let pos_raw = ro + rd * (t + dither * step);
-        let altitude = pos_raw.distance(view.planet_center) - view.planet_radius;
-        let world_pos = vec3(
-            pos_raw.x + view.camera_offset.x,
-            pos_raw.y + view.camera_offset.y,
-            altitude,
-        );
+        let altitude = pos_raw.distance(view.planet_center()) - PLANET_RADIUS;
+        let world_pos = (pos_raw.xy() + view.camera_offset()).extend(altitude);
         let sample = sample_volume(
             world_pos,
             view,

@@ -1,4 +1,4 @@
-use skybound_shared::ViewUniform;
+use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
 };
@@ -102,13 +102,13 @@ pub fn ray_shell_intersect(
     bottom_altitude: f32,
     top_altitude: f32,
 ) -> Vec4 {
-    let local_ro = ro - view.planet_center;
-    let top_radius = view.planet_radius + top_altitude;
+    let local_ro = ro - view.planet_center();
+    let top_radius = PLANET_RADIUS + top_altitude;
     let top_interval = intersect_sphere(local_ro, rd, top_radius);
     if top_interval.x > top_interval.y {
         return vec4(1.0, 0.0, 1.0, 0.0);
     }
-    let bottom_radius = view.planet_radius + bottom_altitude;
+    let bottom_radius = PLANET_RADIUS + bottom_altitude;
     let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
     if bottom_interval.x > bottom_interval.y {
         return vec4(top_interval.x, top_interval.y, 1.0, 0.0);
@@ -123,7 +123,7 @@ pub fn ray_shell_intersect(
 
 pub fn get_sun_position(view: &ViewUniform) -> Vec3 {
     let north_axis = quat_rotate(view.planet_rotation, vec3(0.0, 0.0, 1.0)).normalize();
-    let up_vector = (view.world_position - view.planet_center).normalize();
+    let up_vector = view.ro_relative().normalize();
     let is_in_northern_hemisphere = north_axis.dot(up_vector) > 0.0;
     let sun_axis = if is_in_northern_hemisphere {
         north_axis
@@ -131,10 +131,10 @@ pub fn get_sun_position(view: &ViewUniform) -> Vec3 {
         -north_axis
     };
 
-    let sun_altitude = view.planet_radius + MAGNETOSPHERE_HEIGHT;
-    let mut sun_pos = view.planet_center + sun_axis * sun_altitude;
+    let sun_altitude = PLANET_RADIUS + MAGNETOSPHERE_HEIGHT;
+    let mut sun_pos = view.planet_center() + sun_axis * sun_altitude;
 
-    let blend = (view.latitude.abs() / 0.35).saturate();
+    let blend = (view.latitude().abs() / 0.35).saturate();
     sun_pos.z += 0.0.lerp(sun_altitude * -2.0, 1.0 - blend);
 
     sun_pos

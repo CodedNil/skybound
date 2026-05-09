@@ -14,20 +14,27 @@ use bevy::{
     render::{
         Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
     },
+    shader::load_shader_library,
 };
 
 pub struct WorldRenderingPlugin;
 
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
+        load_shader_library!(app, "shaders/rendering.wgsl");
+        load_shader_library!(app, "shaders/utils.wgsl");
+        load_shader_library!(app, "shaders/sky.wgsl");
+        load_shader_library!(app, "shaders/raymarch.wgsl");
+        load_shader_library!(app, "shaders/volumetrics.wgsl");
+        load_shader_library!(app, "shaders/clouds.wgsl");
+        load_shader_library!(app, "shaders/aur_ocean.wgsl");
+        load_shader_library!(app, "shaders/poles.wgsl");
+
         app.add_plugins(ExtractResourcePlugin::<NoiseTextures>::default())
             .add_systems(Startup, setup_noise_textures);
 
-        let render_app = app
-            .get_sub_app_mut(RenderApp)
-            .expect("RenderApp should already exist in App");
-
-        render_app
+        app.get_sub_app_mut(RenderApp)
+            .expect("RenderApp should already exist in App")
             .init_resource::<PreviousViewData>()
             .add_systems(RenderStartup, init_resources)
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)

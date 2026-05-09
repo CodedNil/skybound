@@ -1,15 +1,15 @@
 use crate::camera::CameraController;
 use bevy::{
-    // anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
+    anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
     core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
     post_process::bloom::Bloom,
     prelude::*,
 };
+use skybound_shared::PLANET_RADIUS;
 use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
-pub const PLANET_RADIUS: f32 = 1_000_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // --- Components ---
@@ -86,11 +86,11 @@ fn setup(mut commands: Commands) {
         DepthPrepass,
         MotionVectorPrepass,
         Msaa::Off,
-        // Dlss::<DlssSuperResolutionFeature> {
-        //     perf_quality_mode: DlssPerfQualityMode::Quality,
-        //     reset: false,
-        //     _phantom_data: std::marker::PhantomData,
-        // },
+        Dlss::<DlssSuperResolutionFeature> {
+            perf_quality_mode: DlssPerfQualityMode::Quality,
+            reset: false,
+            _phantom_data: std::marker::PhantomData,
+        },
         Hdr,
         Bloom::NATURAL,
         Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),

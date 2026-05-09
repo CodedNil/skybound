@@ -152,7 +152,7 @@ pub fn sample_clouds(
     weather_coverage *= cloud_layer_coverage_a + cloud_layer_coverage_b;
     weather_coverage *= 1.0 - layer_fraction * 0.3;
 
-    let lat_norm = (view.latitude.abs() * 0.8).saturate();
+    let lat_norm = (view.latitude().abs() * 0.8).saturate();
     weather_coverage *= 0.5.lerp(1.0, lat_norm);
 
     if weather_coverage <= 0.0 {

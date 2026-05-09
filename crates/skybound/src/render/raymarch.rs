@@ -1,7 +1,4 @@
-use crate::{
-    render::noise::NoiseTextures,
-    world::{PLANET_RADIUS, WorldData},
-};
+use crate::{render::noise::NoiseTextures, world::WorldData};
 use bevy::{
     camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
@@ -16,11 +13,12 @@ use bevy::{
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
             BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
-            ColorWrites, CompareFunction, DepthStencilState, DynamicUniformBuffer, FilterMode,
-            FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
-            RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-            StoreOp, TextureFormat, TextureSampleType,
+            ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, DynamicUniformBuffer,
+            FilterMode, FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
+            PrimitiveState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
+            SamplerDescriptor, ShaderStages, StencilState, StoreOp, TextureFormat,
+            TextureSampleType,
             binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -62,7 +60,6 @@ pub struct CloudsViewUniformOffset {
 #[derive(Resource, Default, ExtractResource, Clone)]
 pub struct ExtractedViewData {
     planet_rotation: Vec4,
-    planet_radius: f32,
     latitude: f32,
     longitude: f32,
     camera_offset: Vec2,
@@ -78,7 +75,6 @@ pub fn extract_clouds_view_uniform(
     if let Ok(camera_transform) = camera_query.single() {
         commands.insert_resource(ExtractedViewData {
             planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
-            planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
             camera_offset: world_coords.camera_offset,
@@ -134,17 +130,15 @@ pub fn prepare_clouds_view_uniforms(
             view_from_clip,
             prev_clip_from_world: prev_view_data.clip_from_world,
             world_from_clip_unjittered,
-            time: time.elapsed_secs_wrapped(),
-            frame_count: frame_count.0,
-            camera_offset: data.camera_offset,
-            world_position,
-            padding1: 0,
-            planet_center: vec3(world_position.x, world_position.y, -data.planet_radius),
-            planet_radius: data.planet_radius,
+            world_position: world_position.extend(0.0),
+            camera_position: vec4(
+                data.latitude,
+                data.longitude,
+                data.camera_offset.x,
+                data.camera_offset.y,
+            ),
             planet_rotation: data.planet_rotation,
-            latitude: data.latitude,
-            longitude: data.longitude,
-            padding2: Vec2::ZERO,
+            times: vec4(time.elapsed_secs_wrapped(), frame_count.0 as f32, 0.0, 0.0),
         });
 
         commands
@@ -232,7 +226,10 @@ pub fn raymarch_pass(
                 Some(RenderPassColorAttachment {
                     view: motion_view,
                     resolve_target: None,
-                    ops: Operations::default(),
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
                     depth_slice: None,
                 }),
             ],
@@ -296,12 +293,21 @@ impl FromWorld for RaymarchPipeline {
         let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout_descriptor],
+            immediate_size: 0,
             vertex: VertexState {
                 shader: shader.clone(),
                 entry_point: Some("main_vs".into()),
                 buffers: vec![],
                 shader_defs: vec![],
             },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Always),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
                 shader,
@@ -318,16 +324,9 @@ impl FromWorld for RaymarchPipeline {
                         write_mask: ColorWrites::ALL,
                     }),
                 ],
-                ..default()
+                shader_defs: Vec::new(),
             }),
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(CompareFunction::GreaterEqual),
-                stencil: default(),
-                bias: default(),
-            }),
-            ..default()
+            zero_initialize_workgroup_memory: false,
         });
 
         Self {

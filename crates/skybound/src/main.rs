@@ -8,6 +8,8 @@ mod camera;
 use crate::camera::CameraPlugin;
 mod world;
 use crate::world::WorldPlugin;
+mod show_prepass;
+use crate::show_prepass::ShowPrepassPlugin;
 
 fn main() {
     App::new()
@@ -21,6 +23,7 @@ fn main() {
             CameraPlugin,
             WorldRenderingPlugin,
             DebugTextPlugin,
+            ShowPrepassPlugin,
         ))
         .run();
 }

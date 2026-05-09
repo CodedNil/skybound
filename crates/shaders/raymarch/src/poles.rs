@@ -30,7 +30,7 @@ pub fn sample_poles(pos: Vec3) -> PolesSample {
 
 pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -> Vec2 {
     let axis = quat_rotate(view.planet_rotation, vec3(0.0, 0.0, 1.0)).normalize();
-    let oc = ro - view.planet_center;
+    let oc = ro - view.planet_center();
     let ad = axis.dot(rd);
     let ao = axis.dot(oc);
     let a = 1.0 - ad * ad;

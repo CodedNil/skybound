@@ -3,13 +3,16 @@ use bevy::{
     prelude::*,
 };
 
+use crate::show_prepass::{ShowPrepass, ShowPrepassDepthPower};
+
 /// Plugin that adds the camera controller system.
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     /// Register systems required for the camera controller.
     fn build(&self, app: &mut App) {
-        app.add_systems(PreUpdate, camera_controller);
+        app.add_systems(PreUpdate, camera_controller)
+            .add_systems(Update, choose_show_prepass_mode);
     }
 }
 
@@ -80,5 +83,25 @@ fn camera_controller(
             controller.speed += event.y * 0.5 * controller.speed;
             controller.speed = controller.speed.clamp(0.1, 5000.0);
         }
+    }
+}
+
+fn choose_show_prepass_mode(
+    mut commands: Commands,
+    camera: Single<Entity, With<Camera3d>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Digit1) {
+        commands.entity(*camera).remove::<ShowPrepass>();
+        commands.entity(*camera).remove::<ShowPrepassDepthPower>();
+    } else if keyboard.just_pressed(KeyCode::Digit2) {
+        commands.entity(*camera).insert(ShowPrepass::Depth);
+        commands
+            .entity(*camera)
+            .insert(ShowPrepassDepthPower(2000.0));
+    } else if keyboard.just_pressed(KeyCode::Digit3) {
+        commands.entity(*camera).insert(ShowPrepass::Normals);
+    } else if keyboard.just_pressed(KeyCode::Digit4) {
+        commands.entity(*camera).insert(ShowPrepass::MotionVectors);
     }
 }

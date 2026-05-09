@@ -1,13 +1,12 @@
 #![no_std]
 
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
 
-#[cfg_attr(
-    feature = "cpu",
-    derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
-)]
+pub const PLANET_RADIUS: f32 = 1_000_000.0;
+
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
+#[cfg_attr(feature = "cpu", derive(bevy::render::render_resource::ShaderType))]
 pub struct ViewUniform {
     pub clip_from_world: Mat4,
     pub world_from_clip: Mat4,
@@ -17,19 +16,40 @@ pub struct ViewUniform {
     pub view_from_clip: Mat4,
     pub prev_clip_from_world: Mat4,
     pub world_from_clip_unjittered: Mat4,
+    pub world_position: Vec4, // Ray origin
 
-    pub time: f32,
-    pub frame_count: u32,
-    pub camera_offset: Vec2,
-
-    pub world_position: Vec3,
-    pub padding1: u32,
-
-    pub planet_center: Vec3,
-    pub planet_radius: f32,
+    pub camera_position: Vec4, // latitude, longitude, offset_x, offset_y
     pub planet_rotation: Vec4,
+    pub times: Vec4, // time, frame_count
+}
 
-    pub latitude: f32,
-    pub longitude: f32,
-    pub padding2: Vec2,
+// Add function planet_center to viewuniform
+impl ViewUniform {
+    pub fn planet_center(&self) -> Vec3 {
+        self.world_position.xy().extend(-PLANET_RADIUS)
+    }
+
+    pub fn ro_relative(&self) -> Vec3 {
+        self.world_position.xyz() - self.planet_center()
+    }
+
+    pub fn latitude(&self) -> f32 {
+        self.camera_position.x
+    }
+
+    pub fn longitude(&self) -> f32 {
+        self.camera_position.y
+    }
+
+    pub fn camera_offset(&self) -> Vec2 {
+        self.camera_position.zy()
+    }
+
+    pub fn time(&self) -> f32 {
+        self.times.x
+    }
+
+    pub fn frame_count(&self) -> f32 {
+        self.times.y
+    }
 }

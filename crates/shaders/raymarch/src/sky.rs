@@ -1,5 +1,5 @@
 use core::f32::consts::PI;
-use skybound_shared::ViewUniform;
+use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -13,6 +13,7 @@ const EXPOSURE: f32 = 3.0;
 
 // Atmosphere dimensions (in meters)
 const ATMOSPHERE_HEIGHT: f32 = 200_000.0;
+const ATMOSPHERE_RADIUS: f32 = PLANET_RADIUS + ATMOSPHERE_HEIGHT;
 const RAYLEIGH_SCALE_HEIGHT: f32 = 8000.0; // ~8km
 const MIE_SCALE_HEIGHT: f32 = 1200.0; // ~1.2km
 
@@ -100,15 +101,14 @@ fn calculate_transmittance(optical_depth: Vec3) -> Vec3 {
 }
 
 // Calculates the optical depth (amount of atmosphere) along a ray
-fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3, view: &ViewUniform) -> Vec3 {
-    let atmosphere_radius = view.planet_radius + ATMOSPHERE_HEIGHT;
-    let intersection = intersect_sphere(ray_start, ray_dir, atmosphere_radius);
+fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3) -> Vec3 {
+    let intersection = intersect_sphere(ray_start, ray_dir, ATMOSPHERE_RADIUS);
     let ray_length = intersection.y.max(0.0);
     let step_size = ray_length / LIGHT_STEPS as f32;
     let mut optical_depth = Vec3::ZERO;
     for i in 0..LIGHT_STEPS {
         let local_pos = ray_start + ray_dir * (i as f32 + 0.5) * step_size;
-        let altitude = atmosphere_height(local_pos, view.planet_radius);
+        let altitude = atmosphere_height(local_pos, PLANET_RADIUS);
         if altitude <= ATMOSPHERE_HEIGHT {
             optical_depth += density_atmosphere(altitude) * step_size;
         }
@@ -143,13 +143,7 @@ fn occlusion_factor_smooth(pos: Vec3, dir: Vec3, planet_radius: f32) -> f32 {
 }
 
 // Main function to calculate scattered light (in-scattering)
-fn integrate_scattering(
-    ray_start: Vec3,
-    ray_dir: Vec3,
-    ray_length: f32,
-    sun_dir: Vec3,
-    view: &ViewUniform,
-) -> Vec3 {
+fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, sun_dir: Vec3) -> Vec3 {
     let cos_theta = ray_dir.dot(sun_dir);
     let phase_r = phase_rayleigh(cos_theta);
     let phase_m = phase_mie(cos_theta, MIE_G);
@@ -158,7 +152,7 @@ fn integrate_scattering(
     let mut mie_scatter = Vec3::ZERO;
 
     // Non-uniform sampling: concentrate samples closer to the camera for better quality
-    let ray_height = atmosphere_height(ray_start, view.planet_radius);
+    let ray_height = atmosphere_height(ray_start, PLANET_RADIUS);
     let sample_distribution_exponent =
         1.0 + (1.0 - ray_height / ATMOSPHERE_HEIGHT).saturate() * 8.0;
 
@@ -169,7 +163,7 @@ fn integrate_scattering(
             ((i + 1) as f32 / PRIMARY_STEPS as f32).powf(sample_distribution_exponent) * ray_length;
         let step_size = ray_time - prev_ray_time;
         let local_pos = ray_start + ray_dir * ray_time;
-        let altitude = atmosphere_height(local_pos, view.planet_radius);
+        let altitude = atmosphere_height(local_pos, PLANET_RADIUS);
         if altitude > ATMOSPHERE_HEIGHT {
             continue;
         }
@@ -182,9 +176,9 @@ fn integrate_scattering(
 
         // Transmittance from sun to sample point (light travelling through atmosphere)
         // Smooth occlusion to avoid banding: compute a soft occlusion factor in [0,1]
-        let occ = occlusion_factor_smooth(local_pos, sun_dir, view.planet_radius);
+        let occ = occlusion_factor_smooth(local_pos, sun_dir, PLANET_RADIUS);
         let light_transmittance = if occ < 1.0 {
-            let optical_depth_light = integrate_optical_depth(local_pos, sun_dir, view);
+            let optical_depth_light = integrate_optical_depth(local_pos, sun_dir);
             let lt = calculate_transmittance(optical_depth_light);
             // scale light by visibility (1 - occ)
             lt * (1.0 - occ)
@@ -211,12 +205,11 @@ fn integrate_scattering(
 }
 
 pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
-    let ro_relative = view.world_position - view.planet_center;
-    let atmosphere_radius = view.planet_radius + ATMOSPHERE_HEIGHT;
+    let ro_relative = view.ro_relative();
 
     // Find intersection distances with the atmosphere and planet from the cameras origin
-    let atmosphere_isect = intersect_sphere(ro_relative, rd, atmosphere_radius);
-    let planet_isect = intersect_sphere(ro_relative, rd, view.planet_radius - 2000.0);
+    let atmosphere_isect = intersect_sphere(ro_relative, rd, ATMOSPHERE_RADIUS);
+    let planet_isect = intersect_sphere(ro_relative, rd, PLANET_RADIUS - 2000.0);
 
     // If the ray completely misses the atmosphere, there's nothing to render
     if atmosphere_isect.y < 0.0 {
@@ -240,12 +233,12 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     let ray_start = ro_relative + rd * ray_start_dist;
 
     // Get the final scattered light color
-    let mut final_color = integrate_scattering(ray_start, rd, ray_length, sun_dir, view);
+    let mut final_color = integrate_scattering(ray_start, rd, ray_length, sun_dir);
 
     // Subtle planet emissive glow (scattered)
     let to_center = -ro_relative.normalize();
     let dist = ro_relative.length();
-    let disk_angle = (view.planet_radius / dist).saturate().asin();
+    let disk_angle = (PLANET_RADIUS / dist).saturate().asin();
     let angle = (rd.dot(to_center).clamp(-1.0, 1.0)).acos();
 
     // Rim distance = angle outside the disk; apply a smooth gaussian-like falloff
@@ -253,7 +246,7 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
     let glow = (-(rim * rim) / (PLANET_GLOW_ANGULAR_WIDTH * PLANET_GLOW_ANGULAR_WIDTH)).exp();
 
     // Attenuate by atmospheric transmittance along the view ray
-    let trans = calculate_transmittance(integrate_optical_depth(ro_relative, rd, view));
+    let trans = calculate_transmittance(integrate_optical_depth(ro_relative, rd));
     let trans_lum = trans.dot(vec3(0.2126, 0.7152, 0.0722));
     let atten = trans * (1.0 - PLANET_EMISSION_CHROMA_PRESERVE)
         + Vec3::splat(trans_lum) * PLANET_EMISSION_CHROMA_PRESERVE;
@@ -268,13 +261,13 @@ pub fn render_sky(rd: Vec3, view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
 
 /// Calculates the direct sunlight color after it has passed through the atmosphere to the camera
 pub fn get_sun_light_color(view: &ViewUniform, sun_dir: Vec3) -> Vec3 {
-    let ro_relative = view.world_position - view.planet_center;
+    let ro_relative = view.ro_relative();
 
     // Use a smooth occlusion factor for the camera as well to avoid hard edges at the horizon
-    let cam_occ = occlusion_factor_smooth(ro_relative, sun_dir, view.planet_radius);
+    let cam_occ = occlusion_factor_smooth(ro_relative, sun_dir, PLANET_RADIUS);
 
     // Calculate the optical depth from the camera position towards the sun
-    let optical_depth_light = integrate_optical_depth(ro_relative, sun_dir, view);
+    let optical_depth_light = integrate_optical_depth(ro_relative, sun_dir);
 
     // Calculate the transmittance (how much light makes it through) based on the optical depth
     let light_transmittance = calculate_transmittance(optical_depth_light) * (1.0 - cam_occ);
