@@ -1,6 +1,6 @@
 #![no_std]
 
-use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
+use glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec3};
 
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
 
@@ -33,7 +33,7 @@ impl ViewUniform {
     }
 
     pub fn ro_relative(&self) -> Vec3 {
-        self.world_position.xyz() - self.planet_center()
+        vec3(0.0, 0.0, self.world_position.z + PLANET_RADIUS)
     }
 
     pub fn latitude(&self) -> f32 {
@@ -45,7 +45,7 @@ impl ViewUniform {
     }
 
     pub fn camera_offset(&self) -> Vec2 {
-        self.camera_position.zy()
+        self.camera_position.zw()
     }
 
     pub fn time(&self) -> f32 {

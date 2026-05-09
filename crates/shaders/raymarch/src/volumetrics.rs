@@ -64,7 +64,6 @@ struct VolumeSample {
 fn sample_volume(
     pos: Vec3,
     view: &ViewUniform,
-    time: f32,
     clouds: bool,
     ocean: bool,
     poles: bool,
@@ -84,7 +83,6 @@ fn sample_volume(
         let cloud_sample = sample_clouds(
             pos,
             view,
-            time,
             false,
             base_texture,
             details_texture,
@@ -97,7 +95,7 @@ fn sample_volume(
         }
     }
     if ocean {
-        let ocean_sample = sample_ocean(pos, time, false, details_texture, sampler);
+        let ocean_sample = sample_ocean(pos, view.time(), false, details_texture, sampler);
         if ocean_sample.density > 0.0 {
             blended_color += ocean_sample.color * ocean_sample.density;
             sample.density += ocean_sample.density;
@@ -133,7 +131,6 @@ fn sample_shadowing(
     rd: Vec3,
     atmosphere: &AtmosphereData,
     step_density: f32,
-    time: f32,
     sun_dir: Vec3,
     dither: f32,
     base_texture: Image!(3D, type=f32, sampled=true),
@@ -169,14 +166,14 @@ fn sample_shadowing(
         let clouds = sample_clouds(
             lightmarch_pos,
             view,
-            time,
             true,
             base_texture,
             details_texture,
             weather_texture,
             sampler,
         );
-        let ocean = sample_ocean(lightmarch_pos, time, true, details_texture, sampler).density;
+        let ocean =
+            sample_ocean(lightmarch_pos, view.time(), true, details_texture, sampler).density;
 
         // Soften the extinction impact (0.6 multiplier) to keep some life in the shadows
         optical_depth +=
@@ -234,7 +231,6 @@ fn compute_aur_turbulence(pos: Vec2, time: f32) -> f32 {
 fn sample_aur_lighting(
     world_pos: Vec3,
     view: &ViewUniform,
-    time: f32,
     base_texture: Image!(3D, type=f32, sampled=true),
     details_texture: Image!(3D, type=f32, sampled=true),
     weather_texture: Image!(2D, type=f32, sampled=true),
@@ -246,7 +242,7 @@ fn sample_aur_lighting(
     }
 
     let p = world_pos.xy() * 0.006;
-    let t_scale = time * 0.5;
+    let t_scale = view.time() * 0.5;
     let turb1 = (p.x + t_scale).sin() * (p.y + t_scale).cos();
     let turb2 = (p.x * 1.8 - t_scale * 0.4).cos() * (p.y * 1.5 + t_scale * 0.7).sin();
 
@@ -254,55 +250,28 @@ fn sample_aur_lighting(
         .saturate()
         .powf(6.0);
     // Add color variance using a second noise-like pattern for lerping between two purples
-    let color_mix = (p.x * 0.3 + time * 0.1).sin() * 0.5 + 0.5;
+    let color_mix = (p.x * 0.3 + view.time() * 0.1).sin() * 0.5 + 0.5;
     let base_color = Vec3::lerp(AUR_LIGHT_COLOR_A, AUR_LIGHT_COLOR_B, color_mix);
 
     let aur_color = base_color * (0.8 + turb * 12.0 * altitude_fade);
 
     let mut aur_optical_depth = 0.0;
 
-    // We want two things:
-    // 1. "Underside" feel: Quick occlusion within the cloud itself (short range).
-    // 2. "Cross-layer" feel: Influence from clouds far above (long range), but very soft.
-
     // Short range for the underside definition
-    let short_steps: u32 = 4;
+    let short_steps: u32 = 2;
     let short_step_size: f32 = 40.0;
-
-    // Long range for cross-layer blocking
-    let long_steps: u32 = 4;
-    let long_step_size: f32 = 800.0;
-
     for j in 0..short_steps {
         let march_pos = world_pos + AUR_LIGHT_DIR * ((j as f32 + 1.0) * short_step_size);
         let sample = sample_clouds(
             march_pos,
             view,
-            time,
             true,
             base_texture,
             details_texture,
             weather_texture,
             sampler,
         );
-        // Heavy weight for local occlusion to keep it on the undersides
-        aur_optical_depth += sample * 0.8 * short_step_size;
-    }
-
-    for j in 0..long_steps {
-        let march_pos = world_pos + AUR_LIGHT_DIR * ((j as f32 + 1.0) * long_step_size + 200.0);
-        let sample = sample_clouds(
-            march_pos,
-            view,
-            time,
-            true,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
-        // Light weight for cross-layer to prevent "lifeless" shadows but allow penetration
-        aur_optical_depth += sample * 0.02 * long_step_size;
+        aur_optical_depth += sample * 0.3 * short_step_size;
     }
 
     aur_color * (-aur_optical_depth.max(0.0)).exp() * altitude_fade
@@ -339,7 +308,6 @@ pub fn raymarch_volumetrics(
 
     let mut t_start = t_max;
     let mut t_end = 0.0;
-    let time = view.time();
     if clouds_entry_exit1.y > 0.0 && clouds_entry_exit1.x < clouds_entry_exit1.y {
         t_start = t_start.min(clouds_entry_exit1.x);
         t_end = t_end.max(clouds_entry_exit1.y);
@@ -424,7 +392,6 @@ pub fn raymarch_volumetrics(
         let sample = sample_volume(
             world_pos,
             view,
-            time,
             inside_clouds,
             inside_ocean,
             inside_poles,
@@ -453,11 +420,11 @@ pub fn raymarch_volumetrics(
 
         let volume_transmittance = (-(DENSITY * step_density) * step).exp();
 
-        let fog_turb = compute_aur_turbulence(world_pos.xy(), time * 0.5);
+        let fog_turb = compute_aur_turbulence(world_pos.xy(), view.time() * 0.5);
         let fog_caustic =
             1.0 + fog_turb * 3.0 * (1.0 - (world_pos.z / 20000.0).saturate()).powf(1.5);
 
-        let color_mix_fog = (world_pos.x * 0.001 + time * 0.1).sin() * 0.5 + 0.5;
+        let color_mix_fog = (world_pos.x * 0.001 + view.time() * 0.1).sin() * 0.5 + 0.5;
         let aur_fog_color = Vec3::lerp(AUR_LIGHT_COLOR_A, AUR_LIGHT_COLOR_B, color_mix_fog);
 
         let fog_color = atmosphere.sky.lerp(
@@ -478,7 +445,6 @@ pub fn raymarch_volumetrics(
                 rd,
                 atmosphere,
                 step_density,
-                time,
                 sun_dir,
                 dither,
                 base_texture,
@@ -492,7 +458,6 @@ pub fn raymarch_volumetrics(
                 sample_aur_lighting(
                     world_pos,
                     view,
-                    time,
                     base_texture,
                     details_texture,
                     weather_texture,

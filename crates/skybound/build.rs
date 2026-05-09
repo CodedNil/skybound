@@ -1,31 +1,18 @@
 use spirv_builder::{SpirvBuilder, SpirvMetadata};
-use std::path::PathBuf;
+use std::fs;
 
 fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    // Path to the shader crate relative to this crate
-    let shader_project_path = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .join("shaders")
-        .join("raymarch");
 
-    // Path to the assets directory in the root of the project
-    let shader_output_path = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("assets")
-        .join("shaders")
-        .join("raymarch.spv");
+    let shader_crate = format!("{manifest_dir}/../shaders/raymarch");
+    let shared_crate = format!("{manifest_dir}/../skybound_shared");
+    let dest_path = format!("{manifest_dir}/../../assets/shaders/raymarch.spv");
 
-    println!(
-        "cargo:rerun-if-changed={}",
-        shader_project_path.to_str().unwrap()
-    );
+    // Tell Cargo when to rebuild
+    println!("cargo:rerun-if-changed={shader_crate}");
+    println!("cargo:rerun-if-changed={shared_crate}");
 
-    let result = SpirvBuilder::new(shader_project_path, "spirv-unknown-vulkan1.1")
+    let result = SpirvBuilder::new(shader_crate, "spirv-unknown-vulkan1.1")
         .spirv_metadata(SpirvMetadata::None)
         .release(true)
         .uniform_buffer_standard_layout(true)
@@ -34,9 +21,10 @@ fn main() {
         .build()
         .expect("Failed to build rust-gpu shader");
 
-    // Copy the built shader to the assets directory
-    let built_shader_path = result.module.unwrap_single();
-    std::fs::create_dir_all(shader_output_path.parent().unwrap()).ok();
-    std::fs::copy(built_shader_path, shader_output_path)
-        .expect("Failed to copy built shader to assets");
+    // Copy the built shader
+    let built_shader = result.module.unwrap_single();
+    if let Some(parent) = std::path::Path::new(&dest_path).parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    fs::copy(built_shader, dest_path).expect("Failed to copy shader to assets");
 }

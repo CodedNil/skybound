@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 skybound_shared = { path = "../skybound_shared", features = ["cpu"] }
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "a74ad33a05ab1b37316fb53559ef7b24ae83b806", default-features = false, features = [
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "92ec2e259a1db70d6e52ae9df833febd672541f2", default-features = false, features = [
     "wayland",
 
     "std",

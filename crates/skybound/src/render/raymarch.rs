@@ -262,7 +262,6 @@ impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
         let asset_server = world.resource::<AssetServer>();
         let shader = asset_server.load("shaders/raymarch.spv");
-        // let shader = bevy::asset::load_embedded_asset!(asset_server, "shaders/rendering.wgsl");
         let render_device = world.resource::<RenderDevice>();
         let fullscreen_shader = world.resource::<bevy::core_pipeline::FullscreenShader>();
 
