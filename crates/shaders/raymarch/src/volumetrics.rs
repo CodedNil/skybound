@@ -159,7 +159,7 @@ pub fn sample_shadowing(
         let distance_along = step_index * LIGHT_STEP_SIZE;
 
         // Disk radius proportional to distance (cone aperture)
-        let disk_radius = distance_along * distance_along.tan(); // Assuming SUN_CONE_ANGLE is baked or use .tan()
+        let disk_radius = SUN_CONE_ANGLE.tan() * distance_along;
 
         // Select a precomputed disk sample indexed by per-pixel dither + step index.
         let nf = DISK_SAMPLE_COUNT as f32;

@@ -72,7 +72,7 @@ fn calculate_layer_v_offset(
     sampler: Sampler,
 ) -> f32 {
     let disp_coord = pos_xy * 0.000_005 + Vec2::splat(index_u as f32 * 0.23);
-    let disp_noise: f32 = weather_texture.sample_by_lod(sampler, disp_coord, 0.0).x;
+    let disp_noise: f32 = weather_texture.sample(sampler, disp_coord).x;
     (disp_noise - 0.5) * CLOUD_LAYER_SPACING * 0.85
 }
 
@@ -137,7 +137,7 @@ pub fn sample_clouds(
     let layer_i = cloud_layer.index as usize;
     let weather_pos_2d = (pos.xy() + CLOUD_LAYER_OFFSETS[layer_i] * 10000.0) * WEATHER_NOISE_SCALE
         + time * WIND_DIRECTION_WEATHER;
-    let weather_noise: Vec4 = weather_texture.sample_by_lod(sampler, weather_pos_2d, 0.0);
+    let weather_noise: Vec4 = weather_texture.sample(sampler, weather_pos_2d);
 
     let mut weather_coverage = weather_noise.x * 1.2 - 0.4;
     let layer_fraction = layer_i as f32 / CLOUD_TOTAL_LAYERS as f32;
@@ -197,7 +197,7 @@ pub fn sample_clouds(
     if simple {
         let shadow_pos =
             vec3(coord_along * stretch, coord_perp, pos.z) * base_scale + base_time_vec;
-        let shadow_noise: f32 = base_texture.sample_by_lod(sampler, shadow_pos, 2.0).x;
+        let shadow_noise: f32 = base_texture.sample(sampler, shadow_pos).x;
         return (shadow_noise * h_profile) + weather_coverage - 1.0;
     }
 
@@ -209,7 +209,7 @@ pub fn sample_clouds(
         vec3(coord_along * stretch + leaning, coord_perp, pos.z) * base_scale + base_time_vec
     };
 
-    let base_noise: f32 = base_texture.sample_by_lod(sampler, noise_sample_pos, 0.0).x;
+    let base_noise: f32 = base_texture.sample(sampler, noise_sample_pos).x;
     let mut density = base_noise;
     if cloud_layer.is_cirrus {
         density = density.powf(3.5) * 0.5;
@@ -241,7 +241,7 @@ pub fn sample_clouds(
     ) * DETAIL_NOISE_SCALE
         * CLOUD_LAYER_SCALES[layer_i]
         - dtime_vec;
-    let detail_noise: f32 = details_texture.sample_by_lod(sampler, dpos, 0.0).x;
+    let detail_noise: f32 = details_texture.sample(sampler, dpos).x;
 
     let erosion_mask = if layer_i < 5 { 1.0 - h_coord } else { h_coord };
     let erosion = detail_noise * 0.4 * CLOUD_LAYER_DETAILS[layer_i] * (1.1 + erosion_mask);

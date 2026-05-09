@@ -157,12 +157,10 @@ pub fn sample_ocean(
         return ocean_sample;
     }
 
-    let noise_sample: Vec4 = details_texture.sample_by_lod(
-        sampler,
-        vec3(pos.x * 0.00002, pos.y * 0.00002, time * 0.04),
-        0.0,
-    );
-    let height_noise = noise_sample.y * -1200.0;
+    let height_noise = details_texture
+        .sample(sampler, vec3(pos.x * 0.00002, pos.y * 0.00002, time * 0.04))
+        .y
+        * -1200.0;
     let altitude = pos.z - height_noise;
     let density_mask = smoothstep(0.0, -500.0, altitude);
 
@@ -175,10 +173,9 @@ pub fn sample_ocean(
         ocean_sample.density = 1.0;
     } else {
         let turb_pos = compute_turbulence(pos.xy() * 0.001 + vec2(time, 0.0), time);
-        let b_noise: Vec4 = details_texture.sample_by_lod(
+        let b_noise: Vec4 = details_texture.sample(
             sampler,
             vec3(turb_pos.x * 0.2, turb_pos.y * 0.2, altitude * 0.001),
-            0.0,
         );
         fbm_value = b_noise.z * 2.0 - 1.0;
         ocean_sample.density =
