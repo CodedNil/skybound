@@ -158,20 +158,20 @@ fn sample_shadowing(
             tangent1 * (sample_offset.x * disk_radius) + tangent2 * (sample_offset.y * disk_radius);
 
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
-        let clouds = sample_clouds(
-            lightmarch_pos,
-            view,
-            true,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
+        // let clouds = sample_clouds(
+        //     lightmarch_pos,
+        //     view,
+        //     true,
+        //     base_texture,
+        //     details_texture,
+        //     weather_texture,
+        //     sampler,
+        // );
         let ocean =
             sample_ocean(lightmarch_pos, view.time(), true, details_texture, sampler).density;
 
-        optical_depth +=
-            (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
+        // optical_depth += (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
+        optical_depth += (ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
     }
 
     let sun_transmittance = (-optical_depth).exp();
@@ -461,20 +461,20 @@ pub fn raymarch_volumetrics(
             );
 
             let emission = sample.emission * 1000.0;
-            let cloud_aur_boost = if inside_clouds {
-                sample_aur_lighting(
-                    world_pos,
-                    view,
-                    base_texture,
-                    details_texture,
-                    weather_texture,
-                    sampler,
-                )
-            } else {
-                Vec3::ZERO
-            };
+            // let cloud_aur_boost = if inside_clouds {
+            //     sample_aur_lighting(
+            //         world_pos,
+            //         view,
+            //         base_texture,
+            //         details_texture,
+            //         weather_texture,
+            //         sampler,
+            //     )
+            // } else {
+            //     Vec3::ZERO
+            // };
 
-            let volume_color = in_scattering * sample.color + emission + cloud_aur_boost;
+            let volume_color = in_scattering * sample.color + emission; // + cloud_aur_boost;
             acc_color += volume_color * transmittance * alpha_step;
 
             let contribution = alpha_step * transmittance;

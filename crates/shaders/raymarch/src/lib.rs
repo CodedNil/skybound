@@ -64,7 +64,7 @@ fn main(
         ambient: sky_zenith * 0.7 + render_sky(-up, view, sun_dir) * 0.15 + sky * 0.15,
     };
 
-    let solids = raymarch_solids(ro, rd, view, &atmosphere, t_max);
+    let solids = raymarch_solids(ro, rd, view, &atmosphere, t_max, dither);
     let mut rendered_color = if solids.hit >= 1.0 {
         solids.color
     } else {
@@ -143,9 +143,6 @@ fn main(
     *out_motion = motion_vector.extend(0.0).extend(0.0);
     *out_gbuffer = gbuffer;
     *out_frag_depth = frag_depth;
-
-    // *out_color = Vec3::splat(frag_depth * 2000.0).extend(1.0); // DEBUG: depth
-    // *out_color = (motion_vector * 200.0 + 0.5).extend(0.5).extend(1.0); // DEBUG: motion vectors
 }
 
 /// Convert a ndc space position to world space

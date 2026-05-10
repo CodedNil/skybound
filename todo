@@ -1,16 +1,14 @@
 the top layer of clouds clips
-make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
-much less dense, mostly upper atmosphere clouds on the equator
 
 
-aur_spikes.rs
-the spikes only start from 0 z height, they should rise from the aur_ocean which is below that, rising from the fog, they should end at between -200 and -50 z
-make the spikes more shaped too like dripping candles as i said, currently the only variation is width over the height so its smooth af, theres also some weird clippig visual behaviour at the peak, the shading on them is very lined for the AO or whatever shadowing its doing, can it use dithering variable for the raymarcher to fix that (dlss will smooth the noise)
-the spikes dont show in the reflections of the spheres too so i feel like the solids reflection logic atm sucks (or perhaps its just being overridden by the sky reflection?
-can we make the solids bend around the planets curve too with the same logic volumetrics uses
+make the bottom of aur_spikes.rs have a flat plane (full density below it infinitely) as like the ground of the planet
+also for all the solids raymarching make them curve with the planet like we do with the volumetrics
 
 
-
+still dont see reflections for the volumetrics in the spheres when they are supposed to be there, also the shadowing is glitchy on solids, and the spike tips are still weird and clipped instead of nicely rounded ends
+make the bottom of aur_spikes.rs have a flat plane (full density below it infinitely) as like the ground of the planet
+surely also let refl_t_max = trace_solids_distance this is redundant? dont we render out solid reflections in the raymarch_solids already, so doesnt that know how far the reflection travelled and could output that?
+start with git diff to see what we've already done
 
 
 
@@ -27,6 +25,9 @@ do trails from fast animal motion as spheres that get placed on it's path with v
 
 
 clouds:
+make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
+much less dense, mostly upper atmosphere clouds on the equator
+
 Good examples of god rays through clouds  https://www.shadertoy.com/view/ttcSD8 https://www.shadertoy.com/view/MstBWs
 60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
 Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
