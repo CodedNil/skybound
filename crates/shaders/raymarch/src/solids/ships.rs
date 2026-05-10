@@ -1,5 +1,4 @@
-use crate::lighting::{compute_surface_light, trace_sun_visibility};
-use crate::utils::{AtmosphereData, get_sun_position};
+use crate::{solids::ShadeResult, utils::hash33};
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{FloatExt, Vec3, Vec4Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
@@ -13,9 +12,6 @@ const WING_HALF_CHORD: f32 = 2.5;
 
 pub const MAT_SPHERE: u32 = 0;
 pub const MAT_WING: u32 = 1;
-
-const SUN_VISIBILITY_DIST: f32 = 50.0;
-const SUN_VISIBILITY_STEPS: u32 = 12;
 
 const WING_COLOR: Vec3 = vec3(0.4, 0.7, 1.0);
 const SPHERE_COLOR: Vec3 = vec3(0.55, 0.52, 0.48);
@@ -83,40 +79,43 @@ pub fn shade_ship(
     n: Vec3,
     mat: u32,
     view: &ViewUniform,
-    atmosphere: &AtmosphereData,
-    sdf_dist_fn: impl Fn(Vec3) -> f32,
-    trace_refl_fn: impl Fn(Vec3, Vec3) -> Vec3,
-) -> (Vec3, f32) {
-    let sun_pos = get_sun_position(view);
-    let sun_dir = (sun_pos - p).normalize();
-    let sun_vis = trace_sun_visibility(
-        p,
-        sun_dir,
-        SUN_VISIBILITY_DIST,
-        SUN_VISIBILITY_STEPS,
-        sdf_dist_fn,
-    );
-    let light = compute_surface_light(n, sun_dir, sun_vis, atmosphere);
+    trace_refl_fn: impl Fn(Vec3, Vec3) -> (Vec3, f32, f32),
+) -> ShadeResult {
     let view_dir = (view.world_position.xyz() - p).normalize();
     let refl_dir = 2.0 * n.dot(view_dir) * n - view_dir;
-    let refl_color = trace_refl_fn(p, refl_dir);
     let n_dot_v = n.dot(view_dir).abs();
 
-    let base = mat_color(mat) * (light.sun + light.sky * 0.5 + light.ambient * 0.8);
+    let base = mat_color(mat);
 
     if mat == MAT_SPHERE {
-        // Sphere: strong mirror fresnel + sharp specular
+        let (refl_color, refl_depth, refl_hit) = trace_refl_fn(p, refl_dir);
         let fresnel = (1.0 - n_dot_v).powf(2.5);
-        let color = base.lerp(refl_color, 0.75 * fresnel + 0.05);
-        let half = (sun_dir + view_dir).normalize();
-        let spec = n.dot(half).max(0.0).powf(256.0);
-        (color + Vec3::splat(spec * sun_vis) * light.sun * 0.7, 1.0)
+        let refl_weight = 0.75 * fresnel + 0.05;
+        ShadeResult {
+            color: base,
+            specular: 1.0,
+            depth: 0.0,
+            normal: Vec3::ZERO,
+            hit: 1.0,
+            refl_color,
+            refl_weight,
+            refl_hit,
+            refl_depth,
+        }
     } else {
-        // Wing: diffuse rough reflection picks up environment (purple from below)
+        let rough_dir = (refl_dir + (hash33(p * 7.3) * 2.0 - Vec3::splat(1.0)) * 0.35).normalize();
+        let (refl_color, _, _) = trace_refl_fn(p, rough_dir);
         let fresnel = 0.10 + 0.30 * (1.0 - n_dot_v).powf(3.0);
-        let color = base.lerp(refl_color, fresnel);
-        let n_dot_up = n.z.max(0.0);
-        let gi = atmosphere.ambient * (0.3 + 0.3 * n_dot_up);
-        (color + gi, 0.3)
+        ShadeResult {
+            color: base.lerp(refl_color, fresnel),
+            specular: 0.0,
+            depth: 0.0,
+            normal: Vec3::ZERO,
+            hit: 1.0,
+            refl_color: Vec3::ZERO,
+            refl_weight: 0.0,
+            refl_hit: 0.0,
+            refl_depth: 0.0,
+        }
     }
 }

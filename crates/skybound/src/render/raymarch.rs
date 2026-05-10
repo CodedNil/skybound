@@ -61,7 +61,7 @@ pub struct ExtractedViewData {
     planet_rotation: Vec4,
     latitude: f32,
     longitude: f32,
-    camera_offset: Vec2,
+    camera_offset: Vec3,
 }
 
 pub fn extract_clouds_view_uniform(
@@ -129,7 +129,7 @@ pub fn prepare_clouds_view_uniforms(
             view_from_clip,
             prev_clip_from_world: prev_view_data.clip_from_world,
             world_from_clip_unjittered,
-            world_position: world_position.extend(0.0),
+            world_position: world_position.extend(data.camera_offset.z),
             camera_position: vec4(
                 data.latitude,
                 data.longitude,

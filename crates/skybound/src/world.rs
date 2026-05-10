@@ -15,16 +15,17 @@ const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldData {
-    pub camera_offset: Vec2,
+    pub camera_offset: Vec3,
 }
 impl Default for WorldData {
     /// Initialize world data with a quantized camera offset based on planet radius.
     fn default() -> Self {
         let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Z * PLANET_RADIUS);
         Self {
-            camera_offset: vec2(
+            camera_offset: Vec3::new(
                 offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
                 offset.y - (offset.y % CAMERA_RESET_THRESHOLD),
+                0.0,
             ),
         }
     }
@@ -61,7 +62,8 @@ impl WorldData {
 
     /// Return the planet rotation quaternion at the given local position.
     pub fn planet_rotation(&self, pos: Vec3) -> Quat {
-        Self::rotation_from_translation(self.camera_offset.extend(0.0) + pos)
+        let flat_offset = Vec3::new(self.camera_offset.x, self.camera_offset.y, 0.0);
+        Self::rotation_from_translation(flat_offset + pos)
     }
 }
 
@@ -128,5 +130,9 @@ fn update(
     apply_snap(
         &mut camera_transform.translation.y,
         &mut world_coords.camera_offset.y,
+    );
+    apply_snap(
+        &mut camera_transform.translation.z,
+        &mut world_coords.camera_offset.z,
     );
 }

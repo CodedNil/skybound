@@ -48,6 +48,12 @@ pub fn hash21(p: Vec2) -> f32 {
     ((v3.x + v3.y) * v3.z).fract()
 }
 
+pub fn hash33(p: Vec3) -> Vec3 {
+    let mut v = (p * vec3(0.1031, 0.1030, 0.0973)).fract_gl();
+    v += v.dot(v.yxz() + 33.33);
+    ((v.xxy() + v.yxx()) * v.zyx()).fract_gl()
+}
+
 pub fn blue_noise(uv: Vec2) -> f32 {
     let s0 = hash21(uv + vec2(-1.0, 0.0));
     let s1 = hash21(uv + vec2(1.0, 0.0));

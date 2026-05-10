@@ -8,16 +8,14 @@ pub const MAT_SPIKE: u32 = 2;
 
 const SPIKE_GRID: f32 = 5000.0;
 /// Spikes rise from within the `aur_ocean` fog
-pub const SPIKE_BASE_ALT: f32 = -3000.0;
+const SPIKE_BASE_ALT: f32 = -3000.0;
 /// Tips land between these altitudes
 const SPIKE_MIN_TIP: f32 = -800.0;
 const SPIKE_MAX_TIP: f32 = 100.0;
 /// Plane distance above the tallest possible tip is always conservative
 const SPIKE_CEILING: f32 = SPIKE_MAX_TIP;
 
-const SPIKE_COLOR_BASE: Vec3 = vec3(0.16, 0.09, 0.03);
-pub const SPIKE_COLOR_MID: Vec3 = vec3(0.36, 0.20, 0.07);
-const SPIKE_COLOR_WAX: Vec3 = vec3(0.50, 0.31, 0.12);
+pub const SPIKE_COLOR: Vec3 = vec3(0.16, 0.09, 0.03);
 
 fn hash2(p: Vec2) -> Vec2 {
     vec2(hash21(p), hash21(p + Vec2::splat(41.3)))
@@ -71,25 +69,26 @@ fn sdf_spike(local: Vec3, radius: f32, height: f32, wax_seed: Vec2) -> f32 {
     }
 }
 
-fn cell_sdf(p_xy: Vec2, p_z: f32, cell: Vec2) -> f32 {
+fn cell_sdf(p_xy: Vec2, p_z: f32, cell: Vec2, co_cell: Vec2, co_frac: Vec2) -> f32 {
     let h = hash2(cell);
     if h.x < 0.38 {
         return 1e9;
     }
 
-    let cell_world = cell * SPIKE_GRID;
     let jitter = (hash2(cell + Vec2::splat(17.1)) - 0.5) * SPIKE_GRID * 0.40;
-    let center = cell_world + jitter;
+    let cell_rel = cell - co_cell;
+    let center_local = cell_rel * SPIKE_GRID - co_frac + jitter;
 
     let h2 = hash2(cell + Vec2::splat(53.7));
-    // Radius drives the girth of the spike
-    let radius = 100.0 + h2.x * 340.0; // 100–440
-    // Height directly spans from SPIKE_BASE_ALT to tip in [SPIKE_MIN_TIP, SPIKE_MAX_TIP]
+    let radius = 100.0 + h2.x * 340.0;
     let tip_alt = SPIKE_MIN_TIP.lerp(SPIKE_MAX_TIP, h2.y);
-    let height = tip_alt - SPIKE_BASE_ALT; // 2200–3100
+    let height = tip_alt - SPIKE_BASE_ALT;
 
-    // local z = 0 at base, = height at tip
-    let local = vec3(p_xy.x - center.x, p_xy.y - center.y, p_z - SPIKE_BASE_ALT);
+    let local = vec3(
+        p_xy.x - center_local.x,
+        p_xy.y - center_local.y,
+        p_z - SPIKE_BASE_ALT,
+    );
     let wax_seed = hash2(cell + Vec2::splat(71.3));
     let mut d = sdf_spike(local, radius, height, wax_seed);
 
@@ -97,12 +96,12 @@ fn cell_sdf(p_xy: Vec2, p_z: f32, cell: Vec2) -> f32 {
     if h.y > 0.52 {
         let sh = hash2(cell + Vec2::splat(89.5));
         let s_off = (sh - 0.5) * radius * 2.8;
-        let s_r = radius * (0.18 + sh.x * 0.32); // 0.18–0.50 of main radius
+        let s_r = radius * (0.18 + sh.x * 0.32);
         let s_tip = SPIKE_MIN_TIP.lerp(SPIKE_MAX_TIP, sh.y);
         let s_h = s_tip - SPIKE_BASE_ALT;
         let s_local = vec3(
-            p_xy.x - center.x - s_off.x,
-            p_xy.y - center.y - s_off.y,
+            p_xy.x - center_local.x - s_off.x,
+            p_xy.y - center_local.y - s_off.y,
             p_z - SPIKE_BASE_ALT,
         );
         let s_seed = hash2(cell + Vec2::splat(103.9));
@@ -112,35 +111,31 @@ fn cell_sdf(p_xy: Vec2, p_z: f32, cell: Vec2) -> f32 {
     d
 }
 
-pub fn sdf_aur_spikes(p: Vec3) -> f32 {
-    // Early out above the spike zone.
-    // p.z - SPIKE_CEILING is always ≤ true distance to nearest spike tip.
+pub fn sdf_ground(p: Vec3) -> f32 {
+    p.z - SPIKE_BASE_ALT
+}
+
+pub fn sdf_aur_spikes(p: Vec3, camera_offset: Vec2) -> f32 {
     if p.z > SPIKE_CEILING + 5000.0 {
         return p.z - SPIKE_CEILING;
     }
 
-    let cell = (vec2(p.x, p.y) / SPIKE_GRID + Vec2::splat(0.5)).floor();
-    let p_xy = vec2(p.x, p.y);
+    let true_xy = vec2(p.x, p.y) + camera_offset;
+    let cell = (true_xy / SPIKE_GRID + Vec2::splat(0.5)).floor();
 
+    let co_cell = (camera_offset / SPIKE_GRID + Vec2::splat(0.5)).floor();
+    let co_frac = camera_offset - co_cell * SPIKE_GRID;
+
+    let p_xy = vec2(p.x, p.y);
     let mut d = 1e9_f32;
     for ci in -1_i32..=1 {
         for cj in -1_i32..=1 {
             let nb = cell + vec2(ci as f32, cj as f32);
-            let cd = cell_sdf(p_xy, p.z, nb);
+            let cd = cell_sdf(p_xy, p.z, nb, co_cell, co_frac);
             if cd < d {
                 d = cd;
             }
         }
     }
     d
-}
-
-pub fn spike_albedo(p: Vec3) -> Vec3 {
-    let alt = p.z - SPIKE_BASE_ALT;
-    let tz = (alt / 2500.0).saturate();
-    let drip_hi = (alt * 0.011).sin().max(0.0).powf(2.0) * 0.35;
-    let h_var = hash21(vec2(p.x * 0.0018, p.y * 0.0018)) * 0.12;
-    SPIKE_COLOR_BASE
-        .lerp(SPIKE_COLOR_MID, (tz * 1.6).min(1.0))
-        .lerp(SPIKE_COLOR_WAX, drip_hi + h_var)
 }

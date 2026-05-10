@@ -64,7 +64,7 @@ fn main(
         ambient: sky_zenith * 0.7 + render_sky(-up, view, sun_dir) * 0.15 + sky * 0.15,
     };
 
-    let solids = raymarch_solids(ro, rd, view, &atmosphere, t_max, dither);
+    let solids = raymarch_solids(ro, rd, view, t_max, dither);
     let mut rendered_color = if solids.hit >= 1.0 {
         solids.color
     } else {
@@ -72,8 +72,8 @@ fn main(
     };
     t_max = solids.depth;
 
-    // Reflected volumetrics pass: when the solid is specular, march volumetrics
-    if solids.hit >= 1.0 && solids.specular > 0.0 {
+    // Reflected volumetrics
+    if solids.hit >= 1.0 && solids.refl_weight > 0.0 {
         let refl_pos = ro + rd * solids.depth;
         let refl_rd = rd - 2.0 * solids.normal.dot(rd) * solids.normal;
         let refl_vols = raymarch_volumetrics(
@@ -81,20 +81,21 @@ fn main(
             refl_rd,
             &atmosphere,
             view,
-            max_dist,
+            solids.refl_depth,
             dither,
             *base_texture,
             *details_texture,
             *weather_texture,
             *sampler,
         );
-        let refl_sky = render_sky(refl_rd, view, sun_dir);
-        let refl_color = refl_vols.color.xyz() + refl_sky * refl_vols.color.w;
-        let n_dot_v = (-rd).dot(solids.normal).clamp(0.0, 1.0);
-        let fresnel = (1.0 - n_dot_v).powf(2.5);
-        let mirror_weight = 0.75 * fresnel + 0.05;
-        let vol_coverage = 1.0 - refl_vols.color.w;
-        rendered_color = rendered_color.lerp(refl_color, mirror_weight * vol_coverage);
+        // Background behind the volumetrics
+        let refl_background = if solids.refl_hit > 0.5 {
+            solids.refl_color
+        } else {
+            render_sky(refl_rd, view, sun_dir)
+        };
+        let effective_refl = refl_vols.color.xyz() + refl_background * refl_vols.color.w;
+        rendered_color = rendered_color.lerp(effective_refl, solids.refl_weight);
     }
 
     // Sample the volumetrics

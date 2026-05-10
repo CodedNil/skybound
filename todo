@@ -1,14 +1,5 @@
-the top layer of clouds clips
-
-
-make the bottom of aur_spikes.rs have a flat plane (full density below it infinitely) as like the ground of the planet
-also for all the solids raymarching make them curve with the planet like we do with the volumetrics
-
-
-still dont see reflections for the volumetrics in the spheres when they are supposed to be there, also the shadowing is glitchy on solids, and the spike tips are still weird and clipped instead of nicely rounded ends
-make the bottom of aur_spikes.rs have a flat plane (full density below it infinitely) as like the ground of the planet
-surely also let refl_t_max = trace_solids_distance this is redundant? dont we render out solid reflections in the raymarch_solids already, so doesnt that know how far the reflection travelled and could output that?
-start with git diff to see what we've already done
+make the aur_ocean wrap/curve around the spikes
+have basic GI reflections diffuse on solids, and lighting from emissives of the volumetrics trace (include sky as emissive
 
 
 

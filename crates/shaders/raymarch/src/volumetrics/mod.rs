@@ -82,21 +82,21 @@ fn sample_volume(
     };
 
     let mut blended_color = Vec3::ZERO;
-    // if clouds {
-    //     let cloud_sample = sample_clouds(
-    //         pos,
-    //         view,
-    //         false,
-    //         base_texture,
-    //         details_texture,
-    //         weather_texture,
-    //         sampler,
-    //     );
-    //     if cloud_sample > 0.0 {
-    //         blended_color += Vec3::ONE * cloud_sample;
-    //         sample.density += cloud_sample;
-    //     }
-    // }
+    if clouds {
+        let cloud_sample = sample_clouds(
+            pos,
+            view,
+            false,
+            base_texture,
+            details_texture,
+            weather_texture,
+            sampler,
+        );
+        if cloud_sample > 0.0 {
+            blended_color += Vec3::ONE * cloud_sample;
+            sample.density += cloud_sample;
+        }
+    }
     if ocean {
         let ocean_sample = sample_ocean(pos, view.time(), false, details_texture, sampler);
         if ocean_sample.density > 0.0 {
@@ -158,20 +158,20 @@ fn sample_shadowing(
             tangent1 * (sample_offset.x * disk_radius) + tangent2 * (sample_offset.y * disk_radius);
 
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
-        // let clouds = sample_clouds(
-        //     lightmarch_pos,
-        //     view,
-        //     true,
-        //     base_texture,
-        //     details_texture,
-        //     weather_texture,
-        //     sampler,
-        // );
+        let clouds = sample_clouds(
+            lightmarch_pos,
+            view,
+            true,
+            base_texture,
+            details_texture,
+            weather_texture,
+            sampler,
+        );
         let ocean =
             sample_ocean(lightmarch_pos, view.time(), true, details_texture, sampler).density;
 
-        // optical_depth += (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
-        optical_depth += (ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
+        optical_depth +=
+            (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
     }
 
     let sun_transmittance = (-optical_depth).exp();
@@ -352,7 +352,8 @@ pub fn raymarch_volumetrics(
     } else {
         1.0
     };
-    let sun_world_pos = atmosphere.sun_pos + view.camera_offset().extend(0.0);
+    let camera_off = view.camera_offset();
+    let sun_world_pos = atmosphere.sun_pos + camera_off;
 
     for _ in 0..MAX_STEPS {
         if t >= t_end || transmittance < 0.01 {
@@ -394,7 +395,7 @@ pub fn raymarch_volumetrics(
 
         let pos_raw = ro + rd * (t + dither * step);
         let altitude = pos_raw.distance(view.planet_center()) - PLANET_RADIUS;
-        let world_pos = (pos_raw.xy() + view.camera_offset()).extend(altitude);
+        let world_pos = (pos_raw.xy() + camera_off.xy()).extend(altitude);
         let sample = sample_volume(
             world_pos,
             view,
@@ -461,20 +462,20 @@ pub fn raymarch_volumetrics(
             );
 
             let emission = sample.emission * 1000.0;
-            // let cloud_aur_boost = if inside_clouds {
-            //     sample_aur_lighting(
-            //         world_pos,
-            //         view,
-            //         base_texture,
-            //         details_texture,
-            //         weather_texture,
-            //         sampler,
-            //     )
-            // } else {
-            //     Vec3::ZERO
-            // };
+            let cloud_aur_boost = if inside_clouds {
+                sample_aur_lighting(
+                    world_pos,
+                    view,
+                    base_texture,
+                    details_texture,
+                    weather_texture,
+                    sampler,
+                )
+            } else {
+                Vec3::ZERO
+            };
 
-            let volume_color = in_scattering * sample.color + emission; // + cloud_aur_boost;
+            let volume_color = in_scattering * sample.color + emission + cloud_aur_boost;
             acc_color += volume_color * transmittance * alpha_step;
 
             let contribution = alpha_step * transmittance;
@@ -492,9 +493,7 @@ pub fn raymarch_volumetrics(
         t += step;
     }
 
-    // Fog from the end of all volumes to t_max (solid surface or sky). Uses
-    // altitude-dependent density so the fog fades toward space and doesn't
-    // create an unnaturally bright band at the cloud exit edge.
+    // Fog from the end of all volumes to t_max (solid surface or sky)
     let post_dist = (t_max - t.min(t_max)).max(0.0);
     if post_dist > 0.0 && transmittance > 0.0 {
         let mid_t = t + post_dist * 0.5;
