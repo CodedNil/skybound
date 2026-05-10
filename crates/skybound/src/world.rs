@@ -2,29 +2,30 @@ use crate::camera::CameraController;
 use bevy::{
     anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
-    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
+    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass},
     post_process::bloom::Bloom,
     prelude::*,
 };
+use skybound_shared::PLANET_RADIUS;
 use std::f32::consts::FRAC_PI_4;
 
 // --- Constants ---
-pub const PLANET_RADIUS: f32 = 1_000_000.0;
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
 
 // --- Components ---
 #[derive(Resource)]
 pub struct WorldData {
-    pub camera_offset: Vec2,
+    pub camera_offset: Vec3,
 }
 impl Default for WorldData {
     /// Initialize world data with a quantized camera offset based on planet radius.
     fn default() -> Self {
         let offset = Quat::from_rotation_x(FRAC_PI_4).mul_vec3(Vec3::Z * PLANET_RADIUS);
         Self {
-            camera_offset: Vec2::new(
+            camera_offset: Vec3::new(
                 offset.x - (offset.x % CAMERA_RESET_THRESHOLD),
                 offset.y - (offset.y % CAMERA_RESET_THRESHOLD),
+                0.0,
             ),
         }
     }
@@ -61,7 +62,8 @@ impl WorldData {
 
     /// Return the planet rotation quaternion at the given local position.
     pub fn planet_rotation(&self, pos: Vec3) -> Quat {
-        Self::rotation_from_translation(self.camera_offset.extend(0.0) + pos)
+        let flat_offset = Vec3::new(self.camera_offset.x, self.camera_offset.y, 0.0);
+        Self::rotation_from_translation(flat_offset + pos)
     }
 }
 
@@ -83,11 +85,12 @@ fn setup(mut commands: Commands) {
         Camera3d::default(),
         Camera::default(),
         Projection::default(),
+        NormalPrepass,
         DepthPrepass,
         MotionVectorPrepass,
         Msaa::Off,
         Dlss::<DlssSuperResolutionFeature> {
-            perf_quality_mode: DlssPerfQualityMode::Quality,
+            perf_quality_mode: DlssPerfQualityMode::UltraPerformance,
             reset: false,
             _phantom_data: std::marker::PhantomData,
         },
@@ -127,5 +130,9 @@ fn update(
     apply_snap(
         &mut camera_transform.translation.y,
         &mut world_coords.camera_offset.y,
+    );
+    apply_snap(
+        &mut camera_transform.translation.z,
+        &mut world_coords.camera_offset.z,
     );
 }

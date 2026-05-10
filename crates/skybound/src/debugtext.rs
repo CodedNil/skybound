@@ -55,20 +55,20 @@ fn update(
         return;
     }
 
-    let (lat_deg, lon_deg, alt) = camera_query
-        .single()
-        .map(|camera_transform| {
-            (
-                world_coords
-                    .latitude(camera_transform.translation)
-                    .to_degrees(),
-                world_coords
-                    .longitude(camera_transform.translation)
-                    .to_degrees(),
-                camera_transform.translation.z,
-            )
-        })
-        .unwrap_or((0.0, 0.0, 0.0));
+    let (lat_deg, lon_deg, alt) =
+        camera_query
+            .single()
+            .map_or((0.0, 0.0, 0.0), |camera_transform| {
+                (
+                    world_coords
+                        .latitude(camera_transform.translation)
+                        .to_degrees(),
+                    world_coords
+                        .longitude(camera_transform.translation)
+                        .to_degrees(),
+                    camera_transform.translation.z,
+                )
+            });
 
     display.0 = format!(
         "FPS: {fps:.0}\n\

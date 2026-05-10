@@ -3,14 +3,10 @@
 }:
 pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
-    rustc
-    cargo
-    rustfmt
-    clippy
-
+    rustup
+    spirv-tools
     pkg-config
     clang
-
     wayland
     vulkan-headers
   ];

@@ -1,9 +1,5 @@
-use crate::{
-    render::noise::NoiseTextures,
-    world::{PLANET_RADIUS, WorldData},
-};
+use crate::{render::noise::NoiseTextures, world::WorldData};
 use bevy::{
-    asset::load_embedded_asset,
     camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
@@ -16,11 +12,12 @@ use bevy::{
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
             BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
-            ColorWrites, CompareFunction, DepthStencilState, DynamicUniformBuffer, FilterMode,
-            FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
-            RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-            ShaderType, StoreOp, TextureFormat, TextureSampleType,
+            ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, DynamicUniformBuffer,
+            FilterMode, FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
+            PrimitiveState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
+            SamplerDescriptor, ShaderStages, StencilState, StoreOp, TextureFormat,
+            TextureSampleType,
             binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -28,33 +25,7 @@ use bevy::{
         view::{ExtractedView, ViewTarget},
     },
 };
-
-#[derive(Clone, ShaderType)]
-pub struct CloudsViewUniform {
-    time: f32,
-    frame_count: u32,
-
-    clip_from_world: Mat4,
-    world_from_clip: Mat4,
-    world_from_view: Mat4,
-    view_from_world: Mat4,
-
-    clip_from_view: Mat4,
-    view_from_clip: Mat4,
-    world_position: Vec3,
-    camera_offset: Vec2,
-
-    // Previous frame matrices for motion vectors
-    prev_clip_from_world: Mat4,
-    // Unjittered inverse-projection for jitter-free motion vector reconstruction
-    world_from_clip_unjittered: Mat4,
-
-    planet_rotation: Vec4,
-    planet_center: Vec3,
-    planet_radius: f32,
-    latitude: f32,
-    longitude: f32,
-}
+pub use skybound_shared::ViewUniform;
 
 #[derive(Resource, Default)]
 pub struct PreviousViewData {
@@ -62,11 +33,11 @@ pub struct PreviousViewData {
 }
 
 #[derive(Resource)]
-pub struct CloudsViewUniforms {
-    pub uniforms: DynamicUniformBuffer<CloudsViewUniform>,
+pub struct ViewUniforms {
+    pub uniforms: DynamicUniformBuffer<ViewUniform>,
 }
 
-impl FromWorld for CloudsViewUniforms {
+impl FromWorld for ViewUniforms {
     fn from_world(world: &mut World) -> Self {
         let mut uniforms = DynamicUniformBuffer::default();
         uniforms.set_label(Some("view_uniforms_buffer"));
@@ -88,10 +59,9 @@ pub struct CloudsViewUniformOffset {
 #[derive(Resource, Default, ExtractResource, Clone)]
 pub struct ExtractedViewData {
     planet_rotation: Vec4,
-    planet_radius: f32,
     latitude: f32,
     longitude: f32,
-    camera_offset: Vec2,
+    camera_offset: Vec3,
 }
 
 pub fn extract_clouds_view_uniform(
@@ -104,7 +74,6 @@ pub fn extract_clouds_view_uniform(
     if let Ok(camera_transform) = camera_query.single() {
         commands.insert_resource(ExtractedViewData {
             planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
-            planet_radius: PLANET_RADIUS,
             latitude: world_coords.latitude(camera_transform.translation),
             longitude: world_coords.longitude(camera_transform.translation),
             camera_offset: world_coords.camera_offset,
@@ -123,7 +92,7 @@ pub fn prepare_clouds_view_uniforms(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    mut view_uniforms: ResMut<CloudsViewUniforms>,
+    mut view_uniforms: ResMut<ViewUniforms>,
     views: Query<ViewQuery, With<Camera3d>>,
     time: Res<Time>,
     frame_count: Res<FrameCount>,
@@ -151,28 +120,24 @@ pub fn prepare_clouds_view_uniforms(
         // Unjittered inverse-projection used for motion vector ray reconstruction only
         let world_from_clip_unjittered = world_from_view * extracted_view.clip_from_view.inverse();
 
-        let offset = view_uniforms.uniforms.push(&CloudsViewUniform {
-            time: time.elapsed_secs_wrapped(),
-            frame_count: frame_count.0,
-
+        let offset = view_uniforms.uniforms.push(&ViewUniform {
             clip_from_world,
             world_from_clip,
             world_from_view,
             view_from_world,
-
             clip_from_view,
             view_from_clip,
-            world_position,
-            camera_offset: data.camera_offset,
-
             prev_clip_from_world: prev_view_data.clip_from_world,
             world_from_clip_unjittered,
-
+            world_position: world_position.extend(data.camera_offset.z),
+            camera_position: vec4(
+                data.latitude,
+                data.longitude,
+                data.camera_offset.x,
+                data.camera_offset.y,
+            ),
             planet_rotation: data.planet_rotation,
-            planet_center: Vec3::new(world_position.x, world_position.y, -data.planet_radius),
-            planet_radius: data.planet_radius,
-            latitude: data.latitude,
-            longitude: data.longitude,
+            times: vec4(time.elapsed_secs_wrapped(), frame_count.0 as f32, 0.0, 0.0),
         });
 
         commands
@@ -223,14 +188,16 @@ pub fn raymarch_pass(
             Some(detail_noise),
             Some(depth_view),
             Some(motion_view),
+            Some(normal_view),
             Some(weather_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
-            world.resource::<CloudsViewUniforms>().uniforms.binding(),
+            world.resource::<ViewUniforms>().uniforms.binding(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             prepass_textures.depth_view(),
             prepass_textures.motion_vectors_view(),
+            prepass_textures.normal_view(),
             gpu_images.get(&noise_texture_handle.weather),
         )
         else {
@@ -260,7 +227,19 @@ pub fn raymarch_pass(
                 Some(RenderPassColorAttachment {
                     view: motion_view,
                     resolve_target: None,
-                    ops: Operations::default(),
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                }),
+                Some(RenderPassColorAttachment {
+                    view: normal_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
                     depth_slice: None,
                 }),
             ],
@@ -292,8 +271,8 @@ pub fn raymarch_pass(
 
 impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
-        let shader =
-            load_embedded_asset!(world.resource::<AssetServer>(), "shaders/rendering.wgsl");
+        let asset_server = world.resource::<AssetServer>();
+        let shader = asset_server.load("shaders/raymarch.spv");
         let render_device = world.resource::<RenderDevice>();
         let fullscreen_shader = world.resource::<bevy::core_pipeline::FullscreenShader>();
 
@@ -309,8 +288,8 @@ impl FromWorld for RaymarchPipeline {
         let layout_entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<CloudsViewUniform>(true), // View uniforms
-                sampler(SamplerBindingType::Filtering),    // Linear sampler
+                uniform_buffer::<ViewUniform>(true),    // View uniforms
+                sampler(SamplerBindingType::Filtering), // Linear sampler
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
@@ -325,7 +304,16 @@ impl FromWorld for RaymarchPipeline {
         let pipeline_id = pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("volumetric_clouds_pipeline".into()),
             layout: vec![layout_descriptor],
+            immediate_size: 0,
             vertex: fullscreen_shader.to_vertex_state(),
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Always),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
                 shader,
@@ -341,17 +329,15 @@ impl FromWorld for RaymarchPipeline {
                         blend: None,
                         write_mask: ColorWrites::ALL,
                     }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgb10a2Unorm,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
                 ],
-                ..default()
+                shader_defs: Vec::new(),
             }),
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(CompareFunction::GreaterEqual),
-                stencil: default(),
-                bias: default(),
-            }),
-            ..default()
+            zero_initialize_workgroup_memory: false,
         });
 
         Self {
