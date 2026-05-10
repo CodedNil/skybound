@@ -1,4 +1,4 @@
-use bevy::math::{IVec3, Vec2, Vec3A};
+use bevy::math::{IVec3, Vec2, Vec3A, ivec3, vec3a};
 use rayon::prelude::*;
 
 pub fn simplex_3d(
@@ -9,7 +9,7 @@ pub fn simplex_3d(
     freq: Vec2,
     gamma: f32,
 ) -> Vec<f32> {
-    let freq = Vec3A::new(freq.x, freq.x, freq.y);
+    let freq = vec3a(freq.x, freq.x, freq.y);
     (0..(size * size * depth))
         .into_par_iter()
         .map(|i| {
@@ -19,7 +19,7 @@ pub fn simplex_3d(
             let z = i / (size * size);
 
             // Normalized coordinates in [0..1]
-            let pos = Vec3A::new(
+            let pos = vec3a(
                 x as f32 / size as f32,
                 y as f32 / size as f32,
                 z as f32 / depth as f32,
@@ -56,14 +56,14 @@ fn simplex3_seamless(pos: Vec3A, period: Vec3A) -> f32 {
     let wz = fpos.z;
 
     let p000 = simplex3(pos);
-    let p100 = simplex3(pos - Vec3A::new(period.x, 0.0, 0.0));
-    let p010 = simplex3(pos - Vec3A::new(0.0, period.y, 0.0));
-    let p110 = simplex3(pos - Vec3A::new(period.x, period.y, 0.0));
+    let p100 = simplex3(pos - vec3a(period.x, 0.0, 0.0));
+    let p010 = simplex3(pos - vec3a(0.0, period.y, 0.0));
+    let p110 = simplex3(pos - vec3a(period.x, period.y, 0.0));
 
-    let p001 = simplex3(pos - Vec3A::new(0.0, 0.0, period.z));
-    let p101 = simplex3(pos - Vec3A::new(period.x, 0.0, period.z));
-    let p011 = simplex3(pos - Vec3A::new(0.0, period.y, period.z));
-    let p111 = simplex3(pos - Vec3A::new(period.x, period.y, period.z));
+    let p001 = simplex3(pos - vec3a(0.0, 0.0, period.z));
+    let p101 = simplex3(pos - vec3a(period.x, 0.0, period.z));
+    let p011 = simplex3(pos - vec3a(0.0, period.y, period.z));
+    let p111 = simplex3(pos - vec3a(period.x, period.y, period.z));
 
     let w000 = (1.0 - wx) * (1.0 - wy) * (1.0 - wz);
     let w100 = wx * (1.0 - wy) * (1.0 - wz);
@@ -91,22 +91,22 @@ const NORM_CONSTANT_3D: f32 = 1.0 / 0.086_766_4;
 
 #[rustfmt::skip]
 const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
-    IVec3::new(0, 0, 0), IVec3::new(1, 0, 0), IVec3::new(0, 1, 0), IVec3::new(0, 0, 1),
-    IVec3::new(1, 1, 1), IVec3::new(1, 0, 0), IVec3::new(0, 1, 0), IVec3::new(0, 0, 1),
-    IVec3::new(0, 0, 0), IVec3::new(0, 1, 1), IVec3::new(0, 1, 0), IVec3::new(0, 0, 1),
-    IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(0, 1, 0), IVec3::new(0, 0, 1),
-    IVec3::new(0, 0, 0), IVec3::new(1, 0, 0), IVec3::new(1, 0, 1), IVec3::new(0, 0, 1),
-    IVec3::new(1, 1, 1), IVec3::new(1, 0, 0), IVec3::new(1, 0, 1), IVec3::new(0, 0, 1),
-    IVec3::new(0, 0, 0), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(0, 0, 1),
-    IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(0, 0, 1),
-    IVec3::new(0, 0, 0), IVec3::new(1, 0, 0), IVec3::new(0, 1, 0), IVec3::new(1, 1, 0),
-    IVec3::new(1, 1, 1), IVec3::new(1, 0, 0), IVec3::new(0, 1, 0), IVec3::new(1, 1, 0),
-    IVec3::new(0, 0, 0), IVec3::new(0, 1, 1), IVec3::new(0, 1, 0), IVec3::new(1, 1, 0),
-    IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(0, 1, 0), IVec3::new(1, 1, 0),
-    IVec3::new(0, 0, 0), IVec3::new(1, 0, 0), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
-    IVec3::new(1, 1, 1), IVec3::new(1, 0, 0), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
-    IVec3::new(0, 0, 0), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
-    IVec3::new(1, 1, 1), IVec3::new(0, 1, 1), IVec3::new(1, 0, 1), IVec3::new(1, 1, 0),
+    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(0, 0, 1),
+    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(0, 0, 1),
+    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(0, 0, 1),
+    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(0, 0, 1),
+    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(0, 0, 1),
+    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(0, 0, 1),
+    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(0, 0, 1),
+    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(0, 0, 1),
+    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(1, 1, 0),
+    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(1, 1, 0),
+    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(1, 1, 0),
+    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(1, 1, 0),
+    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(1, 1, 0),
+    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(1, 1, 0),
+    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(1, 1, 0),
+    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(1, 1, 0),
 ];
 
 /// Evaluate simplex noise at a 3D point.
@@ -229,12 +229,13 @@ fn hash3(p: IVec3) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::math::vec2;
 
     #[test]
     fn simplex_basic_properties() {
         let size = 6usize;
         let depth = 2usize;
-        let out = simplex_3d(size, depth, 3, 0.5, Vec2::new(1.0, 1.0), 1.0);
+        let out = simplex_3d(size, depth, 3, 0.5, vec2(1.0, 1.0), 1.0);
         assert_eq!(out.len(), size * size * depth);
         for v in out {
             assert!((0.0..=1.0).contains(&v), "simplex value out of range: {v}");
@@ -243,8 +244,8 @@ mod tests {
 
     #[test]
     fn simplex_deterministic() {
-        let a = simplex_3d(5, 2, 2, 0.6, Vec2::new(1.0, 1.0), 1.0);
-        let b = simplex_3d(5, 2, 2, 0.6, Vec2::new(1.0, 1.0), 1.0);
+        let a = simplex_3d(5, 2, 2, 0.6, vec2(1.0, 1.0), 1.0);
+        let b = simplex_3d(5, 2, 2, 0.6, vec2(1.0, 1.0), 1.0);
         assert_eq!(a, b);
     }
 }

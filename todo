@@ -1,23 +1,12 @@
-clean up and simplify clouds.wgsl
-softer brighter clouds that blend into the atmosphere better, give them fluffy soft edges
-variable sky shading on clouds, perhaps update atmosphere.sky every x meters?
+make the aur_ocean wrap/curve around the spikes
+have basic GI reflections diffuse on solids, and lighting from emissives of the volumetrics trace (include sky as emissive
 
-make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
-much less dense, mostly upper atmosphere clouds on the equator
-
-improve aur light glow, make it part of the atmospheric fog
-
-
-sdf creatures and plants:
-https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
-https://github.com/klownie/bevy_sdf_klown
 
 
 atmosphere:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 sky goes far too red at night, and it snaps between the two suns sharply
-planet cutout is too harsh for sky
 sunsets look meh
 
 
@@ -27,6 +16,9 @@ do trails from fast animal motion as spheres that get placed on it's path with v
 
 
 clouds:
+make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
+much less dense, mostly upper atmosphere clouds on the equator
+
 Good examples of god rays through clouds  https://www.shadertoy.com/view/ttcSD8 https://www.shadertoy.com/view/MstBWs
 60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
 Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
@@ -56,8 +48,3 @@ aur particles in air going up, wind speed based on height going to poles, maybe 
 aur fog:
 make it wildly more turbulent around the lightning flashes, make actual bolts of lightning flash out of them
 water like caustics on the light that gets emitted up to make it look special
-
-
-long term:
-implement intel xess for performance wins
-switch to wesl
