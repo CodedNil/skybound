@@ -26,33 +26,28 @@ impl Smoothstep for f32 {
     }
 }
 
-// Modulo functions
 pub fn mod1(x: f32, y: f32) -> f32 {
     x - y * (x / y).floor()
 }
 
-// White noise hash: f32 → vec2 [0,1]
 pub fn hash12(p: f32) -> Vec2 {
     let mut v = (Vec2::splat(p) * vec2(0.1031, 0.1030)).fract_gl();
     v += v.dot(v.yx() + 33.33);
     ((v.x + v.y) * v).fract_gl()
 }
 
-// White noise hash: f32 → vec3 [0,1]
 pub fn hash13(p: f32) -> Vec3 {
     let mut v = (Vec3::splat(p) * vec3(0.1031, 0.1030, 0.1029)).fract_gl();
     v += v.dot(v.yxz() + 33.33);
     ((v.x + v.y + v.z) * v).fract_gl()
 }
 
-// White noise hash: vec2 → f32 [0,1]
 pub fn hash21(p: Vec2) -> f32 {
     let mut v3 = (p.xyx() * 0.1031).fract_gl();
     v3 += v3.dot(v3.yzx() + 33.33);
     ((v3.x + v3.y) * v3.z).fract()
 }
 
-// Blue noise approx.: vec2 → f32 [0,1]
 pub fn blue_noise(uv: Vec2) -> f32 {
     let s0 = hash21(uv + vec2(-1.0, 0.0));
     let s1 = hash21(uv + vec2(1.0, 0.0));
@@ -62,15 +57,13 @@ pub fn blue_noise(uv: Vec2) -> f32 {
     hash21(uv) - s * 0.25 + 0.5
 }
 
-// Rotate vector v by quaternion q = (xyz, w)
 pub fn quat_rotate(q: Vec4, v: Vec3) -> Vec3 {
     let u = q.xyz();
     let uv = u.cross(v);
     v + 2.0 * (q.w * uv + u.cross(uv))
 }
 
-// Returns the near (x) and far (y) intersection distances
-// If the ray misses, returns vec2(1.0, -1.0)
+// If the ray misses, returns vec2(1.0, -1.0) so x > y signals a miss
 pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     let a = rd.dot(rd);
     let b = 2.0 * rd.dot(ro);
@@ -85,10 +78,8 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
 }
 
-// Calculates up to two intersection segments (entry/exit pairs) for a ray intersecting a spherical shell
-// x, y = first intersection segment (entry, exit)
-// z, w = second intersection segment (entry, exit)
-// An invalid segment is represented by entry > exit (e.g., 1.0, 0.0)
+// Returns up to two entry/exit segments through a spherical shell.
+// xy = first segment, zw = second; entry > exit signals an invalid/missed segment.
 pub fn ray_shell_intersect(
     ro: Vec3,
     rd: Vec3,
@@ -98,23 +89,19 @@ pub fn ray_shell_intersect(
 ) -> Vec4 {
     let local_ro = ro - view.planet_center();
 
-    // The entry point is the nearest intersection with the top sphere
     let top_radius = PLANET_RADIUS + top_altitude;
     let top_interval = intersect_sphere(local_ro, rd, top_radius);
     if top_interval.x > top_interval.y {
-        return vec4(1.0, 0.0, 1.0, 0.0); // If we miss the top sphere, we miss the shell entirely
+        return vec4(1.0, 0.0, 1.0, 0.0);
     }
 
-    // The exit point is the nearest intersection with the bottom sphere
     let bottom_radius = PLANET_RADIUS + bottom_altitude;
     let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
     if bottom_interval.x > bottom_interval.y {
-        return vec4(top_interval.x, top_interval.y, 1.0, 0.0); // Glancing shot that hits the top layer but misses the bottom, exit is the far side of the top layer
+        // Glancing shot: hits top shell but misses inner sphere; exit is far side of top layer
+        return vec4(top_interval.x, top_interval.y, 1.0, 0.0);
     }
 
-    // The ray hits both spheres, creating two segments through the shell
-    // Segment 1: Enters top sphere (near), exits bottom sphere (near)
-    // Segment 2: Enters bottom sphere (far), exits top sphere (far)
     vec4(
         top_interval.x,
         bottom_interval.x,
@@ -123,7 +110,6 @@ pub fn ray_shell_intersect(
     )
 }
 
-/// Calculates the world position of the two polar suns and returns the one highest in the sky
 pub fn get_sun_position(view: &ViewUniform) -> Vec3 {
     let north_axis = quat_rotate(view.planet_rotation, vec3(0.0, 0.0, 1.0)).normalize();
     let up_vector = view.ro_relative().normalize();

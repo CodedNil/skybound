@@ -5,17 +5,15 @@ use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
-// Constants
 const COLOR_A: Vec3 = vec3(0.6, 0.3, 0.8);
 const COLOR_B: Vec3 = vec3(0.4, 0.1, 0.6);
 const FLASH_COLOR: Vec3 = vec3(3.0, 3.0, 5.0);
 pub const OCEAN_TOP_HEIGHT: f32 = 0.0;
 
-// Turbulence Configuration
 const TURB_AMP: f32 = 0.6;
-const TURB_SPEED: f32 = 0.5;
-const TURB_FREQ: f32 = 0.4;
-const TURB_EXP: f32 = 1.6;
+const TURB_SPEED: f32 = 0.002;
+const TURB_FREQ: f32 = 1.6;
+const TURB_EXP: f32 = 1.4;
 
 const TURB_ROTS: [Mat2; 10] = [
     Mat2::from_cols_array(&[0.600, 0.800, -0.800, 0.600]),
@@ -30,7 +28,6 @@ const TURB_ROTS: [Mat2; 10] = [
     Mat2::from_cols_array(&[-0.923, -0.384, 0.384, -0.923]),
 ];
 
-// Lightning Configuration
 const FLASH_GRID: f32 = 10000.0;
 const FLASH_FREQUENCY: f32 = 0.05;
 const FLASH_DURATION_MIN: f32 = 1.0;
@@ -104,7 +101,6 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
         let life = (tmod / duration_jitter).clamp(0.0, 1.0);
 
         for i in 0..4 {
-            // POISSON_SAMPLES
             let h = hash13(seed + i as f32 * 17.0);
             let rate = 0.8.lerp(1.2, h.y);
             let motion = vec2(

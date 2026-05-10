@@ -2,10 +2,10 @@ mod aur_ocean;
 mod clouds;
 mod poles;
 
+use crate::lighting::henyey_greenstein;
 use crate::utils::{AtmosphereData, intersect_sphere, ray_shell_intersect};
 use aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
 use clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds};
-use core::f32::consts::PI;
 use poles::{poles_raymarch_entry, sample_poles};
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
@@ -82,21 +82,21 @@ fn sample_volume(
     };
 
     let mut blended_color = Vec3::ZERO;
-    if clouds {
-        let cloud_sample = sample_clouds(
-            pos,
-            view,
-            false,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
-        if cloud_sample > 0.0 {
-            blended_color += Vec3::ONE * cloud_sample;
-            sample.density += cloud_sample;
-        }
-    }
+    // if clouds {
+    //     let cloud_sample = sample_clouds(
+    //         pos,
+    //         view,
+    //         false,
+    //         base_texture,
+    //         details_texture,
+    //         weather_texture,
+    //         sampler,
+    //     );
+    //     if cloud_sample > 0.0 {
+    //         blended_color += Vec3::ONE * cloud_sample;
+    //         sample.density += cloud_sample;
+    //     }
+    // }
     if ocean {
         let ocean_sample = sample_ocean(pos, view.time(), false, details_texture, sampler);
         if ocean_sample.density > 0.0 {
@@ -120,12 +120,6 @@ fn sample_volume(
         sample.emission = (sample.emission / sample.density) * mix_factor;
     }
     sample
-}
-
-fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
-    let g2 = g * g;
-    let denom = (1.0 + g2 - 2.0 * g * cos_theta).powf(1.5);
-    (1.0 - g2) / (4.0 * PI * denom.max(1e-4))
 }
 
 fn sample_shadowing(
@@ -213,17 +207,17 @@ fn sample_shadowing(
 }
 
 fn compute_aur_turbulence(pos: Vec2, time: f32) -> f32 {
-    let mut p = pos * 0.006;
+    let mut p = pos * 0.0022;
     let mut noise = 0.0;
     let mut amp = 1.0;
     let mut freq = 1.0;
     for _ in 0..6 {
         let pattern = (p.x * freq + time * 0.7).sin() * (p.y * freq + time * 0.4).cos();
         noise += pattern * amp;
-        let p_rotated = vec2(p.x * 0.866 - p.y * 0.5, p.x * 0.5 + p.y * 0.866);
+        let p_rotated = vec2(p.x * 0.809 - p.y * 0.588, p.x * 0.588 + p.y * 0.809);
         p = p_rotated * 1.8;
         amp *= 0.45;
-        freq *= 1.1;
+        freq *= 1.618;
     }
     (1.0 - (noise * 0.35).abs()).saturate().powf(6.0)
 }
@@ -241,7 +235,13 @@ fn sample_aur_lighting(
         return Vec3::ZERO;
     }
 
-    let p = world_pos.xy() * 0.006;
+    let p_raw = world_pos.xy() * 0.002;
+    // Domain warp
+    let warp_uv = world_pos.xy() * 0.00008 + view.time() * 0.01;
+    let warp_sample: Vec4 = weather_texture.sample(sampler, warp_uv);
+    let warp = vec2(warp_sample.x - 0.5, warp_sample.y - 0.5) * 6.0;
+    let p = p_raw + warp;
+
     let t_scale = view.time() * 0.5;
     let turb1 = (p.x + t_scale).sin() * (p.y + t_scale).cos();
     let turb2 = (p.x * 1.8 - t_scale * 0.4).cos() * (p.y * 1.5 + t_scale * 0.7).sin();
@@ -342,9 +342,12 @@ pub fn raymarch_volumetrics(
     let mut threshold_depth: f32 = t_max;
     let mut threshold_captured: bool = false;
 
+    // Scale fog density by altitude so it thins toward space.
+    let camera_alt = (ro - view.planet_center()).length() - PLANET_RADIUS;
+    let init_fog = ATMOSPHERIC_FOG_DENSITY * (-camera_alt.max(0.0) / 20_000.0).exp();
     let mut transmittance = if t_start > 0.0 {
-        let initial_fog_transmittance = (-ATMOSPHERIC_FOG_DENSITY * t_start).exp();
-        acc_color = atmosphere.sky * (1.0 - initial_fog_transmittance);
+        let initial_fog_transmittance = (-init_fog * t_start).exp();
+        acc_color = atmosphere.ambient * (1.0 - initial_fog_transmittance);
         initial_fog_transmittance
     } else {
         1.0
@@ -378,8 +381,11 @@ pub fn raymarch_volumetrics(
 
             let segment_length = next_t - t;
             if segment_length > 0.0 {
-                let segment_fog_transmittance = (-ATMOSPHERIC_FOG_DENSITY * segment_length).exp();
-                acc_color += atmosphere.sky * (1.0 - segment_fog_transmittance) * transmittance;
+                let mid_pos = ro + rd * (t + segment_length * 0.5);
+                let mid_alt = (mid_pos - view.planet_center()).length() - PLANET_RADIUS;
+                let seg_fog = ATMOSPHERIC_FOG_DENSITY * (-mid_alt.max(0.0) / 20_000.0).exp();
+                let segment_fog_transmittance = (-seg_fog * segment_length).exp();
+                acc_color += atmosphere.ambient * (1.0 - segment_fog_transmittance) * transmittance;
                 transmittance *= segment_fog_transmittance;
             }
             t = next_t;
@@ -432,7 +438,8 @@ pub fn raymarch_volumetrics(
             0.5 * (1.0 - (world_pos.z / 30000.0).saturate()),
         );
 
-        let fog_transmittance_step = (-ATMOSPHERIC_FOG_DENSITY * step).exp();
+        let alt_fog = ATMOSPHERIC_FOG_DENSITY * (-altitude.max(0.0) / 20_000.0).exp();
+        let fog_transmittance_step = (-alt_fog * step).exp();
         let alpha_step = 1.0 - volume_transmittance;
 
         acc_color += fog_color * (1.0 - fog_transmittance_step) * transmittance;
@@ -483,6 +490,20 @@ pub fn raymarch_volumetrics(
         }
 
         t += step;
+    }
+
+    // Fog from the end of all volumes to t_max (solid surface or sky). Uses
+    // altitude-dependent density so the fog fades toward space and doesn't
+    // create an unnaturally bright band at the cloud exit edge.
+    let post_dist = (t_max - t.min(t_max)).max(0.0);
+    if post_dist > 0.0 && transmittance > 0.0 {
+        let mid_t = t + post_dist * 0.5;
+        let post_mid = ro + rd * mid_t;
+        let post_alt = (post_mid - view.planet_center()).length() - PLANET_RADIUS;
+        let post_fog = ATMOSPHERIC_FOG_DENSITY * (-post_alt.max(0.0) / 20_000.0).exp();
+        let fg = (-post_fog * post_dist).exp();
+        acc_color += atmosphere.ambient * (1.0 - fg) * transmittance;
+        transmittance *= fg;
     }
 
     let avg_depth = accumulated_weighted_depth / accumulated_density.max(0.0001);

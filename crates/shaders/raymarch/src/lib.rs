@@ -6,11 +6,11 @@ mod solids;
 mod utils;
 mod volumetrics;
 
+use crate::lighting::henyey_greenstein;
 use crate::sky::{get_sun_light_color, render_sky};
 use crate::solids::raymarch_solids;
 use crate::utils::{AtmosphereData, blue_noise, get_sun_position};
 use crate::volumetrics::raymarch_volumetrics;
-use core::f32::consts::PI;
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2};
 #[cfg(target_arch = "spirv")]
@@ -30,7 +30,7 @@ fn main(
     #[spirv(location = 2)] out_gbuffer: &mut Vec4,
     #[spirv(frag_depth)] out_frag_depth: &mut f32,
 ) {
-    // Spatially-varying blue noise offset by a per-frame golden-ratio step so each
+    // Spatially-varying blue noise offset
     let frame_offset = (view.frame_count() * 0.618_034).fract();
     let dither = (blue_noise(uv * 1024.0) + frame_offset).fract();
 
@@ -55,14 +55,15 @@ fn main(
 
     // Precalculate sun, sky and ambient colors
     let sky = render_sky(rd, view, sun_dir);
+    let up = (ro - view.planet_center()).normalize();
+    let sky_zenith = render_sky(up, view, sun_dir);
     let atmosphere = AtmosphereData {
         sun_pos,
         sky,
         sun: (get_sun_light_color(view, sun_dir) * 0.45 + sky * 0.18) * phase,
-        ambient: sky * 0.8 + render_sky(-rd, view, sun_dir) * 0.2,
+        ambient: sky_zenith * 0.7 + render_sky(-up, view, sun_dir) * 0.15 + sky * 0.15,
     };
 
-    // Run solids raymarch (solids are independent of volumetrics)
     let solids = raymarch_solids(ro, rd, view, &atmosphere, t_max);
     let mut rendered_color = if solids.hit >= 1.0 {
         solids.color
@@ -70,6 +71,31 @@ fn main(
         atmosphere.sky
     };
     t_max = solids.depth;
+
+    // Reflected volumetrics pass: when the solid is specular, march volumetrics
+    if solids.hit >= 1.0 && solids.specular > 0.0 {
+        let refl_pos = ro + rd * solids.depth;
+        let refl_rd = rd - 2.0 * solids.normal.dot(rd) * solids.normal;
+        let refl_vols = raymarch_volumetrics(
+            refl_pos,
+            refl_rd,
+            &atmosphere,
+            view,
+            max_dist,
+            dither,
+            *base_texture,
+            *details_texture,
+            *weather_texture,
+            *sampler,
+        );
+        let refl_sky = render_sky(refl_rd, view, sun_dir);
+        let refl_color = refl_vols.color.xyz() + refl_sky * refl_vols.color.w;
+        let n_dot_v = (-rd).dot(solids.normal).clamp(0.0, 1.0);
+        let fresnel = (1.0 - n_dot_v).powf(2.5);
+        let mirror_weight = 0.75 * fresnel + 0.05;
+        let vol_coverage = 1.0 - refl_vols.color.w;
+        rendered_color = rendered_color.lerp(refl_color, mirror_weight * vol_coverage);
+    }
 
     // Sample the volumetrics
     let volumetrics = raymarch_volumetrics(
@@ -104,7 +130,6 @@ fn main(
         motion_vector = uv - uv_prev;
 
         // G-buffer (normal + specular)
-        // We only write the solid's normal if the solid is at least as close as the volumetric threshold depth
         if solids.hit >= 1.0 && solids.depth <= volumetrics.depth + 0.1 {
             gbuffer = (solids.normal * 0.5 + Vec3::splat(0.5)).extend(solids.specular);
         }
@@ -121,12 +146,6 @@ fn main(
 
     // *out_color = Vec3::splat(frag_depth * 2000.0).extend(1.0); // DEBUG: depth
     // *out_color = (motion_vector * 200.0 + 0.5).extend(0.5).extend(1.0); // DEBUG: motion vectors
-}
-
-const INV_4_PI: f32 = 0.25 * (1.0 / PI);
-fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
-    let g2 = g * g;
-    INV_4_PI * (1.0 - g2) / (1.0 + g2 - 2.0 * g * cos_theta).powf(1.5)
 }
 
 /// Convert a ndc space position to world space

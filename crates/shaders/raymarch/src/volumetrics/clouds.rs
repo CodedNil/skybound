@@ -18,7 +18,6 @@ const WIND_DIRECTION_WEATHER: Vec2 = vec2(1.0 * 0.02 * BASE_TIME, 0.0);
 const DETAIL_NOISE_SCALE: f32 = 0.2 * BASE_SCALE;
 const WIND_DIRECTION_DETAIL: Vec3 = vec3(1.0 * 0.2 * BASE_TIME, 0.0, -0.2 * BASE_TIME);
 
-// --- Cloud scales
 pub const CLOUD_BOTTOM_HEIGHT: f32 = 1000.0;
 const CLOUD_LAYER_SPACING: f32 = 1400.0;
 const CLOUD_TOTAL_LAYERS: usize = 16;
@@ -46,15 +45,12 @@ fn calculate_layer_v_offset(
 ) -> f32 {
     let layer_seed = index_u as f32 * 137.415;
 
-    // Massive regional noise scale
     let large_coord = pos_xy * WEATHER_NOISE_SCALE * 0.2 + Vec2::splat(layer_seed);
     let large_noise = weather_texture.sample(sampler, large_coord).x;
 
-    // Medium-frequency noise
     let medium_coord = pos_xy * WEATHER_NOISE_SCALE * 3.0 + Vec2::splat(layer_seed * 0.5);
     let medium_noise = weather_texture.sample(sampler, medium_coord).x;
 
-    // High-frequency detail noise
     let detail_coord = pos_xy * WEATHER_NOISE_SCALE * 90.0 + Vec2::splat(layer_seed * 0.5);
     let detail_noise = weather_texture.sample(sampler, detail_coord).x;
 
@@ -99,7 +95,6 @@ pub fn sample_clouds(
 
         let h_coord = ((pos.z - bottom) / dynamic_height).saturate();
 
-        // --- Fluff Shaping ---
         let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx];
         let sample_pos = vec3(pos.x, pos.y, pos.z) * base_scale + view.time() * WIND_DIRECTION_BASE;
         let base_noise = base_texture.sample(sampler, sample_pos).x;
@@ -107,10 +102,10 @@ pub fn sample_clouds(
         let billow_modifier = (base_noise * 1.5).saturate();
         let perturbed_h = (h_coord - (base_noise - 0.5) * 0.4).saturate();
 
-        // Asymmetric profile: Flat bottom, rounded/billowy top
+        // Flat bottom, rounded/billowy top — asymmetric to match real cumulus profiles
         let mut h_profile =
             perturbed_h.smoothstep(0.0, 0.2) * (1.0 - perturbed_h).powf(2.0).smoothstep(0.0, 0.7);
-        h_profile *= billow_modifier; // Sharpen crests
+        h_profile *= billow_modifier;
 
         let density = (base_noise * 2.0 - 0.2).saturate();
         let mut cloud_val = (density * h_profile) + global_coverage - 1.0;

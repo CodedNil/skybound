@@ -1,22 +1,23 @@
-whiter clouds, no clipping
-variable sky shading on clouds, perhaps update atmosphere.sky every x meters?
-
+the top layer of clouds clips
 make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
 much less dense, mostly upper atmosphere clouds on the equator
 
-improve aur light glow, make it part of the atmospheric fog
+
+aur_spikes.rs
+the spikes only start from 0 z height, they should rise from the aur_ocean which is below that, rising from the fog, they should end at between -200 and -50 z
+make the spikes more shaped too like dripping candles as i said, currently the only variation is width over the height so its smooth af, theres also some weird clippig visual behaviour at the peak, the shading on them is very lined for the AO or whatever shadowing its doing, can it use dithering variable for the raymarcher to fix that (dlss will smooth the noise)
+the spikes dont show in the reflections of the spheres too so i feel like the solids reflection logic atm sucks (or perhaps its just being overridden by the sky reflection?
+can we make the solids bend around the planets curve too with the same logic volumetrics uses
 
 
-sdf creatures and plants:
-https://artificialanalysis.ai/microevals/sdf-creation-1754564011169?prompt=79c28466
-https://github.com/klownie/bevy_sdf_klown
+
+
 
 
 atmosphere:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 sky goes far too red at night, and it snaps between the two suns sharply
-planet cutout is too harsh for sky
 sunsets look meh
 
 
