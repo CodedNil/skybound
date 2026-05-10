@@ -1,15 +1,12 @@
 #![no_std]
 
-pub mod aur_ocean;
-pub mod clouds;
-pub mod poles;
-pub mod raymarch;
-pub mod sky;
-pub mod utils;
-pub mod volumetrics;
+mod sky;
+mod solids;
+mod utils;
+mod volumetrics;
 
-use crate::raymarch::raymarch_solids;
 use crate::sky::{get_sun_light_color, render_sky};
+use crate::solids::raymarch_solids;
 use crate::utils::{AtmosphereData, blue_noise, get_sun_position};
 use crate::volumetrics::raymarch_volumetrics;
 use core::f32::consts::PI;

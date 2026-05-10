@@ -1,3 +1,4 @@
+use core::f32::consts::FRAC_1_PI;
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
@@ -37,29 +38,29 @@ pub fn mod3(x: Vec3, y: f32) -> Vec3 {
 
 // White noise hash: f32 → f32 [0,1]
 pub fn hash11(p: f32) -> f32 {
-    let mut v = (p * 0.1031).fract();
+    let mut v = (p * 0.1031).fract_gl();
     v *= v + 33.33;
     v *= v + v;
-    v.fract()
+    v.fract_gl()
 }
 
 // White noise hash: f32 → vec2 [0,1]
 pub fn hash12(p: f32) -> Vec2 {
-    let mut v = (Vec2::splat(p) * vec2(0.1031, 0.1030)).fract();
+    let mut v = (Vec2::splat(p) * vec2(0.1031, 0.1030)).fract_gl();
     v += v.dot(v.yx() + 33.33);
-    ((v.x + v.y) * v).fract()
+    ((v.x + v.y) * v).fract_gl()
 }
 
 // White noise hash: f32 → vec3 [0,1]
 pub fn hash13(p: f32) -> Vec3 {
-    let mut v = (Vec3::splat(p) * vec3(0.1031, 0.1030, 0.1029)).fract();
+    let mut v = (Vec3::splat(p) * vec3(0.1031, 0.1030, 0.1029)).fract_gl();
     v += v.dot(v.yxz() + 33.33);
-    ((v.x + v.y + v.z) * v).fract()
+    ((v.x + v.y + v.z) * v).fract_gl()
 }
 
 // White noise hash: vec2 → f32 [0,1]
 pub fn hash21(p: Vec2) -> f32 {
-    let mut v3 = (p.xyx() * 0.1031).fract();
+    let mut v3 = (p.xyx() * 0.1031).fract_gl();
     v3 += v3.dot(v3.yzx() + 33.33);
     ((v3.x + v3.y) * v3.z).fract()
 }

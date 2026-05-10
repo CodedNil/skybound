@@ -1,9 +1,12 @@
-use core::f32::consts::PI;
+mod aur_ocean;
+mod clouds;
+mod poles;
 
-use crate::aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
-use crate::clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds};
-use crate::poles::{poles_raymarch_entry, sample_poles};
 use crate::utils::{AtmosphereData, intersect_sphere, ray_shell_intersect};
+use aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
+use clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds};
+use core::f32::consts::PI;
+use poles::{poles_raymarch_entry, sample_poles};
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
@@ -156,7 +159,7 @@ fn sample_shadowing(
         let distance_along = step_index * dynamic_light_step;
         let disk_radius = SUN_CONE_ANGLE.tan() * distance_along;
 
-        let idxf = (dither + step_index * 0.618_034).fract();
+        let idxf = (dither + step_index * 0.618_034).fract_gl();
         let idx = (idxf * 16.0).floor() as i32;
         let sample_offset = DISK_SAMPLES[idx as usize];
         let disk_offset =

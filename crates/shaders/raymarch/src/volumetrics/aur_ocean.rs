@@ -124,7 +124,7 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
 
             let fade = life.smoothstep(0.0, 0.1) * (1.0 - life.smoothstep(0.9, 1.0));
             let flicker_time = time * FLASH_FLICKER * rate + h.x * 100.0;
-            let flicker = if (flicker_time.fract()) >= 0.5 {
+            let flicker = if (flicker_time.fract_gl()) >= 0.5 {
                 1.0
             } else {
                 0.8
