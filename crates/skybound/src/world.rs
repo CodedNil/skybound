@@ -2,7 +2,7 @@ use crate::camera::CameraController;
 use bevy::{
     anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
-    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
+    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass},
     post_process::bloom::Bloom,
     prelude::*,
 };
@@ -83,6 +83,7 @@ fn setup(mut commands: Commands) {
         Camera3d::default(),
         Camera::default(),
         Projection::default(),
+        NormalPrepass,
         DepthPrepass,
         MotionVectorPrepass,
         Msaa::Off,

@@ -188,6 +188,7 @@ pub fn raymarch_pass(
             Some(detail_noise),
             Some(depth_view),
             Some(motion_view),
+            Some(normal_view),
             Some(weather_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
@@ -196,6 +197,7 @@ pub fn raymarch_pass(
             gpu_images.get(&noise_texture_handle.detail),
             prepass_textures.depth_view(),
             prepass_textures.motion_vectors_view(),
+            prepass_textures.normal_view(),
             gpu_images.get(&noise_texture_handle.weather),
         )
         else {
@@ -224,6 +226,15 @@ pub fn raymarch_pass(
                 Some(view_target.get_color_attachment()),
                 Some(RenderPassColorAttachment {
                     view: motion_view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Load,
+                        store: StoreOp::Store,
+                    },
+                    depth_slice: None,
+                }),
+                Some(RenderPassColorAttachment {
+                    view: normal_view,
                     resolve_target: None,
                     ops: Operations {
                         load: LoadOp::Load,
@@ -315,6 +326,11 @@ impl FromWorld for RaymarchPipeline {
                     }),
                     Some(ColorTargetState {
                         format: TextureFormat::Rg16Float,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    }),
+                    Some(ColorTargetState {
+                        format: TextureFormat::Rgb10a2Unorm,
                         blend: None,
                         write_mask: ColorWrites::ALL,
                     }),

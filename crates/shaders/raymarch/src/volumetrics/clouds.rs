@@ -81,7 +81,6 @@ pub fn sample_clouds(
     let approx_idx = ((pos.z - CLOUD_BOTTOM_HEIGHT) / CLOUD_LAYER_SPACING).floor() as i32;
     let mut total_cloud_val: f32 = 0.0;
 
-    // Range expanded to -4..=4 to handle the high variance without clipping
     for i in -4..=4 {
         let idx_i = approx_idx + i;
         if idx_i < 0 || idx_i >= CLOUD_TOTAL_LAYERS as i32 {
@@ -105,8 +104,6 @@ pub fn sample_clouds(
         let sample_pos = vec3(pos.x, pos.y, pos.z) * base_scale + view.time() * WIND_DIRECTION_BASE;
         let base_noise = base_texture.sample(sampler, sample_pos).x;
 
-        // Anti-Blobbing: Use noise to "pinch" the height gradient
-        // This makes the clouds look like they have distinct billows/bubbles
         let billow_modifier = (base_noise * 1.5).saturate();
         let perturbed_h = (h_coord - (base_noise - 0.5) * 0.4).saturate();
 
@@ -123,7 +120,6 @@ pub fn sample_clouds(
                 let det_pos = (pos * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx])
                     - (view.time() * WIND_DIRECTION_DETAIL);
                 let detail_noise = details_texture.sample(sampler, det_pos).x;
-                // Erode based on detail, but preserve the "fluffy" core
                 cloud_val =
                     (cloud_val - detail_noise * 0.3 * CLOUD_LAYER_DETAILS[layer_idx]).saturate();
             }

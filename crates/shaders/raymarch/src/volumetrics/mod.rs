@@ -151,9 +151,7 @@ fn sample_shadowing(
     let tangent1 = sun_dir.cross(up).normalize();
     let tangent2 = sun_dir.cross(tangent1);
 
-    // Moderate light step size (was 600.0, now 350.0) to balance cross-layer vs lifelessness
     let dynamic_light_step = 350.0;
-
     for j in 0..LIGHT_STEPS {
         let step_index = j as f32 + 1.0;
         let distance_along = step_index * dynamic_light_step;
@@ -178,7 +176,6 @@ fn sample_shadowing(
         let ocean =
             sample_ocean(lightmarch_pos, view.time(), true, details_texture, sampler).density;
 
-        // Soften the extinction impact (0.6 multiplier) to keep some life in the shadows
         optical_depth +=
             (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
     }

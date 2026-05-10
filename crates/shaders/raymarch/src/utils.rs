@@ -1,4 +1,3 @@
-use core::f32::consts::FRAC_1_PI;
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
@@ -30,18 +29,6 @@ impl Smoothstep for f32 {
 // Modulo functions
 pub fn mod1(x: f32, y: f32) -> f32 {
     x - y * (x / y).floor()
-}
-
-pub fn mod3(x: Vec3, y: f32) -> Vec3 {
-    x - (x / y).floor() * y
-}
-
-// White noise hash: f32 → f32 [0,1]
-pub fn hash11(p: f32) -> f32 {
-    let mut v = (p * 0.1031).fract_gl();
-    v *= v + 33.33;
-    v *= v + v;
-    v.fract_gl()
 }
 
 // White noise hash: f32 → vec2 [0,1]
@@ -96,15 +83,6 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
 
     let sqrt_disc = disc.sqrt();
     vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
-}
-
-// Calculate intersection with a horizontal plane at given height
-pub fn intersect_plane(ro: Vec3, rd: Vec3, plane_height: f32) -> f32 {
-    if rd.z.abs() < 0.001 {
-        return -1.0; // Ray is parallel to plane
-    }
-    let t = (plane_height - ro.z) / rd.z;
-    if t > 0.0 { t } else { -1.0 }
 }
 
 // Calculates up to two intersection segments (entry/exit pairs) for a ray intersecting a spherical shell
