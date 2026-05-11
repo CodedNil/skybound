@@ -15,6 +15,7 @@ pub struct NoiseTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
     pub weather: Handle<Image>,
+    pub extra: Handle<Image>,
 }
 
 /// Generates or loads procedural noise textures and inserts them as resources.
@@ -92,10 +93,35 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
+    let size = 512;
+    let depth = 1;
+    let extra_texture = load_or_generate_texture(
+        "extras_texture",
+        size,
+        depth,
+        TextureFormat::Rgba8Unorm,
+        || {
+            let spikes_voronoi = spread(&worley_3d(size, depth, 3, 0.5, 8.0, 0.4))
+                .iter()
+                .zip(spread(&simplex_3d(size, depth, 5, 0.8, vec2(8.0, 2.0), 1.0)).iter())
+                .map(|(&a, &b)| (a * 1.5 - 0.5) + b * 0.1)
+                .collect::<Vec<f32>>();
+
+            save_noise_layer(&spikes_voronoi, "spikes_voronoi.png", size);
+            interleave_channels([
+                spikes_voronoi,
+                vec![0.0; size * size],
+                vec![0.0; size * size],
+                vec![0.0; size * size],
+            ])
+        },
+    );
+
     println!("Noise generation took: {:?}", start.elapsed());
     commands.insert_resource(NoiseTextures {
         base: images.add(base_texture),
         detail: images.add(detail_texture),
         weather: images.add(weather_texture),
+        extra: images.add(extra_texture),
     });
 }

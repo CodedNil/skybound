@@ -1,9 +1,8 @@
-use crate::utils::{Smoothstep, hash12, hash13, mod1};
+use crate::utils::{Smoothstep, Textures, hash12, hash13, mod1};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler};
 
 const COLOR_A: Vec3 = vec3(0.6, 0.3, 0.8);
 const COLOR_B: Vec3 = vec3(0.4, 0.1, 0.6);
@@ -137,13 +136,7 @@ pub struct OceanSample {
     pub emission: Vec3,
 }
 
-pub fn sample_ocean(
-    pos: Vec3,
-    time: f32,
-    only_density: bool,
-    details_texture: Image!(3D, type=f32, sampled=true),
-    sampler: Sampler,
-) -> OceanSample {
+pub fn sample_ocean(pos: Vec3, time: f32, only_density: bool, textures: &Textures) -> OceanSample {
     let mut ocean_sample = OceanSample {
         density: 0.0,
         color: Vec3::ZERO,
@@ -153,8 +146,8 @@ pub fn sample_ocean(
         return ocean_sample;
     }
 
-    let height_noise = details_texture
-        .sample(sampler, vec3(pos.x * 0.00002, pos.y * 0.00002, time * 0.04))
+    let height_noise = textures
+        .details(vec3(pos.x * 0.00002, pos.y * 0.00002, time * 0.04))
         .y
         * -1200.0;
     let altitude = pos.z - height_noise;
@@ -169,10 +162,8 @@ pub fn sample_ocean(
         ocean_sample.density = 1.0;
     } else {
         let turb_pos = compute_turbulence(pos.xy() * 0.001 + vec2(time, 0.0), time);
-        let b_noise: Vec4 = details_texture.sample(
-            sampler,
-            vec3(turb_pos.x * 0.2, turb_pos.y * 0.2, altitude * 0.001),
-        );
+        let b_noise: Vec4 =
+            textures.details(vec3(turb_pos.x * 0.2, turb_pos.y * 0.2, altitude * 0.001));
         fbm_value = b_noise.z * 2.0 - 1.0;
         ocean_sample.density =
             fbm_value.powf(2.0) * density_mask + altitude.smoothstep(-50.0, -1000.0);

@@ -104,18 +104,19 @@ pub fn shade_ship(
         }
     } else {
         let rough_dir = (refl_dir + (hash33(p * 7.3) * 2.0 - Vec3::splat(1.0)) * 0.35).normalize();
-        let (refl_color, _, _) = trace_refl_fn(p, rough_dir);
+        let (refl_color, refl_depth, refl_hit) = trace_refl_fn(p, rough_dir);
         let fresnel = 0.10 + 0.30 * (1.0 - n_dot_v).powf(3.0);
+        let refl_weight = 0.75 * fresnel + 0.05;
         ShadeResult {
             color: base.lerp(refl_color, fresnel),
             specular: 0.0,
             depth: 0.0,
             normal: Vec3::ZERO,
             hit: 1.0,
-            refl_color: Vec3::ZERO,
-            refl_weight: 0.0,
-            refl_hit: 0.0,
-            refl_depth: 0.0,
+            refl_color,
+            refl_weight,
+            refl_hit,
+            refl_depth,
         }
     }
 }

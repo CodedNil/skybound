@@ -1,20 +1,19 @@
 mod aur_spikes;
 mod ships;
 
-use crate::solids::aur_spikes::{MAT_SPIKE, SPIKE_COLOR, sdf_aur_spikes, sdf_ground};
+use crate::solids::aur_spikes::{MAT_SPIKE, SPIKE_COLOR, sdf_aur_spikes};
 use crate::solids::ships::{MAT_SPHERE, MAT_WING, mat_color, sdf_ships, shade_ship};
+use crate::utils::Textures;
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
-const MAX_STEPS: i32 = 512;
-const EPSILON: f32 = 0.01;
-const NORMAL_EPS: f32 = 0.02;
-const MIN_STEP: f32 = 0.03;
+const MAX_STEPS: i32 = 256;
+const EPSILON: f32 = 0.1;
+const NORMAL_EPS: f32 = 0.5;
+const MIN_STEP: f32 = 0.1;
 
 const REFLECTION_MAX_DIST: f32 = 24000.0;
-const REFLECTION_STEPS: u32 = 256;
+const REFLECTION_STEPS: u32 = 64;
 
 /// Surface shading result
 pub struct ShadeResult {
@@ -47,45 +46,52 @@ fn world_to_curved(p_raw: Vec3, planet_center: Vec3, camera_offset_z: f32) -> Ve
     vec3(p_raw.x, p_raw.y, altitude)
 }
 
-fn sdf_combined(p: Vec3, camera_offset: Vec2, time: f32) -> (f32, u32) {
-    let (d_creatures, mat_creatures) = sdf_ships(p, time);
-
-    let d_spikes = sdf_aur_spikes(p, camera_offset);
-    let d_ground = sdf_ground(p);
-    let (d_aur, mat_aur) = if d_spikes < d_ground {
+fn sdf_combined(p: Vec3, camera_offset: Vec2, time: f32, textures: &Textures) -> (f32, u32) {
+    let (d_ships, mat_ships) = sdf_ships(p, time);
+    let d_spikes = sdf_aur_spikes(p, camera_offset, textures);
+    if d_spikes < d_ships {
         (d_spikes, MAT_SPIKE)
     } else {
-        (d_ground, MAT_SPIKE)
-    };
-
-    if d_aur < d_creatures {
-        (d_aur, mat_aur)
-    } else {
-        (d_creatures, mat_creatures)
+        (d_ships, mat_ships)
     }
 }
 
-fn sdf_dist(p: Vec3, camera_offset: Vec2, time: f32) -> f32 {
-    sdf_combined(p, camera_offset, time).0
+fn sdf_dist(p: Vec3, camera_offset: Vec2, time: f32, textures: &Textures) -> f32 {
+    sdf_combined(p, camera_offset, time, textures).0
 }
 
-fn estimate_normal(p: Vec3, camera_offset: Vec2, time: f32) -> Vec3 {
+fn estimate_normal(p: Vec3, camera_offset: Vec2, time: f32, textures: &Textures) -> Vec3 {
     let dx = vec3(NORMAL_EPS, 0.0, 0.0);
     let dy = vec3(0.0, NORMAL_EPS, 0.0);
     let dz = vec3(0.0, 0.0, NORMAL_EPS);
-    let nx = sdf_dist(p + dx, camera_offset, time) - sdf_dist(p - dx, camera_offset, time);
-    let ny = sdf_dist(p + dy, camera_offset, time) - sdf_dist(p - dy, camera_offset, time);
-    let nz = sdf_dist(p + dz, camera_offset, time) - sdf_dist(p - dz, camera_offset, time);
-    vec3(nx, ny, nz).normalize()
+
+    let nx = sdf_dist(p + dx, camera_offset, time, textures)
+        - sdf_dist(p - dx, camera_offset, time, textures);
+    let ny = sdf_dist(p + dy, camera_offset, time, textures)
+        - sdf_dist(p - dy, camera_offset, time, textures);
+    let nz = sdf_dist(p + dz, camera_offset, time, textures)
+        - sdf_dist(p - dz, camera_offset, time, textures);
+
+    let n = vec3(nx, ny, nz);
+    if n.length_squared() > 0.0 {
+        n.normalize()
+    } else {
+        vec3(0.0, 0.0, 1.0)
+    }
 }
 
-/// Returns (color, depth, hit): color = shaded solid or ZERO if sky;
-fn trace_reflection(pos: Vec3, refl_dir: Vec3, camera_offset: Vec2, time: f32) -> (Vec3, f32, f32) {
+fn trace_reflection(
+    pos: Vec3,
+    refl_dir: Vec3,
+    camera_offset: Vec2,
+    time: f32,
+    textures: &Textures,
+) -> (Vec3, f32, f32) {
     let mut t = 0.1;
 
     for _ in 0..REFLECTION_STEPS {
         let p = pos + refl_dir * t;
-        let (d, mat) = sdf_combined(p, camera_offset, time);
+        let (d, mat) = sdf_combined(p, camera_offset, time, textures);
         if d < 0.05 {
             let albedo = if mat == MAT_SPIKE {
                 SPIKE_COLOR
@@ -103,27 +109,65 @@ fn trace_reflection(pos: Vec3, refl_dir: Vec3, camera_offset: Vec2, time: f32) -
     (Vec3::ZERO, REFLECTION_MAX_DIST, 0.0)
 }
 
-fn shade_basic(
+fn trace_shadow(
+    pos: Vec3,
+    light_dir: Vec3,
+    camera_offset: Vec2,
+    time: f32,
+    textures: &Textures,
+    max_dist: f32,
+) -> f32 {
+    let mut t = 1.0; // Start offset to avoid self-intersection
+    for _ in 0..32 {
+        let p = pos + light_dir * t;
+        let d = sdf_dist(p, camera_offset, time, textures);
+        if d < 0.1 {
+            return 0.0;
+        }
+        t += d.max(0.5);
+        if t > max_dist {
+            break;
+        }
+    }
+    1.0
+}
+
+fn shade_sdfs(
     p: Vec3,
     n: Vec3,
     mat: u32,
     camera_offset: Vec2,
     view: &ViewUniform,
     time: f32,
+    textures: &Textures,
 ) -> ShadeResult {
+    let sun_pos = crate::utils::get_sun_position(view);
+    let planet_center = view.planet_center();
+
+    // Approximate light direction in the curved space
+    let light_dir = (sun_pos - (p + planet_center)).normalize();
+    let dot_nl = n.dot(light_dir).max(0.0);
+
+    let shadow = if dot_nl > 0.0 {
+        trace_shadow(p, light_dir, camera_offset, time, textures, 15000.0)
+    } else {
+        0.0
+    };
+
     if mat == MAT_SPHERE || mat == MAT_WING {
-        return shade_ship(p, n, mat, view, |pos, refl_dir| {
-            trace_reflection(pos, refl_dir, camera_offset, time)
+        let mut shade = shade_ship(p, n, mat, view, |pos, refl_dir| {
+            trace_reflection(pos, refl_dir, camera_offset, time, textures)
         });
+        shade.color *= dot_nl * shadow + 0.05;
+        return shade;
     }
 
-    // Spikes and ground
     ShadeResult {
-        color: SPIKE_COLOR,
+        color: SPIKE_COLOR * (dot_nl * shadow + 0.05),
         specular: 0.0,
         depth: 0.0,
-        normal: Vec3::ZERO,
-        hit: 0.0,
+        normal: n,
+        hit: 1.0,
         refl_color: Vec3::ZERO,
         refl_weight: 0.0,
         refl_hit: 0.0,
@@ -137,6 +181,7 @@ pub fn raymarch_solids(
     view: &ViewUniform,
     t_max: f32,
     dither: f32,
+    textures: &Textures,
 ) -> ShadeResult {
     let time = view.time();
     let planet_center = view.planet_center();
@@ -159,13 +204,13 @@ pub fn raymarch_solids(
         }
         let p_raw = ro + rd * t;
         let p = world_to_curved(p_raw, planet_center, camera_offset.z);
-        let (dist, mat) = sdf_combined(p, camera_offset_xy, time);
+        let (dist, mat) = sdf_combined(p, camera_offset_xy, time, textures);
         if dist < EPSILON {
-            let normal = estimate_normal(p, camera_offset_xy, time);
+            let normal = estimate_normal(p, camera_offset_xy, time, textures);
             out_depth = t;
             hit = 1.0;
             if rd.dot(normal) <= 0.0 {
-                let shade = shade_basic(p, normal, mat, camera_offset_xy, view, time);
+                let shade = shade_sdfs(p, normal, mat, camera_offset_xy, view, time, textures);
                 out_color = shade.color;
                 out_refl_color = shade.refl_color;
                 out_refl_weight = shade.refl_weight;
