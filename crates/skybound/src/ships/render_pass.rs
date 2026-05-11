@@ -2,15 +2,17 @@ use super::physics::ExtractedShipData;
 use crate::render::raymarch::{CloudsViewUniformOffset, ViewUniforms};
 use bevy::{
     camera::MainPassResolutionOverride,
+    core_pipeline::FullscreenShader,
+    material::descriptor::BindGroupLayoutDescriptor,
     prelude::*,
     render::{
         render_resource::{
             BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedRenderPipelineId,
-            ColorTargetState, ColorWrites, Extent3d, FragmentState, MultisampleState, Operations,
-            PipelineCache, PrimitiveState, RenderPassColorAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, ShaderStages, TextureDescriptor, TextureDimension,
-            TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, UniformBuffer,
-            binding_types::uniform_buffer,
+            ColorTargetState, ColorWrites, Extent3d, FragmentState, LoadOp, MultisampleState,
+            Operations, PipelineCache, PrimitiveState, RenderPassColorAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, ShaderStages, StoreOp, Texture,
+            TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
+            TextureViewDescriptor, UniformBuffer, binding_types::uniform_buffer,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::ExtractedView,
@@ -20,10 +22,8 @@ use skybound_shared::{ShipUniform, ViewUniform};
 
 #[derive(Resource, Default)]
 pub struct ShipRenderTargets {
-    surface_tex: Option<bevy::render::render_resource::Texture>,
-    gbuf_tex: Option<bevy::render::render_resource::Texture>,
+    surface_tex: Option<Texture>,
     pub surface_view: Option<TextureView>,
-    pub gbuf_view: Option<TextureView>,
     pub size: UVec2,
 }
 
@@ -51,11 +51,8 @@ impl ShipRenderTargets {
             (tex, view)
         };
         let (st, sv) = mk("ship_surface");
-        let (gt, gv) = mk("ship_gbuf");
         self.surface_tex = Some(st);
         self.surface_view = Some(sv);
-        self.gbuf_tex = Some(gt);
-        self.gbuf_view = Some(gv);
         self.size = size;
     }
 }
@@ -89,12 +86,10 @@ pub fn init_ship_resources(world: &mut World) {
     let asset_server = world.resource::<AssetServer>();
     let shader = asset_server.load("shaders/raymarch.spv");
 
-    let fullscreen_shader = world
-        .resource::<bevy::core_pipeline::FullscreenShader>()
-        .clone();
+    let fullscreen_shader = world.resource::<FullscreenShader>().clone();
 
     let pipeline_id = {
-        let layout_desc = bevy::render::render_resource::BindGroupLayoutDescriptor::new(
+        let layout_desc = BindGroupLayoutDescriptor::new(
             "ship_bind_group_layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
@@ -116,18 +111,11 @@ pub fn init_ship_resources(world: &mut World) {
             fragment: Some(FragmentState {
                 shader,
                 entry_point: Some("ship_main".into()),
-                targets: vec![
-                    Some(ColorTargetState {
-                        format: TextureFormat::Rgba16Float,
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                    Some(ColorTargetState {
-                        format: TextureFormat::Rgba16Float,
-                        blend: None,
-                        write_mask: ColorWrites::ALL,
-                    }),
-                ],
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
                 shader_defs: Vec::new(),
             }),
             zero_initialize_workgroup_memory: false,
@@ -184,20 +172,12 @@ pub fn ship_pass(
     let ship_targets = world.resource::<ShipRenderTargets>();
     let ship_uniforms = world.resource::<ShipUniforms>();
 
-    let (
-        Some(pipeline),
-        Some(view_binding),
-        Some(ship_binding),
-        Some(surface_view),
-        Some(gbuf_view),
-    ) = (
+    let (Some(pipeline), Some(view_binding), Some(ship_binding), Some(surface_view)) = (
         pipeline_cache.get_render_pipeline(ship_pipeline.pipeline_id),
         world.resource::<ViewUniforms>().uniforms.binding(),
         ship_uniforms.buffer.binding(),
         ship_targets.surface_view.as_ref(),
-        ship_targets.gbuf_view.as_ref(),
-    )
-    else {
+    ) else {
         return;
     };
 
@@ -211,26 +191,15 @@ pub fn ship_pass(
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("ship_pass"),
-            color_attachments: &[
-                Some(RenderPassColorAttachment {
-                    view: surface_view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: bevy::render::render_resource::LoadOp::Load,
-                        store: bevy::render::render_resource::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                }),
-                Some(RenderPassColorAttachment {
-                    view: gbuf_view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: bevy::render::render_resource::LoadOp::Load,
-                        store: bevy::render::render_resource::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                }),
-            ],
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: surface_view,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,

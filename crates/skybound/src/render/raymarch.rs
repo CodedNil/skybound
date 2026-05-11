@@ -196,7 +196,6 @@ pub fn raymarch_pass(
             Some(weather_noise),
             Some(extra_noise),
             Some(ship_surface_view),
-            Some(ship_gbuf_view),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
@@ -208,7 +207,6 @@ pub fn raymarch_pass(
             gpu_images.get(&noise_texture_handle.weather),
             gpu_images.get(&noise_texture_handle.extra),
             ship_targets.surface_view.as_ref(),
-            ship_targets.gbuf_view.as_ref(),
         )
         else {
             continue;
@@ -227,7 +225,6 @@ pub fn raymarch_pass(
                 &weather_noise.texture_view,
                 &extra_noise.texture_view,
                 ship_surface_view,
-                ship_gbuf_view,
             )),
         );
 
@@ -308,7 +305,6 @@ impl FromWorld for RaymarchPipeline {
                 texture_2d(TextureSampleType::Float { filterable: true }), // 4: Weather noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // 5: Extra noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // 6: Ship surface
-                texture_2d(TextureSampleType::Float { filterable: true }), // 7: Ship gbuf
             ),
         );
         let layout_descriptor =

@@ -1,6 +1,12 @@
-use crate::utils::quat_rotate;
-use skybound_shared::{NODES_PER_STRING, NUM_STRINGS, ShipUniform, TOTAL_BEAD_NODES};
-use spirv_std::glam::{FloatExt, Vec3, Vec4, Vec4Swizzles, vec2, vec3};
+use crate::{
+    T_MAX,
+    solids::{ShadeResult, estimate_normal},
+    utils::{get_sun_position, quat_rotate},
+};
+use skybound_shared::{NODES_PER_STRING, NUM_STRINGS, ShipUniform, TOTAL_BEAD_NODES, ViewUniform};
+use spirv_std::glam::{FloatExt, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 // ── Material IDs ──────────────────────────────────────────────────────────────
 
@@ -155,17 +161,57 @@ pub fn sdf_ship(p: Vec3, ship: &ShipUniform) -> (f32, u32) {
     (best_d, best_mat)
 }
 
-// ── Normal estimation ─────────────────────────────────────────────────────────
+pub fn raymarch_ship(ro: Vec3, rd: Vec3, view: &ViewUniform, ship: &ShipUniform) -> ShadeResult {
+    const SHIP_MAX_T: f32 = 4000.0;
+    const SHIP_MAX_STEPS: i32 = 128;
+    const SHIP_EPSILON: f32 = 0.08;
+    const SHIP_MIN_STEP: f32 = 0.05;
 
-const NORMAL_EPS: f32 = 0.12;
+    let mut t = 0.0;
+    let mut hit = false;
+    let mut hit_mat = 0u32;
 
-pub fn estimate_ship_normal(p: Vec3, ship: &ShipUniform) -> Vec3 {
-    let dx = vec3(NORMAL_EPS, 0.0, 0.0);
-    let dy = vec3(0.0, NORMAL_EPS, 0.0);
-    let dz = vec3(0.0, 0.0, NORMAL_EPS);
-    let nx = sdf_ship(p + dx, ship).0 - sdf_ship(p - dx, ship).0;
-    let ny = sdf_ship(p + dy, ship).0 - sdf_ship(p - dy, ship).0;
-    let nz = sdf_ship(p + dz, ship).0 - sdf_ship(p - dz, ship).0;
-    let n = vec3(nx, ny, nz);
-    if n.length_squared() > 1e-10 { n.normalize() } else { vec3(0.0, 0.0, 1.0) }
+    for _ in 0..SHIP_MAX_STEPS {
+        if t >= SHIP_MAX_T {
+            break;
+        }
+        let p = ro + rd * t;
+        let (d, mat) = sdf_ship(p, ship);
+        if d < SHIP_EPSILON {
+            hit = true;
+            hit_mat = mat;
+            break;
+        }
+        t += d.max(SHIP_MIN_STEP);
+    }
+
+    if !hit {
+        return ShadeResult {
+            color_depth: vec4(0.0, 0.0, 0.0, T_MAX),
+        };
+    }
+
+    let p = ro + rd * t;
+    let normal = estimate_normal(p, |p| sdf_ship(p, ship).0);
+
+    let sun_pos = get_sun_position(
+        view.planet_center(),
+        view.planet_rotation,
+        view.ro_relative(),
+        view.latitude(),
+    );
+    let sun_dir = (sun_pos - ro).normalize();
+
+    let dot_nl = normal.dot(sun_dir).max(0.0);
+    let ambient = 0.06;
+    let base_color = mat_color(hit_mat);
+    let lit = base_color * (dot_nl * 0.9 + ambient);
+
+    let view_dir = (ro - p).normalize();
+    let fresnel = (1.0 - normal.dot(view_dir).abs()).powf(3.0) * 0.4;
+    let color = lit + Vec3::splat(fresnel);
+
+    ShadeResult {
+        color_depth: color.extend(t),
+    }
 }

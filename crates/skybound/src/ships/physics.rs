@@ -94,10 +94,10 @@ impl BeadChain {
 
     /// Apply a global offset to all bead positions (used for coordinate-snap correction).
     pub fn apply_offset(&mut self, offset: Vec3) {
-        for p in self.positions.iter_mut() {
+        for p in &mut self.positions {
             *p += offset;
         }
-        for p in self.prev_positions.iter_mut() {
+        for p in &mut self.prev_positions {
             *p += offset;
         }
     }
