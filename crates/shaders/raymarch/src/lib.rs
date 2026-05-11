@@ -7,9 +7,9 @@ mod utils;
 mod volumetrics;
 
 use crate::lighting::henyey_greenstein;
-use crate::solids::ships::{estimate_ship_normal, mat_color, sdf_ship};
 use crate::sky::{get_sun_light_color, render_sky};
 use crate::solids::raymarch_solids;
+use crate::solids::ships::{estimate_ship_normal, mat_color, sdf_ship};
 use crate::utils::{AtmosphereData, Textures, blue_noise, get_sun_position};
 use crate::volumetrics::raymarch_volumetrics;
 use skybound_shared::{ShipUniform, ViewUniform};
@@ -36,6 +36,7 @@ const SHIP_MAX_T: f32 = 4000.0;
 const SHIP_MAX_STEPS: i32 = 128;
 const SHIP_EPSILON: f32 = 0.08;
 const SHIP_MIN_STEP: f32 = 0.05;
+const ENABLE_REFLECTION_VOLUMETRICS: bool = false;
 
 #[spirv(fragment)]
 pub fn ship_main(
@@ -195,7 +196,11 @@ pub fn main(
     let mut rendered_color = rendered_solid;
 
     // Reflected volumetrics for world solids (not ships).
-    if solids.hit >= 1.0 && solids.refl_weight > 0.0 && solids.depth <= solid_depth + 0.1 {
+    if ENABLE_REFLECTION_VOLUMETRICS
+        && solids.hit >= 1.0
+        && solids.refl_weight > 0.0
+        && solids.depth <= solid_depth + 0.1
+    {
         let refl_pos = ro + rd * solids.depth;
         let refl_rd = rd - 2.0 * solids.normal.dot(rd) * solids.normal;
         let refl_vols = raymarch_volumetrics(

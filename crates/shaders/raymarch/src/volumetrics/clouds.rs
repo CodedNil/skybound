@@ -22,18 +22,63 @@ const CLOUD_TOTAL_LAYERS: usize = 16;
 pub const CLOUD_TOP_HEIGHT: f32 =
     CLOUD_BOTTOM_HEIGHT + CLOUD_LAYER_SPACING * CLOUD_TOTAL_LAYERS as f32;
 
-const CLOUD_LAYER_HEIGHTS: [f32; 16] = [
-    2200.0, 2150.0, 2100.0, 2050.0, 2000.0, 1950.0, 1900.0, 1850.0, 1750.0, 1600.0, 1500.0, 1400.0,
-    1300.0, 1200.0, 1100.0, 1050.0,
-];
+fn cloud_layer_height(index: u32) -> f32 {
+    match index {
+        0 => 2200.0,
+        1 => 2150.0,
+        2 => 2100.0,
+        3 => 2050.0,
+        4 => 2000.0,
+        5 => 1950.0,
+        6 => 1900.0,
+        7 => 1850.0,
+        8 => 1750.0,
+        9 => 1600.0,
+        10 => 1500.0,
+        11 => 1400.0,
+        12 => 1300.0,
+        13 => 1200.0,
+        14 => 1100.0,
+        _ => 1050.0,
+    }
+}
 
-const CLOUD_LAYER_SCALES: [f32; 16] = [
-    1.0, 0.98, 0.95, 0.92, 0.9, 0.88, 0.85, 0.82, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45,
-];
+fn cloud_layer_scale(index: u32) -> f32 {
+    match index {
+        0 => 1.0,
+        1 => 0.98,
+        2 => 0.95,
+        3 => 0.92,
+        4 => 0.9,
+        5 => 0.88,
+        6 => 0.85,
+        7 => 0.82,
+        8 => 0.8,
+        9 => 0.75,
+        10 => 0.7,
+        11 => 0.65,
+        12 => 0.6,
+        13 => 0.55,
+        14 => 0.5,
+        _ => 0.45,
+    }
+}
 
-const CLOUD_LAYER_DETAILS: [f32; 16] = [
-    0.1, 0.1, 0.1, 0.1, 0.12, 0.12, 0.15, 0.15, 0.2, 0.25, 0.3, 0.4, 0.6, 0.8, 0.9, 0.95,
-];
+fn cloud_layer_detail(index: u32) -> f32 {
+    match index {
+        0..=3 => 0.1,
+        4..=5 => 0.12,
+        6..=7 => 0.15,
+        8 => 0.2,
+        9 => 0.25,
+        10 => 0.3,
+        11 => 0.4,
+        12 => 0.6,
+        13 => 0.8,
+        14 => 0.9,
+        _ => 0.95,
+    }
+}
 
 fn calculate_layer_v_offset(pos_xy: Vec2, index_u: u32, textures: &Textures) -> f32 {
     let layer_seed = index_u as f32 * 137.415;
@@ -68,11 +113,10 @@ pub fn sample_clouds(pos: Vec3, view: &ViewUniform, simple: bool, textures: &Tex
             continue;
         }
         let u_idx = idx_i as u32;
-        let layer_idx = u_idx as usize;
-
         let disp = calculate_layer_v_offset(pos.xy(), u_idx, textures);
         let bottom = CLOUD_BOTTOM_HEIGHT + u_idx as f32 * CLOUD_LAYER_SPACING + disp;
-        let dynamic_height = CLOUD_LAYER_HEIGHTS[layer_idx] * (0.3 + 0.7 * global_coverage);
+        let layer_scale = cloud_layer_scale(u_idx);
+        let dynamic_height = cloud_layer_height(u_idx) * (0.3 + 0.7 * global_coverage);
 
         if pos.z < bottom || pos.z > bottom + dynamic_height {
             continue;
@@ -80,7 +124,7 @@ pub fn sample_clouds(pos: Vec3, view: &ViewUniform, simple: bool, textures: &Tex
 
         let h_coord = ((pos.z - bottom) / dynamic_height).saturate();
 
-        let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx];
+        let base_scale = BASE_NOISE_SCALE * layer_scale;
         let sample_pos = vec3(pos.x, pos.y, pos.z) * base_scale + view.time() * WIND_DIRECTION_BASE;
         let base_noise = textures.base(sample_pos).x;
 
@@ -97,11 +141,10 @@ pub fn sample_clouds(pos: Vec3, view: &ViewUniform, simple: bool, textures: &Tex
 
         if cloud_val > 0.0 {
             if !simple {
-                let det_pos = (pos * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx])
+                let det_pos = (pos * DETAIL_NOISE_SCALE * layer_scale)
                     - (view.time() * WIND_DIRECTION_DETAIL);
                 let detail_noise = textures.details(det_pos).x;
-                cloud_val =
-                    (cloud_val - detail_noise * 0.3 * CLOUD_LAYER_DETAILS[layer_idx]).saturate();
+                cloud_val = (cloud_val - detail_noise * 0.3 * cloud_layer_detail(u_idx)).saturate();
             }
             total_cloud_val = total_cloud_val.max(cloud_val);
         }

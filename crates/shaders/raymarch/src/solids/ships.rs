@@ -167,5 +167,9 @@ pub fn estimate_ship_normal(p: Vec3, ship: &ShipUniform) -> Vec3 {
     let ny = sdf_ship(p + dy, ship).0 - sdf_ship(p - dy, ship).0;
     let nz = sdf_ship(p + dz, ship).0 - sdf_ship(p - dz, ship).0;
     let n = vec3(nx, ny, nz);
-    if n.length_squared() > 1e-10 { n.normalize() } else { vec3(0.0, 0.0, 1.0) }
+    if n.length_squared() > 1e-10 {
+        n.normalize()
+    } else {
+        vec3(0.0, 0.0, 1.0)
+    }
 }

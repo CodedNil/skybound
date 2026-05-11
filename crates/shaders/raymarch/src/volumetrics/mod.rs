@@ -32,24 +32,25 @@ const EXTINCTION: f32 = 0.07;
 const SCATTERING_ALBEDO: f32 = 0.65;
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000_004;
 
-const DISK_SAMPLES: [Vec2; 16] = [
-    vec2(0.00, 0.00),
-    vec2(0.71, 0.00),
-    vec2(-0.71, 0.00),
-    vec2(0.00, 0.71),
-    vec2(0.00, -0.71),
-    vec2(0.50, 0.50),
-    vec2(-0.50, 0.50),
-    vec2(0.50, -0.50),
-    vec2(-0.50, -0.50),
-    vec2(0.93, 0.38),
-    vec2(-0.93, 0.38),
-    vec2(0.38, 0.93),
-    vec2(-0.38, 0.93),
-    vec2(0.38, -0.93),
-    vec2(-0.38, -0.93),
-    vec2(0.00, 0.00),
-];
+fn disk_sample(index: i32) -> Vec2 {
+    match index {
+        1 => vec2(0.71, 0.00),
+        2 => vec2(-0.71, 0.00),
+        3 => vec2(0.00, 0.71),
+        4 => vec2(0.00, -0.71),
+        5 => vec2(0.50, 0.50),
+        6 => vec2(-0.50, 0.50),
+        7 => vec2(0.50, -0.50),
+        8 => vec2(-0.50, -0.50),
+        9 => vec2(0.93, 0.38),
+        10 => vec2(-0.93, 0.38),
+        11 => vec2(0.38, 0.93),
+        12 => vec2(-0.38, 0.93),
+        13 => vec2(0.38, -0.93),
+        14 => vec2(-0.38, -0.93),
+        _ => Vec2::ZERO,
+    }
+}
 
 struct VolumeSample {
     density: f32,
@@ -132,7 +133,7 @@ fn sample_shadowing(
 
         let idxf = (dither + step_index * 0.618_034).fract_gl();
         let idx = (idxf * 16.0).floor() as i32;
-        let sample_offset = DISK_SAMPLES[idx as usize];
+        let sample_offset = disk_sample(idx);
         let disk_offset =
             tangent1 * (sample_offset.x * disk_radius) + tangent2 * (sample_offset.y * disk_radius);
 

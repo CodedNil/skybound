@@ -32,7 +32,7 @@ impl ShipRenderTargets {
         if self.size == size {
             return;
         }
-        let mk = |label: &str| {
+        let mk = |label: &str, format: TextureFormat| {
             let tex = device.create_texture(&TextureDescriptor {
                 label: Some(label),
                 size: Extent3d {
@@ -43,15 +43,15 @@ impl ShipRenderTargets {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: TextureFormat::Rgba16Float,
+                format,
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             });
             let view = tex.create_view(&TextureViewDescriptor::default());
             (tex, view)
         };
-        let (st, sv) = mk("ship_surface");
-        let (gt, gv) = mk("ship_gbuf");
+        let (st, sv) = mk("ship_surface", TextureFormat::Rgba16Float);
+        let (gt, gv) = mk("ship_gbuf", TextureFormat::Rgb10a2Unorm);
         self.surface_tex = Some(st);
         self.surface_view = Some(sv);
         self.gbuf_tex = Some(gt);
@@ -123,7 +123,7 @@ pub fn init_ship_resources(world: &mut World) {
                         write_mask: ColorWrites::ALL,
                     }),
                     Some(ColorTargetState {
-                        format: TextureFormat::Rgba16Float,
+                        format: TextureFormat::Rgb10a2Unorm,
                         blend: None,
                         write_mask: ColorWrites::ALL,
                     }),
@@ -216,7 +216,14 @@ pub fn ship_pass(
                     view: surface_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: bevy::render::render_resource::LoadOp::Load,
+                        load: bevy::render::render_resource::LoadOp::Clear(
+                            bevy::render::render_resource::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 0.0,
+                            },
+                        ),
                         store: bevy::render::render_resource::StoreOp::Store,
                     },
                     depth_slice: None,
@@ -225,7 +232,14 @@ pub fn ship_pass(
                     view: gbuf_view,
                     resolve_target: None,
                     ops: Operations {
-                        load: bevy::render::render_resource::LoadOp::Load,
+                        load: bevy::render::render_resource::LoadOp::Clear(
+                            bevy::render::render_resource::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 0.0,
+                            },
+                        ),
                         store: bevy::render::render_resource::StoreOp::Store,
                     },
                     depth_slice: None,

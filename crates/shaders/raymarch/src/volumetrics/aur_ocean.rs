@@ -1,6 +1,6 @@
 use crate::utils::{Smoothstep, Textures, hash12, hash13, mod1};
 use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -14,19 +14,6 @@ const TURB_SPEED: f32 = 0.002;
 const TURB_FREQ: f32 = 1.6;
 const TURB_EXP: f32 = 1.4;
 
-const TURB_ROTS: [Mat2; 10] = [
-    Mat2::from_cols_array(&[0.600, 0.800, -0.800, 0.600]),
-    Mat2::from_cols_array(&[-0.280, 0.960, -0.960, -0.280]),
-    Mat2::from_cols_array(&[-0.843, -0.538, 0.538, -0.843]),
-    Mat2::from_cols_array(&[0.422, 0.907, -0.907, 0.422]),
-    Mat2::from_cols_array(&[-0.644, 0.765, -0.765, -0.644]),
-    Mat2::from_cols_array(&[-0.171, -0.985, 0.985, -0.171]),
-    Mat2::from_cols_array(&[-0.942, 0.337, -0.337, -0.942]),
-    Mat2::from_cols_array(&[0.773, -0.634, 0.634, 0.773]),
-    Mat2::from_cols_array(&[0.196, -0.981, 0.981, 0.196]),
-    Mat2::from_cols_array(&[-0.923, -0.384, 0.384, -0.923]),
-];
-
 const FLASH_GRID: f32 = 10000.0;
 const FLASH_FREQUENCY: f32 = 0.05;
 const FLASH_DURATION_MIN: f32 = 1.0;
@@ -34,44 +21,68 @@ const FLASH_DURATION_MAX: f32 = 4.0;
 const FLASH_FLICKER: f32 = 120.0;
 const FLASH_SCALE: f32 = 0.002;
 
-const POISSON_OFFSETS: [Vec2; 16] = [
-    vec2(0.0000, 0.5000),
-    vec2(0.3621, 0.3536),
-    vec2(0.4755, 0.1545),
-    vec2(0.2939, -0.1545),
-    vec2(0.0955, -0.4045),
-    vec2(-0.0955, -0.4045),
-    vec2(-0.2939, -0.1545),
-    vec2(-0.4755, 0.1545),
-    vec2(-0.3621, 0.3536),
-    vec2(-0.0000, 0.0000),
-    vec2(0.1545, 0.4755),
-    vec2(0.4045, 0.0955),
-    vec2(0.4045, -0.0955),
-    vec2(0.1545, -0.4755),
-    vec2(-0.1545, -0.4755),
-    vec2(-0.4045, -0.0955),
-];
+fn turb_rot_col0(index: i32) -> Vec2 {
+    match index {
+        0 => vec2(0.600, 0.800),
+        1 => vec2(-0.280, 0.960),
+        2 => vec2(-0.843, -0.538),
+        3 => vec2(0.422, 0.907),
+        4 => vec2(-0.644, 0.765),
+        5 => vec2(-0.171, -0.985),
+        6 => vec2(-0.942, 0.337),
+        7 => vec2(0.773, -0.634),
+        8 => vec2(0.196, -0.981),
+        _ => vec2(-0.923, -0.384),
+    }
+}
 
-const CELL_OFFSETS: [Vec2; 9] = [
-    vec2(0.0, 0.0),
-    vec2(1.0, 0.0),
-    vec2(-1.0, 0.0),
-    vec2(0.0, 1.0),
-    vec2(0.0, -1.0),
-    vec2(1.0, 1.0),
-    vec2(-1.0, 1.0),
-    vec2(1.0, -1.0),
-    vec2(-1.0, -1.0),
-];
+fn turb_rot_col1(index: i32) -> Vec2 {
+    match index {
+        0 => vec2(-0.800, 0.600),
+        1 => vec2(-0.960, -0.280),
+        2 => vec2(0.538, -0.843),
+        3 => vec2(-0.907, 0.422),
+        4 => vec2(-0.765, -0.644),
+        5 => vec2(0.985, -0.171),
+        6 => vec2(-0.337, -0.942),
+        7 => vec2(0.634, 0.773),
+        8 => vec2(0.981, 0.196),
+        _ => vec2(0.384, -0.923),
+    }
+}
+
+fn poisson_offset(index: i32) -> Vec2 {
+    match index {
+        0 => vec2(0.0000, 0.5000),
+        1 => vec2(0.3621, 0.3536),
+        2 => vec2(0.4755, 0.1545),
+        3 => vec2(0.2939, -0.1545),
+        _ => Vec2::ZERO,
+    }
+}
+
+fn cell_offset(index: i32) -> Vec2 {
+    match index {
+        1 => vec2(1.0, 0.0),
+        2 => vec2(-1.0, 0.0),
+        3 => vec2(0.0, 1.0),
+        4 => vec2(0.0, -1.0),
+        5 => vec2(1.0, 1.0),
+        6 => vec2(-1.0, 1.0),
+        7 => vec2(1.0, -1.0),
+        8 => vec2(-1.0, -1.0),
+        _ => Vec2::ZERO,
+    }
+}
 
 fn compute_turbulence(initial_pos: Vec2, time: f32) -> Vec2 {
     let mut pos = initial_pos;
     let mut freq = TURB_FREQ;
     for i in 0..10 {
-        let rot = TURB_ROTS[i];
-        let phase = freq * (rot.transpose() * pos).y + TURB_SPEED * time + i as f32;
-        pos += TURB_AMP * rot.col(0) * phase.sin() / freq;
+        let rot_col0 = turb_rot_col0(i);
+        let rot_col1 = turb_rot_col1(i);
+        let phase = freq * rot_col1.dot(pos) + TURB_SPEED * time + i as f32;
+        pos += TURB_AMP * rot_col0 * phase.sin() / freq;
         freq *= TURB_EXP;
     }
     pos
@@ -84,7 +95,7 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
     let max_effective_dist = 1.0 / (FLASH_SCALE * 0.1);
 
     for c in 0..9 {
-        let cell_pos = cell + CELL_OFFSETS[c];
+        let cell_pos = cell + cell_offset(c);
         let seed = cell_pos.dot(vec2(127.1, 311.7));
 
         let period = 1.0 / FLASH_FREQUENCY;
@@ -107,7 +118,7 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
                 (time * 0.4 + h.y * 9.0).cos(),
             ) * 0.3;
 
-            let gp = (cell_pos + POISSON_OFFSETS[i] + motion) * FLASH_GRID;
+            let gp = (cell_pos + poisson_offset(i) + motion) * FLASH_GRID;
             let d = pos.distance(gp);
             if d > max_effective_dist {
                 continue;
