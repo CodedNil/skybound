@@ -93,7 +93,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         },
     );
 
-    let size = 512;
+    let size = 1024;
     let depth = 1;
     let extra_texture = load_or_generate_texture(
         "extras_texture",
@@ -101,11 +101,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
         depth,
         TextureFormat::Rgba8Unorm,
         || {
-            let spikes_voronoi = spread(&worley_3d(size, depth, 3, 0.5, 8.0, 0.4))
-                .iter()
-                .zip(spread(&simplex_3d(size, depth, 5, 0.8, vec2(8.0, 2.0), 1.0)).iter())
-                .map(|(&a, &b)| (a * 1.5 - 0.5) + b * 0.1)
-                .collect::<Vec<f32>>();
+            let spikes_voronoi = spread(&worley_3d(size, depth, 4, 0.6, 12.0, 0.5));
 
             save_noise_layer(&spikes_voronoi, "spikes_voronoi.png", size);
             interleave_channels([
