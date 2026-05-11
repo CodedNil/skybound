@@ -1,4 +1,6 @@
-use crate::{render::noise::NoiseTextures, world::WorldData};
+use crate::{
+    render::noise::NoiseTextures, ships::render_pass::ShipRenderTargets, world::WorldData,
+};
 use bevy::{
     camera::MainPassResolutionOverride,
     core_pipeline::prepass::ViewPrepassTextures,
@@ -180,6 +182,8 @@ pub fn raymarch_pass(
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
         let noise_texture_handle = world.resource::<NoiseTextures>();
 
+        let ship_targets = world.resource::<ShipRenderTargets>();
+
         // Ensure required resources are ready
         let (
             Some(pipeline),
@@ -191,6 +195,8 @@ pub fn raymarch_pass(
             Some(detail_noise),
             Some(weather_noise),
             Some(extra_noise),
+            Some(ship_surface_view),
+            Some(ship_gbuf_view),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
@@ -201,6 +207,8 @@ pub fn raymarch_pass(
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.weather),
             gpu_images.get(&noise_texture_handle.extra),
+            ship_targets.surface_view.as_ref(),
+            ship_targets.gbuf_view.as_ref(),
         )
         else {
             continue;
@@ -218,6 +226,8 @@ pub fn raymarch_pass(
                 &detail_noise.texture_view,
                 &weather_noise.texture_view,
                 &extra_noise.texture_view,
+                ship_surface_view,
+                ship_gbuf_view,
             )),
         );
 
@@ -291,12 +301,14 @@ impl FromWorld for RaymarchPipeline {
         let layout_entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<ViewUniform>(true),    // View uniforms
-                sampler(SamplerBindingType::Filtering), // Linear sampler
-                texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
-                texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
-                texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
-                texture_2d(TextureSampleType::Float { filterable: true }), // Extra noise texture
+                uniform_buffer::<ViewUniform>(true),    // 0: View uniforms
+                sampler(SamplerBindingType::Filtering), // 1: Linear sampler
+                texture_3d(TextureSampleType::Float { filterable: true }), // 2: Base noise
+                texture_3d(TextureSampleType::Float { filterable: true }), // 3: Detail noise
+                texture_2d(TextureSampleType::Float { filterable: true }), // 4: Weather noise
+                texture_2d(TextureSampleType::Float { filterable: true }), // 5: Extra noise
+                texture_2d(TextureSampleType::Float { filterable: true }), // 6: Ship surface
+                texture_2d(TextureSampleType::Float { filterable: true }), // 7: Ship gbuf
             ),
         );
         let layout_descriptor =

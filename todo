@@ -1,3 +1,6 @@
+on the cpu, use f64 for positions, then when passing through to shaders simply center everything around the ship
+
+
 make the aur_ocean wrap/curve around the spikes
 have basic GI reflections diffuse on solids, and lighting from emissives of the volumetrics trace (include sky as emissive
 

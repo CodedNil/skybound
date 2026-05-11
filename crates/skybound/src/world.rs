@@ -1,4 +1,3 @@
-use crate::camera::CameraController;
 use bevy::{
     anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
@@ -8,6 +7,8 @@ use bevy::{
 };
 use skybound_shared::PLANET_RADIUS;
 use std::f32::consts::FRAC_PI_4;
+
+use crate::ships::{physics::ShipPhysics, player::PlayerShip};
 
 // --- Constants ---
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
@@ -78,9 +79,8 @@ impl Plugin for WorldPlugin {
     }
 }
 
-/// Spawns the main camera and initial world entities.
+/// Spawns the main camera. Transform is set each frame by the ship follow system.
 fn setup(mut commands: Commands) {
-    // Camera
     commands.spawn((
         Camera3d::default(),
         Camera::default(),
@@ -96,43 +96,57 @@ fn setup(mut commands: Commands) {
         },
         Hdr,
         Bloom::NATURAL,
-        Transform::from_xyz(0.0, 4.0, 12.0).looking_at(Vec3::Y * 4.0, Vec3::Y),
-        CameraController {
-            speed: 40.0,
-            sensitivity: 0.005,
-            yaw: 0.0,
-            pitch: 0.0,
-        },
+        // Initial position behind the ship's spawn point; the follow system overwrites this.
+        Transform::from_xyz(0.0, -26.0, 20.0).looking_at(Vec3::new(0.0, 4.0, 12.0), Vec3::Z),
     ));
 }
 
-/// Snaps camera world coordinates into the world offset grid to prevent precision loss.
+/// Snaps the ship into the world offset grid to prevent float precision loss.
 fn update(
     mut world_coords: ResMut<WorldData>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    mut ship_query: Query<&mut Transform, With<PlayerShip>>,
+    mut camera_query: Query<&mut Transform, (With<Camera>, Without<PlayerShip>)>,
+    mut physics: ResMut<ShipPhysics>,
 ) {
-    let Ok(mut camera_transform) = camera_query.single_mut() else {
+    let Ok(mut ship) = ship_query.single_mut() else {
         return;
     };
-    // Camera Snapping
-    let apply_snap = |coord: &mut f32, off: &mut f32| {
-        if coord.abs() > CAMERA_RESET_THRESHOLD {
-            let snap = CAMERA_RESET_THRESHOLD * coord.signum();
-            *off += snap;
-            *coord -= snap;
-        }
-    };
 
-    apply_snap(
-        &mut camera_transform.translation.x,
-        &mut world_coords.camera_offset.x,
-    );
-    apply_snap(
-        &mut camera_transform.translation.y,
-        &mut world_coords.camera_offset.y,
-    );
-    apply_snap(
-        &mut camera_transform.translation.z,
-        &mut world_coords.camera_offset.z,
-    );
+    let mut snap = Vec3::ZERO;
+    {
+        let snap_axis = |coord: &mut f32, off: &mut f32, delta: &mut f32| {
+            if coord.abs() > CAMERA_RESET_THRESHOLD {
+                let s = CAMERA_RESET_THRESHOLD * coord.signum();
+                *off += s;
+                *coord -= s;
+                *delta -= s;
+            }
+        };
+        snap_axis(
+            &mut ship.translation.x,
+            &mut world_coords.camera_offset.x,
+            &mut snap.x,
+        );
+        snap_axis(
+            &mut ship.translation.y,
+            &mut world_coords.camera_offset.y,
+            &mut snap.y,
+        );
+        snap_axis(
+            &mut ship.translation.z,
+            &mut world_coords.camera_offset.z,
+            &mut snap.z,
+        );
+    }
+
+    if snap != Vec3::ZERO {
+        if let Ok(mut cam) = camera_query.single_mut() {
+            cam.translation += snap;
+        }
+        if let Some(chains) = physics.chains.as_mut() {
+            for chain in chains.iter_mut() {
+                chain.apply_offset(snap);
+            }
+        }
+    }
 }

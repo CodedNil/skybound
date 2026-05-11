@@ -6,6 +6,9 @@ mod debugtext;
 use crate::debugtext::DebugTextPlugin;
 mod camera;
 use crate::camera::CameraPlugin;
+mod ships;
+use crate::ships::physics::ShipPhysicsPlugin;
+use crate::ships::player::PlayerPlugin;
 mod world;
 use crate::world::WorldPlugin;
 mod show_prepass;
@@ -20,6 +23,8 @@ fn main() {
                 ..default()
             }),
             WorldPlugin,
+            PlayerPlugin,
+            ShipPhysicsPlugin,
             CameraPlugin,
             WorldRenderingPlugin,
             DebugTextPlugin,
