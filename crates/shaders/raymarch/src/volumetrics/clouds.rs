@@ -1,10 +1,8 @@
+use crate::utils::{Smoothstep, Textures};
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler};
-
-use crate::utils::Smoothstep;
 
 const BASE_SCALE: f32 = 0.005;
 const BASE_TIME: f32 = 0.01;
@@ -37,38 +35,25 @@ const CLOUD_LAYER_DETAILS: [f32; 16] = [
     0.1, 0.1, 0.1, 0.1, 0.12, 0.12, 0.15, 0.15, 0.2, 0.25, 0.3, 0.4, 0.6, 0.8, 0.9, 0.95,
 ];
 
-fn calculate_layer_v_offset(
-    pos_xy: Vec2,
-    index_u: u32,
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
-) -> f32 {
+fn calculate_layer_v_offset(pos_xy: Vec2, index_u: u32, textures: &Textures) -> f32 {
     let layer_seed = index_u as f32 * 137.415;
 
     let large_coord = pos_xy * WEATHER_NOISE_SCALE * 0.2 + Vec2::splat(layer_seed);
-    let large_noise = weather_texture.sample(sampler, large_coord).x;
+    let large_noise = textures.weather(large_coord).x;
 
     let medium_coord = pos_xy * WEATHER_NOISE_SCALE * 3.0 + Vec2::splat(layer_seed * 0.5);
-    let medium_noise = weather_texture.sample(sampler, medium_coord).x;
+    let medium_noise = textures.weather(medium_coord).x;
 
     let detail_coord = pos_xy * WEATHER_NOISE_SCALE * 90.0 + Vec2::splat(layer_seed * 0.5);
-    let detail_noise = weather_texture.sample(sampler, detail_coord).x;
+    let detail_noise = textures.weather(detail_coord).x;
 
     let combined_noise = large_noise * 0.9 + medium_noise * 0.1 + detail_noise * 0.01;
     (combined_noise - 0.5) * CLOUD_LAYER_SPACING * 6.0
 }
 
-pub fn sample_clouds(
-    pos: Vec3,
-    view: &ViewUniform,
-    simple: bool,
-    base_texture: Image!(3D, type=f32, sampled=true),
-    details_texture: Image!(3D, type=f32, sampled=true),
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
-) -> f32 {
+pub fn sample_clouds(pos: Vec3, view: &ViewUniform, simple: bool, textures: &Textures) -> f32 {
     let weather_uv = pos.xy() * WEATHER_NOISE_SCALE + view.time() * WIND_DIRECTION_WEATHER;
-    let weather_sample: Vec4 = weather_texture.sample(sampler, weather_uv);
+    let weather_sample: Vec4 = textures.weather(weather_uv);
     let global_coverage = (weather_sample.x * 1.3 - 0.2).saturate();
     if global_coverage <= 0.0 {
         return 0.0;
@@ -85,7 +70,7 @@ pub fn sample_clouds(
         let u_idx = idx_i as u32;
         let layer_idx = u_idx as usize;
 
-        let disp = calculate_layer_v_offset(pos.xy(), u_idx, weather_texture, sampler);
+        let disp = calculate_layer_v_offset(pos.xy(), u_idx, textures);
         let bottom = CLOUD_BOTTOM_HEIGHT + u_idx as f32 * CLOUD_LAYER_SPACING + disp;
         let dynamic_height = CLOUD_LAYER_HEIGHTS[layer_idx] * (0.3 + 0.7 * global_coverage);
 
@@ -97,7 +82,7 @@ pub fn sample_clouds(
 
         let base_scale = BASE_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx];
         let sample_pos = vec3(pos.x, pos.y, pos.z) * base_scale + view.time() * WIND_DIRECTION_BASE;
-        let base_noise = base_texture.sample(sampler, sample_pos).x;
+        let base_noise = textures.base(sample_pos).x;
 
         let billow_modifier = (base_noise * 1.5).saturate();
         let perturbed_h = (h_coord - (base_noise - 0.5) * 0.4).saturate();
@@ -114,7 +99,7 @@ pub fn sample_clouds(
             if !simple {
                 let det_pos = (pos * DETAIL_NOISE_SCALE * CLOUD_LAYER_SCALES[layer_idx])
                     - (view.time() * WIND_DIRECTION_DETAIL);
-                let detail_noise = details_texture.sample(sampler, det_pos).x;
+                let detail_noise = textures.details(det_pos).x;
                 cloud_val =
                     (cloud_val - detail_noise * 0.3 * CLOUD_LAYER_DETAILS[layer_idx]).saturate();
             }

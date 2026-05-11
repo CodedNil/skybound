@@ -184,21 +184,23 @@ pub fn raymarch_pass(
         let (
             Some(pipeline),
             Some(view_binding),
-            Some(base_noise),
-            Some(detail_noise),
             Some(depth_view),
             Some(motion_view),
             Some(normal_view),
+            Some(base_noise),
+            Some(detail_noise),
             Some(weather_noise),
+            Some(extra_noise),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
             world.resource::<ViewUniforms>().uniforms.binding(),
-            gpu_images.get(&noise_texture_handle.base),
-            gpu_images.get(&noise_texture_handle.detail),
             prepass_textures.depth_view(),
             prepass_textures.motion_vectors_view(),
             prepass_textures.normal_view(),
+            gpu_images.get(&noise_texture_handle.base),
+            gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.weather),
+            gpu_images.get(&noise_texture_handle.extra),
         )
         else {
             continue;
@@ -215,6 +217,7 @@ pub fn raymarch_pass(
                 &base_noise.texture_view,
                 &detail_noise.texture_view,
                 &weather_noise.texture_view,
+                &extra_noise.texture_view,
             )),
         );
 
@@ -293,6 +296,7 @@ impl FromWorld for RaymarchPipeline {
                 texture_3d(TextureSampleType::Float { filterable: true }), // Base noise
                 texture_3d(TextureSampleType::Float { filterable: true }), // Detail noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // Weather noise texture
+                texture_2d(TextureSampleType::Float { filterable: true }), // Extra noise texture
             ),
         );
         let layout_descriptor =

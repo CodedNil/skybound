@@ -66,7 +66,7 @@ fn update(
                     world_coords
                         .longitude(camera_transform.translation)
                         .to_degrees(),
-                    camera_transform.translation.z,
+                    camera_transform.translation.z + world_coords.camera_offset.z,
                 )
             });
 

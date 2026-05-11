@@ -3,14 +3,13 @@ mod clouds;
 mod poles;
 
 use crate::lighting::henyey_greenstein;
-use crate::utils::{AtmosphereData, intersect_sphere, ray_shell_intersect};
+use crate::utils::{AtmosphereData, Textures, intersect_sphere, ray_shell_intersect};
 use aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
 use clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds};
 use poles::{poles_raymarch_entry, sample_poles};
 use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler};
 
 // --- Constants ---
 const DENSITY: f32 = 0.25;
@@ -70,10 +69,7 @@ fn sample_volume(
     clouds: bool,
     ocean: bool,
     poles: bool,
-    base_texture: Image!(3D, type=f32, sampled=true),
-    details_texture: Image!(3D, type=f32, sampled=true),
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
+    textures: &Textures,
 ) -> VolumeSample {
     let mut sample = VolumeSample {
         density: 0.0,
@@ -83,22 +79,14 @@ fn sample_volume(
 
     let mut blended_color = Vec3::ZERO;
     if clouds {
-        let cloud_sample = sample_clouds(
-            pos,
-            view,
-            false,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
+        let cloud_sample = sample_clouds(pos, view, false, textures);
         if cloud_sample > 0.0 {
             blended_color += Vec3::ONE * cloud_sample;
             sample.density += cloud_sample;
         }
     }
     if ocean {
-        let ocean_sample = sample_ocean(pos, view.time(), false, details_texture, sampler);
+        let ocean_sample = sample_ocean(pos, view.time(), false, textures);
         if ocean_sample.density > 0.0 {
             blended_color += ocean_sample.color * ocean_sample.density;
             sample.density += ocean_sample.density;
@@ -130,10 +118,7 @@ fn sample_shadowing(
     step_density: f32,
     sun_dir: Vec3,
     dither: f32,
-    base_texture: Image!(3D, type=f32, sampled=true),
-    details_texture: Image!(3D, type=f32, sampled=true),
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
+    textures: &Textures,
 ) -> Vec3 {
     let mut optical_depth = (step_density * 1.5).saturate() * EXTINCTION * LIGHT_STEP_SIZE;
 
@@ -158,17 +143,8 @@ fn sample_shadowing(
             tangent1 * (sample_offset.x * disk_radius) + tangent2 * (sample_offset.y * disk_radius);
 
         let lightmarch_pos = world_pos + sun_dir * distance_along + disk_offset;
-        let clouds = sample_clouds(
-            lightmarch_pos,
-            view,
-            true,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
-        let ocean =
-            sample_ocean(lightmarch_pos, view.time(), true, details_texture, sampler).density;
+        let clouds = sample_clouds(lightmarch_pos, view, true, textures);
+        let ocean = sample_ocean(lightmarch_pos, view.time(), true, textures).density;
 
         optical_depth +=
             (clouds + ocean).max(0.0).powf(1.1) * (EXTINCTION * 0.6) * dynamic_light_step;
@@ -222,14 +198,7 @@ fn compute_aur_turbulence(pos: Vec2, time: f32) -> f32 {
     (1.0 - (noise * 0.35).abs()).saturate().powf(6.0)
 }
 
-fn sample_aur_lighting(
-    world_pos: Vec3,
-    view: &ViewUniform,
-    base_texture: Image!(3D, type=f32, sampled=true),
-    details_texture: Image!(3D, type=f32, sampled=true),
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
-) -> Vec3 {
+fn sample_aur_lighting(world_pos: Vec3, view: &ViewUniform, textures: &Textures) -> Vec3 {
     let altitude_fade = (1.0 - (world_pos.z / 12000.0).saturate()).powf(2.0);
     if altitude_fade <= 0.0 {
         return Vec3::ZERO;
@@ -238,7 +207,7 @@ fn sample_aur_lighting(
     let p_raw = world_pos.xy() * 0.002;
     // Domain warp
     let warp_uv = world_pos.xy() * 0.00008 + view.time() * 0.01;
-    let warp_sample: Vec4 = weather_texture.sample(sampler, warp_uv);
+    let warp_sample: Vec4 = textures.weather(warp_uv);
     let warp = vec2(warp_sample.x - 0.5, warp_sample.y - 0.5) * 6.0;
     let p = p_raw + warp;
 
@@ -257,20 +226,11 @@ fn sample_aur_lighting(
 
     let mut aur_optical_depth = 0.0;
 
-    // Short range for the underside definition
     let short_steps: u32 = 2;
     let short_step_size: f32 = 40.0;
     for j in 0..short_steps {
         let march_pos = world_pos + AUR_LIGHT_DIR * ((j as f32 + 1.0) * short_step_size);
-        let sample = sample_clouds(
-            march_pos,
-            view,
-            true,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
-        );
+        let sample = sample_clouds(march_pos, view, true, textures);
         aur_optical_depth += sample * 0.3 * short_step_size;
     }
 
@@ -290,10 +250,7 @@ pub fn raymarch_volumetrics(
     view: &ViewUniform,
     t_max: f32,
     dither: f32,
-    base_texture: Image!(3D, type=f32, sampled=true),
-    details_texture: Image!(3D, type=f32, sampled=true),
-    weather_texture: Image!(2D, type=f32, sampled=true),
-    sampler: Sampler,
+    textures: &Textures,
 ) -> RaymarchResult {
     let clouds_entry_exit =
         ray_shell_intersect(ro, rd, view, CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT);
@@ -402,10 +359,7 @@ pub fn raymarch_volumetrics(
             inside_clouds,
             inside_ocean,
             inside_poles,
-            base_texture,
-            details_texture,
-            weather_texture,
-            sampler,
+            textures,
         );
         let step_density = sample.density;
 
@@ -455,22 +409,12 @@ pub fn raymarch_volumetrics(
                 step_density,
                 sun_dir,
                 dither,
-                base_texture,
-                details_texture,
-                weather_texture,
-                sampler,
+                textures,
             );
 
             let emission = sample.emission * 1000.0;
             let cloud_aur_boost = if inside_clouds {
-                sample_aur_lighting(
-                    world_pos,
-                    view,
-                    base_texture,
-                    details_texture,
-                    weather_texture,
-                    sampler,
-                )
+                sample_aur_lighting(world_pos, view, textures)
             } else {
                 Vec3::ZERO
             };

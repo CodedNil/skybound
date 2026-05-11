@@ -9,7 +9,7 @@ mod volumetrics;
 use crate::lighting::henyey_greenstein;
 use crate::sky::{get_sun_light_color, render_sky};
 use crate::solids::raymarch_solids;
-use crate::utils::{AtmosphereData, blue_noise, get_sun_position};
+use crate::utils::{AtmosphereData, Textures, blue_noise, get_sun_position};
 use crate::volumetrics::raymarch_volumetrics;
 use skybound_shared::ViewUniform;
 use spirv_std::glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2};
@@ -21,10 +21,11 @@ use spirv_std::{Image, Sampler, spirv};
 fn main(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] view: &ViewUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(descriptor_set = 0, binding = 5)] extra_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_gbuffer: &mut Vec4,
@@ -64,7 +65,15 @@ fn main(
         ambient: sky_zenith * 0.7 + render_sky(-up, view, sun_dir) * 0.15 + sky * 0.15,
     };
 
-    let solids = raymarch_solids(ro, rd, view, t_max, dither);
+    let textures = Textures {
+        base: base_texture,
+        details: details_texture,
+        weather: weather_texture,
+        extra: extra_texture,
+        sampler,
+    };
+
+    let solids = raymarch_solids(ro, rd, view, t_max, dither, &textures);
     let mut rendered_color = if solids.hit >= 1.0 {
         solids.color
     } else {
@@ -83,12 +92,8 @@ fn main(
             view,
             solids.refl_depth,
             dither,
-            *base_texture,
-            *details_texture,
-            *weather_texture,
-            *sampler,
+            &textures,
         );
-        // Background behind the volumetrics
         let refl_background = if solids.refl_hit > 0.5 {
             solids.refl_color
         } else {
@@ -99,18 +104,7 @@ fn main(
     }
 
     // Sample the volumetrics
-    let volumetrics = raymarch_volumetrics(
-        ro,
-        rd,
-        &atmosphere,
-        view,
-        t_max,
-        dither,
-        *base_texture,
-        *details_texture,
-        *weather_texture,
-        *sampler,
-    );
+    let volumetrics = raymarch_volumetrics(ro, rd, &atmosphere, view, t_max, dither, &textures);
     rendered_color = volumetrics.color.xyz() + rendered_color * volumetrics.color.w;
 
     // Motion vectors + depth

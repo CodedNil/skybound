@@ -4,6 +4,7 @@ use spirv_std::glam::{
 };
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
+use spirv_std::{Image, Sampler};
 
 pub const MAGNETOSPHERE_HEIGHT: f32 = 400_000.0;
 
@@ -12,6 +13,32 @@ pub struct AtmosphereData {
     pub sky: Vec3,
     pub sun: Vec3,
     pub ambient: Vec3,
+}
+
+pub struct Textures<'a> {
+    pub base: &'a Image!(3D, type=f32, sampled=true),
+    pub details: &'a Image!(3D, type=f32, sampled=true),
+    pub weather: &'a Image!(2D, type=f32, sampled=true),
+    pub extra: &'a Image!(2D, type=f32, sampled=true),
+    pub sampler: &'a Sampler,
+}
+
+impl Textures<'_> {
+    pub fn base(&self, p: Vec3) -> Vec4 {
+        self.base.sample(*self.sampler, p)
+    }
+
+    pub fn details(&self, p: Vec3) -> Vec4 {
+        self.details.sample(*self.sampler, p)
+    }
+
+    pub fn weather(&self, p: Vec2) -> Vec4 {
+        self.weather.sample(*self.sampler, p)
+    }
+
+    pub fn extra(&self, p: Vec2) -> Vec4 {
+        self.extra.sample(*self.sampler, p)
+    }
 }
 
 pub trait Smoothstep {
