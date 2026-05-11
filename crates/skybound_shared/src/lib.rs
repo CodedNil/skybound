@@ -4,6 +4,11 @@ use glam::{Mat4, Vec3, Vec4, Vec4Swizzles, vec3};
 
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
 
+pub const NUM_STRINGS: usize = 5;
+pub const TANKS_PER_STRING: usize = 3;
+pub const NODES_PER_STRING: usize = TANKS_PER_STRING + 1; // attachment + 3 tanks
+pub const TOTAL_BEAD_NODES: usize = NUM_STRINGS * NODES_PER_STRING; // 20
+
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
 #[cfg_attr(
@@ -26,14 +31,12 @@ pub struct ViewUniform {
 }
 
 impl ViewUniform {
-    /// Planet centre in camera-local space, accounting for the accumulated altitude offset.
     pub fn planet_center(&self) -> Vec3 {
         self.world_position
             .xy()
             .extend(-PLANET_RADIUS - self.world_position.w)
     }
 
-    /// Camera position relative to planet centre, used to derive the local "up" direction.
     pub fn ro_relative(&self) -> Vec3 {
         vec3(
             0.0,
@@ -50,7 +53,6 @@ impl ViewUniform {
         self.camera_position.y
     }
 
-    /// Accumulated camera-snap offset: xy = surface position, z = altitude.
     pub fn camera_offset(&self) -> Vec3 {
         vec3(
             self.camera_position.z,
@@ -66,4 +68,24 @@ impl ViewUniform {
     pub fn frame_count(&self) -> f32 {
         self.times.y
     }
+}
+
+/// Per-ship uniform passed to the ship render pass.
+///
+/// All positions are in camera-snap-space (same coordinate frame as `ViewUniform.world_position`).
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+#[cfg_attr(
+    feature = "cpu",
+    derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
+)]
+pub struct ShipUniform {
+    /// xyz = core world position, w = shield phase [0..1] (negative = ship invalid/hidden)
+    pub core_position: Vec4,
+    /// Core orientation quaternion (x, y, z, w)
+    pub core_rotation: Vec4,
+    /// Flattened bead nodes: [string * NODES_PER_STRING + node]
+    /// node 0 = attachment point on core, nodes 1..NODES_PER_STRING = tank positions.
+    /// xyz = world position, w = unused
+    pub bead_positions: [Vec4; TOTAL_BEAD_NODES],
 }
