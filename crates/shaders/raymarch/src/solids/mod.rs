@@ -11,7 +11,6 @@ const MAX_STEPS: i32 = 256;
 const EPSILON: f32 = 0.1;
 const NORMAL_EPS: f32 = 0.5;
 const MIN_STEP: f32 = 0.1;
-
 const REFLECTION_MAX_DIST: f32 = 24000.0;
 const REFLECTION_STEPS: u32 = 64;
 
@@ -37,8 +36,6 @@ pub struct ShadeResult {
     pub refl_depth: f32,
 }
 
-/// SDF evaluation frame: xy is camera-local, z is true altitude (`camera_offset.z` + r²/2R).
-/// xy must stay camera-local so normal finite-differences are never below the f32 ULP.
 fn world_to_curved(p_raw: Vec3, planet_center: Vec3, camera_offset_z: f32) -> Vec3 {
     let dx = p_raw.x - planet_center.x;
     let dy = p_raw.y - planet_center.y;
@@ -64,14 +61,12 @@ fn estimate_normal(p: Vec3, camera_offset: Vec2, time: f32, textures: &Textures)
     let dx = vec3(NORMAL_EPS, 0.0, 0.0);
     let dy = vec3(0.0, NORMAL_EPS, 0.0);
     let dz = vec3(0.0, 0.0, NORMAL_EPS);
-
     let nx = sdf_dist(p + dx, camera_offset, time, textures)
         - sdf_dist(p - dx, camera_offset, time, textures);
     let ny = sdf_dist(p + dy, camera_offset, time, textures)
         - sdf_dist(p - dy, camera_offset, time, textures);
     let nz = sdf_dist(p + dz, camera_offset, time, textures)
         - sdf_dist(p - dz, camera_offset, time, textures);
-
     let n = vec3(nx, ny, nz);
     if n.length_squared() > 0.0 {
         n.normalize()
@@ -88,7 +83,6 @@ fn trace_reflection(
     textures: &Textures,
 ) -> (Vec3, f32, f32) {
     let mut t = 0.1;
-
     for _ in 0..REFLECTION_STEPS {
         let p = pos + refl_dir * t;
         let (d, mat) = sdf_combined(p, camera_offset, time, textures);
@@ -105,7 +99,6 @@ fn trace_reflection(
             break;
         }
     }
-
     (Vec3::ZERO, REFLECTION_MAX_DIST, 0.0)
 }
 
@@ -117,7 +110,7 @@ fn trace_shadow(
     textures: &Textures,
     max_dist: f32,
 ) -> f32 {
-    let mut t = 1.0; // Start offset to avoid self-intersection
+    let mut t = 1.0;
     for _ in 0..32 {
         let p = pos + light_dir * t;
         let d = sdf_dist(p, camera_offset, time, textures);
@@ -141,10 +134,13 @@ fn shade_sdfs(
     time: f32,
     textures: &Textures,
 ) -> ShadeResult {
-    let sun_pos = crate::utils::get_sun_position(view);
+    let sun_pos = crate::utils::get_sun_position(
+        view.planet_center(),
+        view.planet_rotation,
+        view.ro_relative(),
+        view.latitude(),
+    );
     let planet_center = view.planet_center();
-
-    // Approximate light direction in the curved space
     let light_dir = (sun_pos - (p + planet_center)).normalize();
     let dot_nl = n.dot(light_dir).max(0.0);
 
@@ -188,6 +184,7 @@ pub fn raymarch_solids(
     let camera_offset = view.camera_offset();
     let camera_offset_xy = camera_offset.xy();
     let mut t = dither * 1.5;
+
     let mut out_color = Vec3::ZERO;
     let mut out_refl_color = Vec3::ZERO;
     let mut out_refl_weight = 0.0;

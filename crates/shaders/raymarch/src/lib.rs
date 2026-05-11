@@ -44,8 +44,15 @@ fn main(
     let rd = (world_pos_far - ro).normalize();
     let max_dist = 1_000_000.0;
     let mut t_max = max_dist;
-    let sun_pos = get_sun_position(view);
+
+    let sun_pos = get_sun_position(
+        view.planet_center(),
+        view.planet_rotation,
+        view.ro_relative(),
+        view.latitude(),
+    );
     let sun_dir = (sun_pos - ro).normalize();
+    let ro_relative = view.ro_relative();
 
     // Phase functions for silver and back scattering
     let cos_theta = sun_dir.dot(rd);
@@ -55,14 +62,14 @@ fn main(
     let phase = hg_forward + hg_back * 0.15 + hg_silver * 0.2;
 
     // Precalculate sun, sky and ambient colors
-    let sky = render_sky(rd, view, sun_dir);
+    let sky = render_sky(rd, ro_relative, sun_dir);
     let up = (ro - view.planet_center()).normalize();
-    let sky_zenith = render_sky(up, view, sun_dir);
+    let sky_zenith = render_sky(up, ro_relative, sun_dir);
     let atmosphere = AtmosphereData {
         sun_pos,
         sky,
-        sun: (get_sun_light_color(view, sun_dir) * 0.45 + sky * 0.18) * phase,
-        ambient: sky_zenith * 0.7 + render_sky(-up, view, sun_dir) * 0.15 + sky * 0.15,
+        sun: (get_sun_light_color(ro_relative, sun_dir) * 0.45 + sky * 0.18) * phase,
+        ambient: sky_zenith * 0.7 + render_sky(-up, ro_relative, sun_dir) * 0.15 + sky * 0.15,
     };
 
     let textures = Textures {
@@ -97,7 +104,7 @@ fn main(
         let refl_background = if solids.refl_hit > 0.5 {
             solids.refl_color
         } else {
-            render_sky(refl_rd, view, sun_dir)
+            render_sky(refl_rd, ro_relative, sun_dir)
         };
         let effective_refl = refl_vols.color.xyz() + refl_background * refl_vols.color.w;
         rendered_color = rendered_color.lerp(effective_refl, solids.refl_weight);
