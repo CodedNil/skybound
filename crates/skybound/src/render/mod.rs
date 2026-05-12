@@ -9,16 +9,13 @@ use crate::{
             prepare_clouds_view_uniforms, raymarch_pass,
         },
     },
-    ships::{
-        physics::ExtractedShipData,
-        render_pass::{
-            init_ship_resources, prepare_ship_render_targets, prepare_ship_uniforms,
-            ship_pass as ship_raymarch_pass,
-        },
+    ships::render_pass::{
+        ExtractedShipData, init_ship_resources, prepare_ship_render_targets, prepare_ship_uniforms,
+        ship_pass as ship_raymarch_pass,
     },
 };
 use bevy::{
-    core_pipeline::{Core3d, Core3dSystems},
+    core_pipeline::{Core3d, Core3dSystems, core_3d::main_opaque_pass_3d},
     prelude::*,
     render::{
         Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
@@ -29,11 +26,12 @@ pub struct WorldRenderingPlugin;
 
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            ExtractResourcePlugin::<NoiseTextures>::default(),
-            ExtractResourcePlugin::<ExtractedShipData>::default(),
-        ))
-        .add_systems(Startup, setup_noise_textures);
+        app.init_resource::<ExtractedShipData>()
+            .add_plugins((
+                ExtractResourcePlugin::<NoiseTextures>::default(),
+                ExtractResourcePlugin::<ExtractedShipData>::default(),
+            ))
+            .add_systems(Startup, setup_noise_textures);
 
         app.get_sub_app_mut(RenderApp)
             .expect("RenderApp should exist")
@@ -56,11 +54,11 @@ impl Plugin for WorldRenderingPlugin {
                 Core3d,
                 (
                     ship_raymarch_pass
-                        .before(bevy::core_pipeline::core_3d::main_opaque_pass_3d)
+                        .before(main_opaque_pass_3d)
                         .in_set(Core3dSystems::MainPass),
                     raymarch_pass
                         .after(ship_raymarch_pass)
-                        .before(bevy::core_pipeline::core_3d::main_opaque_pass_3d)
+                        .before(main_opaque_pass_3d)
                         .in_set(Core3dSystems::MainPass),
                 ),
             );

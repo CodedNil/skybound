@@ -65,11 +65,6 @@ impl ViewUniform {
     }
 }
 
-pub const NUM_STRINGS: usize = 5;
-pub const TANKS_PER_STRING: usize = 3;
-pub const NODES_PER_STRING: usize = TANKS_PER_STRING + 1;
-pub const TOTAL_BEAD_NODES: usize = NUM_STRINGS * NODES_PER_STRING;
-
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
 #[cfg_attr(
@@ -77,7 +72,6 @@ pub const TOTAL_BEAD_NODES: usize = NUM_STRINGS * NODES_PER_STRING;
     derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
 )]
 pub struct ShipUniform {
-    pub core_position: Vec4,
-    pub core_rotation: Vec4,
-    pub bead_positions: [Vec4; TOTAL_BEAD_NODES],
+    pub position: Vec4,
+    pub rotation: Vec4,
 }
