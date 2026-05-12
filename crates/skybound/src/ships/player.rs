@@ -3,11 +3,11 @@ use bevy::{
     prelude::*,
 };
 
-/// Marker component for the player's ship entity.
+use crate::ships::render_pass::update_ships;
+
 #[derive(Component)]
 pub struct PlayerShip;
 
-/// Flight controller state attached to the ship.
 #[derive(Component)]
 pub struct ShipController {
     pub speed: f32,
@@ -22,7 +22,7 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_ship)
             .add_systems(PreUpdate, ship_controller)
-            .add_systems(PostUpdate, follow_camera_to_ship);
+            .add_systems(PostUpdate, (follow_camera_to_ship, update_ships));
     }
 }
 
@@ -96,7 +96,6 @@ fn ship_controller(
     }
 }
 
-/// Smoothly follows the camera behind and above the ship.
 fn follow_camera_to_ship(
     time: Res<Time>,
     ship_query: Query<&Transform, (With<PlayerShip>, Without<Camera>)>,
@@ -113,7 +112,6 @@ fn follow_camera_to_ship(
     let up = *ship.up();
     let target = ship.translation - forward * 60.0 + up * 15.0;
 
-    // Exponential smoothing: ~0.12 s time constant at 60 fps.
     let lag = 1.0 - (-8.0 * time.delta_secs()).exp();
     cam.translation = cam.translation.lerp(target, lag.clamp(0.0, 1.0));
     cam.look_at(ship.translation + forward * 5.0, up);

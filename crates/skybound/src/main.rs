@@ -7,7 +7,6 @@ use crate::debugtext::DebugTextPlugin;
 mod camera;
 use crate::camera::CameraPlugin;
 mod ships;
-use crate::ships::physics::ShipPhysicsPlugin;
 use crate::ships::player::PlayerPlugin;
 mod world;
 use crate::world::WorldPlugin;
@@ -24,7 +23,6 @@ fn main() {
             }),
             WorldPlugin,
             PlayerPlugin,
-            ShipPhysicsPlugin,
             CameraPlugin,
             WorldRenderingPlugin,
             DebugTextPlugin,

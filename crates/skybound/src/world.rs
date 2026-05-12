@@ -8,7 +8,7 @@ use bevy::{
 use skybound_shared::PLANET_RADIUS;
 use std::f32::consts::FRAC_PI_4;
 
-use crate::ships::{physics::ShipPhysics, player::PlayerShip};
+use crate::ships::player::PlayerShip;
 
 // --- Constants ---
 const CAMERA_RESET_THRESHOLD: f32 = 50_000.0;
@@ -106,7 +106,6 @@ fn update(
     mut world_coords: ResMut<WorldData>,
     mut ship_query: Query<&mut Transform, With<PlayerShip>>,
     mut camera_query: Query<&mut Transform, (With<Camera>, Without<PlayerShip>)>,
-    mut physics: ResMut<ShipPhysics>,
 ) {
     let Ok(mut ship) = ship_query.single_mut() else {
         return;
@@ -139,14 +138,9 @@ fn update(
         );
     }
 
-    if snap != Vec3::ZERO {
-        if let Ok(mut cam) = camera_query.single_mut() {
-            cam.translation += snap;
-        }
-        if let Some(chains) = physics.chains.as_mut() {
-            for chain in chains.iter_mut() {
-                chain.apply_offset(snap);
-            }
-        }
+    if snap != Vec3::ZERO
+        && let Ok(mut cam) = camera_query.single_mut()
+    {
+        cam.translation += snap;
     }
 }

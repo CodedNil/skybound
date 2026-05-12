@@ -1,11 +1,14 @@
-use super::physics::ExtractedShipData;
-use crate::render::raymarch::{CloudsViewUniformOffset, ViewUniforms};
+use crate::{
+    render::raymarch::{CloudsViewUniformOffset, ViewUniforms},
+    ships::player::PlayerShip,
+};
 use bevy::{
     camera::MainPassResolutionOverride,
     core_pipeline::FullscreenShader,
     material::descriptor::BindGroupLayoutDescriptor,
     prelude::*,
     render::{
+        extract_resource::ExtractResource,
         render_resource::{
             BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedRenderPipelineId,
             ColorTargetState, ColorWrites, Extent3d, FragmentState, LoadOp, MultisampleState,
@@ -19,6 +22,28 @@ use bevy::{
     },
 };
 use skybound_shared::{ShipUniform, ViewUniform};
+
+#[derive(Resource, Clone, Default, ExtractResource)]
+pub struct ExtractedShipData {
+    pub uniform: ShipUniform,
+}
+
+pub fn update_ships(
+    extracted: Option<ResMut<ExtractedShipData>>,
+    ship_query: Query<&Transform, With<PlayerShip>>,
+) {
+    let Some(mut extracted) = extracted else {
+        return;
+    };
+    let Ok(ship_transform) = ship_query.single() else {
+        return;
+    };
+
+    extracted.uniform = ShipUniform {
+        position: ship_transform.translation.extend(1.0),
+        rotation: ship_transform.rotation.to_array().into(),
+    };
+}
 
 #[derive(Resource, Default)]
 pub struct ShipRenderTargets {
