@@ -275,6 +275,11 @@ pub fn raymarch_volumetrics(
             color: vec4(0.0, 0.0, 0.0, 1.0),
             depth: t_max,
         };
+    } else {
+        return RaymarchResult {
+            color: vec4(0.0, 0.0, 0.0, 1.0),
+            depth: t_max,
+        };
     }
 
     let mut acc_color = Vec3::ZERO;
