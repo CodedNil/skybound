@@ -1,9 +1,8 @@
+use crate::{camera::CameraController, ships::render_pass::update_ships};
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
 };
-
-use crate::ships::render_pass::update_ships;
 
 #[derive(Component)]
 pub struct PlayerShip;
@@ -42,11 +41,17 @@ fn spawn_ship(mut commands: Commands) {
 fn ship_controller(
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut ShipController), With<PlayerShip>>,
+    camera: Single<Has<CameraController>, With<Camera>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
 ) {
+    // Check we aren't in freecam
+    if *camera {
+        return;
+    }
+
     for (mut transform, mut controller) in &mut query {
         let mut movement = Vec3::ZERO;
         let mut add_dir = |key: KeyCode, v: Vec3| {
@@ -98,21 +103,14 @@ fn ship_controller(
 
 fn follow_camera_to_ship(
     time: Res<Time>,
-    ship_query: Query<&Transform, (With<PlayerShip>, Without<Camera>)>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
+    ship: Single<&Transform, (With<PlayerShip>, Without<Camera>)>,
+    mut camera: Single<&mut Transform, (With<Camera>, Without<CameraController>)>,
 ) {
-    let Ok(ship) = ship_query.single() else {
-        return;
-    };
-    let Ok(mut cam) = camera_query.single_mut() else {
-        return;
-    };
-
     let forward = *ship.forward();
     let up = *ship.up();
     let target = ship.translation - forward * 60.0 + up * 15.0;
 
     let lag = 1.0 - (-8.0 * time.delta_secs()).exp();
-    cam.translation = cam.translation.lerp(target, lag.clamp(0.0, 1.0));
-    cam.look_at(ship.translation + forward * 5.0, up);
+    camera.translation = camera.translation.lerp(target, lag.clamp(0.0, 1.0));
+    camera.look_at(ship.translation + forward * 5.0, up);
 }
