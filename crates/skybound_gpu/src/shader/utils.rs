@@ -1,8 +1,7 @@
-use skybound_shared::PLANET_RADIUS;
+use crate::PLANET_RADIUS;
 use spirv_std::glam::{
-    FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4,
+    FloatExt, Quat, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, vec2, vec3, vec4,
 };
-#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
@@ -41,22 +40,6 @@ impl Textures<'_> {
     }
 }
 
-pub trait Smoothstep {
-    #[must_use]
-    fn smoothstep(self, edge0: Self, edge1: Self) -> Self;
-}
-
-impl Smoothstep for f32 {
-    fn smoothstep(self, edge0: Self, edge1: Self) -> Self {
-        let t = ((self - edge0) / (edge1 - edge0)).saturate();
-        t * t * (3.0 - 2.0 * t)
-    }
-}
-
-pub fn mod1(x: f32, y: f32) -> f32 {
-    x - y * (x / y).floor()
-}
-
 pub fn hash12(p: f32) -> Vec2 {
     let mut v = (Vec2::splat(p) * vec2(0.1031, 0.1030)).fract_gl();
     v += v.dot(v.yx() + 33.33);
@@ -82,12 +65,6 @@ pub fn blue_noise(uv: Vec2) -> f32 {
     let s3 = hash21(uv + vec2(0.0, -1.0));
     let s = s0 + s1 + s2 + s3;
     hash21(uv) - s * 0.25 + 0.5
-}
-
-pub fn quat_rotate(q: Vec4, v: Vec3) -> Vec3 {
-    let u = q.xyz();
-    let uv = u.cross(v);
-    v + 2.0 * (q.w * uv + u.cross(uv))
 }
 
 /// Ray-sphere intersection. Returns `(near, far)` where `near > far` signals a miss.
@@ -134,11 +111,11 @@ pub fn ray_shell_intersect(
 /// Compute the sun's world-space position from view uniforms.
 pub fn get_sun_position(
     planet_center: Vec3,
-    planet_rotation: Vec4,
+    planet_rotation: Quat,
     ro_relative: Vec3,
     latitude: f32,
 ) -> Vec3 {
-    let north_axis = quat_rotate(planet_rotation, vec3(0.0, 0.0, 1.0)).normalize();
+    let north_axis = planet_rotation.mul_vec3(Vec3::Z).normalize();
     let up_vector = ro_relative.normalize();
     let sun_axis = if north_axis.dot(up_vector) > 0.0 {
         north_axis

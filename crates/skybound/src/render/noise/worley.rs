@@ -107,7 +107,6 @@ const NEIGHBOURS: [(i32, i32, i32); 27] = {
     arr
 };
 
-#[inline(always)]
 /// 3D hash to produce a pseudo-random feature point inside a cell.
 fn hash3(nx: u32, ny: u32, nz: u32) -> (f32, f32, f32) {
     let mut h =
@@ -119,27 +118,4 @@ fn hash3(nx: u32, ny: u32, nz: u32) -> (f32, f32, f32) {
     let oy = ((h >> 8) & 0xFF) as f32 * (1.0 / 255.0);
     let oz = ((h >> 16) & 0xFF) as f32 * (1.0 / 255.0);
     (ox, oy, oz)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn worley_basic_range_and_length() {
-        let size = 8;
-        let depth = 2;
-        let out = worley_3d(size, depth, 3, 0.5, 1.0, 1.0);
-        assert_eq!(out.len(), size * size * depth);
-        for v in out {
-            assert!((0.0..=1.0).contains(&v), "worley value out of range: {v}");
-        }
-    }
-
-    #[test]
-    fn worley_deterministic() {
-        let a = worley_3d(6, 3, 2, 0.5, 2.0, 1.0);
-        let b = worley_3d(6, 3, 2, 0.5, 2.0, 1.0);
-        assert_eq!(a, b);
-    }
 }

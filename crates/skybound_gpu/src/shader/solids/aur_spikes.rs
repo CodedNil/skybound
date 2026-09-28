@@ -1,11 +1,11 @@
 use crate::{
-    solids::{ShadeResult, estimate_normal, trace_shadow, world_to_curved},
-    utils::{Textures, get_sun_position},
+    ViewUniform,
+    shader::{
+        solids::{ShadeResult, estimate_normal, trace_shadow, world_to_curved},
+        utils::{Textures, get_sun_position},
+    },
 };
-use skybound_shared::ViewUniform;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 const MAX_STEPS: i32 = 256;
 const EPSILON: f32 = 0.05;
@@ -70,6 +70,7 @@ pub fn raymarch_aur_spikes(
                 };
                 return ShadeResult {
                     color_depth: (SPIKE_COLOR * (dot_nl * shadow + 0.05)).extend(t),
+                    normal,
                 };
             }
             break;
@@ -79,5 +80,6 @@ pub fn raymarch_aur_spikes(
 
     ShadeResult {
         color_depth: vec4(0.0, 0.0, 0.0, t_max),
+        normal: Vec3::ZERO,
     }
 }

@@ -1,8 +1,7 @@
-use crate::utils::{Smoothstep, Textures, hash12, hash13, mod1};
+use crate::shader::utils::{Textures, hash12, hash13};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Mat2, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use spirv_std::num_traits::{Euclid, Float};
 
 const COLOR_A: Vec3 = vec3(0.6, 0.3, 0.8);
 const COLOR_B: Vec3 = vec3(0.4, 0.1, 0.6);
@@ -90,7 +89,7 @@ fn flash_emission(pos: Vec2, time: f32) -> Vec3 {
         let period = 1.0 / FLASH_FREQUENCY;
         let h_cell = hash12(seed);
         let start_time = h_cell.x * period;
-        let tmod = mod1(time - start_time, period);
+        let tmod = (time - start_time).rem_euclid(&period);
         let duration_jitter = FLASH_DURATION_MIN.lerp(FLASH_DURATION_MAX, h_cell.y);
 
         if tmod > duration_jitter {

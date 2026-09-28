@@ -1,7 +1,5 @@
-use crate::utils::{MAGNETOSPHERE_HEIGHT, Smoothstep, quat_rotate};
-use skybound_shared::ViewUniform;
-use spirv_std::glam::{Vec2, Vec3, vec2, vec3};
-#[cfg(target_arch = "spirv")]
+use crate::{ViewUniform, shader::utils::MAGNETOSPHERE_HEIGHT};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 use spirv_std::num_traits::Float;
 
 pub const POLE_WIDTH: f32 = 10000.0;
@@ -31,7 +29,7 @@ pub fn sample_poles(pos: Vec3) -> PolesSample {
 }
 
 pub fn poles_raymarch_entry(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -> Vec2 {
-    let axis = quat_rotate(view.planet_rotation, vec3(0.0, 0.0, 1.0)).normalize();
+    let axis = view.planet_rotation.mul_vec3(Vec3::Z).normalize();
     let oc = ro - view.planet_center();
     let ad = axis.dot(rd);
     let ao = axis.dot(oc);

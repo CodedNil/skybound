@@ -1,7 +1,5 @@
-use crate::utils::{Smoothstep, Textures};
-use skybound_shared::ViewUniform;
+use crate::{ViewUniform, shader::utils::Textures};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
-#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 const BASE_SCALE: f32 = 0.005;

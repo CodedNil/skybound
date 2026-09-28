@@ -1,7 +1,7 @@
 pub mod aur_spikes;
 pub mod ships;
 
-use skybound_shared::PLANET_RADIUS;
+use crate::PLANET_RADIUS;
 use spirv_std::glam::{Vec3, Vec4, vec3};
 
 pub const NORMAL_EPS: f32 = 0.1;
@@ -9,6 +9,7 @@ pub const NORMAL_EPS: f32 = 0.1;
 /// Surface shading result
 pub struct ShadeResult {
     pub color_depth: Vec4,
+    pub normal: Vec3,
 }
 
 pub fn world_to_curved(p_raw: Vec3, planet_center: Vec3, camera_offset_z: f32) -> Vec3 {

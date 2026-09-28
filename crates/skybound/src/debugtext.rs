@@ -59,13 +59,11 @@ fn update(
         camera_query
             .single()
             .map_or((0.0, 0.0, 0.0), |camera_transform| {
+                let (_, latitude, longitude) =
+                    world_coords.planet_frame(camera_transform.translation);
                 (
-                    world_coords
-                        .latitude(camera_transform.translation)
-                        .to_degrees(),
-                    world_coords
-                        .longitude(camera_transform.translation)
-                        .to_degrees(),
+                    latitude.to_degrees(),
+                    longitude.to_degrees(),
                     camera_transform.translation.z + world_coords.camera_offset.z,
                 )
             });

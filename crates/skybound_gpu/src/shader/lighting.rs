@@ -1,5 +1,4 @@
 use core::f32::consts::PI;
-#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {

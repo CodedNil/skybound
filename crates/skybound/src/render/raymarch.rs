@@ -1,33 +1,33 @@
-use crate::{
-    render::noise::NoiseTextures, ships::render_pass::ShipRenderTargets, world::WorldData,
-};
+use crate::{render::noise::NoiseTextures, ships::player::ExtractedShipData, world::WorldData};
 use bevy::{
     camera::MainPassResolutionOverride,
+    core_pipeline::FullscreenShader,
     core_pipeline::prepass::ViewPrepassTextures,
     diagnostic::FrameCount,
+    ecs::system::SystemParam,
     prelude::*,
     render::{
         Extract,
         camera::TemporalJitter,
-        extract_resource::ExtractResource,
         render_asset::RenderAssets,
         render_resource::{
             AddressMode, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
-            BindGroupLayoutEntries, BufferUsages, CachedRenderPipelineId, ColorTargetState,
-            ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, DynamicUniformBuffer,
-            FilterMode, FragmentState, LoadOp, MultisampleState, Operations, PipelineCache,
-            PrimitiveState, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
-            SamplerDescriptor, ShaderStages, StencilState, StoreOp, TextureFormat,
-            TextureSampleType,
-            binding_types::{sampler, texture_2d, texture_3d, uniform_buffer},
+            BindGroupLayoutEntries, BindingResource, Buffer, BufferBinding, BufferDescriptor,
+            BufferUsages, CachedRenderPipelineId, ColorTargetState, ColorWrites, CompareFunction,
+            DepthBiasState, DepthStencilState, FilterMode, FragmentState, LoadOp, MultisampleState,
+            Operations, PipelineCache, PrimitiveState, RawBufferVec, RenderPassColorAttachment,
+            RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipelineDescriptor,
+            Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, StencilState, StoreOp,
+            TextureFormat, TextureSampleType,
+            binding_types::{sampler, texture_2d, texture_3d, uniform_buffer_sized},
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
         view::{ExtractedView, ViewTarget},
     },
 };
-pub use skybound_shared::ViewUniform;
+use skybound_gpu::{ShipUniform, ViewUniform};
+use std::{mem::size_of, num::NonZeroU64};
 
 #[derive(Resource, Default)]
 pub struct PreviousViewData {
@@ -36,20 +36,100 @@ pub struct PreviousViewData {
 
 #[derive(Resource)]
 pub struct ViewUniforms {
-    pub uniforms: DynamicUniformBuffer<ViewUniform>,
+    buffer: Option<Buffer>,
+    buffer_size: u64,
+    stride: usize,
+    values: Vec<ViewUniform>,
+    staging: Vec<u8>,
+}
+
+impl ViewUniforms {
+    fn clear(&mut self) {
+        self.values.clear();
+    }
+
+    fn push(&mut self, value: ViewUniform) -> u32 {
+        let offset = u32::try_from(self.values.len() * self.stride)
+            .expect("view uniform buffer exceeds dynamic-offset range");
+        self.values.push(value);
+        offset
+    }
+
+    fn write_buffer(&mut self, device: &RenderDevice, queue: &RenderQueue) {
+        if self.values.is_empty() {
+            return;
+        }
+
+        let size = self.stride * self.values.len();
+        self.staging.resize(size, 0);
+        self.staging.fill(0);
+        for (index, value) in self.values.iter().enumerate() {
+            let offset = index * self.stride;
+            self.staging[offset..offset + size_of::<ViewUniform>()]
+                .copy_from_slice(bytemuck::bytes_of(value));
+        }
+
+        if size as u64 > self.buffer_size {
+            self.buffer = Some(device.create_buffer(&BufferDescriptor {
+                label: Some("view_uniforms_buffer"),
+                size: size as u64,
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.buffer_size = size as u64;
+        }
+
+        queue.write_buffer(
+            self.buffer
+                .as_ref()
+                .expect("view uniform buffer was created"),
+            0,
+            &self.staging,
+        );
+    }
+
+    pub(crate) fn binding(&self) -> Option<BindingResource<'_>> {
+        Some(BindingResource::Buffer(BufferBinding {
+            buffer: self.buffer.as_ref()?,
+            offset: 0,
+            size: NonZeroU64::new(size_of::<ViewUniform>() as u64),
+        }))
+    }
+}
+
+#[derive(Resource)]
+pub struct ShipUniforms(RawBufferVec<ShipUniform>);
+
+impl Default for ShipUniforms {
+    fn default() -> Self {
+        Self(RawBufferVec::new(BufferUsages::UNIFORM))
+    }
+}
+
+pub fn prepare_ship_uniforms(
+    render_device: Res<RenderDevice>,
+    render_queue: Res<RenderQueue>,
+    mut ship_uniforms: ResMut<ShipUniforms>,
+    data: Res<ExtractedShipData>,
+) {
+    ship_uniforms.0.clear();
+    ship_uniforms.0.push(data.uniform);
+    ship_uniforms.0.write_buffer(&render_device, &render_queue);
 }
 
 impl FromWorld for ViewUniforms {
     fn from_world(world: &mut World) -> Self {
-        let mut uniforms = DynamicUniformBuffer::default();
-        uniforms.set_label(Some("view_uniforms_buffer"));
-
         let render_device = world.resource::<RenderDevice>();
-        if render_device.limits().max_storage_buffers_per_shader_stage > 0 {
-            uniforms.add_usages(BufferUsages::STORAGE);
-        }
+        let offset_alignment = render_device.limits().min_uniform_buffer_offset_alignment as usize;
+        let stride = size_of::<ViewUniform>().next_multiple_of(offset_alignment.max(1));
 
-        Self { uniforms }
+        Self {
+            buffer: None,
+            buffer_size: 0,
+            stride,
+            values: Vec::new(),
+            staging: Vec::new(),
+        }
     }
 }
 
@@ -58,9 +138,9 @@ pub struct CloudsViewUniformOffset {
     pub offset: u32,
 }
 
-#[derive(Resource, Default, ExtractResource, Clone)]
+#[derive(Resource, Default, Clone)]
 pub struct ExtractedViewData {
-    planet_rotation: Vec4,
+    planet_rotation: Quat,
     latitude: f32,
     longitude: f32,
     camera_offset: Vec3,
@@ -74,10 +154,12 @@ pub fn extract_clouds_view_uniform(
 ) {
     commands.insert_resource(**time);
     if let Ok(camera_transform) = camera_query.single() {
+        let (planet_rotation, latitude, longitude) =
+            world_coords.planet_frame(camera_transform.translation);
         commands.insert_resource(ExtractedViewData {
-            planet_rotation: Vec4::from(world_coords.planet_rotation(camera_transform.translation)),
-            latitude: world_coords.latitude(camera_transform.translation),
-            longitude: world_coords.longitude(camera_transform.translation),
+            planet_rotation,
+            latitude,
+            longitude,
             camera_offset: world_coords.camera_offset,
         });
     }
@@ -90,18 +172,33 @@ type ViewQuery = (
     Option<&'static MainPassResolutionOverride>,
 );
 
-pub fn prepare_clouds_view_uniforms(
-    mut commands: Commands,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    mut view_uniforms: ResMut<ViewUniforms>,
-    views: Query<ViewQuery, With<Camera3d>>,
-    time: Res<Time>,
-    frame_count: Res<FrameCount>,
-    data: Res<ExtractedViewData>,
-    mut prev_view_data: ResMut<PreviousViewData>,
+#[derive(SystemParam)]
+pub(super) struct PrepareCloudsViewUniforms<'w, 's> {
+    commands: Commands<'w, 's>,
+    render_device: Res<'w, RenderDevice>,
+    render_queue: Res<'w, RenderQueue>,
+    view_uniforms: ResMut<'w, ViewUniforms>,
+    views: Query<'w, 's, ViewQuery, With<Camera3d>>,
+    time: Res<'w, Time>,
+    frame_count: Res<'w, FrameCount>,
+    data: Res<'w, ExtractedViewData>,
+    prev_view_data: ResMut<'w, PreviousViewData>,
+}
+
+pub(super) fn prepare_clouds_view_uniforms(
+    PrepareCloudsViewUniforms {
+        mut commands,
+        render_device,
+        render_queue,
+        mut view_uniforms,
+        views,
+        time,
+        frame_count,
+        data,
+        mut prev_view_data,
+    }: PrepareCloudsViewUniforms,
 ) {
-    view_uniforms.uniforms.clear();
+    view_uniforms.clear();
 
     for (entity, extracted_view, temporal_jitter, resolution_override) in &views {
         let viewport = extracted_view.viewport.as_vec4();
@@ -122,7 +219,7 @@ pub fn prepare_clouds_view_uniforms(
         // Unjittered inverse-projection used for motion vector ray reconstruction only
         let world_from_clip_unjittered = world_from_view * extracted_view.clip_from_view.inverse();
 
-        let offset = view_uniforms.uniforms.push(&ViewUniform {
+        let offset = view_uniforms.push(ViewUniform {
             clip_from_world,
             world_from_clip,
             world_from_view,
@@ -151,9 +248,7 @@ pub fn prepare_clouds_view_uniforms(
             .unwrap_or_else(|| extracted_view.clip_from_view * view_from_world);
     }
 
-    view_uniforms
-        .uniforms
-        .write_buffer(&render_device, &render_queue);
+    view_uniforms.write_buffer(&render_device, &render_queue);
 }
 
 #[derive(Resource)]
@@ -182,7 +277,7 @@ pub fn raymarch_pass(
         let gpu_images = world.resource::<RenderAssets<GpuImage>>();
         let noise_texture_handle = world.resource::<NoiseTextures>();
 
-        let ship_targets = world.resource::<ShipRenderTargets>();
+        let ship_uniforms = world.resource::<ShipUniforms>();
 
         // Ensure required resources are ready
         let (
@@ -195,18 +290,18 @@ pub fn raymarch_pass(
             Some(detail_noise),
             Some(weather_noise),
             Some(extra_noise),
-            Some(ship_surface_view),
+            Some(ship_uniform_binding),
         ) = (
             pipeline_cache.get_render_pipeline(volumetric_clouds_pipeline.pipeline_id),
-            world.resource::<ViewUniforms>().uniforms.binding(),
-            prepass_textures.depth_view(),
+            world.resource::<ViewUniforms>().binding(),
+            prepass_textures.depth_only_view(),
             prepass_textures.motion_vectors_view(),
             prepass_textures.normal_view(),
             gpu_images.get(&noise_texture_handle.base),
             gpu_images.get(&noise_texture_handle.detail),
             gpu_images.get(&noise_texture_handle.weather),
             gpu_images.get(&noise_texture_handle.extra),
-            ship_targets.surface_view.as_ref(),
+            ship_uniforms.0.binding(),
         )
         else {
             continue;
@@ -224,7 +319,7 @@ pub fn raymarch_pass(
                 &detail_noise.texture_view,
                 &weather_noise.texture_view,
                 &extra_noise.texture_view,
-                ship_surface_view,
+                ship_uniform_binding,
             )),
         );
 
@@ -281,10 +376,9 @@ pub fn raymarch_pass(
 
 impl FromWorld for RaymarchPipeline {
     fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        let shader = asset_server.load("shaders/raymarch.spv");
+        let shader = world.resource::<super::SkyboundGpuShader>().0.clone();
         let render_device = world.resource::<RenderDevice>();
-        let fullscreen_shader = world.resource::<bevy::core_pipeline::FullscreenShader>();
+        let fullscreen_shader = world.resource::<FullscreenShader>();
 
         let linear_sampler = render_device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
@@ -298,13 +392,13 @@ impl FromWorld for RaymarchPipeline {
         let layout_entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                uniform_buffer::<ViewUniform>(true),    // 0: View uniforms
+                uniform_buffer_sized(true, NonZeroU64::new(size_of::<ViewUniform>() as u64)), // 0: View uniforms
                 sampler(SamplerBindingType::Filtering), // 1: Linear sampler
                 texture_3d(TextureSampleType::Float { filterable: true }), // 2: Base noise
                 texture_3d(TextureSampleType::Float { filterable: true }), // 3: Detail noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // 4: Weather noise
                 texture_2d(TextureSampleType::Float { filterable: true }), // 5: Extra noise
-                texture_2d(TextureSampleType::Float { filterable: true }), // 6: Ship surface
+                uniform_buffer_sized(false, NonZeroU64::new(size_of::<ShipUniform>() as u64)), // 6: Ship uniform
             ),
         );
         let layout_descriptor =
@@ -330,6 +424,7 @@ impl FromWorld for RaymarchPipeline {
             fragment: Some(FragmentState {
                 shader,
                 entry_point: Some("main".into()),
+                constants: Vec::new(),
                 targets: vec![
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,

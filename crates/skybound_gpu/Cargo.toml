@@ -1,0 +1,14 @@
+[package]
+name = "skybound_gpu"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["dylib", "lib"]
+
+[dependencies]
+bytemuck.workspace = true
+spirv-std = { workspace = true, features = ["bytemuck"] }
+
+[lints]
+workspace = true
