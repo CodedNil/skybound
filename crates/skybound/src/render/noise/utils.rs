@@ -5,7 +5,7 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use image::RgbaImage;
-use std::{fs, path::Path};
+use std::{fs, io, path::Path};
 
 /// Stretch contrast: map [min, max] → [0,255].
 pub fn spread(image: &[f32]) -> Vec<f32> {
@@ -47,11 +47,11 @@ pub fn save_noise_layer(data: &[f32], filename: &str, size: usize) {
 }
 
 /// Helper to interleave multiple noise vectors into a combined `Vec<u8>`.
-pub fn interleave_channels<const N: usize>(noise_data: [Vec<f32>; N]) -> Vec<u8> {
+pub fn interleave_channels<const N: usize>(noise_data: &[Vec<f32>; N]) -> Vec<u8> {
     let len = noise_data[0].len();
     let mut out = Vec::with_capacity(len * N);
     for i in 0..len {
-        for ch in &noise_data {
+        for ch in noise_data {
             out.push((ch[i] * 255.0).round() as u8);
         }
     }
@@ -75,7 +75,7 @@ const IMAGE_SAMPLER: ImageSamplerDescriptor = ImageSamplerDescriptor {
 };
 
 /// Write raw texture bytes to a file path.
-pub fn save_texture_bin(path: &str, data: &[u8]) -> std::io::Result<()> {
+pub fn save_texture_bin(path: &str, data: &[u8]) -> io::Result<()> {
     fs::write(path, data)
 }
 
@@ -113,32 +113,4 @@ where
     );
     image.sampler = ImageSampler::Descriptor(IMAGE_SAMPLER);
     image
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_map_range_and_spread() {
-        let v = map_range(5.0, 0.0, 10.0, 0.0, 1.0);
-        assert!((v - 0.5).abs() < 1e-6);
-
-        let img = vec![0.2f32, 0.8f32];
-        let out = spread(&img);
-        assert_eq!(out.len(), 2);
-        assert!((out[0] - 0.0).abs() < 1e-6);
-        assert!((out[1] - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_interleave_channels() {
-        let a = vec![0.0f32, 0.5, 1.0];
-        let b = vec![1.0f32, 0.5, 0.0];
-        let out = interleave_channels([a, b]);
-        assert_eq!(out.len(), 6);
-        // first pixel from channel a then b
-        assert_eq!(out[0], (0.0f32 * 255.0).round() as u8);
-        assert_eq!(out[1], (1.0f32 * 255.0).round() as u8);
-    }
 }

@@ -1,11 +1,12 @@
 use bevy::{
-    anti_alias::dlss::{Dlss, DlssPerfQualityMode, DlssSuperResolutionFeature},
     camera::Hdr,
-    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass, NormalPrepass},
+    core_pipeline::prepass::{
+        DepthPrepass, MotionVectorPrepass, NoBackgroundMotionVectors, NormalPrepass,
+    },
     post_process::bloom::Bloom,
     prelude::*,
 };
-use skybound_shared::PLANET_RADIUS;
+use skybound_gpu::PLANET_RADIUS;
 use std::f32::consts::FRAC_PI_4;
 
 use crate::ships::player::PlayerShip;
@@ -32,20 +33,17 @@ impl Default for WorldData {
     }
 }
 impl WorldData {
-    /// Calculates the latitude at a given position.
-    pub fn latitude(&self, pos: Vec3) -> f32 {
-        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Z);
-        v_local.z.clamp(-1.0, 1.0).asin()
-    }
-
-    /// Calculates the longitude at a given position.
-    pub fn longitude(&self, pos: Vec3) -> f32 {
-        let v_local = self.planet_rotation(pos).conjugate().mul_vec3(Vec3::Z);
-        if v_local.x.abs() < f32::EPSILON && v_local.y.abs() < f32::EPSILON {
+    /// Return the planet orientation and geographic coordinates at a local position.
+    pub fn planet_frame(&self, pos: Vec3) -> (Quat, f32, f32) {
+        let rotation = self.planet_rotation(pos);
+        let north = rotation.conjugate().mul_vec3(Vec3::Z);
+        let latitude = north.z.clamp(-1.0, 1.0).asin();
+        let longitude = if north.x.abs() < f32::EPSILON && north.y.abs() < f32::EPSILON {
             0.0
         } else {
-            v_local.x.atan2(-v_local.y)
-        }
+            north.x.atan2(-north.y)
+        };
+        (rotation, latitude, longitude)
     }
 
     /// Compute a rotation quaternion from an X/Y translation on the planet surface.
@@ -88,12 +86,8 @@ fn setup(mut commands: Commands) {
         NormalPrepass,
         DepthPrepass,
         MotionVectorPrepass,
+        NoBackgroundMotionVectors,
         Msaa::Off,
-        Dlss::<DlssSuperResolutionFeature> {
-            perf_quality_mode: DlssPerfQualityMode::UltraPerformance,
-            reset: false,
-            _phantom_data: std::marker::PhantomData,
-        },
         Hdr,
         Bloom::NATURAL,
         // Initial position behind the ship's spawn point; the follow system overwrites this.

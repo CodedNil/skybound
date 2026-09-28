@@ -1,16 +1,16 @@
 use spirv_builder::{SpirvBuilder, SpirvMetadata};
-use std::fs;
+use std::{env, fs, path::PathBuf};
 
 fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
 
-    let shader_crate = format!("{manifest_dir}/../shaders/raymarch");
-    let shared_crate = format!("{manifest_dir}/../skybound_shared");
-    let dest_path = format!("{manifest_dir}/../../assets/shaders/raymarch.spv");
+    let shader_crate = format!("{manifest_dir}/../skybound_gpu");
+
+    let out_path = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo should set OUT_DIR"))
+        .join("skybound_gpu.spv");
 
     // Tell Cargo when to rebuild
     println!("cargo:rerun-if-changed={shader_crate}");
-    println!("cargo:rerun-if-changed={shared_crate}");
 
     let result = SpirvBuilder::new(shader_crate, "spirv-unknown-vulkan1.1")
         .spirv_metadata(SpirvMetadata::None)
@@ -21,10 +21,6 @@ fn main() {
         .build()
         .expect("Failed to build rust-gpu shader");
 
-    // Copy the built shader
     let built_shader = result.module.unwrap_single();
-    if let Some(parent) = std::path::Path::new(&dest_path).parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    fs::copy(built_shader, dest_path).expect("Failed to copy shader to assets");
+    fs::copy(built_shader, out_path).expect("Failed to copy shader to Cargo's build output");
 }

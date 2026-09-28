@@ -2,12 +2,16 @@ mod aur_ocean;
 mod clouds;
 mod poles;
 
-use crate::lighting::henyey_greenstein;
-use crate::utils::{AtmosphereData, Textures, intersect_sphere, ray_shell_intersect};
+use crate::{
+    PLANET_RADIUS, ViewUniform,
+    shader::{
+        lighting::henyey_greenstein,
+        utils::{AtmosphereData, Textures, intersect_sphere, ray_shell_intersect},
+    },
+};
 use aur_ocean::{OCEAN_TOP_HEIGHT, sample_ocean};
 use clouds::{CLOUD_BOTTOM_HEIGHT, CLOUD_TOP_HEIGHT, sample_clouds};
 use poles::{poles_raymarch_entry, sample_poles};
-use skybound_shared::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
 
@@ -271,11 +275,6 @@ pub fn raymarch_volumetrics(
     t_end = t_end.min(t_max);
 
     if t_start >= t_end {
-        return RaymarchResult {
-            color: vec4(0.0, 0.0, 0.0, 1.0),
-            depth: t_max,
-        };
-    } else {
         return RaymarchResult {
             color: vec4(0.0, 0.0, 0.0, 1.0),
             depth: t_max,

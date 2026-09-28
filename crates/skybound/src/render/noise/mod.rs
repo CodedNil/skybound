@@ -2,15 +2,18 @@ mod simplex;
 mod utils;
 mod worley;
 
+use std::time::Instant;
+
 use bevy::{
     prelude::*,
-    render::{extract_resource::ExtractResource, render_resource::TextureFormat},
+    render::{RenderApp, extract_resource::ExtractResource, render_resource::TextureFormat},
 };
 use simplex::simplex_3d;
 use utils::{interleave_channels, load_or_generate_texture, map_range, save_noise_layer, spread};
 use worley::worley_3d;
 
 #[derive(Resource, ExtractResource, Clone)]
+#[extract_app(RenderApp)]
 pub struct NoiseTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
@@ -20,7 +23,7 @@ pub struct NoiseTextures {
 
 /// Generates or loads procedural noise textures and inserts them as resources.
 pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let start = std::time::Instant::now();
+    let start = Instant::now();
 
     let size = 384;
     let depth = 96;
@@ -35,7 +38,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             );
 
             save_noise_layer(&perlinworley, "perlinworley.png", size);
-            interleave_channels([perlinworley])
+            interleave_channels(&[perlinworley])
         });
 
     let size = 192;
@@ -53,7 +56,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             save_noise_layer(&detail1, "detail1.png", size);
             save_noise_layer(&fog1, "fog1.png", size);
             save_noise_layer(&fog2, "fog2.png", size);
-            interleave_channels([detail1, fog1, fog2, vec![0.0; size * size * size]])
+            interleave_channels(&[detail1, fog1, fog2, vec![0.0; size * size * size]])
         },
     );
 
@@ -89,7 +92,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             save_noise_layer(&weather2, "weather2.png", size);
             save_noise_layer(&weather3, "weather3.png", size);
             save_noise_layer(&height, "height.png", size);
-            interleave_channels([weather1, weather2, weather3, height])
+            interleave_channels(&[weather1, weather2, weather3, height])
         },
     );
 
@@ -104,7 +107,7 @@ pub fn setup_noise_textures(mut commands: Commands, mut images: ResMut<Assets<Im
             let spikes_voronoi = spread(&worley_3d(size, depth, 4, 0.6, 12.0, 0.5));
 
             save_noise_layer(&spikes_voronoi, "spikes_voronoi.png", size);
-            interleave_channels([
+            interleave_channels(&[
                 spikes_voronoi,
                 vec![0.0; size * size],
                 vec![0.0; size * size],

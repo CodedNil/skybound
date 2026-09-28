@@ -1,15 +1,9 @@
-#![no_std]
-
-use glam::{Mat4, Vec3, Vec4, Vec4Swizzles, vec3};
+use spirv_std::glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles, vec3};
 
 pub const PLANET_RADIUS: f32 = 1_000_000.0;
 
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
-#[cfg_attr(
-    feature = "cpu",
-    derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
-)]
+#[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewUniform {
     pub clip_from_world: Mat4,
     pub world_from_clip: Mat4,
@@ -19,10 +13,10 @@ pub struct ViewUniform {
     pub view_from_clip: Mat4,
     pub prev_clip_from_world: Mat4,
     pub world_from_clip_unjittered: Mat4,
-    pub world_position: Vec4, // xyz = ray origin, w = altitude camera-snap accumulator
-    pub camera_position: Vec4, // latitude, longitude, xy camera-snap accumulators
-    pub planet_rotation: Vec4,
-    pub times: Vec4, // time, frame_count
+    pub world_position: Vec4,
+    pub camera_position: Vec4,
+    pub planet_rotation: Quat,
+    pub times: Vec4,
 }
 
 impl ViewUniform {
@@ -66,11 +60,7 @@ impl ViewUniform {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Default)]
-#[cfg_attr(
-    feature = "cpu",
-    derive(bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)
-)]
+#[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ShipUniform {
     pub position: Vec4,
     pub rotation: Vec4,

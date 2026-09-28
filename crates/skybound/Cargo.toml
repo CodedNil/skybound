@@ -4,14 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-skybound_shared = { path = "../skybound_shared", features = ["cpu"] }
-bevy = { git = "https://github.com/bevyengine/bevy", rev = "92ec2e259a1db70d6e52ae9df833febd672541f2", default-features = false, features = [
+skybound_gpu = { path = "../skybound_gpu" }
+bevy = { git = "https://github.com/bevyengine/bevy", rev = "74884ffda7831d2b4576ade270199d671bb2e8f9", default-features = false, features = [
     "wayland",
-
     "std",
     "async_executor",
-    "bevy_anti_alias",
-    "dlss",
     "bevy_asset",
     "bevy_color",
     "bevy_core_pipeline",
@@ -28,14 +25,14 @@ bevy = { git = "https://github.com/bevyengine/bevy", rev = "92ec2e259a1db70d6e52
     "tonemapping_luts",
     "zstd_rust",
 ] }
-bytemuck = "1.25.0"
+bytemuck.workspace = true
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-rand = "0.10.1"
+rand = "0.10.3"
 rayon = "1.12.0"
-clap = { version = "4.6.1", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 
 [build-dependencies]
-spirv-builder = { version = "0.10.0-alpha.1" }
+spirv-builder.workspace = true
 
 [lints]
 workspace = true

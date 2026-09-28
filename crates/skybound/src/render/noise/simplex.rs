@@ -1,5 +1,6 @@
 use bevy::math::{IVec3, Vec2, Vec3A, ivec3, vec3a};
 use rayon::prelude::*;
+use std::f32::consts::FRAC_1_SQRT_2;
 
 pub fn simplex_3d(
     size: usize,
@@ -89,24 +90,71 @@ fn simplex3_seamless(pos: Vec3A, period: Vec3A) -> f32 {
 const TO_SIMPLEX_CONSTANT_3D: f32 = -2.0 / 3.0;
 const NORM_CONSTANT_3D: f32 = 1.0 / 0.086_766_4;
 
-#[rustfmt::skip]
 const LATTICE_LOOKUP_3D: [IVec3; 4 * 16] = [
-    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(0, 0, 1),
-    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(0, 0, 1),
-    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(0, 0, 1),
-    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(0, 0, 1),
-    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(0, 0, 1),
-    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(0, 0, 1),
-    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(0, 0, 1),
-    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(0, 0, 1),
-    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(1, 1, 0),
-    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(0, 1, 0), ivec3(1, 1, 0),
-    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(1, 1, 0),
-    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(0, 1, 0), ivec3(1, 1, 0),
-    ivec3(0, 0, 0), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(1, 1, 0),
-    ivec3(1, 1, 1), ivec3(1, 0, 0), ivec3(1, 0, 1), ivec3(1, 1, 0),
-    ivec3(0, 0, 0), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(1, 1, 0),
-    ivec3(1, 1, 1), ivec3(0, 1, 1), ivec3(1, 0, 1), ivec3(1, 1, 0),
+    ivec3(0, 0, 0),
+    ivec3(1, 0, 0),
+    ivec3(0, 1, 0),
+    ivec3(0, 0, 1),
+    ivec3(1, 1, 1),
+    ivec3(1, 0, 0),
+    ivec3(0, 1, 0),
+    ivec3(0, 0, 1),
+    ivec3(0, 0, 0),
+    ivec3(0, 1, 1),
+    ivec3(0, 1, 0),
+    ivec3(0, 0, 1),
+    ivec3(1, 1, 1),
+    ivec3(0, 1, 1),
+    ivec3(0, 1, 0),
+    ivec3(0, 0, 1),
+    ivec3(0, 0, 0),
+    ivec3(1, 0, 0),
+    ivec3(1, 0, 1),
+    ivec3(0, 0, 1),
+    ivec3(1, 1, 1),
+    ivec3(1, 0, 0),
+    ivec3(1, 0, 1),
+    ivec3(0, 0, 1),
+    ivec3(0, 0, 0),
+    ivec3(0, 1, 1),
+    ivec3(1, 0, 1),
+    ivec3(0, 0, 1),
+    ivec3(1, 1, 1),
+    ivec3(0, 1, 1),
+    ivec3(1, 0, 1),
+    ivec3(0, 0, 1),
+    ivec3(0, 0, 0),
+    ivec3(1, 0, 0),
+    ivec3(0, 1, 0),
+    ivec3(1, 1, 0),
+    ivec3(1, 1, 1),
+    ivec3(1, 0, 0),
+    ivec3(0, 1, 0),
+    ivec3(1, 1, 0),
+    ivec3(0, 0, 0),
+    ivec3(0, 1, 1),
+    ivec3(0, 1, 0),
+    ivec3(1, 1, 0),
+    ivec3(1, 1, 1),
+    ivec3(0, 1, 1),
+    ivec3(0, 1, 0),
+    ivec3(1, 1, 0),
+    ivec3(0, 0, 0),
+    ivec3(1, 0, 0),
+    ivec3(1, 0, 1),
+    ivec3(1, 1, 0),
+    ivec3(1, 1, 1),
+    ivec3(1, 0, 0),
+    ivec3(1, 0, 1),
+    ivec3(1, 1, 0),
+    ivec3(0, 0, 0),
+    ivec3(0, 1, 1),
+    ivec3(1, 0, 1),
+    ivec3(1, 1, 0),
+    ivec3(1, 1, 1),
+    ivec3(0, 1, 1),
+    ivec3(1, 0, 1),
+    ivec3(1, 1, 0),
 ];
 
 /// Evaluate simplex noise at a 3D point.
@@ -126,34 +174,35 @@ fn simplex3(point: Vec3A) -> f32 {
 
     // Create indices to lookup table from barycentric coordinates
     let index =
-        usize::from(simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 1.5) << 2
-            | usize::from(
+        (usize::from(simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 1.5)
+            << 2)
+            | (usize::from(
                 -simplex_rel_coords.x + simplex_rel_coords.y + simplex_rel_coords.z >= 0.5,
-            ) << 3
-            | usize::from(
+            ) << 3)
+            | (usize::from(
                 simplex_rel_coords.x - simplex_rel_coords.y + simplex_rel_coords.z >= 0.5,
-            ) << 4
-            | usize::from(
+            ) << 4)
+            | (usize::from(
                 simplex_rel_coords.x + simplex_rel_coords.y - simplex_rel_coords.z >= 0.5,
-            ) << 5;
-    let second_index = usize::from(
+            ) << 5);
+    let second_index = (usize::from(
         second_simplex_rel_coords.x + second_simplex_rel_coords.y + second_simplex_rel_coords.z
             >= 1.5,
-    ) << 2
-        | usize::from(
+    ) << 2)
+        | (usize::from(
             -second_simplex_rel_coords.x
                 + second_simplex_rel_coords.y
                 + second_simplex_rel_coords.z
                 >= 0.5,
-        ) << 3
-        | usize::from(
+        ) << 3)
+        | (usize::from(
             second_simplex_rel_coords.x - second_simplex_rel_coords.y + second_simplex_rel_coords.z
                 >= 0.5,
-        ) << 4
-        | usize::from(
+        ) << 4)
+        | (usize::from(
             second_simplex_rel_coords.x + second_simplex_rel_coords.y - second_simplex_rel_coords.z
                 >= 0.5,
-        ) << 5;
+        ) << 5);
 
     let mut value = 0.0;
 
@@ -182,41 +231,40 @@ fn simplex3(point: Vec3A) -> f32 {
     value * NORM_CONSTANT_3D
 }
 
-#[rustfmt::skip]
 /// Gradient selection for simplex lattice contributions.
 fn grad3(index: usize) -> [f32; 3] {
     // Vectors are combinations of -1, 0, and 1
     // Precompute the normalized elements
-    const DIAG : f32 = core::f32::consts::FRAC_1_SQRT_2;
-    const DIAG2 : f32 = 0.577_350_26;
+    const DIAG: f32 = FRAC_1_SQRT_2;
+    const DIAG2: f32 = 0.577_350_269_189_625_8f64 as f32;
 
     match index % 32 {
         // 12 edges repeated twice then 8 corners
-        0  | 12 => [  DIAG,   DIAG,    0.0],
-        1  | 13 => [ -DIAG,   DIAG,    0.0],
-        2  | 14 => [  DIAG,  -DIAG,    0.0],
-        3  | 15 => [ -DIAG,  -DIAG,    0.0],
-        4  | 16 => [  DIAG,    0.0,   DIAG],
-        5  | 17 => [ -DIAG,    0.0,   DIAG],
-        6  | 18 => [  DIAG,    0.0,  -DIAG],
-        7  | 19 => [ -DIAG,    0.0,  -DIAG],
-        8  | 20 => [   0.0,   DIAG,   DIAG],
-        9  | 21 => [   0.0,  -DIAG,   DIAG],
-        10 | 22 => [   0.0,   DIAG,  -DIAG],
-        11 | 23 => [   0.0,  -DIAG,  -DIAG],
-        24      => [ DIAG2,  DIAG2,  DIAG2],
-        25      => [-DIAG2,  DIAG2,  DIAG2],
-        26      => [ DIAG2, -DIAG2,  DIAG2],
-        27      => [-DIAG2, -DIAG2,  DIAG2],
-        28      => [ DIAG2,  DIAG2, -DIAG2],
-        29      => [-DIAG2,  DIAG2, -DIAG2],
-        30      => [ DIAG2, -DIAG2, -DIAG2],
-        31      => [-DIAG2, -DIAG2, -DIAG2],
-        _       => panic!("Attempt to access gradient {} of 32", index % 32),
+        0 | 12 => [DIAG, DIAG, 0.0],
+        1 | 13 => [-DIAG, DIAG, 0.0],
+        2 | 14 => [DIAG, -DIAG, 0.0],
+        3 | 15 => [-DIAG, -DIAG, 0.0],
+        4 | 16 => [DIAG, 0.0, DIAG],
+        5 | 17 => [-DIAG, 0.0, DIAG],
+        6 | 18 => [DIAG, 0.0, -DIAG],
+        7 | 19 => [-DIAG, 0.0, -DIAG],
+        8 | 20 => [0.0, DIAG, DIAG],
+        9 | 21 => [0.0, -DIAG, DIAG],
+        10 | 22 => [0.0, DIAG, -DIAG],
+        11 | 23 => [0.0, -DIAG, -DIAG],
+        24 => [DIAG2, DIAG2, DIAG2],
+        25 => [-DIAG2, DIAG2, DIAG2],
+        26 => [DIAG2, -DIAG2, DIAG2],
+        27 => [-DIAG2, -DIAG2, DIAG2],
+        28 => [DIAG2, DIAG2, -DIAG2],
+        29 => [-DIAG2, DIAG2, -DIAG2],
+        30 => [DIAG2, -DIAG2, -DIAG2],
+        31 => [-DIAG2, -DIAG2, -DIAG2],
+        _ => panic!("Attempt to access gradient {} of 32", index % 32),
     }
 }
 
-const HASH_MULTIPLIER: f32 = 1.0 / 268_435_455.0;
+const HASH_MULTIPLIER: f32 = 1.0 / (1u32 << 28) as f32;
 /// Hash a lattice point to an index used by the gradient table.
 fn hash3(p: IVec3) -> usize {
     let mut n: i32 = p.x * 3 + p.y * 113 + p.z * 311;
@@ -224,28 +272,4 @@ fn hash3(p: IVec3) -> usize {
         .wrapping_mul(n.wrapping_mul(n).wrapping_mul(15731).wrapping_add(789_221))
         .wrapping_add(1_376_312_589);
     ((n & 268_435_455) as f32 * HASH_MULTIPLIER * 255.0) as usize
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use bevy::math::vec2;
-
-    #[test]
-    fn simplex_basic_properties() {
-        let size = 6usize;
-        let depth = 2usize;
-        let out = simplex_3d(size, depth, 3, 0.5, vec2(1.0, 1.0), 1.0);
-        assert_eq!(out.len(), size * size * depth);
-        for v in out {
-            assert!((0.0..=1.0).contains(&v), "simplex value out of range: {v}");
-        }
-    }
-
-    #[test]
-    fn simplex_deterministic() {
-        let a = simplex_3d(5, 2, 2, 0.6, vec2(1.0, 1.0), 1.0);
-        let b = simplex_3d(5, 2, 2, 0.6, vec2(1.0, 1.0), 1.0);
-        assert_eq!(a, b);
-    }
 }

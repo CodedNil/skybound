@@ -1,33 +1,86 @@
 [workspace]
-resolver = "2"
-members = [
-    "crates/skybound",
-    "crates/skybound_shared",
-    "crates/shaders/raymarch",
-]
+resolver = "3"
+members = ["crates/skybound", "crates/skybound_gpu"]
+
+[workspace.dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+
+spirv-std = { git = "https://github.com/Rust-GPU/rust-gpu", rev = "10c45727cf9645d89c3a6a1659f5eee6ec8e1a86" }
+spirv-builder = { git = "https://github.com/Rust-GPU/rust-gpu", rev = "10c45727cf9645d89c3a6a1659f5eee6ec8e1a86" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
-unexpected_cfgs = { level = "allow", check-cfg = [
+unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(target_arch, values("spirv"))',
 ] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
-must_use_candidate = "allow"
-suboptimal_flops = "allow"
+
 needless_pass_by_value = "allow"
-similar_names = "allow"
+large_types_passed_by_value = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-many_single_char_names = "allow"
-inline_always = "allow"
-too-many-lines = "allow"
-too-many-arguments = "allow"
-needless_range_loop = "allow"
+suboptimal_flops = "allow"
+
+absolute_paths = "warn"
+allow_attributes_without_reason = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+error_impl_error = "warn"
+exit = "warn"
+filetype_is_file = "warn"
+float_cmp_const = "warn"
+fn_to_numeric_cast_any = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+iter_over_hash_type = "warn"
+lossy_float_literal = "warn"
+map_err_ignore = "warn"
+mem_forget = "warn"
+missing_assert_message = "warn"
+mixed_read_write_in_expression = "warn"
+multiple_unsafe_ops_per_block = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+needless_raw_strings = "warn"
+non_zero_suggestions = "warn"
+panic_in_result_fn = "warn"
+pathbuf_init_then_push = "warn"
+precedence_bits = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+redundant_test_prefix = "warn"
+redundant_type_annotations = "warn"
+renamed_function_params = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+semicolon_inside_block = "warn"
+separated_literal_suffix = "warn"
+str_to_string = "warn"
+string_add = "warn"
+string_lit_chars_any = "warn"
+suspicious_xor_used_as_pow = "warn"
+tests_outside_test_module = "warn"
+todo = "warn"
+try_err = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unnecessary_self_imports = "warn"
+unneeded_field_pattern = "warn"
+unreachable = "warn"
+unused_result_ok = "warn"
+verbose_file_reads = "warn"
 
 [profile.release]
 incremental = true

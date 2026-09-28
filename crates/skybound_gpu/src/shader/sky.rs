@@ -1,9 +1,9 @@
-use crate::lighting::henyey_greenstein;
-use crate::utils::intersect_sphere;
+use crate::{
+    PLANET_RADIUS,
+    shader::{lighting::henyey_greenstein, utils::intersect_sphere},
+};
 use core::f32::consts::PI;
-use skybound_shared::PLANET_RADIUS;
 use spirv_std::glam::{FloatExt, Vec3, vec3};
-#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);

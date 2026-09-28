@@ -1,11 +1,35 @@
-use crate::{camera::CameraController, ships::render_pass::update_ships};
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
 };
+use skybound_gpu::ShipUniform;
+use std::f32::consts::FRAC_PI_2;
+
+use crate::camera::CameraController;
 
 #[derive(Component)]
 pub struct PlayerShip;
+
+#[derive(Resource, Clone, Default, ExtractResource)]
+#[extract_app(RenderApp)]
+pub struct ExtractedShipData {
+    pub uniform: ShipUniform,
+}
+
+fn update_ships(
+    mut extracted: ResMut<ExtractedShipData>,
+    ship_query: Query<&Transform, With<PlayerShip>>,
+) {
+    let Ok(ship) = ship_query.single() else {
+        return;
+    };
+
+    extracted.uniform = ShipUniform {
+        position: ship.translation.extend(1.0),
+        rotation: ship.rotation.to_array().into(),
+    };
+}
 
 #[derive(Component)]
 pub struct ShipController {
@@ -47,16 +71,15 @@ fn ship_controller(
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
 ) {
-    // Check we aren't in freecam
     if *camera {
         return;
     }
 
     for (mut transform, mut controller) in &mut query {
         let mut movement = Vec3::ZERO;
-        let mut add_dir = |key: KeyCode, v: Vec3| {
+        let mut add_dir = |key: KeyCode, vector: Vec3| {
             if keyboard_input.pressed(key) {
-                movement += v;
+                movement += vector;
             }
         };
         add_dir(KeyCode::KeyW, *transform.forward());
@@ -77,26 +100,24 @@ fn ship_controller(
         transform.translation += movement * controller.speed * time.delta_secs() * sprint;
 
         if mouse_button_input.pressed(MouseButton::Right) {
-            let delta = mouse_motion_events.read().fold(Vec2::ZERO, |mut acc, e| {
-                acc += e.delta;
-                acc
-            });
+            let delta = mouse_motion_events
+                .read()
+                .fold(Vec2::ZERO, |mut acc, event| {
+                    acc += event.delta;
+                    acc
+                });
             if delta != Vec2::ZERO {
                 controller.yaw -= delta.x * controller.sensitivity;
-                controller.pitch = (controller.pitch - delta.y * controller.sensitivity).clamp(
-                    -std::f32::consts::FRAC_PI_2 + 0.01,
-                    std::f32::consts::FRAC_PI_2 - 0.01,
-                );
+                controller.pitch = (controller.pitch - delta.y * controller.sensitivity)
+                    .clamp(-FRAC_PI_2 + 0.01, FRAC_PI_2 - 0.01);
             }
         }
 
-        let yaw_quat = Quat::from_rotation_z(controller.yaw);
-        let pitch_quat = Quat::from_rotation_x(controller.pitch + std::f32::consts::FRAC_PI_2);
-        transform.rotation = yaw_quat * pitch_quat;
+        transform.rotation = Quat::from_rotation_z(controller.yaw)
+            * Quat::from_rotation_x(controller.pitch + FRAC_PI_2);
 
         for event in mouse_wheel_events.read() {
-            controller.speed += event.y * 0.5 * controller.speed;
-            controller.speed = controller.speed.clamp(0.1, 5000.0);
+            controller.speed = (controller.speed * (1.0 + event.y * 0.5)).clamp(0.1, 5000.0);
         }
     }
 }

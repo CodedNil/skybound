@@ -5,14 +5,12 @@ use crate::{
     render::{
         noise::{NoiseTextures, setup_noise_textures},
         raymarch::{
-            PreviousViewData, RaymarchPipeline, ViewUniforms, extract_clouds_view_uniform,
-            prepare_clouds_view_uniforms, raymarch_pass,
+            PreviousViewData, RaymarchPipeline, ShipUniforms, ViewUniforms,
+            extract_clouds_view_uniform, prepare_clouds_view_uniforms, prepare_ship_uniforms,
+            raymarch_pass,
         },
     },
-    ships::render_pass::{
-        ExtractedShipData, init_ship_resources, prepare_ship_render_targets, prepare_ship_uniforms,
-        ship_pass as ship_raymarch_pass,
-    },
+    ships::player::ExtractedShipData,
 };
 use bevy::{
     core_pipeline::{Core3d, Core3dSystems, core_3d::main_opaque_pass_3d},
@@ -20,9 +18,13 @@ use bevy::{
     render::{
         Render, RenderApp, RenderStartup, RenderSystems, extract_resource::ExtractResourcePlugin,
     },
+    shader::Shader,
 };
 
 pub struct WorldRenderingPlugin;
+
+#[derive(Resource)]
+pub struct SkyboundGpuShader(pub Handle<Shader>);
 
 impl Plugin for WorldRenderingPlugin {
     fn build(&self, app: &mut App) {
@@ -33,39 +35,35 @@ impl Plugin for WorldRenderingPlugin {
             ))
             .add_systems(Startup, setup_noise_textures);
 
-        app.get_sub_app_mut(RenderApp)
-            .expect("RenderApp should exist")
+        let shader = Shader::from_spirv(
+            include_bytes!(concat!(env!("OUT_DIR"), "/skybound_gpu.spv")).as_slice(),
+            "skybound_gpu.spv",
+        );
+        let shader = app.world_mut().resource_mut::<Assets<Shader>>().add(shader);
+        let render_app = app
+            .get_sub_app_mut(RenderApp)
+            .expect("RenderApp should exist");
+        render_app.insert_resource(SkyboundGpuShader(shader));
+        render_app
             .init_resource::<PreviousViewData>()
-            .add_systems(RenderStartup, |world: &mut World| {
-                init_resources(world);
-                init_ship_resources(world);
-            })
+            .add_systems(RenderStartup, init_resources)
             .add_systems(ExtractSchedule, extract_clouds_view_uniform)
             .add_systems(
                 Render,
-                (
-                    prepare_clouds_view_uniforms,
-                    prepare_ship_uniforms,
-                    prepare_ship_render_targets,
-                )
+                (prepare_clouds_view_uniforms, prepare_ship_uniforms)
                     .in_set(RenderSystems::PrepareResources),
             )
             .add_systems(
                 Core3d,
-                (
-                    ship_raymarch_pass
-                        .before(main_opaque_pass_3d)
-                        .in_set(Core3dSystems::MainPass),
-                    raymarch_pass
-                        .after(ship_raymarch_pass)
-                        .before(main_opaque_pass_3d)
-                        .in_set(Core3dSystems::MainPass),
-                ),
+                raymarch_pass
+                    .before(main_opaque_pass_3d)
+                    .in_set(Core3dSystems::MainPass),
             );
     }
 }
 
 fn init_resources(world: &mut World) {
+    world.init_resource::<ShipUniforms>();
     world.init_resource::<ViewUniforms>();
     world.init_resource::<RaymarchPipeline>();
 }

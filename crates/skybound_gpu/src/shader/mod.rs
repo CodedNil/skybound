@@ -1,20 +1,18 @@
-#![no_std]
-
 mod lighting;
 mod sky;
 mod solids;
 mod utils;
 mod volumetrics;
 
-use crate::lighting::henyey_greenstein;
-use crate::sky::{get_sun_light_color, render_sky};
-use crate::solids::aur_spikes::raymarch_aur_spikes;
-use crate::solids::ships::raymarch_ship;
-use crate::utils::{AtmosphereData, Textures, blue_noise, get_sun_position};
-use crate::volumetrics::raymarch_volumetrics;
-use skybound_shared::{ShipUniform, ViewUniform};
+use self::{
+    lighting::henyey_greenstein,
+    sky::{get_sun_light_color, render_sky},
+    solids::{aur_spikes::raymarch_aur_spikes, ships::raymarch_ship},
+    utils::{AtmosphereData, Textures, blue_noise, get_sun_position},
+    volumetrics::raymarch_volumetrics,
+};
+use crate::{ShipUniform, ViewUniform};
 use spirv_std::glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2};
-#[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
@@ -29,23 +27,7 @@ fn uv_to_ndc(uv: Vec2) -> Vec2 {
     uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0)
 }
 
-#[spirv(fragment)]
-pub fn ship_main(
-    #[spirv(location = 0)] uv: Vec2,
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] view: &ViewUniform,
-    #[spirv(uniform, descriptor_set = 0, binding = 1)] ship: &ShipUniform,
-    #[spirv(location = 0)] out_surface: &mut Vec4,
-) {
-    let ndc = uv_to_ndc(uv);
-    let world_far = position_ndc_to_world(ndc.extend(0.01), view.world_from_clip);
-    let ro = view.world_position.xyz();
-    let rd = (world_far - ro).normalize();
-
-    let shade = raymarch_ship(ro, rd, view, ship);
-    *out_surface = shade.color_depth;
-}
-
-#[spirv(fragment(depth_replacing))]
+#[spirv(fragment(depth_replacing, entry_point_name = "main"))]
 pub fn main(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] view: &ViewUniform,
@@ -54,9 +36,10 @@ pub fn main(
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 5)] extra_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] ship_surface_tex: &Image!(2D, type=f32, sampled=true),
+    #[spirv(uniform, descriptor_set = 0, binding = 6)] ship: &ShipUniform,
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
+    #[spirv(location = 2)] out_normal: &mut Vec4,
     #[spirv(frag_depth)] out_frag_depth: &mut f32,
 ) {
     let frame_offset = (view.frame_count() * 0.618_034).fract();
@@ -101,20 +84,24 @@ pub fn main(
         sampler,
     };
 
-    // Read ship pass output
-    let ship_surface: Vec4 = ship_surface_tex.sample(*sampler, uv);
-    let ship_t = ship_surface.w;
+    let ship = raymarch_ship(ro, rd, view, ship);
+    let ship_t = ship.color_depth.w;
+    let solids = raymarch_aur_spikes(ro, rd, view, ship_t, dither, &textures);
+    let ship_is_closest = ship_t <= solids.color_depth.w && ship_t < T_MAX;
 
-    // Raymarch world solids
-    let solids = raymarch_aur_spikes(ro, rd, view, ship_surface.w, dither, &textures);
-
-    // Choose what's closest: ship or solid
-    let mut rendered_color = if ship_t <= solids.color_depth.w {
-        ship_surface.xyz()
-    } else if solids.color_depth.w <= T_MAX {
+    let mut rendered_color = if ship_is_closest {
+        ship.color_depth.xyz()
+    } else if solids.color_depth.w < T_MAX {
         solids.color_depth.xyz()
     } else {
         atmosphere.sky
+    };
+    let normal = if ship_is_closest {
+        ship.normal
+    } else if solids.color_depth.w < T_MAX {
+        solids.normal
+    } else {
+        Vec3::Z
     };
 
     // Volumetrics pass
@@ -145,5 +132,6 @@ pub fn main(
 
     *out_color = rendered_color.extend(1.0).saturate();
     *out_motion = motion_vector.extend(0.0).extend(0.0);
+    *out_normal = (normal * 0.5 + 0.5).extend(1.0);
     *out_frag_depth = frag_depth;
 }
