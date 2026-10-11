@@ -31,7 +31,7 @@ fn update(
         .get(&FrameTimeDiagnosticsPlugin::FPS)
         .and_then(Diagnostic::average)
         .unwrap_or(0.0);
-    let altitude = camera.0.translation.z + world.camera_offset.z;
+    let altitude = world.altitude(camera.0.translation);
     let state = if camera.1 {
         "FREE CAMERA · P to return"
     } else {

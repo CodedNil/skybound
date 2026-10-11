@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn mist_tolerance_is_inherited_only_by_naeturae_and_pure_aur_is_lethal() {
+    fn mist_tolerance_is_inherited_only_by_naeturus_and_pure_aur_is_lethal() {
         for kind in KINDS {
             let biology = kind.biology();
             if biology.anatomy == Anatomy::Plant {

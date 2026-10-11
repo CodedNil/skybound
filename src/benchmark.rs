@@ -1,5 +1,6 @@
+use bevy::math::DVec3;
 use std::env;
-use std::f32::consts::FRAC_PI_2;
+use std::f64::consts::FRAC_PI_2;
 use std::time::Duration;
 
 use bevy::camera::RenderTarget;
@@ -11,8 +12,11 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
-use skybound::scene::aur::{EJECTION_CELL, ejection};
-use skybound::scene::{PLANET_RADIUS, ViewUniform};
+use skybound::scene::aur::{EJECTION_CELL, ejection, ejection_fill};
+use skybound::scene::{
+    ViewUniform,
+    planet::{surface_frame, surface_point},
+};
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
@@ -65,27 +69,18 @@ fn setup(params: BenchmarkSetup) {
     commands.insert_resource(WinitSettings::continuous());
     let resolution = resolution();
     let scene = option("--scene").unwrap_or_else(|| "garden".to_owned());
-    let altitude = match scene.as_str() {
-        "cloud-edge" => 6350.0,
-        "cloud-high" => 8000.0,
-        "cloud-tower" => 26_000.0,
-        "cloud-interior" => 7500.0,
-        "veil" => 25.0,
-        "aur-horizon" => 12_000.0,
-        "aur-ejection" | "aur-lightning" => 650.0,
-        "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar" => 2400.0,
-        _ => panic!("unknown benchmark scene"),
-    };
+    let altitude = scene_altitude(&scene);
     mount.translation.z = altitude;
     player.translation.z = altitude + 5.8;
     let latitude = match scene.as_str() {
         "equator" => Some(0.0),
         "sunrise" => Some(0.87),
         "polar" => Some(1.4),
+        "polar-reaction" => Some(1.1),
         _ => None,
     };
     if let Some(latitude) = latitude {
-        world.camera_offset = vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 - latitude), 0.0);
+        *world = WorldData::at(latitude, -FRAC_PI_2);
     }
     if let Some(weather) = scene_weather(&scene) {
         settings.0 = weather;
@@ -95,13 +90,11 @@ fn setup(params: BenchmarkSetup) {
     let direction = if scene == "aur-ejection" || scene == "aur-lightning" {
         focus_aur(
             phase,
-            world.camera_offset,
+            &world,
             &mut mount,
             &mut player,
             scene == "aur-lightning",
         )
-    } else if latitude.is_some() {
-        -Vec3::Y
     } else {
         Vec3::Y
     };
@@ -121,6 +114,9 @@ fn setup(params: BenchmarkSetup) {
         flight.mode = ControlMode::Flying;
         Transform::from_translation(player.translation + vec3(1.5, -4.0, 0.8))
             .looking_at(player.translation, Vec3::Z)
+    } else if scene == "aur-overhead" {
+        Transform::from_translation(mount.translation + Vec3::Z * 200.0)
+            .looking_at(mount.translation.with_z(0.0) + direction * 2000.0, Vec3::Z)
     } else if scene == "cloud-tower" {
         Transform::from_translation(mount.translation - direction * 12_000.0 + Vec3::Z * 8000.0)
             .looking_at(mount.translation - Vec3::Z * 5000.0, Vec3::Z)
@@ -151,25 +147,43 @@ fn setup(params: BenchmarkSetup) {
     }
 }
 
+fn scene_altitude(scene: &str) -> f32 {
+    match scene {
+        "cloud-edge" => 6350.0,
+        "cloud-high" => 8000.0,
+        "cloud-tower" => 26_000.0,
+        "cloud-interior" => 7500.0,
+        "veil" => 25.0,
+        "aur-horizon" => 12_000.0,
+        "aur-overhead" => 4000.0,
+        "aur-ejection" | "aur-lightning" => 650.0,
+        "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar"
+        | "polar-reaction" => 2400.0,
+        _ => panic!("unknown benchmark scene"),
+    }
+}
+
 fn scene_weather(scene: &str) -> Option<Vec4> {
     match scene {
         "cloud-high" => Some(vec4(0.1, 0.1, 0.95, 0.3)),
         "cloud-tower" => Some(vec4(0.95, 0.95, 0.7, 0.95)),
         "cloud-edge" | "cloud-interior" => Some(vec4(0.95, 0.85, 0.3, 0.8)),
-        "aur-horizon" | "clear" | "equator" | "sunrise" | "polar" => Some(Vec4::ZERO),
+        "aur-horizon" | "aur-overhead" | "clear" | "equator" | "sunrise" | "polar"
+        | "polar-reaction" => Some(Vec4::ZERO),
         _ => None,
     }
 }
 
 fn focus_aur(
     phase: f32,
-    offset: Vec3,
+    world: &WorldData,
     mount: &mut Transform,
     player: &mut Transform,
     lightning: bool,
 ) -> Vec3 {
     let mut view = ViewUniform {
-        camera_position: vec4(0.0, 0.0, offset.x, offset.y),
+        planet_center_value: world.local(DVec3::ZERO).extend(0.0),
+        planet_rotation: world.basis.conjugate().as_quat(),
         ..default()
     };
     view.times.x = phase
@@ -179,21 +193,19 @@ fn focus_aur(
             0.0
         };
     view.prepare_flashes();
-    let cell = (offset.truncate() / EJECTION_CELL).floor();
-    let event = (0..9)
+    let cell = (world.surface_position(Vec3::ZERO).truncate() / EJECTION_CELL).floor();
+    let event = (0..49)
         .map(|index| {
             ejection(
-                cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0),
+                cell + vec2((index / 7) as f32 - 3.0, (index % 7) as f32 - 3.0),
                 view.time(),
             )
         })
-        .max_by(|a, b| a[0].w.total_cmp(&b[0].w))
+        .max_by(|a, b| {
+            let score = |event: &[Vec4; 2]| event[0].w * ejection_fill(0.5, event[0].z);
+            score(a).total_cmp(&score(b))
+        })
         .expect("ejection cells");
-    let direction = if lightning {
-        Vec3::Y
-    } else {
-        vec3(-event[1].y, event[1].x, 0.0)
-    };
     let center = if lightning {
         view.aur_bolts
             .iter()
@@ -205,10 +217,17 @@ fn focus_aur(
     } else {
         event[0].truncate().truncate()
     };
-    let position = (center - offset.truncate()).extend(mount.translation.z) - direction * 1600.0;
+    let point = surface_point(center.extend(world.altitude(mount.translation) as f32));
+    let direction = if lightning {
+        Vec3::Y
+    } else {
+        world.rotate_to_local(surface_frame(point) * vec3(-event[1].y, -event[1].x, 0.0))
+    };
+    let position = world.local(point.as_dvec3()) - direction * 1600.0;
+    let up = world.up(position);
     mount.translation = position;
-    mount.rotation = Transform::default().looking_to(direction, Vec3::Z).rotation;
-    player.translation = position + Vec3::Z * 5.8;
+    mount.rotation = Transform::default().looking_to(direction, up).rotation;
+    player.translation = position + up * 5.8;
     player.rotation = mount.rotation;
     direction
 }

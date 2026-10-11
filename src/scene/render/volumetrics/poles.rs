@@ -2,6 +2,7 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 use spirv_std::num_traits::Float;
 
 use super::VolumeSample;
+use crate::scene::polar::{REACTION_SPREAD, reaction_coordinates};
 use crate::scene::render::utils::Textures;
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
@@ -13,7 +14,7 @@ pub fn sample_poles(
     footprint: f32,
     textures: &Textures,
 ) -> VolumeSample {
-    let axis = view.planet_rotation.mul_vec3(Vec3::Z).normalize();
+    let axis = Vec3::Z;
     let along = relative.dot(axis);
     let radial = relative - axis * along;
     let height = (along.abs() - PLANET_RADIUS).max(0.0);
@@ -27,7 +28,37 @@ pub fn sample_poles(
     let core = (-distance / (width * width)).exp() * filament * 0.002;
     let sheath = (-distance / (width * width * 36.0)).exp() * (0.5 + noise.z) * 0.00012;
     let halo = (-distance / (width * width * 625.0)).exp() * 0.000004;
-    let density = core + sheath + halo;
+    let reaction = reaction_coordinates(relative, axis);
+    let mut impact = 0.0;
+    let mut corona = 0.0;
+    if reaction.x < REACTION_SPREAD * 1.6 && reaction.y.abs() < 45_000.0 {
+        let surface = relative.normalize();
+        let turbulence = textures.base_filtered(
+            surface * 39.0 - axis * view.time() * 0.025,
+            footprint / (PLANET_RADIUS + height) * 39.0,
+        );
+        let spread = (-((reaction.x / REACTION_SPREAD).powi(2)) * 2.5).exp();
+        let shell = reaction.y - (turbulence.w - 0.5) * 14_000.0;
+        let thickness = 4500.0 + turbulence.y * 5500.0;
+        let layer = (-(shell / thickness).powi(2)).exp();
+        let fronts =
+            (reaction.x * 0.00018 - view.time() * 1.8 + turbulence.z * 5.0).sin() * 0.5 + 0.5;
+        let reference = if axis.z.abs() < 0.95 {
+            Vec3::Z
+        } else {
+            Vec3::Y
+        };
+        let east = axis.cross(reference).normalize();
+        let azimuth = radial.dot(axis.cross(east)).atan2(radial.dot(east));
+        let rays =
+            (azimuth * 27.0 + turbulence.x * 4.0 + reaction.x * 0.000015 - view.time() * 0.3).sin()
+                * 0.5
+                + 0.5;
+        corona = layer * spread * (0.00012 + fronts.powi(3) * rays.powi(3) * 0.0012);
+        impact = (-(reaction.x / 12_000.0).powi(2) - (reaction.y / 12_000.0).powi(2)).exp()
+            * (0.008 + noise.w * 0.004);
+    }
+    let density = core + sheath + halo + impact + corona;
     if density < 0.0000001 {
         return VolumeSample::default();
     }
@@ -36,7 +67,9 @@ pub fn sample_poles(
         color: vec3(0.1, 0.15, 0.25),
         emission: (vec3(1.0, 0.85, 0.6) * (core * 90.0)
             + vec3(0.2, 0.5, 1.0) * (sheath * 25.0)
-            + vec3(0.15, 0.08, 0.4) * (halo * 4.0))
+            + vec3(0.15, 0.08, 0.4) * (halo * 4.0)
+            + vec3(1.0, 0.96, 0.82) * (impact * 110.0)
+            + vec3(0.32, 0.52, 1.0).lerp(vec3(1.0, 0.66, 0.35), noise.z) * (corona * 8.0))
             / density,
         ..VolumeSample::default()
     }

@@ -1,4 +1,3 @@
-use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::{Biology, Feeding, Social};
 
 pub const BIOLOGY: Biology = Biology {
@@ -9,55 +8,16 @@ pub const BIOLOGY: Biology = Biology {
     ..super::BIOLOGY
 };
 
-use spirv_std::glam::{Vec3, vec3, vec4};
-
 pub use super::render_wings;
-use crate::scene::life::behaviour::{self, Controls, Senses};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose};
-use crate::scene::surface::{Ray, Surface, TraceResult};
+use crate::scene::life::{Rank, Taxon};
 
-pub mod purgatoridae;
+pub mod manduca;
+pub mod purgator;
+
 pub const TAXON: Taxon = Taxon {
     name: "Manducidae",
     english_name: "Nibblers",
-    description: "Nibblers are tiny, opportunistic four-winged scavengers that gather in large feeding swarms. \
-        They consume many kinds of organic debris and are among the ecosystem's primary decomposers. \
-        Compact bodies and quick wing movements support spectacular coordinated murmurations. \
-        Related cleaners concentrate this scavenging behaviour on the surfaces of larger animals.",
+    description: "Small swarm scavengers recycle suspended organic matter; related cleaners forage on the bodies of larger animals.",
     rank: Rank::Family,
     parent: Some(&super::TAXON),
-    radius: 21.6,
 };
-
-pub fn behave(senses: &Senses) -> Controls {
-    behaviour::organism(senses, BIOLOGY)
-}
-
-pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 3.0, 3.0, 0);
-    c.opaque_bounds = vec3(4.0, 4.0, 4.0).extend(0.0);
-}
-
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.8, 0.65, 1.5)), 0);
-    hit.join(
-        ellipsoid(p - vec3(0.0, 0.2, -1.25), vec3(0.7, 0.6, 0.55)),
-        3,
-    );
-    hit.join(
-        oral_tentacles(p, c, vec3(0.0, -0.3, -1.90), 0.40, BIOLOGY.oral_pairs),
-        8,
-    );
-    hit
-}
-
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.47, 0.26, 0.18, 0.0),
-        vec3(0.86, 0.56, 0.28),
-        [vec4(3.5, 1.2, 0.0, 0.3), vec4(2.2, 1.0, 1.7, 0.35)],
-    )
-}

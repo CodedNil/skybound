@@ -176,7 +176,7 @@ mod tests {
             danger: Some(Vec3::Z),
             ..Senses::default()
         };
-        for kind in [Kind::Aerogigans, Kind::Levita, Kind::Nubiballona] {
+        for kind in [Kind::Aerogigas, Kind::Levitans, Kind::Nubivesica] {
             let passive = super::super::behave(kind, &senses);
             let empty = super::super::behave(
                 kind,

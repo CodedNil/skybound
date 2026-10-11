@@ -315,22 +315,11 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
 ) -> Hit {
     let local = local_ray(ray, c);
     let bounds = c.opaque_bounds.truncate();
+    let nonzero = |value: f32| if value.abs() < 1e-8 { 1e-8 } else { value };
     let safe = vec3(
-        if local.direction.x.abs() < 1e-8 {
-            1e-8
-        } else {
-            local.direction.x
-        },
-        if local.direction.y.abs() < 1e-8 {
-            1e-8
-        } else {
-            local.direction.y
-        },
-        if local.direction.z.abs() < 1e-8 {
-            1e-8
-        } else {
-            local.direction.z
-        },
+        nonzero(local.direction.x),
+        nonzero(local.direction.y),
+        nonzero(local.direction.z),
     );
     let inv = Vec3::ONE / safe;
     let near = (-bounds - local.origin) * inv;

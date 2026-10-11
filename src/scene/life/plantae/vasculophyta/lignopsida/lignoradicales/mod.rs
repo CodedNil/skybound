@@ -2,8 +2,8 @@ pub use super::BIOLOGY;
 pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
-pub mod radicellaceae;
-pub mod rubilionaceae;
+pub mod spinivineaceae;
+pub mod stelloradicaceae;
 
 pub const TAXON: Taxon = Taxon {
     name: "Lignoradicales",
@@ -13,5 +13,4 @@ pub const TAXON: Taxon = Taxon {
         Their slow-changing frameworks provide shelter or exploit nutrients inaccessible to delicate membrane plants.",
     rank: Rank::Order,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

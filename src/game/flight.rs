@@ -1,12 +1,13 @@
 use bevy::ecs::system::SystemParam;
 use bevy::input::InputSystems;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::transform::TransformSystems;
-use skybound::scene::life::animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::{
-    nae, naetu,
+use skybound::scene::life::animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{
+    lucidus, robustus,
 };
 use skybound::scene::life::behaviour::{Motion, Senses};
 use skybound::scene::life::{CreatureInstance, Kind};
@@ -27,11 +28,11 @@ pub struct Player;
 #[derive(Component)]
 pub struct Mount;
 #[derive(Component, Default)]
-struct Velocity(Vec3);
+pub struct Velocity(pub Vec3);
 
 #[derive(Clone, Copy)]
 pub struct PerchAnchor {
-    point: Vec3,
+    point: DVec3,
     normal: Vec3,
     on_mount: bool,
 }
@@ -93,13 +94,19 @@ fn spawn_player(mut commands: Commands) {
         Transform::from_translation(body.transform_point(ROSETTE)).with_rotation(body.rotation),
     ));
 }
-fn instance(transform: &Transform, kind: Kind, time: f32, speed: f32) -> CreatureInstance {
+fn instance(
+    transform: &Transform,
+    kind: Kind,
+    time: f32,
+    speed: f32,
+    world: &WorldData,
+) -> CreatureInstance {
     let radius = if kind == Kind::Nae {
-        nae::TAXON.radius
+        lucidus::RENDER_RADIUS
     } else {
-        naetu::TAXON.radius
+        robustus::RENDER_RADIUS
     };
-    let dive = (-transform.forward().z).clamp(0.0, 1.0);
+    let dive = (-transform.forward().dot(world.up(transform.translation))).clamp(0.0, 1.0);
     let stroke = (time * 4.0).sin() * (0.06 + (speed / 100.0).min(1.0) * 0.28) * (1.0 - dive);
     let fold = dive * 1.1;
     CreatureInstance::new(
@@ -110,6 +117,7 @@ fn instance(transform: &Transform, kind: Kind, time: f32, speed: f32) -> Creatur
     )
 }
 fn extract_player(
+    world: Res<WorldData>,
     mut model: ResMut<PlayerModel>,
     player: Single<(&Transform, &Velocity), With<Player>>,
     mount: Single<(&Transform, &Velocity), With<Mount>>,
@@ -122,12 +130,14 @@ fn extract_player(
             Kind::Naetu,
             time.elapsed_secs(),
             mount.1.0.length(),
+            &world,
         ),
         instance(
             player.0,
             Kind::Nae,
             time.elapsed_secs(),
             player.1.0.length(),
+            &world,
         ),
     ];
     for (index, mut pose) in poses.into_iter().enumerate() {
@@ -162,23 +172,32 @@ fn advance(velocity: &mut Vec3, target: Vec3, response: f32, dt: f32) -> Vec3 {
     *velocity = target + (*velocity - target) * decay;
     displacement
 }
-fn pilot(body: &mut Transform, velocity: &mut Vec3, steering: Vec2, cruise: f32, dt: f32) {
-    let forward = *body.forward();
+fn pilot(
+    body: &mut Transform,
+    velocity: &mut Vec3,
+    steering: Vec2,
+    cruise: f32,
+    dt: f32,
+    up: Vec3,
+) {
+    let tangent = Quat::from_rotation_arc(Vec3::Z, up);
+    let forward = tangent.conjugate() * *body.forward();
     let yaw = forward.y.atan2(forward.x) - steering.x * 1.1 * dt;
     let pitch = (forward.z.asin() + steering.y * 0.9 * dt).clamp(-1.25, 1.25);
-    let heading = vec3(
-        yaw.cos() * pitch.cos(),
-        yaw.sin() * pitch.cos(),
-        pitch.sin(),
-    );
-    let level = Transform::default().looking_to(heading, Vec3::Z);
+    let heading = tangent
+        * vec3(
+            yaw.cos() * pitch.cos(),
+            yaw.sin() * pitch.cos(),
+            pitch.sin(),
+        );
+    let level = Transform::default().looking_to(heading, up);
     let bank = -body
         .up()
         .dot(*level.right())
         .atan2(body.up().dot(*level.up()));
     let bank = bank.lerp(-steering.x * 0.65, 1.0 - (-6.0 * dt).exp());
     body.rotation = level.rotation * Quat::from_rotation_z(bank);
-    let speed = cruise * (1.0 + (-heading.z).max(0.0) * 0.7);
+    let speed = cruise * (1.0 + (-heading.dot(up)).max(0.0) * 0.7);
     body.translation += advance(velocity, heading * speed, 3.5, dt);
 }
 
@@ -200,7 +219,7 @@ fn contact(
             ambient: vec3(0.30, 0.36, 0.45),
             radiance: Vec3::ONE,
         };
-        let result = naetu::render(ray, c);
+        let result = robustus::render(ray, c);
         let mut hit = result.opaque;
         for layer in result.layers.iter().take(result.count as usize) {
             if layer.part != 2 && layer.distance() < hit.distance() {
@@ -211,20 +230,21 @@ fn contact(
             nearest = hit.distance();
             let point = position + direction * nearest + hit.normal * 0.62;
             found = Some(PerchAnchor {
-                point: mount.rotation.inverse() * (point - mount.translation),
+                point: (mount.rotation.inverse() * (point - mount.translation)).as_dvec3(),
                 normal: mount.rotation.inverse() * hit.normal,
                 on_mount: true,
             });
         }
     }
-    let offset = world.camera_offset;
-    let terrain_point = position + offset;
+    let terrain_point = world.surface_position(position);
     let distance = spike_distance(terrain_point, Vec2::ZERO);
     if distance.abs() < nearest {
-        let normal = estimate_normal(terrain_point, |p| spike_distance(p, Vec2::ZERO));
+        let normal = estimate_normal(position, |p| {
+            spike_distance(world.surface_position(p), Vec2::ZERO)
+        });
         found = Some(PerchAnchor {
-            point: position + world.camera_offset + normal * (0.62 - distance),
-            normal,
+            point: world.position(position + normal * (0.62 - distance)),
+            normal: world.basis.as_quat() * normal,
             on_mount: false,
         });
     }
@@ -282,8 +302,9 @@ fn fly(
         return;
     }
     let axis = |a, b| f32::from(keys.pressed(a)) - f32::from(keys.pressed(b));
-    let forward = Vec3::new(camera.0.forward().x, camera.0.forward().y, 0.0).normalize_or_zero();
-    let right = forward.cross(Vec3::Z);
+    let up = world.up(player.translation);
+    let forward = (*camera.0.forward() - up * camera.0.forward().dot(up)).normalize_or_zero();
+    let right = forward.cross(up);
     let horizontal = (forward * axis(KeyCode::KeyW, KeyCode::KeyS)
         + right * axis(KeyCode::KeyD, KeyCode::KeyA))
     .normalize_or_zero();
@@ -294,7 +315,7 @@ fn fly(
     let boost = 1.0 + f32::from(keys.pressed(KeyCode::ShiftLeft)) * 0.65;
     if keys.just_pressed(KeyCode::Space) && matches!(flight.mode, ControlMode::Perched(_)) {
         flight.mode = ControlMode::Flying;
-        player_velocity.0 = mount_velocity.0 + Vec3::Z * 3.0;
+        player_velocity.0 = mount_velocity.0 + up * 3.0;
     }
     if keys.just_pressed(KeyCode::KeyE) {
         if matches!(flight.mode, ControlMode::Mounted | ControlMode::Perched(_)) {
@@ -305,9 +326,10 @@ fn fly(
                 Kind::Naetu,
                 time.elapsed_secs(),
                 mount_velocity.0.length(),
+                &world,
             );
             if let Some(anchor) = contact(player.translation, &mount, &c, &world) {
-                flight.mode = if anchor.on_mount && anchor.point.distance(ROSETTE) < 1.5 {
+                flight.mode = if anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE) < 1.5 {
                     ControlMode::Mounted
                 } else {
                     ControlMode::Perched(anchor)
@@ -323,7 +345,8 @@ fn fly(
             } else {
                 (&mut *player, &mut player_velocity.0, 22.0)
             };
-            pilot(body, velocity, steering, cruise * boost, dt);
+            let up = world.up(body.translation);
+            pilot(body, velocity, steering, cruise * boost, dt, up);
             if mounted {
                 player.translation = mount.transform_point(ROSETTE);
                 player.rotation = mount.rotation;
@@ -350,6 +373,7 @@ fn fly(
 
 fn advance_companion(
     time: Res<Time>,
+    world: Res<WorldData>,
     player: Single<(&mut Transform, &mut Velocity), NaeQuery>,
     mount: Single<
         (
@@ -378,7 +402,7 @@ fn advance_companion(
         motion.advance(
             Kind::Naetu,
             &Senses {
-                up: Vec3::Z,
+                up: world.up(mount.translation),
                 companion: Some(if on_back {
                     Vec3::ZERO
                 } else {
@@ -394,7 +418,7 @@ fn advance_companion(
         if let ControlMode::Perched(anchor) = flight.mode
             && anchor.on_mount
         {
-            player.translation = mount.transform_point(anchor.point);
+            player.translation = mount.transform_point(anchor.point.as_vec3());
             velocity.0 = mount_velocity.0;
         }
     }
@@ -404,6 +428,7 @@ fn advance_companion(
             Kind::Naetu,
             time.elapsed_secs(),
             mount_velocity.0.length(),
+            &world,
         );
         separate_from_mount(
             &mut player,
@@ -428,11 +453,12 @@ fn separate_from_mount(
         if point.abs().cmpgt(body.opaque_bounds.truncate() + 1.0).any() {
             return;
         }
-        let distance = naetu::surface(point, body).distance;
+        let distance = robustus::surface(point, body).distance;
         if distance >= 0.35 {
             return;
         }
-        let normal = mount.rotation * estimate_normal(point, |p| naetu::surface(p, body).distance);
+        let normal =
+            mount.rotation * estimate_normal(point, |p| robustus::surface(p, body).distance);
         player.translation += normal * (0.35 - distance);
         let inward = (*velocity - mount_velocity).dot(normal).min(0.0);
         *velocity -= normal * inward;
@@ -459,39 +485,40 @@ fn crawl(
     let normal = if anchor.on_mount {
         mount.rotation * anchor.normal
     } else {
-        anchor.normal
+        world.rotate_to_local(anchor.normal)
     };
     let tangent = steering.horizontal - normal * steering.horizontal.dot(normal);
     let movement = tangent.normalize_or_zero() * (steering.dt * 2.4);
     let point = if anchor.on_mount {
-        mount.transform_point(anchor.point)
+        mount.transform_point(anchor.point.as_vec3())
     } else {
-        anchor.point - world.camera_offset
+        world.local(anchor.point)
     };
     let c = instance(
         mount,
         Kind::Naetu,
         steering.time,
         steering.mount_velocity.length(),
+        world,
     );
     if let Some(projected) = contact(point + movement, mount, &c, world) {
         anchor = projected;
     }
     player.translation = if anchor.on_mount {
-        mount.transform_point(anchor.point)
+        mount.transform_point(anchor.point.as_vec3())
     } else {
-        anchor.point - world.camera_offset
+        world.local(anchor.point)
     };
     let normal = if anchor.on_mount {
         mount.rotation * anchor.normal
     } else {
-        anchor.normal
+        world.rotate_to_local(anchor.normal)
     };
     let facing = (steering.forward - normal * steering.forward.dot(normal)).normalize_or_zero();
     if facing.length_squared() > 0.1 {
         player.look_to(facing, normal);
     }
-    flight.mode = if anchor.on_mount && anchor.point.distance(ROSETTE) < 1.3 {
+    flight.mode = if anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE) < 1.3 {
         ControlMode::Mounted
     } else {
         ControlMode::Perched(anchor)
@@ -503,8 +530,9 @@ fn crawl(
     };
 }
 
-fn follow_camera(
+pub fn follow_camera(
     time: Res<Time>,
+    world: Res<WorldData>,
     flight: Res<Flight>,
     player: Single<&Transform, NaeQuery>,
     mount: Single<&Transform, NaetuQuery>,
@@ -512,20 +540,17 @@ fn follow_camera(
 ) {
     let mounted = matches!(flight.mode, ControlMode::Mounted);
     let body = if mounted { *mount } else { *player };
-    let focus = body.translation
-        + if mounted {
-            Vec3::Z * 5.0
-        } else {
-            Vec3::Z * 0.2
-        };
-    let heading = vec3(body.forward().x, body.forward().y, 0.0).normalize_or_zero();
-    let back = Quat::from_rotation_z(flight.orbit.x) * -heading;
+    let up = world.up(body.translation);
+    let focus = body.translation + if mounted { up * 5.0 } else { up * 0.2 };
+    let heading = (*body.forward() - up * body.forward().dot(up)).normalize_or_zero();
+    let back = Quat::from_axis_angle(up, flight.orbit.x) * -heading;
     let distance = (if mounted { 85.0 } else { 5.0 }) * flight.zoom;
     let pitch = 0.18 + flight.orbit.y;
-    let target = focus + back * distance * pitch.cos() + Vec3::Z * distance * pitch.sin();
+    let target = focus + back * distance * pitch.cos() + up * distance * pitch.sin();
     let lag = 1.0 - (-7.0 * time.delta_secs()).exp();
     camera.translation = camera.translation.lerp(target, lag);
-    let aim = Transform::from_translation(camera.translation).looking_at(focus, Vec3::Z);
+    let aim = Transform::from_translation(camera.translation)
+        .looking_at(focus, world.up(camera.translation));
     camera.rotation = camera.rotation.slerp(aim.rotation, lag);
 }
 
@@ -543,9 +568,10 @@ mod tests {
         let mut time = Time::<()>::default();
         time.advance_by(Duration::from_secs_f32(0.1));
         world.insert_resource(time);
+        world.insert_resource(WorldData::default());
         world.insert_resource(Flight {
             mode: ControlMode::Perched(PerchAnchor {
-                point: ROSETTE,
+                point: ROSETTE.as_dvec3(),
                 normal: Vec3::Y,
                 on_mount: true,
             }),
@@ -607,7 +633,14 @@ mod tests {
             let mut body = Transform::default().looking_to(Vec3::Y, Vec3::Z);
             let mut velocity = Vec3::ZERO;
             for _ in 0..hz {
-                pilot(&mut body, &mut velocity, steering, 95.0, 1.0 / hz as f32);
+                pilot(
+                    &mut body,
+                    &mut velocity,
+                    steering,
+                    95.0,
+                    1.0 / hz as f32,
+                    Vec3::Z,
+                );
             }
             (body, velocity)
         };
@@ -627,10 +660,15 @@ mod tests {
             "diving must descend and gain speed"
         );
         assert!(
-            instance(&dive, Kind::Naetu, 0.0, velocity.length())
-                .animation
-                .y
-                > 0.7,
+            instance(
+                &dive,
+                Kind::Naetu,
+                0.0,
+                velocity.length(),
+                &WorldData::default()
+            )
+            .animation
+            .y > 0.7,
             "diving must tuck wings"
         );
     }
@@ -638,12 +676,12 @@ mod tests {
     #[test]
     fn contact_uses_body_and_ignores_aur_dome() {
         let mount = Transform::from_translation(SPAWN).looking_to(Vec3::Y, Vec3::Z);
-        let body = instance(&mount, Kind::Naetu, 0.0, 0.0);
+        let body = instance(&mount, Kind::Naetu, 0.0, 0.0, &WorldData::default());
         let world = WorldData::default();
         let anchor = contact(mount.transform_point(ROSETTE), &mount, &body, &world)
             .expect("rosette must be reachable from the back");
         assert!(
-            anchor.on_mount && anchor.point.distance(ROSETTE) < 1.5,
+            anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE) < 1.5,
             "perching must resolve to the physical back"
         );
         assert!(
@@ -661,12 +699,12 @@ mod tests {
     #[test]
     fn flying_body_collision_removes_inward_velocity() {
         let mount = Transform::from_translation(SPAWN);
-        let body = instance(&mount, Kind::Naetu, 0.0, 0.0);
+        let body = instance(&mount, Kind::Naetu, 0.0, 0.0, &WorldData::default());
         let mut player = Transform::from_translation(SPAWN + Vec3::X * 3.0);
         let mut velocity = -Vec3::X * 10.0;
         separate_from_mount(&mut player, &mount, &body, &mut velocity, Vec3::ZERO);
         assert!(
-            naetu::surface(player.translation - SPAWN, &body).distance > 0.30,
+            robustus::surface(player.translation - SPAWN, &body).distance > 0.30,
             "Næ remains embedded in Nætu"
         );
         assert!(velocity.x >= -0.01, "collision must remove inward velocity");

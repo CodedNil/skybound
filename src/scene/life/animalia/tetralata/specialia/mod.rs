@@ -10,7 +10,7 @@ pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod detritivora;
-pub mod rapaxina;
+pub mod rapaciformes;
 
 pub const TAXON: Taxon = Taxon {
     name: "Specialia",
@@ -20,5 +20,4 @@ pub const TAXON: Taxon = Taxon {
         Their activity recycles waste and helps connect otherwise isolated aerial habitats.",
     rank: Rank::Class,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

@@ -91,7 +91,7 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
         closest = bolt;
     }
     // The pure aur ocean hides terrain from observers above the veil.
-    if ray.origin.z + frame.view.world_position.w > 0.0 {
+    if frame.view.surface_position(ray.origin).z > 0.0 {
         return closest;
     }
     let terrain = raymarch_aur_spikes(ray.origin, ray.direction, &frame.view, closest.distance());
@@ -164,14 +164,7 @@ fn energy_hit(ray: Ray, view: &crate::scene::ViewUniform) -> Hit {
 }
 
 fn energy_point(point: Vec3, view: &crate::scene::ViewUniform) -> Vec3 {
-    let xy = point.truncate() - view.camera_offset().truncate();
-    let radial = crate::scene::PLANET_RADIUS + point.z;
-    xy.extend(
-        view.planet_center().z
-            + (radial * radial - (xy - view.planet_center().truncate()).length_squared())
-                .max(0.0)
-                .sqrt(),
-    )
+    view.from_planet(crate::scene::planet::surface_point(point))
 }
 
 fn depth_limit(uv: Vec2, frame: &FrameUniform, depth: &Depth, ray: Ray) -> f32 {
@@ -195,7 +188,13 @@ fn atmosphere(
     let sky = sky_texture
         .sample_by_lod(
             *sampler,
-            sky_uv(ray.direction, ray.light, frame.view.sky_horizon.x),
+            sky_uv(
+                crate::scene::planet::surface_frame(frame.view.up(ray.origin)).transpose()
+                    * ray.direction,
+                crate::scene::planet::surface_frame(frame.view.up(ray.origin)).transpose()
+                    * ray.light,
+                frame.view.sky_horizon.x,
+            ),
             0.0,
         )
         .xyz();
@@ -291,14 +290,38 @@ pub fn volume(
         &frame.view,
         limit,
         dither,
+        ray.footprint * 2.0,
         &textures,
     );
     let position = ray.origin + ray.direction * volume.depth;
     let altitude = position.distance(frame.view.planet_center()) - crate::scene::PLANET_RADIUS;
-    let current = if altitude <= 2800.0 {
-        crate::scene::aur::CURRENT
+    let current = if altitude <= 1900.0 {
+        frame.view.planet_rotation
+            * (crate::scene::planet::surface_frame(frame.view.to_planet(position))
+                * vec3(
+                    crate::scene::aur::CURRENT.x,
+                    -crate::scene::aur::CURRENT.y,
+                    0.0,
+                ))
+    } else if altitude > crate::scene::climate::CLOUD_TOP {
+        Vec3::ZERO
     } else {
-        vec3(-2.5, -0.625, 0.0)
+        let world = frame.view.surface_position(position);
+        let weather = if frame.view.weather.x >= 0.0 {
+            frame.view.weather
+        } else {
+            textures.weather(crate::scene::climate::Climate::weather_uv(
+                world,
+                frame.view.time(),
+            ))
+        };
+        frame.view.planet_rotation
+            * crate::scene::climate::Climate::on_planet(
+                frame.view.to_planet(position),
+                frame.view.time(),
+                weather,
+            )
+            .wind
     };
     let previous = position - current * frame.view.times.w;
     *out_color = volume.color;
@@ -404,9 +427,14 @@ pub fn sky(
     #[spirv(location = 0)] out_color: &mut Vec4,
 ) {
     let view = &frame.view;
-    let light = view.pole_direction();
+    let light = crate::scene::planet::surface_frame(view.up(view.world_position.xyz())).transpose()
+        * view.pole_direction();
     let direction = sky_direction(uv, view.sky_horizon.x);
     let light = vec3((1.0 - light.z * light.z).max(0.0).sqrt(), 0.0, light.z);
-    *out_color =
-        (render_sky(direction, view.ro_relative(), light) * view.sky_horizon.y).extend(1.0);
+    *out_color = (render_sky(
+        direction,
+        vec3(0.0, 0.0, crate::scene::PLANET_RADIUS + view.altitude()),
+        light,
+    ) * view.sky_horizon.y)
+        .extend(1.0);
 }

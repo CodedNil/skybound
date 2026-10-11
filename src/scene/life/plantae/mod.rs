@@ -35,7 +35,6 @@ pub const TAXON: Taxon = Taxon {
         Spores, fragments and drifting seeds disperse through the currents.",
     rank: Rank::Kingdom,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };
 
 pub fn rotate(p: Vec3, angle: f32) -> Vec3 {

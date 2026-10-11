@@ -20,8 +20,8 @@ use spirv_std::glam::{FloatExt, Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 pub mod specialia;
-pub mod viviparia;
-pub mod volitilia;
+pub mod vivipara;
+pub mod volitantia;
 
 pub const TAXON: Taxon = Taxon {
     name: "Tetralata",
@@ -32,7 +32,6 @@ pub const TAXON: Taxon = Taxon {
         The mouth palps, wing margins and tail specialise into feeding, attachment and manipulation structures throughout the phylum.",
     rank: Rank::Phylum,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };
 
 pub fn oral_tentacles(

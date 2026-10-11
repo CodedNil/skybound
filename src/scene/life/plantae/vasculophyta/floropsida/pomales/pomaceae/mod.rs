@@ -2,7 +2,7 @@ pub use super::BIOLOGY;
 pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
-pub mod fructus;
+pub mod pomum;
 
 pub const TAXON: Taxon = Taxon {
     name: "Pomaceae",
@@ -12,5 +12,4 @@ pub const TAXON: Taxon = Taxon {
         Seeds use light, feathery structures and attachment filaments to leave the parent and reach new currents or hosts.",
     rank: Rank::Family,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

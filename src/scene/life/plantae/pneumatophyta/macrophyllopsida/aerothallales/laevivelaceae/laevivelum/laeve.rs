@@ -1,0 +1,67 @@
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    adult_mass: 18.0,
+    ..super::BIOLOGY
+};
+
+use core::f32::consts::TAU;
+
+use spirv_std::glam::{Vec3, Vec3Swizzles, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::surface::{Ray, Surface, TraceResult};
+
+pub const RENDER_RADIUS: f32 = 17.0;
+
+pub const TAXON: Taxon = Taxon {
+    name: "Laevivelum laeve",
+    english_name: "Smooth Sails",
+    description: "Smooth Sails are flat, broad, thin aurosynthetic membranes that can reach enormous sizes. \
+        Gentle undulation allows them to ride updrafts while maintaining a wide collecting surface. \
+        Small glands along the edge produce a soft bioluminescent glow. \
+        Overlapping sails shade and cool the air below, and wind-dispersed spores carry new growth to distant currents.",
+    rank: Rank::Species,
+    parent: Some(&super::TAXON),
+};
+
+pub fn animate(c: &mut CreatureInstance) {
+    c.opaque_bounds = vec3(11.0, 3.0, 11.0).extend(0.0);
+}
+
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+    let radius = p.xz().length();
+    let height =
+        (radius * 0.65).sin() * 0.25 + (p.x * 0.7 + c.animation.z * 0.4).sin() * radius * 0.035;
+    let mut shape = Surface::new(
+        (p.y - height).abs().max((radius - 9.0) * 0.5) * 0.65 - 0.045,
+        1,
+    );
+    for i in 0..20 {
+        let angle = i as f32 * TAU / 20.0;
+        shape.join(
+            ellipsoid(
+                p - vec3(
+                    angle.cos() * 8.9,
+                    (8.9f32 * 0.65).sin() * 0.25,
+                    angle.sin() * 8.9,
+                ),
+                Vec3::splat(0.14),
+            ),
+            2,
+        );
+    }
+    shape
+}
+
+pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+    super::render(
+        ray,
+        c,
+        surface,
+        vec3(0.17, 0.5, 0.36),
+        vec3(0.29, 0.95, 0.7),
+    )
+}

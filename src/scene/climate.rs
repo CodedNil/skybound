@@ -1,12 +1,12 @@
-use core::f32::consts::TAU;
+use core::f32::consts::{FRAC_PI_2, TAU};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use super::noise::fbm;
+use super::{PLANET_RADIUS, noise::fbm};
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
-pub const CLOUD_BOTTOM: f32 = 250.0;
+pub const CLOUD_BOTTOM: f32 = 900.0;
 pub const CLOUD_TOP: f32 = 26_000.0;
 
 pub fn weather_map(uv: Vec2) -> Vec4 {
@@ -38,6 +38,23 @@ pub struct Climate {
 }
 
 impl Climate {
+    pub fn at(position: Vec3, seconds: f32, weather: Vec4) -> Self {
+        Self::from_weather(
+            position,
+            seconds,
+            FRAC_PI_2 - position.y / PLANET_RADIUS,
+            -Vec3::Y,
+            weather,
+        )
+    }
+
+    pub fn on_planet(point: Vec3, seconds: f32, weather: Vec4) -> Self {
+        let mut climate = Self::at(super::planet::surface_coordinates(point), seconds, weather);
+        let frame = super::planet::surface_frame(point);
+        climate.wind = frame * vec3(climate.wind.x, -climate.wind.y, climate.wind.z);
+        climate
+    }
+
     pub fn weather_uv(position: Vec3, seconds: f32) -> Vec2 {
         (position.xy() - vec2(1.2, -0.7) * seconds) * WEATHER_SCALE
     }
@@ -70,7 +87,8 @@ impl Climate {
             (moisture * (0.7 + weather.w * 0.3) * (1.0 - sinking * 0.75)).clamp(0.02, 1.0);
         let storm = moisture.smoothstep(0.55, 0.95) * convection.smoothstep(0.65, 0.95);
         let upper = altitude.smoothstep(3000.0, 14_000.0);
-        let vertical = ((1.6 + convection * 3.0) * (1.0 - upper) + storm * 5.0)
+        let basal_lift = (8.0 + convection * 4.0) * (-altitude / 1800.0).exp();
+        let vertical = (basal_lift + (1.6 + convection * 3.0) * (1.0 - upper) + storm * 5.0)
             * (0.65 + activity * 0.35)
             - sinking * (4.0 + upper * 12.0);
         let direction = if latitude < 0.0 { -north } else { north };
@@ -89,7 +107,7 @@ impl Climate {
             temperature,
             precipitation: (storm + moisture.smoothstep(0.75, 1.0) * 0.2) * (1.0 - ice * 0.7),
             ice,
-            condensation: 300.0 + (1.0 - humidity) * 3400.0,
+            condensation: 3.0 * (300.0 + (1.0 - humidity) * 3400.0),
             low_cloud: humidity.smoothstep(0.25, 0.8) * (0.35 + convection * 0.65),
             middle_cloud: moisture.smoothstep(0.5, 0.95) * (1.0 - storm * 0.5),
             high_cloud: weather.z.smoothstep(0.43, 0.7) * (0.25 + moisture * 0.75),
@@ -121,6 +139,25 @@ impl Climate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn basal_updraft_and_condensation_leave_a_clear_lower_sky() {
+        let wet = Vec4::splat(0.95);
+        let surface = Climate::from_weather(Vec3::ZERO, 0.0, 0.0, Vec3::Y, wet);
+        let upper = Climate::from_weather(Vec3::Z * 6000.0, 0.0, 0.0, Vec3::Y, wet);
+        assert!(surface.wind.z > upper.wind.z + 8.0);
+        assert!((900.0..1200.0).contains(&surface.condensation));
+        for index in 0..4 {
+            assert!(surface.layer(index).x >= CLOUD_BOTTOM);
+        }
+        let north = Climate::at(vec3(0.0, 800_000.0, 15_000.0), 0.0, wet);
+        let south = Climate::at(
+            vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 * 2.0) - 800_000.0, 15_000.0),
+            0.0,
+            wet,
+        );
+        assert!(north.wind.y < 0.0 && south.wind.y > 0.0);
+    }
 
     #[test]
     fn circulation_rises_at_equator_diverges_aloft_and_sinks_at_poles() {

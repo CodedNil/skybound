@@ -116,31 +116,11 @@ fn slug(name: &str) -> String {
 fn filename(mut taxon: &Taxon) -> String {
     let mut branches = Vec::new();
     while let Some(parent) = taxon.parent {
-        let sibling = sibling_index(taxon, parent);
-        branches.push(format!("{sibling:02}_{}", slug(taxon.name)));
+        branches.push(slug(taxon.name));
         taxon = parent;
     }
     branches.reverse();
     branches.join("__")
-}
-
-fn sibling_index(taxon: &Taxon, parent: &Taxon) -> usize {
-    let mut names = Vec::new();
-    for species in SPECIES {
-        let mut node = *species;
-        while let Some(ancestor) = node.parent {
-            if ancestor.name == parent.name && !names.contains(&node.name) {
-                names.push(node.name);
-            }
-            node = ancestor;
-        }
-    }
-    names.sort_unstable();
-    names
-        .iter()
-        .position(|&name| name == taxon.name)
-        .expect("registered taxon")
-        + 1
 }
 
 fn option(name: &str) -> Option<String> {
@@ -269,7 +249,7 @@ fn main() {
             continue;
         }
         let c = CreatureInstance::new(
-            Vec3::ZERO.extend(taxon.radius),
+            Vec3::ZERO.extend(life::KINDS[kind].render_radius()),
             Vec4::W,
             Vec4::new(0.05, 0.0, seconds, 0.0),
             kind as u32,

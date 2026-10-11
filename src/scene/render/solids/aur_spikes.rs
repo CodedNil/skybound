@@ -1,7 +1,7 @@
-use spirv_std::glam::{Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
+use spirv_std::glam::{Vec2, Vec3, Vec4Swizzles, vec3};
 
 use crate::scene::ViewUniform;
-use crate::scene::render::solids::{ShadeResult, estimate_normal, trace_shadow, world_to_curved};
+use crate::scene::render::solids::{ShadeResult, estimate_normal, trace_shadow};
 use crate::scene::terrain::{spike_distance, spike_interval};
 
 const MAX_STEPS: i32 = 256;
@@ -11,9 +11,9 @@ const MIN_STEP: f32 = 0.05;
 const SPIKE_COLOR: Vec3 = vec3(0.16, 0.09, 0.03);
 pub fn raymarch_aur_spikes(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -> ShadeResult {
     let planet_center = view.planet_center();
-    let camera_offset = view.camera_offset();
-    let camera_offset_xy = camera_offset.xy();
-    let interval = spike_interval(ro.z + camera_offset.z, rd, t_max);
+    let up = (ro - planet_center).normalize();
+    let tangent = crate::scene::planet::surface_frame(up).transpose();
+    let interval = spike_interval(view.surface_position(ro).z, tangent * rd, t_max);
     let end = interval.y;
     let mut t = interval.x;
 
@@ -22,18 +22,19 @@ pub fn raymarch_aur_spikes(ro: Vec3, rd: Vec3, view: &ViewUniform, t_max: f32) -
             break;
         }
         let p_raw = ro + rd * t;
-        let p = world_to_curved(p_raw, planet_center, camera_offset.z);
-        let d = spike_distance(p, camera_offset_xy);
+        let p = view.surface_position(p_raw);
+        let d = spike_distance(p, Vec2::ZERO);
         if d < EPSILON {
-            let normal = estimate_normal(p, |p| spike_distance(p, camera_offset_xy));
+            let normal = estimate_normal(p_raw, |p| {
+                spike_distance(view.surface_position(p), Vec2::ZERO)
+            });
             if rd.dot(normal) <= 0.0 {
                 let pole_pos = view.pole_position.xyz();
-                let planet_center = view.planet_center();
-                let light_dir = (pole_pos - (p + planet_center)).normalize();
+                let light_dir = (pole_pos - p_raw).normalize();
                 let dot_nl = normal.dot(light_dir).max(0.0);
                 let shadow = if dot_nl > 0.0 {
-                    trace_shadow(p, light_dir, 15000.0, |p| {
-                        spike_distance(p, camera_offset_xy)
+                    trace_shadow(p_raw, light_dir, 15000.0, |p| {
+                        spike_distance(view.surface_position(p), Vec2::ZERO)
                     })
                 } else {
                     0.0

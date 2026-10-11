@@ -7,6 +7,8 @@ pub mod climate;
 mod geometry;
 mod lighting;
 pub mod noise;
+pub mod planet;
+pub mod polar;
 
 #[cfg(target_arch = "spirv")]
 pub mod render;
