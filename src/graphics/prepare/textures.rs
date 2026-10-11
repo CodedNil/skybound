@@ -8,6 +8,8 @@ use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use rayon::prelude::*;
+use skybound::scene::climate::weather_map;
+use skybound::scene::noise::{fbm, lattice};
 
 #[derive(Resource, ExtractResource, Clone)]
 #[extract_app(RenderApp)]
@@ -15,55 +17,6 @@ pub struct VolumeTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
     pub weather: Handle<Image>,
-}
-
-fn lattice(cell: IVec3, period: i32, seed: u32) -> f32 {
-    let mut value = (cell.x.rem_euclid(period) as u32).wrapping_mul(73_856_093)
-        ^ (cell.y.rem_euclid(period) as u32).wrapping_mul(19_349_663)
-        ^ (cell.z.rem_euclid(period) as u32).wrapping_mul(83_492_791)
-        ^ seed;
-    value ^= value >> 16;
-    value = value.wrapping_mul(0x7feb_352d);
-    value ^= value >> 15;
-    value = value.wrapping_mul(0x846c_a68b);
-    value ^= value >> 16;
-    (value >> 8) as f32 / 16_777_215.0
-}
-
-fn periodic_noise(position: Vec3, period: i32, seed: u32) -> f32 {
-    let position = position * period as f32;
-    let cell = position.floor().as_ivec3();
-    let fraction = position - position.floor();
-    let weight = fraction * fraction * fraction * (fraction * (fraction * 6.0 - 15.0) + 10.0);
-    let mut value = 0.0;
-    for corner in 0..8 {
-        let offset = ivec3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
-        let blend = Vec3::select(offset.cmpeq(IVec3::ZERO), Vec3::ONE - weight, weight);
-        let hash = (lattice(cell + offset, period, seed) * 255.0) as u32 & 15;
-        let delta = fraction - offset.as_vec3();
-        let u = if hash < 8 { delta.x } else { delta.y };
-        let v = if hash < 4 {
-            delta.y
-        } else if hash == 12 || hash == 14 {
-            delta.x
-        } else {
-            delta.z
-        };
-        let gradient = (if hash & 1 == 0 { u } else { -u }) + (if hash & 2 == 0 { v } else { -v });
-        value += gradient * blend.x * blend.y * blend.z;
-    }
-    value * 0.5 + 0.5
-}
-
-fn fbm(position: Vec3, period: i32, seed: u32) -> f32 {
-    let mut value = 0.0;
-    let mut amplitude = 1.0;
-    for octave in 0..4 {
-        value += periodic_noise(position, period << octave, seed.wrapping_add(octave * 1013))
-            * amplitude;
-        amplitude *= 0.5;
-    }
-    ((value / 1.875 - 0.5) * 2.0 + 0.5).clamp(0.0, 1.0)
 }
 
 fn cellular(position: Vec3, period: i32, seed: u32) -> f32 {
@@ -87,6 +40,46 @@ fn cellular(position: Vec3, period: i32, seed: u32) -> f32 {
     nearest.sqrt().min(1.0)
 }
 
+fn mip_chain<const N: usize>(mut level: Vec<u8>, mut size: UVec3) -> (Vec<u8>, u32) {
+    let mut data = level.clone();
+    let mut levels = 1;
+    while size.max_element() > 1 {
+        let next_size = (size / 2).max(UVec3::ONE);
+        let mut next = vec![0; next_size.element_product() as usize * N];
+        next.par_chunks_mut(N)
+            .enumerate()
+            .for_each(|(index, pixel)| {
+                let index = index as u32;
+                let origin = uvec3(
+                    index % next_size.x,
+                    (index / next_size.x) % next_size.y,
+                    index / (next_size.x * next_size.y),
+                ) * 2;
+                let count = size.min(UVec3::splat(2));
+                for (channel, byte) in pixel.iter_mut().enumerate() {
+                    let mut sum = 0u32;
+                    for z in 0..count.z {
+                        for y in 0..count.y {
+                            for x in 0..count.x {
+                                let p = origin + uvec3(x, y, z);
+                                sum += u32::from(
+                                    level[((p.z * size.y + p.y) * size.x + p.x) as usize * N
+                                        + channel],
+                                );
+                            }
+                        }
+                    }
+                    *byte = ((sum + count.element_product() / 2) / count.element_product()) as u8;
+                }
+            });
+        data.extend_from_slice(&next);
+        level = next;
+        size = next_size;
+        levels += 1;
+    }
+    (data, levels)
+}
+
 fn texture<const N: usize>(
     size: u32,
     depth: u32,
@@ -105,7 +98,8 @@ fn texture<const N: usize>(
             *byte = (value.clamp(0.0, 1.0) * 255.0).round() as u8;
         }
     });
-    let mut image = Image::new(
+    let (data, levels) = mip_chain::<N>(data, uvec3(size, size, depth));
+    let mut image = Image::new_uninit(
         Extent3d {
             width: size,
             height: size,
@@ -116,16 +110,18 @@ fn texture<const N: usize>(
         } else {
             TextureDimension::D3
         },
-        data,
         format,
         RenderAssetUsages::RENDER_WORLD,
     );
+    image.data = Some(data);
+    image.texture_descriptor.mip_level_count = levels;
     image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
         address_mode_u: ImageAddressMode::Repeat,
         address_mode_v: ImageAddressMode::Repeat,
         address_mode_w: ImageAddressMode::Repeat,
         mag_filter: ImageFilterMode::Linear,
         min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
         ..default()
     });
     image
@@ -168,19 +164,14 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
                 },
                 || {
                     texture(256, 1, TextureFormat::Rgba8Unorm, |p| {
-                        [
-                            fbm(p, 4, seed ^ 0x83),
-                            fbm(p, 4, seed ^ 0xc5),
-                            fbm(p, 2, seed ^ 0xf1),
-                            fbm(p, 4, seed ^ 0x133),
-                        ]
+                        weather_map(p.truncate()).to_array()
                     })
                 },
             )
         },
     );
     info!(
-        "Prepared 9.25 MiB of procedural cloud and flow textures in {:?}",
+        "Prepared filtered procedural cloud and flow textures in {:?}",
         start.elapsed()
     );
     commands.insert_resource(VolumeTextures {
@@ -193,6 +184,22 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn volume_mips_average_all_axes_and_preserve_constant_fields() {
+        let (data, levels) = mip_chain::<1>(vec![128; 64], UVec3::splat(4));
+        assert_eq!(levels, 3);
+        assert_eq!(data.len(), 64 + 8 + 1);
+        assert!(data.iter().all(|value| *value == 128));
+        let (data, levels) =
+            mip_chain::<1>((0..8).map(|index| index * 32).collect(), UVec3::splat(2));
+        assert_eq!(levels, 2);
+        assert_eq!(data[8], 112);
+        let (data, levels) = mip_chain::<1>(vec![64; 16], uvec3(4, 4, 1));
+        assert_eq!(levels, 3);
+        assert_eq!(data.len(), 16 + 4 + 1);
+        assert!(data.iter().all(|value| *value == 64));
+    }
+
     #[test]
     fn periodic_noise_tiles_with_matching_slopes() {
         let p = vec3(0.0, 0.23, 0.61);

@@ -1,4 +1,12 @@
-pub use super::{behave, render};
+use crate::scene::life::biology::{Biology, Lift, Organs};
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        lift: Lift::Membrane,
+        ..super::BIOLOGY.organs
+    },
+    ..super::BIOLOGY
+};
+pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod laevensails;

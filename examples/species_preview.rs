@@ -156,17 +156,21 @@ struct Sample {
     color: Vec3,
     distance: f32,
 }
-fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize) -> Sample {
+fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: bool) -> Sample {
     let mut ray = view.ray(vec2(uv.x, 1.0 - uv.y));
     ray.footprint = view.field / tile as f32;
-    let hit = life::render(ray, c);
+    let hit = if anatomy {
+        life::anatomy::render(ray, c)
+    } else {
+        life::render(ray, c)
+    };
     Sample {
         color: hit.composite(background(uv)),
         distance: hit.distance(),
     }
 }
 
-fn render_grid(c: &CreatureInstance, tile: usize) -> Vec<u8> {
+fn render_grid(c: &CreatureInstance, tile: usize, anatomy: bool) -> Vec<u8> {
     let width = tile * 3;
     let mut pixels = vec![0u8; width * width * 3];
     for index in 0..9 {
@@ -179,6 +183,7 @@ fn render_grid(c: &CreatureInstance, tile: usize) -> Vec<u8> {
                     vec2((i % tile) as f32 + 0.5, (i / tile) as f32 + 0.5) / tile as f32,
                     c,
                     tile,
+                    anatomy,
                 )
             })
             .collect();
@@ -214,6 +219,7 @@ fn render_grid(c: &CreatureInstance, tile: usize) -> Vec<u8> {
                             (vec2(x as f32, y as f32) + offset) / tile as f32,
                             c,
                             tile,
+                            anatomy,
                         )
                         .color
                             * 0.25;
@@ -268,7 +274,8 @@ fn main() {
             Vec4::new(0.05, 0.0, seconds, 0.0),
             kind as u32,
         );
-        let pixels = render_grid(&c, tile);
+        let anatomy = env::args().any(|arg| arg == "--anatomy");
+        let pixels = render_grid(&c, tile, anatomy);
         let path = output.as_ref().map_or_else(
             || adjacent_preview(kind),
             |output| {
@@ -277,6 +284,17 @@ fn main() {
                     .with_extension("png")
             },
         );
+        let path = if anatomy {
+            path.with_file_name(format!(
+                "{}_anatomy.png",
+                path.file_stem()
+                    .expect("preview stem")
+                    .to_string_lossy()
+                    .trim_end_matches("_render")
+            ))
+        } else {
+            path
+        };
         RgbImage::from_raw(width as u32, width as u32, pixels)
             .expect("valid pixel dimensions")
             .save(&path)

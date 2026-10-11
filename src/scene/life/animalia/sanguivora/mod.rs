@@ -1,3 +1,18 @@
+use crate::scene::life::biology::{Anatomy, Biology, Feeding};
+use crate::scene::life::biology::{Lift, Organs};
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        lift: Lift::Attached,
+        ..Organs::ANIMAL
+    },
+    anatomy: Anatomy::Suctorial,
+    oral_pairs: 1,
+    feeding: Feeding::Parasite,
+    adult_mass: 0.05,
+    ..super::BIOLOGY
+};
+
 pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 

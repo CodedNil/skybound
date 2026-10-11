@@ -1,3 +1,12 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 12.0,
+    adult_mass: 35.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
@@ -12,14 +21,14 @@ pub const TAXON: Taxon = Taxon {
     description: "Grazers are large, slow-moving herbivores with broad feathered wings and long, soft tongue-like feeding appendages. \
         Their soft feeding appendages gather larger algae as they sweep through dense concentrations of food. \
         Twice a year they return to the Mineral Fields in enormous migratory herds. \
-        Their steady flight and social gatherings make them a conspicuous part of the aerial landscape.",
+        Their steady flight and social gatherings make them a conspicuous part of the aerial landscape. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
     radius: 49.8,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 12.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -36,6 +45,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         8,
     );
     hit.join(eyes(p, 9.0, 1.4), 3);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.5, -13.0), 2.3, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

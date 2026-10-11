@@ -1,4 +1,11 @@
-pub use super::{behave, render};
+use crate::scene::life::biology::{Biology, Reproduction};
+
+pub const BIOLOGY: Biology = Biology {
+    reproduction: Reproduction::Pollination,
+    ..super::BIOLOGY
+};
+
+pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod nectarales;

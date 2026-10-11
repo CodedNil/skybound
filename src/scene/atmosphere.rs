@@ -10,7 +10,7 @@ use crate::scene::lighting::henyey_greenstein;
 
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 
-const POLE_INTENSITY: f32 = 6.0;
+const POLE_INTENSITY: f32 = 12.0;
 const EXPOSURE: f32 = 3.0;
 const ATMOSPHERE_HEIGHT: f32 = 200_000.0;
 const ATMOSPHERE_RADIUS: f32 = PLANET_RADIUS + ATMOSPHERE_HEIGHT;
@@ -29,7 +29,7 @@ const MIE_G: f32 = 0.85;
 const PRIMARY_STEPS: i32 = 16;
 const LIGHT_STEPS: i32 = 8;
 
-const AUR_RADIANCE: Vec3 = vec3(2.4, 0.6, 3.4);
+const AUR_RADIANCE: Vec3 = vec3(0.08, 0.012, 0.16);
 
 pub const SKY_SIZE: u32 = 128;
 

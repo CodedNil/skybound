@@ -1,4 +1,5 @@
-pub use super::{behave, render};
+pub use super::BIOLOGY;
+pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod kelpus;

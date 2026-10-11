@@ -1,3 +1,4 @@
+pub use super::BIOLOGY;
 use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;

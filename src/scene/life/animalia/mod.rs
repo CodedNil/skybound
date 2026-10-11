@@ -1,3 +1,10 @@
+use crate::scene::life::biology::{Anatomy, Biology};
+
+pub const BIOLOGY: Biology = Biology {
+    anatomy: Anatomy::Porous,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, Vec4, vec3};
 
 use crate::scene::life::{CreatureInstance, Rank, Taxon};
@@ -10,8 +17,9 @@ pub mod tetralata;
 pub const TAXON: Taxon = Taxon {
     name: "Animalia",
     english_name: "Animals",
-    description: "Animals acquire nutrients from other organisms and organic debris, ranging from passive sponge-like drifters to intelligent aerial predators. \
-        Their bodies exploit the planet's continuous updraft through gas chambers, lifting surfaces or powered wings, and many provide living habitat for smaller animals and plants.",
+    description: "Animals obtain chemical energy by digesting organic tissue. \
+        Gas-exchange surfaces and moisture-recovery membranes supply metabolism while conserving water; digestive residues carry unassimilated aur back into the currents. \
+        Porous lineages distribute nutrients locally, while larger active animals use pulsatile transport channels.",
     rank: Rank::Kingdom,
     parent: Some(&super::TAXON),
     radius: 0.0,

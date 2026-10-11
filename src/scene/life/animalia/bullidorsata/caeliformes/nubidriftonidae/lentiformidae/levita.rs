@@ -1,3 +1,11 @@
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    adult_mass: 0.3,
+    altitude: (800.0, 7000.0),
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -22,7 +30,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::drift(senses, 0.3)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 #[cfg(not(target_arch = "spirv"))]

@@ -1,8 +1,19 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Feeding, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    feeding: Feeding::Scavenger,
+    social: Social::Swarm,
+    speed: 9.0,
+    adult_mass: 0.02,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 pub use super::render_wings;
 use crate::scene::life::behaviour::{self, Controls, Senses};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, legs, prepare_pose};
+use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub mod purgatoridae;
@@ -19,7 +30,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 9.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -27,13 +38,16 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 4.0, 4.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(ellipsoid(p, vec3(0.8, 0.65, 1.5)), 0);
     hit.join(
         ellipsoid(p - vec3(0.0, 0.2, -1.25), vec3(0.7, 0.6, 0.55)),
         3,
     );
-    hit.join(legs(p, vec3(0.8, 0.65, 1.5), 2), 4);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.3, -1.90), 0.40, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

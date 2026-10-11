@@ -1,4 +1,5 @@
 use std::env;
+use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 
 use bevy::camera::RenderTarget;
@@ -10,7 +11,8 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
-use skybound::scene::ViewUniform;
+use skybound::scene::aur::{EJECTION_CELL, ejection};
+use skybound::scene::{PLANET_RADIUS, ViewUniform};
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
@@ -44,7 +46,7 @@ struct BenchmarkSetup<'w, 's> {
     flight: ResMut<'w, Flight>,
     time: ResMut<'w, Time<Virtual>>,
     images: ResMut<'w, Assets<Image>>,
-    world: Res<'w, WorldData>,
+    world: ResMut<'w, WorldData>,
 }
 
 fn setup(params: BenchmarkSetup) {
@@ -58,31 +60,35 @@ fn setup(params: BenchmarkSetup) {
         mut flight,
         mut time,
         mut images,
-        world,
+        mut world,
     } = params;
     commands.insert_resource(WinitSettings::continuous());
-    let resolution = option("--size").map_or(UVec2::new(1280, 720), |s| {
-        let (w, h) = s
-            .split_once('x')
-            .expect("benchmark size must be WIDTHxHEIGHT");
-        UVec2::new(w.parse().expect("width"), h.parse().expect("height"))
-    });
+    let resolution = resolution();
     let scene = option("--scene").unwrap_or_else(|| "garden".to_owned());
     let altitude = match scene.as_str() {
         "cloud-edge" => 6350.0,
+        "cloud-high" => 8000.0,
+        "cloud-tower" => 26_000.0,
         "cloud-interior" => 7500.0,
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
         "aur-ejection" | "aur-lightning" => 650.0,
-        "garden" | "mounted" | "nae-close" => 2400.0,
+        "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar" => 2400.0,
         _ => panic!("unknown benchmark scene"),
     };
     mount.translation.z = altitude;
     player.translation.z = altitude + 5.8;
-    if scene.starts_with("cloud-") {
-        settings.0 = vec4(0.95, 0.85, 0.30, 0.80);
-    } else if scene == "aur-horizon" {
-        settings.0 = Vec4::ZERO;
+    let latitude = match scene.as_str() {
+        "equator" => Some(0.0),
+        "sunrise" => Some(0.87),
+        "polar" => Some(1.4),
+        _ => None,
+    };
+    if let Some(latitude) = latitude {
+        world.camera_offset = vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 - latitude), 0.0);
+    }
+    if let Some(weather) = scene_weather(&scene) {
+        settings.0 = weather;
     }
     let phase = option("--time").map_or(0.0, |s| s.parse::<f32>().expect("simulation time"));
     time.advance_by(Duration::from_secs_f32(phase));
@@ -94,6 +100,8 @@ fn setup(params: BenchmarkSetup) {
             &mut player,
             scene == "aur-lightning",
         )
+    } else if latitude.is_some() {
+        -Vec3::Y
     } else {
         Vec3::Y
     };
@@ -113,6 +121,9 @@ fn setup(params: BenchmarkSetup) {
         flight.mode = ControlMode::Flying;
         Transform::from_translation(player.translation + vec3(1.5, -4.0, 0.8))
             .looking_at(player.translation, Vec3::Z)
+    } else if scene == "cloud-tower" {
+        Transform::from_translation(mount.translation - direction * 12_000.0 + Vec3::Z * 8000.0)
+            .looking_at(mount.translation - Vec3::Z * 5000.0, Vec3::Z)
     } else {
         Transform::from_translation(mount.translation - direction * 85.0 + Vec3::Z * 18.0)
             .looking_at(mount.translation + Vec3::Z * 5.0, Vec3::Z)
@@ -140,6 +151,16 @@ fn setup(params: BenchmarkSetup) {
     }
 }
 
+fn scene_weather(scene: &str) -> Option<Vec4> {
+    match scene {
+        "cloud-high" => Some(vec4(0.1, 0.1, 0.95, 0.3)),
+        "cloud-tower" => Some(vec4(0.95, 0.95, 0.7, 0.95)),
+        "cloud-edge" | "cloud-interior" => Some(vec4(0.95, 0.85, 0.3, 0.8)),
+        "aur-horizon" | "clear" | "equator" | "sunrise" | "polar" => Some(Vec4::ZERO),
+        _ => None,
+    }
+}
+
 fn focus_aur(
     phase: f32,
     offset: Vec3,
@@ -158,9 +179,14 @@ fn focus_aur(
             0.0
         };
     view.prepare_flashes();
-    let event = view
-        .aur_ejections
-        .iter()
+    let cell = (offset.truncate() / EJECTION_CELL).floor();
+    let event = (0..9)
+        .map(|index| {
+            ejection(
+                cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0),
+                view.time(),
+            )
+        })
         .max_by(|a, b| a[0].w.total_cmp(&b[0].w))
         .expect("ejection cells");
     let direction = if lightning {
@@ -239,6 +265,15 @@ fn measure(
         }
     }
     exit.write(AppExit::Success);
+}
+
+fn resolution() -> UVec2 {
+    option("--size").map_or(UVec2::new(1280, 720), |s| {
+        let (w, h) = s
+            .split_once('x')
+            .expect("benchmark size must be WIDTHxHEIGHT");
+        UVec2::new(w.parse().expect("width"), h.parse().expect("height"))
+    })
 }
 
 fn option(name: &str) -> Option<String> {

@@ -1,4 +1,12 @@
-pub use super::{behave, render};
+use crate::scene::life::biology::{Biology, Organs, Transport};
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        transport: Transport::Vascular,
+        ..super::BIOLOGY.organs
+    },
+    ..super::BIOLOGY
+};
+pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod floropsida;

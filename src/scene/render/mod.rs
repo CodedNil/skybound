@@ -56,7 +56,7 @@ fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     Ray {
         origin,
         direction: (world_point(uv, 0.01, matrix) - origin).normalize(),
-        light: (view.pole_position.xyz() - origin).normalize(),
+        light: view.pole_direction(),
         ambient: view.ambient_color.xyz().min(Vec3::splat(0.8)),
         radiance: view.pole_color.xyz().min(Vec3::splat(1.5)),
         max_distance: T_MAX,
@@ -103,73 +103,62 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
 
 fn energy_hit(ray: Ray, view: &crate::scene::ViewUniform) -> Hit {
     let mut closest = Hit::MISS;
-    for kind in 0..4 {
-        for index in 0..32 {
-            let bolt = if kind == 0 {
-                view.aur_bolts[index]
-            } else {
-                view.aur_arcs[kind - 1][index]
-            };
-            if bolt[0].w <= 0.0 {
-                break;
-            }
-            let start = energy_point(bolt[0].xyz(), view);
-            let end = energy_point(bolt[1].xyz(), view);
-            let axis = end - start;
-            let length = axis.length_squared();
-            let center = (start + end) * 0.5;
-            let radius = bolt[0]
-                .w
-                .max(ray.footprint * center.distance(ray.origin) * 0.65);
-            let bound = axis.length() * 0.5 + radius;
-            let bounds = intersect_sphere(ray.origin - center, ray.direction, bound);
-            if bounds.y < 0.0 || bounds.x > ray.max_distance || bounds.x > closest.distance() {
-                continue;
-            }
-            let offset = ray.origin - start;
-            let along_ray = axis.dot(ray.direction);
-            let along_origin = axis.dot(offset);
-            let a = length - along_ray * along_ray;
-            let b = length * ray.direction.dot(offset) - along_origin * along_ray;
-            let c = length * offset.length_squared()
-                - along_origin * along_origin
-                - radius * radius * length;
-            let discriminant = b * b - a * c;
-            let mut distance = ray.max_distance;
-            if discriminant >= 0.0 && a > 0.0001 {
-                let root = (-b - discriminant.sqrt()) / a;
-                let height = along_origin + root * along_ray;
-                if root > 0.0 && height > 0.0 && height < length {
-                    distance = root;
-                }
-            }
-            for cap in 0..2 {
-                let center = if cap == 0 { start } else { end };
-                let interval = intersect_sphere(ray.origin - center, ray.direction, radius);
-                if interval.y >= interval.x && interval.x > 0.0 {
-                    distance = distance.min(interval.x);
-                }
-            }
-            if distance >= closest.distance() || distance >= ray.max_distance {
-                continue;
-            }
-            let point = ray.origin + ray.direction * distance;
-            let along = ((point - start).dot(axis) / length.max(0.001)).clamp(0.0, 1.0);
-            // Preserve energy when distant bolts widen to a pixel.
-            let energy = bolt[1].w * (bolt[0].w / radius);
-            closest = Hit {
-                color_depth: (if kind == 0 {
-                    vec3(0.65, 1.2, 2.0)
-                } else {
-                    vec3(0.25, 0.8, 1.8)
-                } * energy)
-                    .extend(distance),
-                normal: (point - (start + axis * along)).normalize(),
-                previous_position: point,
-                transmittance: Vec3::ZERO,
-                part: 0,
-            };
+    for index in 0..32 {
+        let bolt = view.aur_bolts[index];
+        if bolt[0].w <= 0.0 {
+            break;
         }
+        let start = energy_point(bolt[0].xyz(), view);
+        let end = energy_point(bolt[1].xyz(), view);
+        let axis = end - start;
+        let length = axis.length_squared();
+        let center = (start + end) * 0.5;
+        let radius = bolt[0]
+            .w
+            .max(ray.footprint * center.distance(ray.origin) * 0.65);
+        let bound = axis.length() * 0.5 + radius;
+        let bounds = intersect_sphere(ray.origin - center, ray.direction, bound);
+        if bounds.y < 0.0 || bounds.x > ray.max_distance || bounds.x > closest.distance() {
+            continue;
+        }
+        let offset = ray.origin - start;
+        let along_ray = axis.dot(ray.direction);
+        let along_origin = axis.dot(offset);
+        let a = length - along_ray * along_ray;
+        let b = length * ray.direction.dot(offset) - along_origin * along_ray;
+        let c = length * offset.length_squared()
+            - along_origin * along_origin
+            - radius * radius * length;
+        let discriminant = b * b - a * c;
+        let mut distance = ray.max_distance;
+        if discriminant >= 0.0 && a > 0.0001 {
+            let root = (-b - discriminant.sqrt()) / a;
+            let height = along_origin + root * along_ray;
+            if root > 0.0 && height > 0.0 && height < length {
+                distance = root;
+            }
+        }
+        for cap in 0..2 {
+            let center = if cap == 0 { start } else { end };
+            let interval = intersect_sphere(ray.origin - center, ray.direction, radius);
+            if interval.y >= interval.x && interval.x > 0.0 {
+                distance = distance.min(interval.x);
+            }
+        }
+        if distance >= closest.distance() || distance >= ray.max_distance {
+            continue;
+        }
+        let point = ray.origin + ray.direction * distance;
+        let along = ((point - start).dot(axis) / length.max(0.001)).clamp(0.0, 1.0);
+        // Preserve energy when distant bolts widen to a pixel.
+        let energy = bolt[1].w * (bolt[0].w / radius);
+        closest = Hit {
+            color_depth: (vec3(0.65, 1.2, 2.0) * energy).extend(distance),
+            normal: (point - (start + axis * along)).normalize(),
+            previous_position: point,
+            transmittance: Vec3::ZERO,
+            part: 0,
+        };
     }
     closest
 }
@@ -211,9 +200,7 @@ fn atmosphere(
         )
         .xyz();
     AtmosphereData {
-        pole_pos: frame.view.pole_position.xyz(),
         sky,
-        pole: frame.view.pole_color.xyz().min(Vec3::splat(1.5)) * 0.45,
         ambient: frame.view.ambient_color.xyz() + sky * 0.12,
     }
 }
@@ -417,7 +404,7 @@ pub fn sky(
     #[spirv(location = 0)] out_color: &mut Vec4,
 ) {
     let view = &frame.view;
-    let light = (view.pole_position.xyz() - view.world_position.xyz()).normalize();
+    let light = view.pole_direction();
     let direction = sky_direction(uv, view.sky_horizon.x);
     let light = vec3((1.0 - light.z * light.z).max(0.0).sqrt(), 0.0, light.z);
     *out_color =

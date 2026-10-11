@@ -2,9 +2,11 @@ mod view;
 pub use view::{FrameUniform, PLANET_RADIUS, ViewUniform};
 
 pub mod atmosphere;
-mod aur;
+pub mod aur;
+pub mod climate;
 mod geometry;
 mod lighting;
+pub mod noise;
 
 #[cfg(target_arch = "spirv")]
 pub mod render;

@@ -1,3 +1,16 @@
+use crate::scene::life::biology::Organs;
+use crate::scene::life::biology::{Biology, Feeding, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        aur_capacity: 1.0,
+        ..super::BIOLOGY.organs
+    },
+    feeding: Feeding::Omnivore,
+    social: Social::Mutualist,
+    ..super::BIOLOGY
+};
+
 pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 

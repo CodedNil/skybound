@@ -1,3 +1,13 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Feeding};
+
+pub const BIOLOGY: Biology = Biology {
+    feeding: Feeding::Scavenger,
+    speed: 32.0,
+    adult_mass: 20.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
@@ -13,14 +23,14 @@ pub const TAXON: Taxon = Taxon {
     description: "Shadowings are large, intelligent scavengers covered in muted, light-absorbing dark plumage. \
         Fine sensitivity to wind and thermal currents helps them search vast territories for carcasses left by apex predators. \
         Sharp, echoing cries warn kin and other animals, coordinate safe feeding and discourage threats. \
-        Broad wings support long journeys and patient circling over potential feeding sites.",
+        Broad wings support long journeys and patient circling over potential feeding sites. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
     radius: 49.8,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 32.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -37,6 +47,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         6,
     );
     hit.join(eyes(p, 7.2, 1.0), 3);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.5, -10.0), 0.9, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

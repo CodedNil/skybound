@@ -1,3 +1,11 @@
+use crate::scene::life::biology::{Biology, Energy};
+
+pub const BIOLOGY: Biology = Biology {
+    energy: Energy::Lightning,
+    adult_mass: 8.0,
+    ..super::BIOLOGY
+};
+
 use core::f32::consts::FRAC_PI_2;
 
 use spirv_std::glam::{Vec3, vec3};
@@ -20,7 +28,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::steer(senses, senses.storm, 4.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {

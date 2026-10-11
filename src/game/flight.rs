@@ -133,7 +133,7 @@ fn extract_player(
     for (index, mut pose) in poses.into_iter().enumerate() {
         if index == 1 && !matches!(flight.mode, ControlMode::Flying) {
             for (knot, point) in pose.tail.iter_mut().zip([
-                vec3(0.0, -0.8, 0.45),
+                vec3(0.0, -0.95, 0.12),
                 vec3(0.0, -1.8, 0.9),
                 vec3(0.0, -2.6, 0.8),
                 vec3(0.0, -2.7, 0.5),
@@ -351,7 +351,14 @@ fn fly(
 fn advance_companion(
     time: Res<Time>,
     player: Single<(&mut Transform, &mut Velocity), NaeQuery>,
-    mount: Single<(&mut Transform, &mut Velocity), NaetuQuery>,
+    mount: Single<
+        (
+            &mut Transform,
+            &mut Velocity,
+            Option<&super::ecosystem::Relations>,
+        ),
+        NaetuQuery,
+    >,
     camera: Single<Has<CameraController>, With<Camera3d>>,
     mut flight: ResMut<Flight>,
 ) {
@@ -360,7 +367,7 @@ fn advance_companion(
         return;
     }
     let (mut player, mut velocity) = player.into_inner();
-    let (mut mount, mut mount_velocity) = mount.into_inner();
+    let (mut mount, mut mount_velocity, ecology) = mount.into_inner();
     if !matches!(flight.mode, ControlMode::Mounted) {
         let on_back = matches!(flight.mode, ControlMode::Perched(a) if a.on_mount);
         let mut motion = Motion {
@@ -377,7 +384,7 @@ fn advance_companion(
                 } else {
                     player.translation - mount.translation
                 }),
-                ..Senses::default()
+                ..ecology.map_or_else(Senses::default, |relations| relations.senses)
             },
             dt,
         );
