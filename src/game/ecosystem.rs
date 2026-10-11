@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use skybound::scene::climate::weather_map;
 use skybound::scene::life::behaviour::{Activity, Motion, Senses};
@@ -8,7 +9,7 @@ use skybound::scene::life::physiology::{Climate, Vitals};
 use skybound::scene::life::{KINDS, Kind};
 
 use super::flight::{Mount, Player, SPAWN};
-use super::world::{WorldAnchor, WorldData};
+use super::world::{PlanetPosition, WorldAnchor, WorldData};
 
 const CELL: f32 = 300.0;
 const STEP: f32 = 0.25;
@@ -28,10 +29,34 @@ pub struct Relations {
     pub activity: Activity,
     pub senses: Senses,
     host: Option<Entity>,
-    remembered_food: Option<(Entity, Vec3, f32)>,
+    remembered_food: Option<(Entity, DVec3, f32)>,
     pollen: Option<(Entity, Kind)>,
     pollinated_until: f32,
     last_birth: f32,
+}
+
+impl Relations {
+    pub fn rotate(&mut self, rotation: Quat) {
+        let senses = &mut self.senses;
+        for direction in [
+            &mut senses.wind,
+            &mut senses.up,
+            &mut senses.separation,
+            &mut senses.alignment,
+        ] {
+            *direction = rotation * *direction;
+        }
+        for target in [
+            &mut senses.food,
+            &mut senses.danger,
+            &mut senses.companion,
+            &mut senses.habitat,
+            &mut senses.storm,
+            &mut senses.water,
+        ] {
+            *target = target.map(|direction| rotation * direction);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -141,14 +166,11 @@ type Organisms<'a> = (
 );
 
 fn climate_at(world: &WorldData, local: Vec3, now: f32) -> Climate {
-    let position = local + world.camera_offset;
+    let position = world.surface_position(local);
     let weather = weather_map(Climate::weather_uv(position, now));
-    let north = world
-        .planet_rotation(local)
-        .mul_vec3(Vec3::Z)
-        .with_z(0.0)
-        .normalize_or_zero();
-    Climate::from_weather(position, now, world.planet_frame(local).1, north, weather)
+    let mut climate = Climate::on_planet(world.position(local).as_vec3(), now, weather);
+    climate.wind = world.rotate_to_local(climate.wind);
+    climate
 }
 
 fn simulate(
@@ -157,7 +179,7 @@ fn simulate(
     time: Res<Time>,
     world: Res<WorldData>,
     mut ecosystem: ResMut<Ecosystem>,
-    mut organisms: Query<Organisms>,
+    (mut organisms, mut coordinates): (Query<Organisms>, Query<&mut PlanetPosition>),
     mut accumulated: Local<f32>,
 ) {
     *accumulated += clock.delta_secs();
@@ -185,7 +207,7 @@ fn simulate(
         let climate = climate_at(&world, transform.translation, now);
         let patch = ecosystem
             .patches
-            .entry(cell(transform.translation + world.camera_offset))
+            .entry(cell(world.position(transform.translation).as_vec3()))
             .or_default();
         let recycled = patch.detritus * (1.0 - (-(now - patch.recycled_at) * 0.001).exp());
         patch.detritus -= recycled;
@@ -200,17 +222,10 @@ fn simulate(
         }
         let neighbours = neighbours(transform.translation, biology.perception, &grid);
         let agent = index[&entity];
-        let senses = perceive(
-            agent,
-            &mut relations,
-            climate,
-            &neighbours,
-            now,
-            world.camera_offset,
-        );
+        let senses = perceive(agent, &mut relations, climate, &neighbours, now, &world);
         relations.senses = senses;
         let mut movement = Motion {
-            position: transform.translation,
+            position: Vec3::ZERO,
             velocity: motion.0,
             rotation: transform.rotation,
         };
@@ -235,12 +250,16 @@ fn simulate(
                 .and_then(|host| index.get(&host))
                 .filter(|host| host.vitals.health > 0.0)
             {
-                transform.translation =
-                    host.position + Vec3::Z * host.kind.biology().adult_mass.cbrt() * 0.3;
+                transform.translation = host.position
+                    + world.up(host.position) * host.kind.biology().adult_mass.cbrt() * 0.3;
                 motion.0 = host.velocity;
             } else {
                 relations.host = None;
-                transform.translation = movement.position;
+                if let Ok(mut coordinate) = coordinates.get_mut(entity) {
+                    coordinate.translate(movement.position, &mut transform, &world);
+                } else {
+                    transform.translation += movement.position;
+                }
                 transform.rotation = movement.rotation;
                 motion.0 = movement.velocity;
             }
@@ -308,9 +327,9 @@ fn companion(kind: Kind, other: Kind) -> bool {
     match kind {
         Kind::Nae => other == Kind::Naetu,
         Kind::Naetu => other == Kind::Nae,
-        Kind::Lucinani => other == Kind::Susurrium,
+        Kind::Lucinani => other == Kind::Susurrus,
         Kind::Luminiflora
-        | Kind::Aurocoralla
+        | Kind::Aurocorallum
         | Kind::Aeromuscus
         | Kind::Flexilora
         | Kind::Chromacorallum => other.biology().adult_mass > kind.biology().adult_mass * 20.0,
@@ -324,7 +343,7 @@ fn perceive(
     climate: Climate,
     neighbours: &[Agent],
     now: f32,
-    world_origin: Vec3,
+    world: &WorldData,
 ) -> Senses {
     let Agent {
         entity,
@@ -336,7 +355,7 @@ fn perceive(
     let biology = kind.biology();
     let mut senses = Senses {
         wind: climate.wind,
-        up: Vec3::Z,
+        up: world.up(position),
         aur: climate.aur,
         time: now,
         energy: body.energy,
@@ -351,7 +370,7 @@ fn perceive(
                 || (biology.feeding == Feeding::Scavenger && other.vitals.health <= 0.0))
         {
             senses.food = Some(offset);
-            relations.remembered_food = Some((other.entity, other.position + world_origin, now));
+            relations.remembered_food = Some((other.entity, world.position(other.position), now));
         }
         if senses.danger.is_none()
             && other.vitals.health > 0.0
@@ -360,7 +379,7 @@ fn perceive(
         {
             senses.danger = Some(offset);
         }
-        if senses.water.is_none() && other.kind == Kind::Pondphilus && other.vitals.health > 0.0 {
+        if senses.water.is_none() && other.kind == Kind::Lacufolium && other.vitals.health > 0.0 {
             senses.water = Some(offset);
         }
         if senses.companion.is_none() && companion(kind, other.kind) && other.vitals.health > 0.0 {
@@ -388,7 +407,7 @@ fn perceive(
         {
             relations.remembered_food = None;
         } else {
-            senses.food = Some(location - position - world_origin);
+            senses.food = Some(world.local(location) - position);
         }
     }
     let target_altitude = if biology.organs.aur_capacity > 0.0 && body.aur < 0.15 {
@@ -399,16 +418,17 @@ fn perceive(
             .clamp(biology.altitude.0 + 20.0, biology.altitude.1 - 20.0)
     };
     if (target_altitude - climate.altitude).abs() > 5.0 {
-        senses.habitat = Some(Vec3::Z * (target_altitude - climate.altitude));
+        senses.habitat = Some(senses.up * (target_altitude - climate.altitude));
     }
     if climate.storm > 0.1 {
         senses.storm = Some(Vec3::Y * 100.0);
     }
     senses.buoyancy = match biology.organs.lift {
         Lift::Bladders | Lift::Membrane | Lift::Chimney => {
-            -climate.wind.z + ((target_altitude - climate.altitude) * 0.01).clamp(-2.0, 2.0)
+            -climate.wind.dot(senses.up)
+                + ((target_altitude - climate.altitude) * 0.01).clamp(-2.0, 2.0)
         }
-        Lift::Wings => -climate.wind.z - body.fatigue * 0.2,
+        Lift::Wings => -climate.wind.dot(senses.up) - body.fatigue * 0.2,
         Lift::Attached | Lift::Aerosol => 0.0,
     };
     if matches!(kind, Kind::Aerohirudo | Kind::Ptilohirudo) && body.energy > 0.8 {
@@ -636,7 +656,9 @@ mod tests {
         let mut world = World::new();
         let first = world.spawn(population(Kind::Naetu, Vec3::ZERO, 1.0)).id();
         let second = world.spawn(population(Kind::Naetu, Vec3::ZERO, 1.0)).id();
-        let plant = world.spawn(population(Kind::Kelpus, Vec3::ZERO, 0.3)).id();
+        let plant = world
+            .spawn(population(Kind::Aerothallus, Vec3::ZERO, 0.3))
+            .id();
         let before = world.get::<Physiology>(plant).expect("plant").0.mass;
         let meals = [
             Meal {
@@ -683,16 +705,22 @@ mod tests {
             velocity: Vec3::ZERO,
         };
         let mut relations = Relations {
-            remembered_food: Some((food, agent.position + Vec3::X * 80.0, 1.0)),
+            remembered_food: Some((
+                food,
+                WorldData::default().position(agent.position + Vec3::X * 80.0),
+                1.0,
+            )),
             ..Relations::default()
         };
         let origin = Vec3::X * 50_000.0;
+        let mut coordinates = WorldData::default();
+        coordinates.origin = coordinates.position(origin);
         let shifted = Agent {
             position: agent.position - origin,
             ..agent
         };
         let climate = Climate::sample(agent.position, 2.0, 0.0);
-        let senses = perceive(shifted, &mut relations, climate, &[], 2.0, origin);
+        let senses = perceive(shifted, &mut relations, climate, &[], 2.0, &coordinates);
         assert!(
             senses
                 .food
@@ -700,7 +728,7 @@ mod tests {
                 .distance(Vec3::X * 80.0)
                 < 1e-5
         );
-        let expired = perceive(shifted, &mut relations, climate, &[], 10.0, origin);
+        let expired = perceive(shifted, &mut relations, climate, &[], 10.0, &coordinates);
         assert!(expired.food.is_none());
     }
 }

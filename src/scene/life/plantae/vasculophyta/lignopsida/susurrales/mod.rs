@@ -2,7 +2,7 @@ pub use super::BIOLOGY;
 pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
-pub mod susurriaceae;
+pub mod susurraceae;
 
 pub const TAXON: Taxon = Taxon {
     name: "Susurrales",
@@ -12,5 +12,4 @@ pub const TAXON: Taxon = Taxon {
         Associations with luminous sap-feeding animals add active movement to an otherwise wind-supported plant body.",
     rank: Rank::Order,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

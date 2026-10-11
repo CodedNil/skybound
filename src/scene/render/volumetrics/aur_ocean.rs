@@ -1,4 +1,4 @@
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4Swizzles, vec2, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3};
 use spirv_std::num_traits::Float;
 
 use super::VolumeSample;
@@ -7,6 +7,17 @@ use crate::scene::aur::{CURRENT, curl, ejection_field};
 use crate::scene::render::utils::Textures;
 
 pub const OCEAN_TOP_HEIGHT: f32 = 3800.0;
+
+fn flow_noise(p: Vec3, footprint: f32, textures: &Textures) -> Vec4 {
+    let rotated = vec3(
+        p.dot(vec3(0.36, 0.48, -0.8)),
+        p.dot(vec3(-0.8, 0.6, 0.0)),
+        p.dot(vec3(0.48, 0.64, 0.6)),
+    ) * 0.754_877
+        + vec3(0.37, 0.19, 0.63);
+    (textures.base_filtered(p, footprint) + textures.base_filtered(rotated, footprint * 0.754_877))
+        * 0.5
+}
 
 fn wave_height(position: Vec2, time: f32, footprint: f32, textures: &Textures) -> f32 {
     let flowing = position - CURRENT.xy() * time;
@@ -25,14 +36,14 @@ fn wave_height(position: Vec2, time: f32, footprint: f32, textures: &Textures) -
     let folds = textures
         .base_filtered(
             vec2(
-                warped.x * 1.73 + warped.y * 0.61,
-                warped.y * 1.73 - warped.x * 0.61,
+                warped.x * 0.61 + warped.y * 0.46,
+                warped.y * 0.61 - warped.x * 0.46,
             )
             .extend(-time * 0.018),
-            footprint * 0.0003,
+            footprint * 0.00017,
         )
         .z;
-    (broad - 0.5) * 1800.0 + (folds - 0.5) * 500.0 - 120.0
+    (broad - 0.5) * 1400.0 + (folds - 0.5) * 1100.0 - 120.0
 }
 
 fn ejections(pos: Vec3, view: &ViewUniform, footprint: f32, textures: &Textures) -> Vec2 {
@@ -82,9 +93,10 @@ pub fn sample_ocean(
     let wave = wave_height(pos.xy(), time, footprint, textures);
     let altitude = pos.z - wave;
     let coordinates = curl(flowing.xy() * 0.00018, time).extend(pos.z * 0.0008 - time * 0.025);
-    let flow = textures.base_filtered(
+    let flow = flow_noise(
         flowing * vec3(0.0001, 0.0001, 0.0003) - Vec3::Z * time * 0.0072,
         footprint * 0.0003,
+        textures,
     );
     let detail = textures.details_filtered(coordinates * vec3(3.0, 3.0, 1.0), footprint * 0.0016);
     let noise = detail.w * 2.0 - 1.0;
@@ -116,7 +128,7 @@ pub fn sample_ocean(
         let hue =
             vec3(0.16, 0.12, 0.27).lerp(vec3(0.34, 0.21, 0.30), flow.y.smoothstep(0.25, 0.75));
         let core = hue.lerp(vec3(0.40, 0.61, 0.57), flow.z.smoothstep(0.46, 0.75));
-        let energy = flow.w.smoothstep(0.40, 0.75);
+        let energy = flow.w.smoothstep(0.30, 0.70);
         let depth_glow = 1.0 - (-(depth + 35.0) / 180.0).exp();
         let pulse = 0.85 + 0.15 * (time * 1.4 + flow.y * 9.0).sin();
         let mut flash = 0.0;
@@ -128,8 +140,8 @@ pub fn sample_ocean(
             let distance = (pos.xy() - event.xy()).length_squared() + (pos.z + 120.0).powi(2);
             flash += (-distance / (event.z * event.z)).exp() * event.w;
         }
-        let emission = (hue * (0.08 + facing * 0.35)
-            + core * depth_glow * (0.15 + energy.powi(3) * 3.5) * (0.2 + facing * 1.4)
+        let emission = (hue * (1.0 + facing * 0.55)
+            + core * depth_glow * (0.65 + energy.powi(3) * 3.5) * (0.65 + facing * 0.95)
             + vec3(0.26, 0.40, 0.42) * wisp * plume * energy * 0.5)
             * pulse
             + vec3(1.0, 1.8, 3.0) * flash * 4.0;

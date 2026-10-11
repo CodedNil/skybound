@@ -8,7 +8,7 @@ pub const BIOLOGY: Biology = Biology {
 
 use crate::scene::life::{Rank, Taxon};
 
-pub mod caeliformes;
+pub mod caelomorpha;
 
 pub const TAXON: Taxon = Taxon {
     name: "Bullidorsata",
@@ -18,5 +18,4 @@ pub const TAXON: Taxon = Taxon {
         Air currents carry them through suspended algae and plant fragments, which adhere to their moist surfaces and are absorbed as food.",
     rank: Rank::Phylum,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

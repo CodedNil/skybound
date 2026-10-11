@@ -11,7 +11,7 @@ use crate::scene::life::{CreatureInstance, Rank, Taxon};
 use crate::scene::surface::{Ray, Surface, TraceResult, paired_sheets, trace};
 
 pub mod bullidorsata;
-pub mod sanguivora;
+pub mod sanguinivora;
 pub mod tetralata;
 
 pub const TAXON: Taxon = Taxon {
@@ -22,7 +22,6 @@ pub const TAXON: Taxon = Taxon {
         Porous lineages distribute nutrients locally, while larger active animals use pulsatile transport channels.",
     rank: Rank::Kingdom,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };
 
 /// Render the body and wing pairs (span, chord, root Z, opacity).

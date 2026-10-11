@@ -89,7 +89,6 @@ pub struct Taxon {
     pub english_name: &'static str,
     pub description: &'static str,
     pub rank: Rank,
-    pub radius: f32,
     pub parent: Option<&'static Self>,
 }
 
@@ -102,12 +101,11 @@ pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 pub mod plantae;
 
 pub const TAXON: Taxon = Taxon {
-    name: "Life",
+    name: "Vita",
     english_name: "Life",
     description: "Life above the aur ocean is sustained by rising energy, moisture and wind. \
         Organisms occupy changing layers of the sky, exchanging nutrients through grazing, decomposition, parasitism and mutual dependence; buoyancy and attachment are as important as active flight.",
     rank: Rank::Root,
-    radius: 0.0,
     parent: None,
 };
 
@@ -118,6 +116,9 @@ macro_rules! species {
         pub enum Kind { $($id),* }
         pub const KINDS: &[Kind] = &[$(Kind::$id),*];
         impl Kind {
+            pub const fn render_radius(self) -> f32 {
+                match self { $(Self::$id => $($path)::+::RENDER_RADIUS,)* }
+            }
             pub const fn biology(self) -> biology::Biology {
                 match self { $(Self::$id => $($path)::+::BIOLOGY,)* }
             }
@@ -127,7 +128,7 @@ macro_rules! species {
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES_MODULES: &[&str] = &[$(stringify!($($path)::+)),*];
         pub fn behave(kind: Kind, senses: &behaviour::Senses) -> behaviour::Controls {
-            match kind { $(Kind::$id => $($path)::+::behave(senses),)* }
+            behaviour::organism(senses, kind.biology())
         }
         #[cfg(not(target_arch = "spirv"))]
         pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
@@ -144,60 +145,60 @@ macro_rules! species {
     };
 }
 species! {
-    Lucentiae: animalia::tetralata::specialia::detritivora::lucentiae;
-    Manducidae: animalia::tetralata::specialia::detritivora::manducidae;
-    Textricinae: animalia::tetralata::specialia::rapaxina::textricinae;
-    Luminiscidae: animalia::tetralata::volitilia::parvifuga::luminiscidae;
-    Nebulaphoridae: animalia::tetralata::volitilia::parvifuga::nebulaphoridae;
-    Ramiphagae: animalia::tetralata::volitilia::petrolata::ramiphagae;
-    Terrapodae: animalia::tetralata::volitilia::petrolata::terrapodae;
-    Aerogigans: animalia::bullidorsata::caeliformes::aerogigantiform::aerogigantidae::aerogigans;
-    Levita: animalia::bullidorsata::caeliformes::nubidriftonidae::lentiformidae::levita;
-    Nubiballona: animalia::bullidorsata::caeliformes::nubidriftonidae::leviformidae::nubiballona;
-    Hematozoa: animalia::sanguivora::erratia::errantia::parasitidae::hematozoa;
-    Adherans: animalia::sanguivora::erratia::errantia::tenacidae::adherans;
-    Fluitans: animalia::sanguivora::erratia::errantia::tenacidae::fluitans;
-    Ambigena: animalia::sanguivora::voluceria::dissimuliformes::mimicidae::ambigena;
-    Aerohirudo: animalia::sanguivora::voluceria::voluceriformes::voluceridae::aerohirudo;
-    Ptilohirudo: animalia::sanguivora::voluceria::voluceriformes::voluceridae::ptilohirudo;
-    Purgatoridae: animalia::tetralata::specialia::detritivora::manducidae::purgatoridae;
-    Sputorexidae: animalia::tetralata::specialia::rapaxina::textricinae::sputorexidae;
-    Aculeorhynchus: animalia::tetralata::viviparia::ferrilaminata::aculeorhinidae::aculeorhynchus;
-    Crepusculorbis: animalia::tetralata::viviparia::ferrilaminata::ferrivolvidae::crepusculorbis;
-    Ferrispinae: animalia::tetralata::viviparia::ferrilaminata::ferrivolvidae::ferrispinae;
-    Herbivolus: animalia::tetralata::viviparia::grandivoriformes::ruminavidae::herbivolus;
-    Umbraevolidae: animalia::tetralata::viviparia::grandivoriformes::ruminavidae::umbraevolidae;
-    Lucinani: animalia::sanguivora::voluceria::dissimuliformes::mimicidae::candelis::lucinani;
-    Custos: animalia::tetralata::viviparia::ferrilaminata::ferrivolvidae::ferrispinae::custos;
-    Naetu: animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::naetu;
-    Antiquus: animalia::tetralata::viviparia::grandivoriformes::vocanathidae::vocanathus::antiquus;
-    Nae: animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::nae;
-    Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus;
-    Luminiflora: plantae::pneumatophyta::micrococcopsida::luminiferales::luminiferaceae::luminiflora;
-    Kelpus: plantae::pneumatophyta::macrophyllopsida::kelpidales::kelpiaceae::kelpus;
-    Laevensails: plantae::pneumatophyta::macrophyllopsida::kelpidales::laevensailiaceae::laevensails;
-    Pondphilus: plantae::pneumatophyta::macrophyllopsida::kelpidales::laevensailiaceae::pondphilus;
-    Flexilora: plantae::pneumatophyta::macrophyllopsida::tendrillales::spirulaceae::flexilora;
-    Chromacorallum: plantae::pneumatophyta::macrophyllopsida::tendrillales::corallophylaceae::chromacorallum;
-    Aurocoralla: plantae::pneumatophyta::macrophyllopsida::tendrillales::corallophylaceae::aurocoralla;
-    Rubilion: plantae::vasculophyta::lignopsida::lignoradicales::rubilionaceae::rubilion;
-    Stelloradix: plantae::vasculophyta::lignopsida::lignoradicales::radicellaceae::stelloradix;
-    Susurrium: plantae::vasculophyta::lignopsida::susurrales::susurriaceae::susurrium;
-    Ventistrix: plantae::vasculophyta::lignopsida::fulminatales::vexillariaceae::ventistrix;
-    Florapollis: plantae::vasculophyta::floropsida::nectarales::bloomaceae::florapollis;
-    Gigantaflora: plantae::vasculophyta::floropsida::nectarales::bloomaceae::gigantaflora;
-    Fructus: plantae::vasculophyta::floropsida::pomales::pomaceae::fructus;
-    Aeromuscus: plantae::chlorophyta::muscopsida::bryophytales::verdeaceae::aeromuscus;
+    Lucerna: animalia::tetralata::specialia::detritivora::lucernidae::lucerna::undulata;
+    Manduca: animalia::tetralata::specialia::detritivora::manducidae::manduca::gregaria;
+    Sericifex: animalia::tetralata::specialia::rapaciformes::sericificidae::sericifex::textor;
+    Scintilla: animalia::tetralata::volitantia::parvivolantia::scintillidae::scintilla::scintillans;
+    Nebulaphora: animalia::tetralata::volitantia::parvivolantia::nebulaphoridae::nebulaphora::vitrea;
+    Ramiphaga: animalia::tetralata::volitantia::lithoptera::ramiphagidae::ramiphaga::corticivora;
+    Lithosoma: animalia::tetralata::volitantia::lithoptera::lithosomatidae::lithosoma::grave;
+    Aerogigas: animalia::bullidorsata::caelomorpha::aerogigantiformes::aerogigantidae::aerogigas::auratus;
+    Levitans: animalia::bullidorsata::caelomorpha::nubivaga::levitantidae::levitans::taeniatus;
+    Nubivesica: animalia::bullidorsata::caelomorpha::nubivaga::nubivesicidae::nubivesica::caerulea;
+    Haematozoon: animalia::sanguinivora::errantia::errantiformes::haematozoidae::haematozoon::invasor;
+    Adhaerens: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::adhaerens::tenax;
+    Fluitans: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::fluitans::crypticus;
+    Ambigena: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::ambigena::fallax;
+    Aerohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::aerohirudo::membranacea;
+    Ptilohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::ptilohirudo::pennata;
+    Purgator: animalia::tetralata::specialia::detritivora::manducidae::purgator::mutualis;
+    Sputator: animalia::tetralata::specialia::rapaciformes::sericificidae::sputator::acidus;
+    Aculeorhynchus: animalia::tetralata::vivipara::ferrilaminata::aculeorhynchidae::aculeorhynchus::acuminatus;
+    Crepusculofalx: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::crepusculofalx::venatrix;
+    Ferrispina: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::falcata;
+    Herbivolus: animalia::tetralata::vivipara::grandivora::herbivolidae::herbivolus::migratorius;
+    Umbravola: animalia::tetralata::vivipara::grandivora::herbivolidae::umbravola::tacita;
+    Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
+    Custos: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::custos;
+    Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus;
+    Antiquus: animalia::tetralata::vivipara::grandivora::vocigenidae::vocigenus::antiquus;
+    Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus;
+    Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus::communis;
+    Luminiflora: plantae::pneumatophyta::micrococcopsida::luminiflorales::luminifloraceae::luminiflora::symbiotica;
+    Aerothallus: plantae::pneumatophyta::macrophyllopsida::aerothallales::aerothallaceae::aerothallus::vittatus;
+    Laevivelum: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::laevivelum::laeve;
+    Lacufolium: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::concavum;
+    Flexilora: plantae::pneumatophyta::macrophyllopsida::flexilorales::flexiloraceae::flexilora::spiralis;
+    Chromacorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::chromacorallum::versicolor;
+    Aurocorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::aurocorallum::aureum;
+    Spinivinea: plantae::vasculophyta::lignopsida::lignoradicales::spinivineaceae::spinivinea::volitans;
+    Stelloradix: plantae::vasculophyta::lignopsida::lignoradicales::stelloradicaceae::stelloradix::pendula;
+    Susurrus: plantae::vasculophyta::lignopsida::susurrales::susurraceae::susurrus::tubulatus;
+    Tempestivaga: plantae::vasculophyta::lignopsida::tempestivagales::tempestivagaceae::tempestivaga::fulgurivora;
+    Polliniflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::polliniflora::nectarifera;
+    Gigantiflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::gigantiflora::gigantea;
+    Pomum: plantae::vasculophyta::floropsida::pomales::pomaceae::pomum::iridescens;
+    Aeromuscus: plantae::chlorophyta::muscopsida::aeromuscales::aeromuscaceae::aeromuscus::velutinus;
 }
 
 #[cfg(target_arch = "spirv")]
 pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::nae::render_opaque(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus::render_opaque(
             ray, c,
         )
     } else {
-        animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::naetu::render_opaque(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus::render_opaque(
             ray, c,
         )
     }
@@ -323,8 +324,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn species_tree_is_connected_and_every_specimen_renders() {
+    fn species_have_binomial_names_and_complete_taxonomic_paths() {
         for (kind, taxon) in SPECIES.iter().enumerate() {
+            assert_eq!(taxon.rank, Rank::Species, "renderable taxa must be species");
+            let genus = taxon.parent.expect("species genus");
+            assert_eq!(genus.rank, Rank::Genus);
+            assert_eq!(genus.parent.expect("genus family").rank, Rank::Family);
+            let (generic, epithet) = taxon.name.split_once(' ').expect("binomial species name");
+            assert_eq!(generic, genus.name);
+            assert!(epithet.bytes().all(|letter| letter.is_ascii_lowercase()));
+            let module = SPECIES_MODULES[kind].split_whitespace().collect::<String>();
+            assert!(module.ends_with(&format!("::{}::{epithet}", generic.to_lowercase())));
             let mut ancestor = *taxon;
             loop {
                 assert!(
@@ -333,16 +343,35 @@ mod tests {
                     ancestor.name
                 );
                 let Some(parent) = ancestor.parent else { break };
-                assert!(parent.rank < ancestor.rank, "invalid taxonomy hierarchy");
+                assert_eq!(
+                    parent.rank as u8 + 1,
+                    ancestor.rank as u8,
+                    "missing taxonomic rank"
+                );
+                if ancestor.rank == Rank::Family {
+                    let suffix = if module.starts_with("plantae::") {
+                        "aceae"
+                    } else {
+                        "idae"
+                    };
+                    assert!(
+                        ancestor.name.ends_with(suffix),
+                        "invalid family suffix: {}",
+                        ancestor.name
+                    );
+                }
                 ancestor = parent;
             }
-            let c = CreatureInstance::new(
-                Vec3::ZERO.extend(taxon.radius),
-                Vec4::W,
-                Vec4::ZERO,
-                kind as u32,
-            );
-            let origin = vec3(0.0, 0.0, -taxon.radius * 1.7);
+        }
+    }
+
+    #[test]
+    fn every_species_renders_finite_hits_and_respects_depth_limits() {
+        for (kind, taxon) in SPECIES.iter().enumerate() {
+            let radius = KINDS[kind].render_radius();
+            let c =
+                CreatureInstance::new(Vec3::ZERO.extend(radius), Vec4::W, Vec4::ZERO, kind as u32);
+            let origin = vec3(0.0, 0.0, -radius * 1.7);
             let mut hits = 0;
             for x in -5..=5 {
                 for y in -5..=5 {
@@ -366,7 +395,7 @@ mod tests {
                         );
                         assert!((hit.normal.length() - 1.0).abs() < 0.001, "invalid normal");
                         assert!(
-                            hit.distance() > 0.0 && hit.distance() < taxon.radius * 3.0,
+                            hit.distance() > 0.0 && hit.distance() < radius * 3.0,
                             "invalid depth"
                         );
                         assert!(
@@ -389,7 +418,7 @@ mod tests {
 
     #[test]
     fn transformed_species_keep_depth_and_motion_consistent() {
-        let radius = SPECIES[Kind::Naetu as usize].radius;
+        let radius = Kind::Naetu.render_radius();
         let rotation = Quat::from_rotation_y(0.7);
         let offset = vec3(100.0, -200.0, 300.0);
         let c = CreatureInstance::new(
@@ -421,11 +450,11 @@ mod tests {
 #[cfg(target_arch = "spirv")]
 pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
     if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::nae::visit_thin(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus::visit_thin(
             ray, c, emit,
         );
     } else {
-        animalia::tetralata::viviparia::ferrilaminata::naeturidae::naeturae::naetu::visit_thin(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus::visit_thin(
             ray, c, emit,
         );
     }

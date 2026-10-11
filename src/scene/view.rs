@@ -1,4 +1,4 @@
-use spirv_std::glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles, vec3};
+use spirv_std::glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles};
 
 use crate::scene::atmosphere::{get_pole_light_color, render_sky};
 use crate::scene::geometry::get_pole_position;
@@ -15,6 +15,7 @@ pub struct ViewUniform {
     pub world_from_clip_unjittered: Mat4,
     pub world_position: Vec4,
     pub camera_position: Vec4,
+    pub planet_center_value: Vec4,
     pub planet_rotation: Quat,
     pub times: Vec4,
     pub weather: Vec4,
@@ -35,6 +36,14 @@ pub struct FrameUniform {
 }
 
 impl ViewUniform {
+    pub fn up(&self, local: Vec3) -> Vec3 {
+        (local - self.planet_center()).normalize()
+    }
+
+    pub fn down(&self, local: Vec3) -> Vec3 {
+        -self.up(local)
+    }
+
     pub fn prepare_atmosphere(&mut self) {
         let pole = get_pole_position(
             self.planet_center(),
@@ -53,8 +62,7 @@ impl ViewUniform {
         self.pole_color = get_pole_light_color(ro, pole_dir).extend(0.0);
         self.ambient_color =
             (render_sky(up, ro, pole_dir) * 0.7 + render_sky(-up, ro, pole_dir) * 0.15).extend(0.0);
-        let position = (self.world_position.xy() + self.camera_offset().truncate())
-            .extend(ro.z - PLANET_RADIUS);
+        let position = self.surface_position(self.world_position.xyz());
         self.ambient_color += super::aur::ambient(position, self.time()).extend(0.0);
     }
 
@@ -62,7 +70,7 @@ impl ViewUniform {
     pub fn prepare_flashes(&mut self) {
         use std::f32::consts::PI;
 
-        use spirv_std::glam::{FloatExt, Vec2, Vec3Swizzles};
+        use spirv_std::glam::{FloatExt, Vec2, Vec3Swizzles, vec3};
         let hash = |value: f32| {
             let mut point = (Vec3::splat(value) * vec3(0.1031, 0.1030, 0.1029)).fract_gl();
             point += point.dot(point.yxz() + 33.33);
@@ -70,8 +78,7 @@ impl ViewUniform {
         };
         self.aur_flashes = [Vec4::ZERO; 32];
         self.aur_bolts = [[Vec4::ZERO; 2]; 32];
-        let cell =
-            ((self.world_position.xy() + self.camera_offset().truncate()) / 10_000.0).floor();
+        let cell = (self.surface_position(self.world_position.xyz()).truncate() / 10_000.0).floor();
         let time = self.time();
         let mut count = 0;
         let mut bolt_count = 0;
@@ -144,33 +151,27 @@ impl ViewUniform {
     }
 
     pub fn planet_center(&self) -> Vec3 {
-        self.world_position
-            .xy()
-            .extend(-PLANET_RADIUS - self.world_position.w)
+        self.planet_center_value.xyz()
     }
 
     pub fn ro_relative(&self) -> Vec3 {
-        vec3(
-            0.0,
-            0.0,
-            self.world_position.z + PLANET_RADIUS + self.world_position.w,
-        )
+        self.world_position.xyz() - self.planet_center()
     }
 
-    pub fn latitude(&self) -> f32 {
-        self.camera_position.x
+    pub fn to_planet(&self, point: Vec3) -> Vec3 {
+        self.planet_rotation.conjugate() * (point - self.planet_center())
     }
 
-    pub fn longitude(&self) -> f32 {
-        self.camera_position.y
+    pub fn from_planet(&self, point: Vec3) -> Vec3 {
+        self.planet_center() + self.planet_rotation * point
     }
 
-    pub fn camera_offset(&self) -> Vec3 {
-        vec3(
-            self.camera_position.z,
-            self.camera_position.w,
-            self.world_position.w,
-        )
+    pub fn surface_position(&self, point: Vec3) -> Vec3 {
+        super::planet::surface_coordinates(self.to_planet(point))
+    }
+
+    pub fn altitude(&self) -> f32 {
+        self.camera_position.z
     }
 
     pub fn time(&self) -> f32 {
@@ -194,6 +195,7 @@ impl ViewUniform {
 #[cfg(test)]
 mod tests {
     use core::f32::consts::FRAC_PI_2;
+    use spirv_std::glam::vec3;
 
     use super::*;
 
@@ -202,6 +204,7 @@ mod tests {
         let light = |latitude: f32| {
             let mut view = ViewUniform {
                 world_position: vec3(0.0, 0.0, 2400.0).extend(0.0),
+                planet_center_value: vec3(0.0, 0.0, -PLANET_RADIUS).extend(0.0),
                 planet_rotation: Quat::from_rotation_x(FRAC_PI_2 - latitude),
                 ..ViewUniform::default()
             };
@@ -220,6 +223,7 @@ mod tests {
             for latitude in [-1.0, 0.0, 1.0] {
                 let mut view = ViewUniform {
                     world_position: vec3(0.0, 0.0, altitude).extend(0.0),
+                    planet_center_value: vec3(0.0, 0.0, -PLANET_RADIUS).extend(0.0),
                     camera_position: Vec4::new(latitude, 0.0, 0.0, 0.0),
                     planet_rotation: Quat::from_rotation_x(latitude),
                     ..ViewUniform::default()

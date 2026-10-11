@@ -8,6 +8,7 @@ use bevy::core_pipeline::FullscreenShader;
 use bevy::core_pipeline::prepass::ViewPrepassTextures;
 use bevy::diagnostic::FrameCount;
 use bevy::ecs::system::SystemParam;
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
 use bevy::render::diagnostic::RecordDiagnostics;
@@ -52,7 +53,7 @@ pub struct SceneBuffer {
     resolve: RawBufferVec<ResolveUniform>,
     previous_clip: Mat4,
     previous_position: Vec3,
-    previous_origin: Vec3,
+    previous_origin: DVec3,
     previous_rotation: Quat,
     previous_debug: u32,
     previous_weather: Vec4,
@@ -65,7 +66,7 @@ impl Default for SceneBuffer {
             resolve: RawBufferVec::new(BufferUsages::UNIFORM),
             previous_clip: Mat4::IDENTITY,
             previous_position: Vec3::ZERO,
-            previous_origin: Vec3::ZERO,
+            previous_origin: DVec3::ZERO,
             previous_rotation: Quat::IDENTITY,
             previous_debug: 0,
             previous_weather: Vec4::ZERO,
@@ -123,13 +124,9 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         world_from_clip,
         prev_clip_from_world: buffer.previous_clip,
         world_from_clip_unjittered: world_from_view * view.clip_from_view.inverse(),
-        world_position: position.extend(world.camera_offset.z),
-        camera_position: vec4(
-            latitude,
-            longitude,
-            world.camera_offset.x,
-            world.camera_offset.y,
-        ),
+        world_position: position.extend(0.0),
+        planet_center_value: world.local(DVec3::ZERO).extend(0.0),
+        camera_position: vec4(latitude, longitude, world.altitude(position) as f32, 0.0),
         planet_rotation: rotation,
         weather: atmosphere.0,
         times: vec4(
@@ -145,7 +142,7 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     sky.update(&mut uniform);
     let valid = targets.valid.load(Ordering::Relaxed)
         && position.distance(buffer.previous_position) < 100.0
-        && world.camera_offset == buffer.previous_origin
+        && world.origin == buffer.previous_origin
         && view
             .world_from_view
             .rotation()
@@ -173,7 +170,7 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         .clip_from_world
         .unwrap_or_else(|| view.clip_from_view * world_from_view.inverse());
     buffer.previous_position = position;
-    buffer.previous_origin = world.camera_offset;
+    buffer.previous_origin = world.origin;
     buffer.previous_rotation = view.world_from_view.rotation();
     buffer.previous_debug = debug.0;
     buffer.previous_weather = atmosphere.0;

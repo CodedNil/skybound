@@ -12,5 +12,4 @@ pub const TAXON: Taxon = Taxon {
         Their abundance links ambient aur energy to the animals that filter particles from the sky.",
     rank: Rank::Family,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

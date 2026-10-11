@@ -12,5 +12,4 @@ pub const TAXON: Taxon = Taxon {
         Rapid asexual division turns suitable air into concentrations of primary food for filter feeders.",
     rank: Rank::Order,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

@@ -1,3 +1,4 @@
+use super::world::WorldData;
 use bevy::anti_alias::taa::TemporalAntiAliasing;
 use bevy::input::InputSystems;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
@@ -30,6 +31,7 @@ pub struct CameraController {
 
 fn camera_controller(
     time: Res<Time>,
+    world: Res<WorldData>,
     mut query: Query<(&mut Transform, &mut CameraController), With<Camera>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
@@ -37,24 +39,30 @@ fn camera_controller(
     mut mouse_wheel_events: MessageReader<MouseWheel>,
 ) {
     for (mut transform, controller) in &mut query {
-        let movement = movement(&keyboard_input, &transform);
+        let movement = movement(
+            &keyboard_input,
+            &transform,
+            -world.down(transform.translation),
+        );
         transform.translation += movement * controller.speed * time.delta_secs();
 
         if mouse_button_input.pressed(MouseButton::Right) {
             let delta = mouse_motion.delta;
             if delta != Vec2::ZERO {
-                transform.rotate_z(-delta.x * controller.sensitivity);
+                let up = world.up(transform.translation);
+                transform.rotate(Quat::from_axis_angle(up, -delta.x * controller.sensitivity));
                 let pitch_delta = -delta.y * controller.sensitivity;
-                let current_pitch_sin = transform.forward().z;
+                let current_pitch_sin = transform.forward().dot(up);
                 if (pitch_delta > 0.0 && current_pitch_sin < 0.99)
                     || (pitch_delta < 0.0 && current_pitch_sin > -0.99)
                 {
                     transform.rotate_local_x(pitch_delta);
                 }
-                let final_forward = *transform.forward();
-                transform.look_to(final_forward, Vec3::Z);
             }
         }
+        let forward = *transform.forward();
+        let up = world.up(transform.translation);
+        transform.look_to(forward, up);
     }
     for event in mouse_wheel_events.read() {
         for (_, mut controller) in &mut query {
@@ -102,12 +110,12 @@ fn toggle_freecam(
     }
 }
 
-pub fn movement(keys: &ButtonInput<KeyCode>, transform: &Transform) -> Vec3 {
+pub fn movement(keys: &ButtonInput<KeyCode>, transform: &Transform, up: Vec3) -> Vec3 {
     let axis =
         |positive, negative| f32::from(keys.pressed(positive)) - f32::from(keys.pressed(negative));
     let direction = *transform.forward() * axis(KeyCode::KeyW, KeyCode::KeyS)
         + *transform.right() * axis(KeyCode::KeyD, KeyCode::KeyA)
-        + *transform.up() * axis(KeyCode::KeyE, KeyCode::KeyQ);
+        + up * axis(KeyCode::KeyE, KeyCode::KeyQ);
     direction.normalize_or_zero()
         * if keys.pressed(KeyCode::ShiftLeft) {
             10.0

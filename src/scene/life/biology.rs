@@ -161,10 +161,10 @@ pub fn edible(consumer: Kind, resource: Kind) -> bool {
         return false;
     }
     match consumer {
-        Kind::Lucinani => return resource == Kind::Susurrium,
-        Kind::Ramiphagae => return resource == Kind::Rubilion,
-        Kind::Antiquus => return matches!(resource, Kind::Kelpus | Kind::Laevensails),
-        Kind::Terrapodae => return resource == Kind::Stelloradix,
+        Kind::Lucinani => return resource == Kind::Susurrus,
+        Kind::Ramiphaga => return resource == Kind::Spinivinea,
+        Kind::Antiquus => return matches!(resource, Kind::Aerothallus | Kind::Laevivelum),
+        Kind::Lithosoma => return resource == Kind::Stelloradix,
         _ => {}
     }
     let eater = consumer.biology();
@@ -172,7 +172,7 @@ pub fn edible(consumer: Kind, resource: Kind) -> bool {
     match eater.feeding {
         Feeding::Absorption | Feeding::Filter => {
             resource == Kind::Auracoccus
-                || (consumer == Kind::Lucentiae && resource == Kind::Luminiscidae)
+                || (consumer == Kind::Lucerna && resource == Kind::Scintilla)
         }
         Feeding::Grazer => food.anatomy == Anatomy::Plant,
         Feeding::Omnivore => {
@@ -226,11 +226,11 @@ mod tests {
             }
         }
         assert!(
-            edible(Kind::Ramiphagae, Kind::Rubilion),
+            edible(Kind::Ramiphaga, Kind::Spinivinea),
             "bark grazer lost its food source"
         );
         assert!(
-            !edible(Kind::Ramiphagae, Kind::Florapollis),
+            !edible(Kind::Ramiphaga, Kind::Polliniflora),
             "bark specialist grazes flowers"
         );
         assert!(
@@ -238,7 +238,7 @@ mod tests {
             "parasite cannot find hosts"
         );
         assert!(
-            !edible(Kind::Aerogigans, Kind::Nae),
+            !edible(Kind::Aerogigas, Kind::Nae),
             "passive sponge became a predator"
         );
     }

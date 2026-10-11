@@ -30,27 +30,40 @@ pub fn ambient(pos: Vec3, time: f32) -> Vec3 {
     vec3(0.035, 0.008, 0.065) * fade * pulse
 }
 
-pub const EJECTION_CELL: f32 = 8000.0;
+pub const EJECTION_CELL: f32 = 40_000.0;
 
-pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
+fn eruption_hash(cell: Vec2) -> Vec3 {
     let mut hash = (cell.xyx() * vec3(0.1031, 0.1030, 0.0973)).fract_gl();
     hash += hash.dot(hash.yzx() + 33.33);
-    let seed = ((hash.x + hash.y) * hash.z).fract_gl();
-    let period = 12.0 + seed * 9.0;
-    let phase = ((time / period + seed).fract_gl() / 0.35).min(1.0);
-    let envelope = phase.smoothstep(0.0, 0.12) * (1.0 - phase.smoothstep(0.78, 1.0));
-    let center =
-        (cell + vec2(0.3 + seed * 0.4, 0.3 + (seed * 17.37).fract_gl() * 0.4)) * EJECTION_CELL;
-    let angle = seed * TAU;
+    ((hash.xxy() + hash.yzz()) * hash.zyx()).fract_gl()
+}
+
+pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
+    let seed = eruption_hash(cell + vec2(19.7, 63.1));
+    let period = 55.0 + seed.x * 45.0;
+    let cycle = time / period + seed.y;
+    let random = eruption_hash(cell + vec2(37.1, 91.7) * (cycle.floor() + 1.0));
+    let phase = (cycle.fract_gl() * period / (12.0 + seed.z * 6.0)).min(1.0);
+    let center = (cell + random.xy()) * EJECTION_CELL;
+    let angle = random.z * TAU;
     [
-        center.extend(phase).extend(envelope),
+        center
+            .extend(phase)
+            .extend(if phase < 1.0 { 1.0 } else { 0.0 }),
         Vec4::new(
             angle.cos(),
             angle.sin(),
-            1200.0 + seed * 600.0,
-            (650.0 + seed * 700.0) * (0.45 + 0.55 * (phase * PI).sin()),
+            1200.0 + seed.x * 600.0,
+            650.0 + seed.z * 700.0,
         ),
     ]
+}
+
+pub fn ejection_fill(progress: f32, phase: f32) -> f32 {
+    let head = phase / 0.35;
+    let tail = (phase - 0.60) / 0.40;
+    progress.smoothstep(tail - 0.025, tail + 0.025)
+        * (1.0 - progress.smoothstep(head - 0.025, head + 0.025))
 }
 
 pub fn ejection_distance(position: Vec3, event: [Vec4; 2]) -> Vec2 {
@@ -66,16 +79,22 @@ pub fn ejection_distance(position: Vec3, event: [Vec4; 2]) -> Vec2 {
 }
 
 pub fn ejection_field(position: Vec3, time: f32) -> Vec3 {
-    let cell = (position.xy() / EJECTION_CELL - Vec2::splat(0.5)).floor();
+    let cell = (position.xy() / EJECTION_CELL).floor();
     let mut nearest = vec3(1.0e10, 0.0, 0.0);
-    for index in 0..4 {
-        let event = ejection(cell + vec2((index / 2) as f32, (index % 2) as f32), time);
+    for index in 0..9 {
+        let neighbour = cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
+        let outside =
+            ((position.xy() / EJECTION_CELL - neighbour - 0.5).abs() - 0.5).max(Vec2::ZERO);
+        if outside.max_element() * EJECTION_CELL > 4000.0 {
+            continue;
+        }
+        let event = ejection(neighbour, time);
         if event[0].w < 0.01 {
             continue;
         }
         let curve = ejection_distance(position, event);
         if curve.x < nearest.x {
-            nearest = curve.extend(event[0].w);
+            nearest = curve.extend(ejection_fill(curve.y, event[0].z) * event[0].w);
         }
     }
     nearest
@@ -88,6 +107,16 @@ pub fn ejection_clearance(position: Vec3, time: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn eruptions_fill_then_drain_from_the_same_end() {
+        assert!(ejection_fill(0.25, 0.15) > 0.99);
+        assert!(ejection_fill(0.85, 0.15) < 0.01);
+        assert!(ejection_fill(0.25, 0.5) > 0.99 && ejection_fill(0.85, 0.5) > 0.99);
+        assert!(ejection_fill(0.25, 0.85) < 0.01);
+        assert!(ejection_fill(0.85, 0.85) > 0.99);
+        assert!(ejection_fill(0.85, 1.0) < 0.01);
+    }
+
     #[test]
     fn eruption_distance_is_continuous_and_tracks_position_along_curve() {
         let event = [Vec4::ZERO, Vec4::new(1.0, 0.0, 2000.0, 1000.0)];
@@ -102,7 +131,11 @@ mod tests {
         for x in -8..8 {
             for y in -8..8 {
                 for time in [2.0, 10.0, 20.0] {
-                    let point = vec3(x as f32 * 1300.0, y as f32 * 1700.0, 650.0);
+                    let point = vec3(
+                        x as f32 * EJECTION_CELL * 0.37,
+                        y as f32 * EJECTION_CELL * 0.53,
+                        650.0,
+                    );
                     let cell = (point.xy() / EJECTION_CELL).floor();
                     let mut distance: f32 = 1.0e10;
                     for dx in -1..=1 {

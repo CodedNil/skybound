@@ -1,8 +1,7 @@
-pub use super::BIOLOGY;
-pub use super::render_wings;
+pub use super::{BIOLOGY, render_wings};
 use crate::scene::life::{Rank, Taxon};
 
-pub mod lucentiae;
+pub mod lucernidae;
 pub mod manducidae;
 
 pub const TAXON: Taxon = Taxon {
@@ -13,5 +12,4 @@ pub const TAXON: Taxon = Taxon {
         Their feeding recycles material that would otherwise fall out of the inhabited sky.",
     rank: Rank::Order,
     parent: Some(&super::TAXON),
-    radius: 0.0,
 };

@@ -31,14 +31,18 @@ impl FromWorld for SkyLookup {
 }
 impl SkyLookup {
     pub fn update(&mut self, view: &mut ViewUniform) {
-        let altitude = view.ro_relative().z - PLANET_RADIUS;
+        let altitude = view.altitude();
         let direction = view.pole_direction();
         let activity = 0.10 + 0.90 * (0.5 + 0.5 * (view.time() * TAU / 2400.0).cos());
         let horizon = -(1.0 - (PLANET_RADIUS / (PLANET_RADIUS + altitude.max(0.0))).powi(2)).sqrt();
         view.sky_horizon = vec4(horizon, activity, 0.0, 0.0);
         view.pole_color *= activity;
         view.ambient_color *= activity;
-        let current = vec3(altitude, direction.z, activity);
+        let current = vec3(
+            altitude,
+            direction.dot(view.up(view.world_position.truncate())),
+            activity,
+        );
         let dirty = self.dirty.load(Ordering::Relaxed)
             || (current.x - self.last.x).abs() >= 0.5
             || (current.y - self.last.y).abs() >= 0.000_01
