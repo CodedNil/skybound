@@ -1,0 +1,16 @@
+pub use super::{behave, render};
+use crate::scene::life::{Rank, Taxon};
+
+pub mod nectarales;
+pub mod pomales;
+
+pub const TAXON: Taxon = Taxon {
+    name: "Floropsida",
+    english_name: "Flowering",
+    description: "Flowering plants concentrate reproduction into conspicuous structures that attract pollinators or disperse seeds. \
+        Vascular tissues supply petals, nectar reservoirs and buoyant fruit bodies. \
+        Stored aur becomes both an energy reserve and a reward that links these plants to animals and Næ gatherers.",
+    rank: Rank::Class,
+    parent: Some(&super::TAXON),
+    radius: 0.0,
+};
