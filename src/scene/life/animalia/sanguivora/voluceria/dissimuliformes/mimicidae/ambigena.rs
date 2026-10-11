@@ -1,13 +1,22 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 8.0,
+    adult_mass: 0.04,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes, legs, prepare_pose};
+use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes, prepare_pose};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const TAXON: Taxon = Taxon {
     name: "Ambigena",
     english_name: "Double Natured",
-    description: "Double Natured animals imitate the swollen bodies and specialised limbs of Sweepers. \
+    description: "Double Natured animals imitate the swollen bodies and specialised mouth palps of Sweepers. \
         They remove debris and provide an antiseptic cleaning benefit while slowly drawing fluids from the same host. \
         Their appearance and careful movements encourage hosts to tolerate close contact. \
         Hosts often tolerate their careful grooming movements, allowing prolonged access to a food source.",
@@ -17,7 +26,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 12.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -25,9 +34,12 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 5.0, 4.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(ellipsoid(p, vec3(1.6, 1.5, 2.8)), 0);
-    hit.join(legs(p, vec3(1.6, 1.5, 2.8), 2), 4);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.3, -3.20), 0.80, BIOLOGY.oral_pairs),
+        8,
+    );
     hit.join(
         ellipsoid(p - vec3(0.0, -0.5, -2.0), vec3(0.7, 0.45, 1.0)),
         8,

@@ -1,3 +1,4 @@
+pub use super::BIOLOGY;
 pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 

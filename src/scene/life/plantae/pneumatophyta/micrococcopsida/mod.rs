@@ -1,4 +1,17 @@
-pub use super::{behave, render};
+use crate::scene::life::biology::{Biology, Reproduction};
+use crate::scene::life::biology::{Lift, Organs};
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        lift: Lift::Aerosol,
+        ..super::BIOLOGY.organs
+    },
+    adult_mass: 0.002,
+    reproduction: Reproduction::Division,
+    ..super::BIOLOGY
+};
+
+pub use super::render;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod auracoccales;

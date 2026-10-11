@@ -1,4 +1,4 @@
-use spirv_std::glam::{FloatExt, Quat, Vec2, Vec3, vec2};
+use spirv_std::glam::{Quat, Vec2, Vec3, vec2};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -18,12 +18,7 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
 }
 
-pub fn get_pole_position(
-    planet_center: Vec3,
-    planet_rotation: Quat,
-    ro_relative: Vec3,
-    latitude: f32,
-) -> Vec3 {
+pub fn get_pole_position(planet_center: Vec3, planet_rotation: Quat, ro_relative: Vec3) -> Vec3 {
     let north_axis = planet_rotation.mul_vec3(Vec3::Z).normalize();
     let up_vector = ro_relative.normalize();
     let pole_axis = if north_axis.dot(up_vector) > 0.0 {
@@ -32,8 +27,5 @@ pub fn get_pole_position(
         -north_axis
     };
     let pole_altitude = PLANET_RADIUS + MAGNETOSPHERE_HEIGHT;
-    let mut pole_pos = planet_center + pole_axis * pole_altitude;
-    let blend = (latitude.abs() / 0.35).saturate();
-    pole_pos.z += 0.0.lerp(pole_altitude * -2.0, 1.0 - blend);
-    pole_pos
+    planet_center + pole_axis * pole_altitude
 }

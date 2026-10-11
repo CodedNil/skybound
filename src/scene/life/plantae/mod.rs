@@ -1,3 +1,17 @@
+use crate::scene::life::biology::Organs;
+use crate::scene::life::biology::{Anatomy, Biology, Energy, Feeding, Reproduction};
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs::PLANT,
+    anatomy: Anatomy::Plant,
+    wing_pairs: 0,
+    oral_pairs: 0,
+    feeding: Feeding::Producer,
+    energy: Energy::Aur,
+    reproduction: Reproduction::Spores,
+    ..super::BIOLOGY
+};
+
 use core::f32::consts::{PI, TAU};
 
 use spirv_std::glam::{FloatExt, Vec3, vec3};
@@ -14,17 +28,15 @@ pub mod vasculophyta;
 pub const TAXON: Taxon = Taxon {
     name: "Plantae",
     english_name: "Plants",
-    description: "Plants convert aur, light or mechanical and electrical energy into living tissue that supports the aerial food web. \
-        Gas bladders, broad membranes and hollow wind channels keep large forms aloft; small forms drift freely or attach to hosts. \
-        Their forests, flowers and living surfaces provide food, water, shelter and attachment sites throughout the inhabited sky.",
+    description: "Plants build edible organic tissue using aur, scattered aur light, wind deformation or electrical discharges. \
+        Hygroscopic surfaces collect airborne moisture, and selective membranes retain dissolved minerals from dust and rain. \
+        Gas chambers, broad drag surfaces and hollow airflow channels maintain altitude; attachment occurs between living organisms and their silk networks. \
+        Vascular lineages distribute fluids through flexible channels, while microscopic forms exchange materials directly across their surfaces. \
+        Spores, fragments and drifting seeds disperse through the currents.",
     rank: Rank::Kingdom,
     parent: Some(&super::TAXON),
     radius: 0.0,
 };
-
-pub fn behave(senses: &super::behaviour::Senses) -> super::behaviour::Controls {
-    super::behaviour::drift(senses, 0.0)
-}
 
 pub fn rotate(p: Vec3, angle: f32) -> Vec3 {
     let (sine, cosine) = angle.sin_cos();

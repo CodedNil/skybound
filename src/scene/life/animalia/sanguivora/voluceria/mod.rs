@@ -1,3 +1,13 @@
+use crate::scene::life::biology::Biology;
+use crate::scene::life::biology::Organs;
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs::ANIMAL,
+    wing_pairs: 1,
+    speed: 14.0,
+    ..super::BIOLOGY
+};
+
 pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 

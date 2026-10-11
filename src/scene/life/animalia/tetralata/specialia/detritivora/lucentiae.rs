@@ -1,6 +1,13 @@
+use crate::scene::life::biology::{Biology, Feeding, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    feeding: Feeding::Filter,
+    speed: 10.0,
+    social: Social::Swarm,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
 use crate::scene::life::{
@@ -21,7 +28,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::drift(senses, (senses.time * 0.0026).sin() * 1.5)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {

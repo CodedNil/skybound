@@ -93,8 +93,12 @@ pub struct Taxon {
     pub parent: Option<&'static Self>,
 }
 
+pub mod anatomy;
 pub mod animalia;
 pub mod behaviour;
+pub mod biology;
+pub mod physiology;
+pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 pub mod plantae;
 
 pub const TAXON: Taxon = Taxon {
@@ -112,6 +116,12 @@ macro_rules! species {
         #[repr(u32)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum Kind { $($id),* }
+        pub const KINDS: &[Kind] = &[$(Kind::$id),*];
+        impl Kind {
+            pub const fn biology(self) -> biology::Biology {
+                match self { $(Self::$id => $($path)::+::BIOLOGY,)* }
+            }
+        }
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES: &[&Taxon] = &[$(&$($path)::+::TAXON),*];
         #[cfg(not(target_arch = "spirv"))]
@@ -122,6 +132,10 @@ macro_rules! species {
         #[cfg(not(target_arch = "spirv"))]
         pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::render(ray, c),)* _ => TraceResult::MISS }
+        }
+        #[cfg(not(target_arch = "spirv"))]
+        pub fn body_surface(point: Vec3, c: &CreatureInstance) -> crate::scene::surface::Surface {
+            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => crate::scene::surface::Surface::new(1e6, 0) }
         }
         #[cfg(not(target_arch = "spirv"))]
         fn prepare_instance(c: &mut CreatureInstance) {
@@ -259,22 +273,6 @@ pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
         distance = distance.min(ellipsoid(swept, vec3(reach * 0.32, 0.12, 4.5)));
     }
     distance
-}
-
-pub fn legs(p: Vec3, size: Vec3, pairs: u32) -> f32 {
-    let p = vec3(p.x.abs(), p.y, p.z);
-    let mut d = 1e6f32;
-    for i in 0..pairs {
-        let root = vec3(size.x * 0.7, -size.y * 0.4, i as f32 * 1.8 - 1.8);
-        let knee = root + vec3(2.0, -1.0, 1.0);
-        d = d.min(capsule(p, root, knee, 0.22)).min(capsule(
-            p,
-            knee,
-            knee + vec3(0.5, -1.5, -0.7),
-            0.15,
-        ));
-    }
-    d
 }
 
 pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {

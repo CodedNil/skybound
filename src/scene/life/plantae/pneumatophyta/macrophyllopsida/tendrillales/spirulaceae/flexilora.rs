@@ -1,8 +1,25 @@
+use crate::scene::life::biology::{Biology, Energy, Reproduction};
+use crate::scene::life::biology::{Lift, Organs};
+
+pub const BIOLOGY: Biology = Biology {
+    organs: Organs {
+        lift: Lift::Attached,
+        ..super::BIOLOGY.organs
+    },
+    energy: Energy::Wind,
+    reproduction: Reproduction::Fragmentation,
+    adult_mass: 0.3,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-pub use super::behave;
+use crate::scene::life::behaviour::{self, Controls, Senses};
+pub fn behave(senses: &Senses) -> Controls {
+    behaviour::organism(senses, BIOLOGY)
+}
 use crate::scene::life::plantae::{frond, rotate};
 use crate::scene::life::{CreatureInstance, Rank, Taxon};
 use crate::scene::surface::{Ray, Surface, TraceResult};

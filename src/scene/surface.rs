@@ -359,7 +359,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
                     - c.tail[index].lerp(c.tail[index + 1], fraction - index as f32);
                 let scale = if c.kind.x == Kind::Nae as u32 {
                     vec3(0.2, 0.25, 1.0)
-                } else if c.kind.x == Kind::Naetu as u32 && sample.material != 1 {
+                } else if c.kind.x == Kind::Naetu as u32 {
                     vec3(3.0, 3.0, 1.0)
                 } else {
                     Vec3::ONE

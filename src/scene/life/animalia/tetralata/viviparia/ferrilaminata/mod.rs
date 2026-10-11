@@ -1,3 +1,11 @@
+use crate::scene::life::biology::{Biology, Feeding};
+
+pub const BIOLOGY: Biology = Biology {
+    feeding: Feeding::Predator,
+    speed: 45.0,
+    ..super::BIOLOGY
+};
+
 pub use super::render_wings;
 use crate::scene::life::{Rank, Taxon};
 

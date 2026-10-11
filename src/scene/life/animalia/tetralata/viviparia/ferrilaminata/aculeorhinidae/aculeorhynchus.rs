@@ -1,3 +1,13 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 75.0,
+    social: Social::Solitary,
+    adult_mass: 14.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
@@ -12,14 +22,14 @@ pub const TAXON: Taxon = Taxon {
     description: "Needlesharks carry a huge needle-like spike on the head of a streamlined four-winged body. \
         They approach from above and align the whole animal with the intended strike. \
         A sudden swoop drives the spike toward vital organs before prey has time to respond. \
-        Their pointed silhouette and steep attack angle distinguish them from the blade-bearing hunters nearby in the tree.",
+        Their pointed silhouette and steep attack angle distinguish them from the blade-bearing hunters nearby in the tree. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
     radius: 41.5,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 75.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -27,7 +37,7 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 5.0, 19.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(torso(p, vec3(1.8, 1.7, 6.0), 0.8), 0);
     hit.join(
         tapered_tail(p, vec3(0.0, 0.4, -7.8), vec3(0.0, 0.35, -18.0), 0.7, 0.025),
@@ -35,6 +45,10 @@ pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
     );
     hit.join(ellipsoid(p - vec3(0.0, 2.0, 1.0), vec3(0.18, 1.7, 4.5)), 5);
     hit.join(eyes(p, 6.0, 0.8), 3);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.5, -8.0), 0.8, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

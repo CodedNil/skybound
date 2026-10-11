@@ -3,6 +3,22 @@ use spirv_std::glam::{Mat3, Quat, Vec3};
 use spirv_std::num_traits::Float;
 
 use super::Kind;
+use super::biology::{Anatomy, Biology, Feeding, Social};
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum Activity {
+    #[default]
+    Drift,
+    Feed,
+    Flee,
+    Drink,
+    Rest,
+    Return,
+    Attach,
+    Clean,
+    Weave,
+    Guard,
+}
 
 #[derive(Clone, Copy)]
 pub struct Senses {
@@ -14,6 +30,13 @@ pub struct Senses {
     pub companion: Option<Vec3>,
     pub habitat: Option<Vec3>,
     pub storm: Option<Vec3>,
+    pub water: Option<Vec3>,
+    pub separation: Vec3,
+    pub alignment: Vec3,
+    pub energy: f32,
+    pub hydration: f32,
+    pub fatigue: f32,
+    pub buoyancy: f32,
     pub aur: f32,
     pub time: f32,
 }
@@ -28,6 +51,13 @@ impl Default for Senses {
             companion: None,
             habitat: None,
             storm: None,
+            water: None,
+            separation: Vec3::ZERO,
+            alignment: Vec3::ZERO,
+            energy: 0.5,
+            hydration: 1.0,
+            fatigue: 0.0,
+            buoyancy: 0.0,
             aur: 0.5,
             time: 0.0,
         }
@@ -36,6 +66,7 @@ impl Default for Senses {
 
 #[derive(Clone, Copy, Default)]
 pub struct Controls {
+    pub activity: Activity,
     pub velocity: Vec3,
     pub facing: Vec3,
     pub response: f32,
@@ -44,30 +75,56 @@ pub struct Controls {
 
 pub fn drift(s: &Senses, lift: f32) -> Controls {
     Controls {
-        velocity: s.wind + s.up.normalize_or_zero() * lift,
+        activity: Activity::Drift,
+        velocity: s.wind + s.up.normalize_or_zero() * (lift + s.buoyancy),
         facing: s.wind.normalize_or_zero(),
         response: 0.35,
         wing_fold: 0.0,
     }
 }
 
-pub fn forage(s: &Senses, speed: f32) -> Controls {
-    let direction = s
-        .danger
-        .map_or_else(|| s.food.unwrap_or(s.wind), |danger| -danger)
-        .normalize_or_zero();
-    let up = s.up.normalize_or_zero();
-    Controls {
-        velocity: s.wind + direction * speed,
-        facing: direction,
-        response: 1.8,
-        wing_fold: (-direction.dot(up)).clamp(0.0, 1.0),
+pub fn organism(s: &Senses, biology: Biology) -> Controls {
+    if biology.anatomy == Anatomy::Porous {
+        return drift(s, 0.0);
     }
-}
-
-pub fn seek_aur(s: &Senses, speed: f32) -> Controls {
-    let mut controls = drift(s, (s.aur - 0.5) * speed);
-    controls.facing = controls.velocity.normalize_or_zero();
+    let (target, speed, activity) = match (s.danger, s.water, s.habitat) {
+        (Some(danger), _, _) => {
+            if biology.social == Social::Guardian {
+                (Some(danger), biology.speed, Activity::Guard)
+            } else {
+                (Some(-danger), biology.speed * 1.2, Activity::Flee)
+            }
+        }
+        (_, Some(water), _) if s.hydration < 0.35 => {
+            (Some(water), biology.speed * 0.7, Activity::Drink)
+        }
+        (_, _, Some(habitat)) => (Some(habitat), biology.speed * 0.6, Activity::Return),
+        _ if s.fatigue > 0.8 => (None, 0.0, Activity::Rest),
+        _ if s.energy < 0.25 && s.food.is_some() => (s.food, biology.speed * 0.7, Activity::Feed),
+        _ if biology.social == Social::Mutualist && s.companion.is_some() => {
+            (s.companion, biology.speed * 0.6, Activity::Attach)
+        }
+        _ if biology.feeding == Feeding::Cleaner && s.food.is_some() => {
+            (s.food, biology.speed * 0.6, Activity::Clean)
+        }
+        _ if s.energy < 0.85 && s.food.is_some() => (s.food, biology.speed * 0.7, Activity::Feed),
+        _ if biology.social == Social::Weaver && s.companion.is_some() => {
+            (s.companion, biology.speed * 0.3, Activity::Weave)
+        }
+        _ => (s.companion, biology.speed * 0.25, Activity::Drift),
+    };
+    let mut controls = if biology.anatomy == Anatomy::Plant {
+        drift(s, 0.0)
+    } else {
+        let mut controls = steer(s, target, speed);
+        controls.velocity += s.separation * 2.0 + s.alignment * 0.2;
+        if target.is_some_and(|offset| offset.length_squared() < 9.0) {
+            controls.velocity = s.wind + s.separation;
+        }
+        controls.wing_fold = (-controls.facing.dot(s.up)).clamp(0.0, 1.0);
+        controls
+    };
+    controls.activity = activity;
     controls
 }
 

@@ -1,9 +1,18 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 45.0,
+    social: Social::Solitary,
+    adult_mass: 5.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
 use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, ellipsoid, eyes, feathers, legs, prepare_pose, smooth_min, tail,
-    torso,
+    CreatureInstance, Rank, Taxon, ellipsoid, eyes, feathers, prepare_pose, smooth_min, tail, torso,
 };
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
@@ -11,16 +20,16 @@ pub const TAXON: Taxon = Taxon {
     name: "Crepusculorbis",
     english_name: "Duskslicers",
     description: "Duskslicers are medium-sized predators with camouflage suited to the dusty, dim Mineral Fields. \
-        A bioluminescent lure on the feathered tail draws prey close before blade-like claws deliver an ambush. \
+        A bioluminescent lure on the feathered tail draws prey close before bladed wing margins deliver an ambush. \
         Their muted bodies contrast with the small bright lure. \
-        They also scavenge effectively when active hunting offers little reward.",
+        They also scavenge effectively when active hunting offers little reward. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
     radius: 41.5,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 45.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -32,7 +41,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(torso(p, vec3(1.6, 1.4, 5.2), 0.8), 0);
     hit.distance = smooth_min(hit.distance, tail(p, c), 0.35);
     hit.join(feathers(p, c, 3.0), 1);
-    hit.join(legs(p, vec3(1.6, 1.4, 5.2), 2), 6);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.3, -5.60), 0.80, BIOLOGY.oral_pairs),
+        8,
+    );
     hit.join(
         ellipsoid(p - c.tail[5].truncate(), vec3(0.35, 0.35, 0.65)),
         9,

@@ -1,3 +1,4 @@
+use bevy::render::render_resource::MipmapFilterMode;
 use std::array::from_fn;
 use std::mem::size_of;
 use std::num::NonZeroU64;
@@ -740,6 +741,7 @@ impl FromWorld for ScenePipeline {
                 address_mode_w: AddressMode::Repeat,
                 mag_filter: FilterMode::Linear,
                 min_filter: FilterMode::Linear,
+                mipmap_filter: MipmapFilterMode::Linear,
                 ..default()
             }),
             linear_sampler: device.create_sampler(&SamplerDescriptor {

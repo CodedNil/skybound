@@ -1,3 +1,4 @@
+pub use super::BIOLOGY;
 use crate::scene::life::{Rank, Taxon};
 
 pub mod aerogigans;

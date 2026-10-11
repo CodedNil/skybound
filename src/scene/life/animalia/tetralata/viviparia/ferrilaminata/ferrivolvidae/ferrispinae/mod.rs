@@ -1,3 +1,12 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 65.0,
+    adult_mass: 25.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 pub use super::render_wings;
@@ -14,14 +23,14 @@ pub const TAXON: Taxon = Taxon {
     description: "Shredders are agile, serpentine apex predators with razor-sharp blades along their spines. \
         Long flexible bodies and two pairs of wings let them sweep past prey in tight, cutting arcs. \
         The spinal blades cut through tough hides during a sweeping pass. \
-        Younger animals often hunt in coordinated packs, separating prey from protective groups before striking.",
+        Younger animals often hunt in coordinated packs, separating prey from protective groups before striking. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
     radius: 41.5,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 65.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -37,6 +46,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         hit.join(blade(p, vec3(0.0, 1.2, z), vec3(0.0, 4.5, z + 2.0), 0.5), 6);
     }
     hit.join(eyes(p, 8.0, 0.8), 3);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.5, -10.0), 1.0, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

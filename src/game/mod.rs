@@ -1,4 +1,5 @@
 pub mod camera;
+pub mod ecosystem;
 pub mod flight;
 mod hud;
 pub mod world;
@@ -13,6 +14,7 @@ impl Plugin for GamePlugin {
             flight::PlayerPlugin,
             camera::CameraPlugin,
             hud::HudPlugin,
+            ecosystem::EcosystemPlugin,
         ));
     }
 }

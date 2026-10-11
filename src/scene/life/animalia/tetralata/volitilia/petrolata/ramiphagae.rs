@@ -1,9 +1,16 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 3.0,
+    adult_mass: 2.0,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, ellipsoid, legs, prepare_pose, tapered_tail,
-};
+use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose, tapered_tail};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const TAXON: Taxon = Taxon {
@@ -19,7 +26,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 3.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -27,7 +34,7 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 5.0, 7.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(ellipsoid(p, vec3(2.7, 1.6, 3.7)), 5);
     for i in 0..5 {
         hit.join(
@@ -43,7 +50,10 @@ pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
         tapered_tail(q, vec3(1.2, 0.0, -3.0), vec3(0.65, -0.2, -6.0), 0.65, 0.14),
         6,
     );
-    hit.join(legs(p, vec3(2.7, 1.6, 3.7), 3), 0);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.3, -4.10), 1.35, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

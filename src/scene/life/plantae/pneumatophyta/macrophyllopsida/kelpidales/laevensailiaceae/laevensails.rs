@@ -1,3 +1,10 @@
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    adult_mass: 18.0,
+    ..super::BIOLOGY
+};
+
 use core::f32::consts::TAU;
 
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec3};
@@ -21,7 +28,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::seek_aur(senses, 0.25)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {

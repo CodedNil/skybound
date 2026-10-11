@@ -1,3 +1,11 @@
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 24.0,
+    adult_mass: 0.01,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
@@ -17,7 +25,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 26.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {

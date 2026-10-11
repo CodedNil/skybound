@@ -1,9 +1,17 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    speed: 10.0,
+    social: Social::Solitary,
+    adult_mass: 0.12,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, capsule, ellipsoid, eyes, legs, prepare_pose,
-};
+use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, eyes, prepare_pose};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const TAXON: Taxon = Taxon {
@@ -11,7 +19,7 @@ pub const TAXON: Taxon = Taxon {
     english_name: "Spitfire Beetles",
     description: "Spitfire Beetles are small, armoured predators with specialised mouths that launch sticky acidic saliva. \
         The projected secretion can immobilise prey or corrode a threat before the animal approaches. \
-        Compact wings and sturdy limbs let them work around vegetation and Weaver structures. \
+        Compact wings and gripping mouth palps steady them among vegetation and Weaver structures. \
         Despite their size, their ability to attack from a distance makes them dangerous to disturb.",
     rank: Rank::Genus,
     parent: Some(&super::TAXON),
@@ -19,7 +27,7 @@ pub const TAXON: Taxon = Taxon {
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 15.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -27,10 +35,13 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 5.0, 5.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(ellipsoid(p, vec3(1.7, 1.4, 2.8)), 5);
     hit.join(ellipsoid(p - vec3(0.0, 0.15, -2.2), vec3(1.2, 1.0, 1.2)), 5);
-    hit.join(legs(p, vec3(1.7, 1.4, 2.8), 3), 0);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.3, -3.20), 0.85, BIOLOGY.oral_pairs),
+        8,
+    );
     hit.join(
         capsule(p, vec3(0.0, -0.3, -2.8), vec3(0.0, -0.2, -4.0), 0.3),
         8,

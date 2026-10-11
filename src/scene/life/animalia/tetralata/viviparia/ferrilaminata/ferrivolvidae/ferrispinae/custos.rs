@@ -1,3 +1,11 @@
+use crate::scene::life::animalia::tetralata::oral_tentacles;
+use crate::scene::life::biology::{Biology, Social};
+
+pub const BIOLOGY: Biology = Biology {
+    social: Social::Guardian,
+    ..super::BIOLOGY
+};
+
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::behaviour::{self, Controls, Senses};
@@ -12,14 +20,14 @@ pub const TAXON: Taxon = Taxon {
     description: "Iron Spined Guardians are a nursery-guarding species of Shredder, with a robust serpentine body and conspicuous spinal blades. \
         They retain the fast banking flight and cutting attacks of their genus. \
         Their presence around nursery zones discourages approaching threats. \
-        A heavier silhouette and guarded movements distinguish them from the more roaming forms of Ferrispinae.",
+        A heavier silhouette and guarded movements distinguish them from the more roaming forms of Ferrispinae. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
     rank: Rank::Species,
     parent: Some(&super::TAXON),
     radius: 41.5,
 };
 
 pub fn behave(senses: &Senses) -> Controls {
-    behaviour::forage(senses, 50.0)
+    behaviour::organism(senses, BIOLOGY)
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -39,6 +47,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     }
     hit.join(gills(p, 7.0, 2), 9);
     hit.join(eyes(p, 7.0, 1.1), 3);
+    hit.join(
+        oral_tentacles(p, c, vec3(0.0, -0.5, -10.0), 1.1, BIOLOGY.oral_pairs),
+        8,
+    );
     hit
 }
 

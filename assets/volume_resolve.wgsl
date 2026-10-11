@@ -20,8 +20,25 @@ struct FilterOutput {
 fn reconstruct(@location(0) uv: vec2<f32>) -> FilterOutput {
     let size = vec2<i32>(parameters.size.xy);
     let p = clamp(vec2<i32>(uv * parameters.size.xy), vec2<i32>(0), size - 1);
-    let current = textureLoad(volume, p, 0);
     let sample_data = textureLoad(metadata, p, 0);
+    var minimum = textureLoad(volume, p, 0);
+    var maximum = minimum;
+    var current = vec4<f32>(0.0);
+    var total = 0.0;
+    for (var y = -1; y <= 1; y += 1) {
+        for (var x = -1; x <= 1; x += 1) {
+            let neighbour = clamp(p + vec2<i32>(x, y), vec2<i32>(0), size - 1);
+            let geometry = textureLoad(metadata, neighbour, 0).y;
+            if abs(geometry - sample_data.y) <= max(10.0, sample_data.y * 0.04) {
+                let spatial_weight = f32((2 - abs(x)) * (2 - abs(y)));
+                let value = textureLoad(volume, neighbour, 0);
+                current += value * spatial_weight;
+                total += spatial_weight;
+                minimum = min(minimum, value); maximum = max(maximum, value);
+            }
+        }
+    }
+    current /= max(total, 1.0);
     let previous_uv = uv - textureLoad(motion, p, 0).xy;
     var weight = 0.0;
     var old = current;
@@ -30,19 +47,12 @@ fn reconstruct(@location(0) uv: vec2<f32>) -> FilterOutput {
         let previous_p = clamp(vec2<i32>(previous_uv * parameters.size.xy), vec2<i32>(0), size - 1);
         let old_meta = textureLoad(history_metadata, previous_p, 0);
         let difference = abs(sample_data.xy - old_meta.xy);
-        let tolerance = max(vec2<f32>(10.0), sample_data.xy * 0.04);
-        if all(difference < tolerance) {
-            weight = 0.92;
+        let tolerance = max(vec2<f32>(1500.0, 10.0), sample_data.xy * vec2<f32>(0.35, 0.04));
+        let thin_edge = max(current.a, old.a) > 0.8;
+        if difference.y < tolerance.y && (difference.x < tolerance.x || thin_edge) {
+            weight = 0.96;
             let luminance_change = abs(dot(old.rgb - current.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
-            weight *= 1.0 - smoothstep(0.12, 0.65, luminance_change);
-        }
-    }
-    var minimum = current;
-    var maximum = current;
-    for (var y = -1; y <= 1; y += 1) {
-        for (var x = -1; x <= 1; x += 1) {
-            let neighbour = textureLoad(volume, clamp(p + vec2<i32>(x, y), vec2<i32>(0), size - 1), 0);
-            minimum = min(minimum, neighbour); maximum = max(maximum, neighbour);
+            weight *= 1.0 - smoothstep(0.5, 3.0, luminance_change);
         }
     }
     old = clamp(old, minimum, maximum);

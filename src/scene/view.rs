@@ -23,9 +23,7 @@ pub struct ViewUniform {
     pub ambient_color: Vec4,
     pub sky_horizon: Vec4,
     pub aur_flashes: [Vec4; 32],
-    pub aur_ejections: [[Vec4; 2]; 9],
     pub aur_bolts: [[Vec4; 2]; 32],
-    pub aur_arcs: [[[Vec4; 2]; 32]; 3],
 }
 
 #[repr(C)]
@@ -42,10 +40,14 @@ impl ViewUniform {
             self.planet_center(),
             self.planet_rotation,
             self.ro_relative(),
-            self.latitude(),
         );
-        let pole_dir = (pole - self.world_position.xyz()).normalize();
         let up = (self.world_position.xyz() - self.planet_center()).normalize();
+        let offset = pole - self.world_position.xyz();
+        let pole_dir = if offset.length_squared() < 0.0001 {
+            up
+        } else {
+            offset.normalize()
+        };
         let ro = self.ro_relative();
         self.pole_position = pole.extend(0.0);
         self.pole_color = get_pole_light_color(ro, pole_dir).extend(0.0);
@@ -68,7 +70,6 @@ impl ViewUniform {
         };
         self.aur_flashes = [Vec4::ZERO; 32];
         self.aur_bolts = [[Vec4::ZERO; 2]; 32];
-        self.prepare_ejections();
         let cell =
             ((self.world_position.xy() + self.camera_offset().truncate()) / 10_000.0).floor();
         let time = self.time();
@@ -142,65 +143,6 @@ impl ViewUniform {
         }
     }
 
-    #[cfg(not(target_arch = "spirv"))]
-    fn prepare_ejections(&mut self) {
-        use std::f32::consts::{PI, TAU};
-
-        use spirv_std::glam::{FloatExt, Vec2};
-        let origin = self.world_position.xy() + self.camera_offset().truncate();
-        let cell = (origin / 4500.0).floor();
-        let time = self.time();
-        for index in 0..9 {
-            let cell = cell + Vec2::new((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
-            let seed = ((cell.dot(Vec2::new(127.1, 311.7)) + 12.7).sin() * 43_758.547).fract_gl();
-            let period = 9.0 + seed * 7.0;
-            let phase = (time + seed * period).rem_euclid(period) / period;
-            let envelope = phase.smoothstep(0.0, 0.12) * (1.0 - phase.smoothstep(0.65, 0.95));
-            let center = (cell + Vec2::new(0.2 + seed * 0.6, 0.8 - seed * 0.6)) * 4500.0;
-            let angle = seed * TAU;
-            self.aur_ejections[index] = [
-                center.extend(phase).extend(envelope),
-                Vec4::new(
-                    angle.cos(),
-                    angle.sin(),
-                    180.0 + seed * 320.0,
-                    (350.0 + seed * 550.0) * (0.35 + 0.65 * (phase * PI).sin()),
-                ),
-            ];
-        }
-        self.aur_arcs = [[[Vec4::ZERO; 2]; 32]; 3];
-        let mut events = self.aur_ejections;
-        events.sort_by(|a, b| {
-            let priority = |e: &[Vec4; 2]| {
-                if e[0].w < 0.15 {
-                    f32::INFINITY
-                } else {
-                    e[0].truncate().truncate().distance_squared(origin)
-                }
-            };
-            priority(a).total_cmp(&priority(b))
-        });
-        for (arc, event) in events.iter().take(3).enumerate() {
-            if event[0].w < 0.15 {
-                continue;
-            }
-            let point = |angle: f32| {
-                let along = event[1].truncate().truncate() * (angle.cos() * event[1].z);
-                let twist = Vec2::new(-event[1].y, event[1].x)
-                    * (angle * 3.0 + time * 2.0).sin()
-                    * (angle.sin() * 12.0);
-                (event[0].truncate().truncate() + along + twist)
-                    .extend(-120.0 + angle.sin() * event[1].w)
-            };
-            for segment in 0..32 {
-                let a = segment as f32 * PI / 32.0;
-                let b = (segment + 1) as f32 * PI / 32.0;
-                let energy = (0.8 + (a * 5.0 - time * 7.0).sin().powi(2) * 2.0) * event[0].w;
-                self.aur_arcs[arc][segment] = [point(a).extend(2.0), point(b).extend(energy * 3.0)];
-            }
-        }
-    }
-
     pub fn planet_center(&self) -> Vec3 {
         self.world_position
             .xy()
@@ -235,6 +177,15 @@ impl ViewUniform {
         self.times.x
     }
 
+    pub fn pole_direction(&self) -> Vec3 {
+        let offset = self.pole_position.truncate() - self.world_position.truncate();
+        if offset.length_squared() < 0.0001 {
+            Vec3::Z
+        } else {
+            offset.normalize()
+        }
+    }
+
     pub fn frame_count(&self) -> f32 {
         self.times.y
     }
@@ -242,7 +193,26 @@ impl ViewUniform {
 
 #[cfg(test)]
 mod tests {
+    use core::f32::consts::FRAC_PI_2;
+
     use super::*;
+
+    #[test]
+    fn polar_light_rises_symmetrically_from_dark_equatorial_conditions() {
+        let light = |latitude: f32| {
+            let mut view = ViewUniform {
+                world_position: vec3(0.0, 0.0, 2400.0).extend(0.0),
+                planet_rotation: Quat::from_rotation_x(FRAC_PI_2 - latitude),
+                ..ViewUniform::default()
+            };
+            view.prepare_atmosphere();
+            view.pole_color.truncate().length()
+        };
+        assert!(light(0.0) < 0.001);
+        assert!(light(0.87) > light(0.0) + 0.1);
+        assert!(light(1.4) > light(0.87));
+        assert!((light(0.87) - light(-0.87)).abs() < 0.01);
+    }
 
     #[test]
     fn atmosphere_stays_finite_across_altitudes_and_latitudes() {

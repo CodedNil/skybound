@@ -3,12 +3,10 @@ use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
 use crate::scene::PLANET_RADIUS;
-pub use crate::scene::geometry::{MAGNETOSPHERE_HEIGHT, intersect_sphere};
+pub use crate::scene::geometry::intersect_sphere;
 
 pub struct AtmosphereData {
-    pub pole_pos: Vec3,
     pub sky: Vec3,
-    pub pole: Vec3,
     pub ambient: Vec3,
 }
 
@@ -20,12 +18,14 @@ pub struct Textures<'a> {
 }
 
 impl Textures<'_> {
-    pub fn base(&self, p: Vec3) -> Vec4 {
-        self.base.sample_by_lod(*self.sampler, p, 0.0)
+    pub fn base_filtered(&self, p: Vec3, footprint: f32) -> Vec4 {
+        self.base
+            .sample_by_lod(*self.sampler, p, (footprint * 128.0).max(1.0).log2())
     }
 
-    pub fn details(&self, p: Vec3) -> Vec4 {
-        self.details.sample_by_lod(*self.sampler, p, 0.0)
+    pub fn details_filtered(&self, p: Vec3, footprint: f32) -> Vec4 {
+        self.details
+            .sample_by_lod(*self.sampler, p, (footprint * 64.0).max(1.0).log2())
     }
 
     pub fn weather(&self, p: Vec2) -> Vec4 {
