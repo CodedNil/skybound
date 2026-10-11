@@ -1,0 +1,15 @@
+pub use super::{behave, render};
+use crate::scene::life::{Rank, Taxon};
+
+pub mod bryophytales;
+
+pub const TAXON: Taxon = Taxon {
+    name: "Muscopsida",
+    english_name: "Moss-like",
+    description: "Moss-like plants form small fuzzy growths that cling to other organisms. \
+        Fine leaves and dense surface coverage capture dew and moderate conditions close to the host. \
+        Their low profile helps the mats remain attached as their hosts move through the air.",
+    rank: Rank::Class,
+    parent: Some(&super::TAXON),
+    radius: 0.0,
+};
