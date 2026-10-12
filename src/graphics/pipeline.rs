@@ -156,6 +156,7 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         view: uniform,
         players: player.0,
         viewport,
+        volume_size: targets.size.as_vec2().extend(0.0).extend(0.0),
     });
     buffer.resolve.clear();
     buffer.resolve.push(ResolveUniform {

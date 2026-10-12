@@ -1,4 +1,10 @@
-pub use super::BIOLOGY;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    maturity_days: 1800.0,
+    lifespan_days: 30000.0,
+    ..super::BIOLOGY
+};
 use super::blade;
 use crate::scene::life::animalia::tetralata::oral_tentacles;
 

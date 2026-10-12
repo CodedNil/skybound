@@ -39,6 +39,7 @@ fn reconstruct(@location(0) uv: vec2<f32>) -> FilterOutput {
         }
     }
     current /= max(total, 1.0);
+    current = mix(textureLoad(volume, p, 0), current, 0.25);
     let previous_uv = uv - textureLoad(motion, p, 0).xy;
     var weight = 0.0;
     var old = current;
@@ -50,9 +51,11 @@ fn reconstruct(@location(0) uv: vec2<f32>) -> FilterOutput {
         let tolerance = max(vec2<f32>(1500.0, 10.0), sample_data.xy * vec2<f32>(0.35, 0.04));
         let thin_edge = max(current.a, old.a) > 0.8;
         if difference.y < tolerance.y && (difference.x < tolerance.x || thin_edge) {
-            weight = 0.96;
+            let screen_motion = length(textureLoad(motion, p, 0).xy * parameters.size.xy);
+            weight = mix(0.88, 0.65, smoothstep(0.25, 3.0, screen_motion));
             let luminance_change = abs(dot(old.rgb - current.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
-            weight *= 1.0 - smoothstep(0.5, 3.0, luminance_change);
+            let brightness = max(dot(current.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.1);
+            weight *= 1.0 - smoothstep(0.08, 0.5, luminance_change / brightness);
         }
     }
     old = clamp(old, minimum, maximum);

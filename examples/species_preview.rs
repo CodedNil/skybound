@@ -1,8 +1,12 @@
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use image::RgbImage;
+use image::codecs::gif::{GifEncoder, Repeat};
+use image::imageops;
+use image::{Delay, Frame, RgbImage, RgbaImage};
 use rayon::prelude::*;
 use skybound::scene::life::{self, CreatureInstance, SPECIES, SPECIES_MODULES, Taxon};
 use skybound::scene::surface::{Ray, tonemap};
@@ -13,38 +17,9 @@ fn adjacent_preview(kind: usize) -> PathBuf {
         .split_whitespace()
         .collect::<String>()
         .replace("::", "/");
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/scene/life")
-        .join(module);
-    let folder = if source.is_dir() {
-        source.as_path()
-    } else {
-        source.parent().expect("species folder")
-    };
-    let source_stem = source
-        .file_stem()
-        .expect("species module")
-        .to_string_lossy();
-    let mut references: Vec<_> = fs::read_dir(folder)
-        .expect("read species folder")
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().is_some_and(|ext| ext == "png")
-                && path.file_stem().is_some_and(|stem| {
-                    let stem = stem.to_string_lossy();
-                    stem == source_stem || stem == source_stem.trim_end_matches('s')
-                })
-        })
-        .collect();
-    references.sort();
-    let stem = references
-        .first()
-        .unwrap_or(&source)
-        .file_stem()
-        .expect("species filename")
-        .to_string_lossy();
-    folder.join(format!("{stem}_render.png"))
+        .join(module)
 }
 
 struct View {
@@ -150,79 +125,216 @@ fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: boo
     }
 }
 
-fn render_grid(c: &CreatureInstance, tile: usize, anatomy: bool) -> Vec<u8> {
-    let width = tile * 3;
-    let mut pixels = vec![0u8; width * width * 3];
-    for index in 0..9 {
-        let view = View::fit(index, c);
-        let samples: Vec<Sample> = (0..tile * tile)
-            .into_par_iter()
-            .map(|i| {
-                sample(
-                    &view,
-                    vec2((i % tile) as f32 + 0.5, (i / tile) as f32 + 0.5) / tile as f32,
-                    c,
-                    tile,
-                    anatomy,
-                )
-            })
-            .collect();
-        let refined: Vec<[u8; 3]> = samples
-            .par_iter()
-            .enumerate()
-            .map(|(i, center)| {
-                let x = i % tile;
-                let y = i / tile;
-                let edge = [
-                    (x.saturating_sub(1), y),
-                    ((x + 1).min(tile - 1), y),
-                    (x, y.saturating_sub(1)),
-                    (x, (y + 1).min(tile - 1)),
-                ]
-                .iter()
-                .any(|&(x, y)| {
-                    let other = samples[y * tile + x];
-                    (other.distance - center.distance).abs() > center.distance.max(1.0) * 0.02
-                        || other.color.distance(center.color) > 0.12
-                });
-                let mut color = center.color;
-                if edge {
-                    color = Vec3::ZERO;
-                    for offset in [
-                        vec2(0.25, 0.25),
-                        vec2(0.75, 0.25),
-                        vec2(0.25, 0.75),
-                        vec2(0.75, 0.75),
-                    ] {
-                        color += sample(
-                            &view,
-                            (vec2(x as f32, y as f32) + offset) / tile as f32,
-                            c,
-                            tile,
-                            anatomy,
-                        )
-                        .color
-                            * 0.25;
-                    }
+fn render_tile(c: &CreatureInstance, view: &View, tile: usize, anatomy: bool) -> Vec<u8> {
+    let samples: Vec<Sample> = (0..tile * tile)
+        .into_par_iter()
+        .map(|i| {
+            sample(
+                view,
+                vec2((i % tile) as f32 + 0.5, (i / tile) as f32 + 0.5) / tile as f32,
+                c,
+                tile,
+                anatomy,
+            )
+        })
+        .collect();
+    let refined: Vec<[u8; 3]> = samples
+        .par_iter()
+        .enumerate()
+        .map(|(i, center)| {
+            let x = i % tile;
+            let y = i / tile;
+            let edge = [
+                (x.saturating_sub(1), y),
+                ((x + 1).min(tile - 1), y),
+                (x, y.saturating_sub(1)),
+                (x, (y + 1).min(tile - 1)),
+            ]
+            .iter()
+            .any(|&(x, y)| {
+                let other = samples[y * tile + x];
+                (other.distance - center.distance).abs() > center.distance.max(1.0) * 0.02
+                    || other.color.distance(center.color) > 0.12
+            });
+            let mut color = center.color;
+            if edge {
+                color = Vec3::ZERO;
+                for offset in [
+                    vec2(0.25, 0.25),
+                    vec2(0.75, 0.25),
+                    vec2(0.25, 0.75),
+                    vec2(0.75, 0.75),
+                ] {
+                    color += sample(
+                        view,
+                        (vec2(x as f32, y as f32) + offset) / tile as f32,
+                        c,
+                        tile,
+                        anatomy,
+                    )
+                    .color
+                        * 0.25;
                 }
-                let color = tonemap(color);
-                [
-                    (color.x * 255.0).round() as u8,
-                    (color.y * 255.0).round() as u8,
-                    (color.z * 255.0).round() as u8,
-                ]
-            })
-            .collect();
-        for (i, color) in refined.iter().enumerate() {
-            let x = index % 3 * tile + i % tile;
-            let y = index / 3 * tile + i / tile;
-            pixels[(y * width + x) * 3..(y * width + x) * 3 + 3].copy_from_slice(color);
+            }
+            let color = tonemap(color);
+            [
+                (color.x * 255.0).round() as u8,
+                (color.y * 255.0).round() as u8,
+                (color.z * 255.0).round() as u8,
+            ]
+        })
+        .collect();
+    refined.into_iter().flatten().collect()
+}
+
+const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Output {
+    Render,
+    Anatomy,
+    Lifecycle,
+    Variation,
+    Idle,
+}
+impl Output {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Render => "render",
+            Self::Anatomy => "anatomy",
+            Self::Lifecycle => "lifecycle",
+            Self::Variation => "variation",
+            Self::Idle => "idle",
         }
     }
-    pixels
+}
+
+fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> CreatureInstance {
+    CreatureInstance::specimen(
+        Vec3::ZERO.extend(life::KINDS[kind].render_radius()),
+        Vec4::W,
+        Vec4::new((seconds * TAU / 4.0).sin() * 0.12, 0.0, seconds, 0.0),
+        kind as u32,
+        days,
+        seed,
+    )
+}
+
+fn label(pixels: &mut [u8], size: usize, text: &str) {
+    let scale = (size / 128).max(1);
+    for (column, ch) in text.chars().enumerate() {
+        let glyph: [u8; 5] = match ch {
+            '0' => [62, 65, 65, 65, 62],
+            '1' => [0, 66, 127, 64, 0],
+            '2' => [98, 81, 73, 73, 70],
+            '3' => [34, 65, 73, 73, 54],
+            '4' => [24, 20, 18, 127, 16],
+            '5' => [39, 69, 69, 69, 57],
+            '6' => [62, 73, 73, 73, 48],
+            '7' => [1, 113, 9, 5, 3],
+            '8' => [54, 73, 73, 73, 54],
+            '9' => [6, 73, 73, 73, 62],
+            '.' => [0, 96, 96, 0, 0],
+            'D' => [127, 65, 65, 65, 62],
+            'Y' => [7, 8, 112, 8, 7],
+            'S' => [38, 73, 73, 73, 50],
+            _ => [0; 5],
+        };
+        for (x, bits) in glyph.into_iter().enumerate() {
+            for y in 0..7 {
+                for dx in 0..scale {
+                    for dy in 0..scale {
+                        let px = 6 * scale + (column * 6 + x) * scale + dx;
+                        let py = size - 10 * scale + y * scale + dy;
+                        if px < size {
+                            let start = (py * size + px) * 3;
+                            pixels[start..start + 3].copy_from_slice(if bits & (1 << y) != 0 {
+                                &[225, 235, 245]
+                            } else {
+                                &[12, 25, 40]
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbImage {
+    let biology = life::KINDS[kind].biology();
+    let adult = specimen(kind, biology.maturity_days * 1.25, 0, seconds);
+    let mut fixed = View::fit(1, &adult);
+    fixed.field *= 1.2;
+    let mut grid = RgbImage::new((size * 3) as u32, (size * 3) as u32);
+    for (panel, &seed) in SEEDS.iter().enumerate() {
+        let age = if output == Output::Lifecycle {
+            life::development::grid_age(biology, panel)
+        } else {
+            biology.maturity_days * 1.25
+        };
+        let seed = if output == Output::Variation { seed } else { 0 };
+        let c = specimen(kind, age, seed, seconds);
+        let angled =
+            matches!(output, Output::Render | Output::Anatomy).then(|| View::fit(panel, &c));
+        let view = angled.as_ref().unwrap_or(&fixed);
+        let mut pixels = render_tile(&c, view, size, output == Output::Anatomy);
+        if output == Output::Lifecycle {
+            let title = if age >= 365.0 {
+                format!("{:.1}Y", age / 365.0)
+            } else {
+                format!("{age:.1}D")
+            };
+            label(&mut pixels, size, &title);
+        } else if output == Output::Variation {
+            label(&mut pixels, size, &format!("S{seed}"));
+        }
+        let tile = RgbImage::from_raw(size as u32, size as u32, pixels).expect("tile pixels");
+        imageops::replace(
+            &mut grid,
+            &tile,
+            i64::try_from((panel % 3) * size).expect("grid width"),
+            i64::try_from((panel / 3) * size).expect("grid height"),
+        );
+    }
+    grid
+}
+
+fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
+    let age = life::KINDS[kind].biology().maturity_days * 1.25;
+    let c = specimen(kind, age, 0, seconds);
+    let mut view = View::fit(1, &c);
+    view.field *= 1.2;
+    let mut encoder =
+        GifEncoder::new_with_speed(BufWriter::new(File::create(path).expect("create GIF")), 10);
+    encoder.set_repeat(Repeat::Infinite).expect("GIF loop");
+    for frame in 0..48 {
+        let c = specimen(kind, age, 0, seconds + frame as f32 / 12.0);
+        let pixels = render_tile(&c, &view, size, false);
+        let rgba: Vec<u8> = pixels
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect();
+        encoder
+            .encode_frame(Frame::from_parts(
+                RgbaImage::from_raw(size as u32, size as u32, rgba).expect("GIF pixels"),
+                0,
+                0,
+                Delay::from_numer_denom_ms(1000, 12),
+            ))
+            .expect("encode GIF frame");
+    }
 }
 
 fn main() {
+    if env::args().any(|arg| arg == "--help") {
+        println!(
+            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle]\nBy default, writes all five assets beside each species source file. --anatomy selects anatomy only."
+        );
+        return;
+    }
     let tile: usize = option("--size")
         .or_else(|| env::args().nth(1).filter(|v| !v.starts_with('-')))
         .map_or(768, |value| {
@@ -239,7 +351,25 @@ fn main() {
     if let Some(output) = &output {
         fs::create_dir_all(output).expect("create renders folder");
     }
-    let width = tile * 3;
+    let requested = option("--outputs").unwrap_or_else(|| {
+        if env::args().any(|arg| arg == "--anatomy") {
+            "anatomy".into()
+        } else {
+            "render,anatomy,lifecycle,variation,idle".into()
+        }
+    });
+    let outputs: Vec<_> = requested
+        .split(',')
+        .map(|name| match name {
+            "render" => Output::Render,
+            "anatomy" => Output::Anatomy,
+            "lifecycle" => Output::Lifecycle,
+            "variation" => Output::Variation,
+            "idle" => Output::Idle,
+            _ => panic!("unknown output: {name}"),
+        })
+        .collect();
+    let mut count = 0;
     for (kind, taxon) in SPECIES.iter().enumerate() {
         if selected.as_ref().is_some_and(|filter| {
             !filter.split(',').any(|name| {
@@ -248,37 +378,34 @@ fn main() {
         }) {
             continue;
         }
-        let c = CreatureInstance::new(
-            Vec3::ZERO.extend(life::KINDS[kind].render_radius()),
-            Vec4::W,
-            Vec4::new(0.05, 0.0, seconds, 0.0),
-            kind as u32,
-        );
-        let anatomy = env::args().any(|arg| arg == "--anatomy");
-        let pixels = render_grid(&c, tile, anatomy);
-        let path = output.as_ref().map_or_else(
+        count += 1;
+        let base = output.as_ref().map_or_else(
             || adjacent_preview(kind),
-            |output| {
-                Path::new(output)
-                    .join(filename(taxon))
-                    .with_extension("png")
-            },
+            |output| Path::new(output).join(filename(taxon)),
         );
-        let path = if anatomy {
-            path.with_file_name(format!(
-                "{}_anatomy.png",
-                path.file_stem()
+        for &output in &outputs {
+            let extension = if matches!(output, Output::Idle) {
+                "gif"
+            } else {
+                "png"
+            };
+            let path = base.with_file_name(format!(
+                "{}_{}.{extension}",
+                base.file_stem()
                     .expect("preview stem")
                     .to_string_lossy()
-                    .trim_end_matches("_render")
-            ))
-        } else {
-            path
-        };
-        RgbImage::from_raw(width as u32, width as u32, pixels)
-            .expect("valid pixel dimensions")
-            .save(&path)
-            .expect("save species preview");
-        println!("{}: {}", taxon.name, path.display());
+                    .trim_end_matches("_render"),
+                output.name()
+            ));
+            if matches!(output, Output::Idle) {
+                idle(&path, kind, tile, seconds);
+            } else {
+                render_grid(kind, tile, output, seconds)
+                    .save(&path)
+                    .expect("save species preview");
+            }
+            println!("{}: {}", taxon.name, path.display());
+        }
     }
+    assert!(count > 0, "no species matched the filter");
 }

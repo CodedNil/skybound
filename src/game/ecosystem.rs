@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use skybound::scene::climate::weather_map;
 use skybound::scene::life::behaviour::{Activity, Motion, Senses};
 use skybound::scene::life::biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible};
 use skybound::scene::life::physiology::{Climate, Vitals};
@@ -20,6 +19,9 @@ pub struct Species(pub Kind);
 
 #[derive(Component, Clone, Copy)]
 pub struct Physiology(pub Vitals);
+
+#[derive(Component)]
+pub struct Individual(pub u32);
 
 #[derive(Component, Default)]
 pub struct EcologicalMotion(pub Vec3);
@@ -99,7 +101,7 @@ impl Plugin for EcosystemPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Ecosystem>()
             .add_systems(Startup, seed)
-            .add_systems(Update, attach_players)
+            .add_systems(Update, (attach_players, identify))
             .add_systems(FixedUpdate, simulate);
     }
 }
@@ -107,6 +109,9 @@ impl Plugin for EcosystemPlugin {
 fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle {
     let mut vitals = Vitals::new(kind.biology());
     vitals.mass *= mass_fraction;
+    if mass_fraction < 0.5 {
+        vitals.age_days = 0.0;
+    }
     (
         Species(kind),
         Physiology(vitals),
@@ -139,6 +144,17 @@ fn seed(mut commands: Commands) {
 }
 
 type UnregisteredActors = (Or<(With<Player>, With<Mount>)>, Without<Species>);
+fn identify(
+    mut commands: Commands,
+    organisms: Query<Entity, (With<Species>, Without<Individual>)>,
+) {
+    for entity in &organisms {
+        commands.entity(entity).insert(Individual(
+            (entity.to_bits() as u32) ^ ((entity.to_bits() >> 32) as u32).wrapping_mul(0x9e37_79b9),
+        ));
+    }
+}
+
 fn attach_players(
     mut commands: Commands,
     actors: Query<(Entity, Has<Player>), UnregisteredActors>,
@@ -166,8 +182,7 @@ type Organisms<'a> = (
 );
 
 fn climate_at(world: &WorldData, local: Vec3, now: f32) -> Climate {
-    let position = world.surface_position(local);
-    let weather = weather_map(Climate::weather_uv(position, now));
+    let weather = Climate::weather_on_planet(world.position(local).as_vec3(), now);
     let mut climate = Climate::on_planet(world.position(local).as_vec3(), now, weather);
     climate.wind = world.rotate_to_local(climate.wind);
     climate
@@ -572,13 +587,14 @@ fn reproduce(
 ) -> bool {
     let kind = agent.kind;
     let biology = kind.biology();
-    let mature = body.age > 120.0 && body.mass > biology.adult_mass * 1.15;
+    let maturity = f64::from(biology.maturity_days);
+    let mature = body.age_days >= maturity && body.mass > biology.adult_mass * 1.15;
     let fertile = match biology.reproduction {
         Reproduction::Pollination => relations.pollinated_until > now,
         Reproduction::Eggs | Reproduction::LiveBirth => neighbours.iter().any(|other| {
             other.entity != agent.entity
                 && other.kind == kind
-                && other.vitals.age > 120.0
+                && other.vitals.age_days >= maturity
                 && other.vitals.health > 0.0
                 && other.position.distance_squared(agent.position) < 400.0
         }),
@@ -611,7 +627,7 @@ mod tests {
         let mate = world.spawn_empty().id();
         let kind = Kind::Naetu;
         let mut body = Vitals::new(kind.biology());
-        body.age = 200.0;
+        body.age_days = f64::from(kind.biology().maturity_days);
         body.mass *= 1.2;
         body.energy = 1.0;
         let agent = Agent {

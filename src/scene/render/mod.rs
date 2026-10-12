@@ -27,7 +27,9 @@ impl ThinLayers {
             return;
         }
         let mut color = hit.color_depth;
-        let mut transmission = hit.transmittance.extend(0.0);
+        let mut transmission =
+            hit.transmittance
+                .extend(if hit.part == u32::MAX { 1.0 } else { 0.0 });
         for index in 0..8 {
             if color.w < self.color[index].w {
                 core::mem::swap(&mut color, &mut self.color[index]);
@@ -80,16 +82,6 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
             }
         }
     }
-    let bolt = energy_hit(
-        Ray {
-            max_distance: closest.distance(),
-            ..ray
-        },
-        &frame.view,
-    );
-    if bolt.distance() < closest.distance() {
-        closest = bolt;
-    }
     // The pure aur ocean hides terrain from observers above the veil.
     if frame.view.surface_position(ray.origin).z > 0.0 {
         return closest;
@@ -101,8 +93,7 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
     closest
 }
 
-fn energy_hit(ray: Ray, view: &crate::scene::ViewUniform) -> Hit {
-    let mut closest = Hit::MISS;
+fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLayers) {
     for index in 0..32 {
         let bolt = view.aur_bolts[index];
         if bolt[0].w <= 0.0 {
@@ -111,56 +102,43 @@ fn energy_hit(ray: Ray, view: &crate::scene::ViewUniform) -> Hit {
         let start = energy_point(bolt[0].xyz(), view);
         let end = energy_point(bolt[1].xyz(), view);
         let axis = end - start;
-        let length = axis.length_squared();
+        let length = axis.length_squared().max(0.001);
         let center = (start + end) * 0.5;
-        let radius = bolt[0]
-            .w
-            .max(ray.footprint * center.distance(ray.origin) * 0.65);
-        let bound = axis.length() * 0.5 + radius;
+        let radius = (bolt[0].w * 12.0).max(ray.footprint * center.distance(ray.origin));
+        let bound = axis.length() * 0.5 + radius * 3.0;
         let bounds = intersect_sphere(ray.origin - center, ray.direction, bound);
-        if bounds.y < 0.0 || bounds.x > ray.max_distance || bounds.x > closest.distance() {
+        if bounds.y < 0.0 || bounds.x > ray.max_distance {
             continue;
         }
         let offset = ray.origin - start;
         let along_ray = axis.dot(ray.direction);
         let along_origin = axis.dot(offset);
-        let a = length - along_ray * along_ray;
-        let b = length * ray.direction.dot(offset) - along_origin * along_ray;
-        let c = length * offset.length_squared()
-            - along_origin * along_origin
-            - radius * radius * length;
-        let discriminant = b * b - a * c;
-        let mut distance = ray.max_distance;
-        if discriminant >= 0.0 && a > 0.0001 {
-            let root = (-b - discriminant.sqrt()) / a;
-            let height = along_origin + root * along_ray;
-            if root > 0.0 && height > 0.0 && height < length {
-                distance = root;
-            }
-        }
-        for cap in 0..2 {
-            let center = if cap == 0 { start } else { end };
-            let interval = intersect_sphere(ray.origin - center, ray.direction, radius);
-            if interval.y >= interval.x && interval.x > 0.0 {
-                distance = distance.min(interval.x);
-            }
-        }
-        if distance >= closest.distance() || distance >= ray.max_distance {
+        let along = ((along_origin - along_ray * ray.direction.dot(offset))
+            / (length - along_ray * along_ray).max(0.001))
+        .clamp(0.0, 1.0);
+        let point_on_bolt = start + axis * along;
+        let distance = (point_on_bolt - ray.origin).dot(ray.direction);
+        if distance <= 0.0 || distance >= ray.max_distance {
             continue;
         }
         let point = ray.origin + ray.direction * distance;
-        let along = ((point - start).dot(axis) / length.max(0.001)).clamp(0.0, 1.0);
-        // Preserve energy when distant bolts widen to a pixel.
-        let energy = bolt[1].w * (bolt[0].w / radius);
-        closest = Hit {
-            color_depth: (vec3(0.65, 1.2, 2.0) * energy).extend(distance),
-            normal: (point - (start + axis * along)).normalize(),
+        let separation = point.distance_squared(point_on_bolt);
+        let core_width = bolt[0].w.max(ray.footprint * distance * 0.5);
+        let core = (-separation / (core_width * core_width)).exp();
+        let glow = (-separation / (radius * radius)).exp();
+        let energy = bolt[1].w * bolt[0].w / core_width;
+        let color = (vec3(0.70, 0.92, 1.0) * core + vec3(0.08, 0.38, 0.65) * glow * 0.12) * energy;
+        if color.max_element() < 0.001 {
+            continue;
+        }
+        layers.add(Hit {
+            color_depth: color.extend(distance),
+            normal: Vec3::ZERO,
             previous_position: point,
-            transmittance: Vec3::ZERO,
-            part: 0,
-        };
+            transmittance: Vec3::ONE,
+            part: u32::MAX,
+        });
     }
-    closest
 }
 
 fn energy_point(point: Vec3, view: &crate::scene::ViewUniform) -> Vec3 {
@@ -282,7 +260,7 @@ pub fn volume(
         sampler,
     };
     let dither =
-        (blue_noise(uv * frame.viewport.zw()) + frame.view.frame_count() * 0.618_034).fract();
+        (blue_noise(uv * frame.volume_size.xy()) + frame.view.frame_count() * 0.618_034).fract();
     let volume = raymarch_volumetrics(
         ray.origin,
         ray.direction,
@@ -290,30 +268,20 @@ pub fn volume(
         &frame.view,
         limit,
         dither,
-        ray.footprint * 2.0,
+        2.0 / frame.volume_size.y,
         &textures,
     );
     let position = ray.origin + ray.direction * volume.depth;
     let altitude = position.distance(frame.view.planet_center()) - crate::scene::PLANET_RADIUS;
-    let current = if altitude <= 1900.0 {
-        frame.view.planet_rotation
-            * (crate::scene::planet::surface_frame(frame.view.to_planet(position))
-                * vec3(
-                    crate::scene::aur::CURRENT.x,
-                    -crate::scene::aur::CURRENT.y,
-                    0.0,
-                ))
+    let current = if altitude <= 3700.0 {
+        frame.view.planet_rotation * crate::scene::aur::CURRENT
     } else if altitude > crate::scene::climate::CLOUD_TOP {
         Vec3::ZERO
     } else {
-        let world = frame.view.surface_position(position);
         let weather = if frame.view.weather.x >= 0.0 {
             frame.view.weather
         } else {
-            textures.weather(crate::scene::climate::Climate::weather_uv(
-                world,
-                frame.view.time(),
-            ))
+            textures.weather_on_planet(frame.view.to_planet(position), frame.view.time())
         };
         frame.view.planet_rotation
             * crate::scene::climate::Climate::on_planet(
@@ -355,6 +323,7 @@ pub fn transparent(
         transmission: [Vec4::ONE; 8],
         count: 0,
     };
+    energy_layers(ray, &frame.view, &mut hits);
     for i in 0..2 {
         let c = &frame.players[i];
         if c.position.w <= 0.0 {
@@ -394,6 +363,10 @@ pub fn transparent(
             0.5,
             &textures,
         );
+        if hits.transmission[i].w > 0.5 {
+            color += transmission * fog.color.w * hit.xyz();
+            continue;
+        }
         color += transmission * fog.color.xyz();
         transmission *= fog.color.w;
         prefix += prefix_t * fog.color.xyz();
@@ -431,10 +404,7 @@ pub fn sky(
         * view.pole_direction();
     let direction = sky_direction(uv, view.sky_horizon.x);
     let light = vec3((1.0 - light.z * light.z).max(0.0).sqrt(), 0.0, light.z);
-    *out_color = (render_sky(
-        direction,
-        vec3(0.0, 0.0, crate::scene::PLANET_RADIUS + view.altitude()),
-        light,
-    ) * view.sky_horizon.y)
-        .extend(1.0);
+    let origin = vec3(0.0, 0.0, crate::scene::PLANET_RADIUS + view.altitude());
+    let source = origin + light * view.pole_position.xyz().distance(view.world_position.xyz());
+    *out_color = (render_sky(direction, origin, source) * view.sky_horizon.y).extend(1.0);
 }

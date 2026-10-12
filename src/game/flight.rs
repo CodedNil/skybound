@@ -7,14 +7,15 @@ use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::transform::TransformSystems;
 use skybound::scene::life::animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{
-    lucidus, robustus,
+    nae, naetu,
 };
 use skybound::scene::life::behaviour::{Motion, Senses};
-use skybound::scene::life::{CreatureInstance, Kind};
+use skybound::scene::life::{CreatureInstance, Kind, development};
 use skybound::scene::surface::{Ray, estimate_normal};
 use skybound::scene::terrain::spike_distance;
 
 use crate::game::camera::CameraController;
+use crate::game::ecosystem::{Individual, Physiology};
 use crate::game::world::{WorldAnchor, WorldData};
 
 pub const SPAWN: Vec3 = vec3(0.0, 4.0, 2400.0);
@@ -100,27 +101,34 @@ fn instance(
     time: f32,
     speed: f32,
     world: &WorldData,
+    physiology: Option<&Physiology>,
+    individual: Option<&Individual>,
 ) -> CreatureInstance {
     let radius = if kind == Kind::Nae {
-        lucidus::RENDER_RADIUS
+        nae::RENDER_RADIUS
     } else {
-        robustus::RENDER_RADIUS
+        naetu::RENDER_RADIUS
     };
     let dive = (-transform.forward().dot(world.up(transform.translation))).clamp(0.0, 1.0);
     let stroke = (time * 4.0).sin() * (0.06 + (speed / 100.0).min(1.0) * 0.28) * (1.0 - dive);
     let fold = dive * 1.1;
-    CreatureInstance::new(
+    CreatureInstance::specimen(
         transform.translation.extend(radius),
         transform.rotation.to_array().into(),
         Vec4::new(stroke, fold, time, speed),
         kind as u32,
+        physiology.map_or_else(
+            || kind.biology().maturity_days * 1.25,
+            |body| body.0.age_days as f32,
+        ),
+        individual.map_or(kind as u32 + 1, |identity| identity.0),
     )
 }
 fn extract_player(
     world: Res<WorldData>,
     mut model: ResMut<PlayerModel>,
-    player: Single<(&Transform, &Velocity), With<Player>>,
-    mount: Single<(&Transform, &Velocity), With<Mount>>,
+    player: Single<BodyView, With<Player>>,
+    mount: Single<BodyView, With<Mount>>,
     time: Res<Time>,
     flight: Res<Flight>,
 ) {
@@ -131,6 +139,8 @@ fn extract_player(
             time.elapsed_secs(),
             mount.1.0.length(),
             &world,
+            mount.2,
+            mount.3,
         ),
         instance(
             player.0,
@@ -138,6 +148,8 @@ fn extract_player(
             time.elapsed_secs(),
             player.1.0.length(),
             &world,
+            player.2,
+            player.3,
         ),
     ];
     for (index, mut pose) in poses.into_iter().enumerate() {
@@ -160,6 +172,7 @@ fn extract_player(
             pose.previous_position = old.position;
             pose.previous_rotation = old.rotation;
             pose.previous_animation = old.animation;
+            pose.previous_proportions = old.proportions;
             pose.previous_tail = old.tail;
         }
         model.0[index] = pose;
@@ -219,7 +232,7 @@ fn contact(
             ambient: vec3(0.30, 0.36, 0.45),
             radiance: Vec3::ONE,
         };
-        let result = robustus::render(ray, c);
+        let result = naetu::render(ray, c);
         let mut hit = result.opaque;
         for layer in result.layers.iter().take(result.count as usize) {
             if layer.part != 2 && layer.distance() < hit.distance() {
@@ -253,6 +266,25 @@ fn contact(
 
 type NaeQuery = (With<Player>, Without<Mount>, Without<Camera3d>);
 type NaetuQuery = (With<Mount>, Without<Player>, Without<Camera3d>);
+type BodyView<'a> = (
+    &'a Transform,
+    &'a Velocity,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
+type BodyMotion<'a> = (
+    &'a mut Transform,
+    &'a mut Velocity,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
+type CompanionMotion<'a> = (
+    &'a mut Transform,
+    &'a mut Velocity,
+    Option<&'a super::ecosystem::Relations>,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
 type FollowCameraQuery = (
     With<Camera3d>,
     Without<Player>,
@@ -274,12 +306,12 @@ struct FlightInput<'w, 's> {
 fn fly(
     input: FlightInput,
     player: Single<(&mut Transform, &mut Velocity), NaeQuery>,
-    mount: Single<(&mut Transform, &mut Velocity), NaetuQuery>,
+    mount: Single<BodyMotion, NaetuQuery>,
     camera: Single<(&Transform, Has<CameraController>), CameraQuery>,
     mut flight: ResMut<Flight>,
 ) {
     let (mut player, mut player_velocity) = player.into_inner();
-    let (mut mount, mut mount_velocity) = mount.into_inner();
+    let (mut mount, mut mount_velocity, physiology, individual) = mount.into_inner();
     let FlightInput {
         time,
         keys,
@@ -313,6 +345,16 @@ fn fly(
     flight.steering = flight.steering.lerp(steering, 1.0 - (-8.0 * dt).exp());
     let steering = flight.steering;
     let boost = 1.0 + f32::from(keys.pressed(KeyCode::ShiftLeft)) * 0.65;
+    let c = instance(
+        &mount,
+        Kind::Naetu,
+        time.elapsed_secs(),
+        mount_velocity.0.length(),
+        &world,
+        physiology,
+        individual,
+    );
+    let rosette = ROSETTE * development::scale(&c);
     if keys.just_pressed(KeyCode::Space) && matches!(flight.mode, ControlMode::Perched(_)) {
         flight.mode = ControlMode::Flying;
         player_velocity.0 = mount_velocity.0 + up * 3.0;
@@ -320,21 +362,14 @@ fn fly(
     if keys.just_pressed(KeyCode::KeyE) {
         if matches!(flight.mode, ControlMode::Mounted | ControlMode::Perched(_)) {
             flight.mode = ControlMode::Flying;
-        } else if matches!(flight.mode, ControlMode::Flying) {
-            let c = instance(
-                &mount,
-                Kind::Naetu,
-                time.elapsed_secs(),
-                mount_velocity.0.length(),
-                &world,
-            );
-            if let Some(anchor) = contact(player.translation, &mount, &c, &world) {
-                flight.mode = if anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE) < 1.5 {
-                    ControlMode::Mounted
-                } else {
-                    ControlMode::Perched(anchor)
-                };
-            }
+        } else if matches!(flight.mode, ControlMode::Flying)
+            && let Some(anchor) = contact(player.translation, &mount, &c, &world)
+        {
+            flight.mode = if anchor.on_mount && anchor.point.as_vec3().distance(rosette) < 1.5 {
+                ControlMode::Mounted
+            } else {
+                ControlMode::Perched(anchor)
+            };
         }
     }
     match flight.mode {
@@ -348,7 +383,7 @@ fn fly(
             let up = world.up(body.translation);
             pilot(body, velocity, steering, cruise * boost, dt, up);
             if mounted {
-                player.translation = mount.transform_point(ROSETTE);
+                player.translation = mount.transform_point(rosette);
                 player.rotation = mount.rotation;
                 player_velocity.0 = mount_velocity.0;
             }
@@ -366,6 +401,8 @@ fn fly(
                 dt,
                 time: time.elapsed_secs(),
                 mount_velocity: mount_velocity.0,
+                physiology,
+                individual,
             },
         ),
     }
@@ -375,14 +412,7 @@ fn advance_companion(
     time: Res<Time>,
     world: Res<WorldData>,
     player: Single<(&mut Transform, &mut Velocity), NaeQuery>,
-    mount: Single<
-        (
-            &mut Transform,
-            &mut Velocity,
-            Option<&super::ecosystem::Relations>,
-        ),
-        NaetuQuery,
-    >,
+    mount: Single<CompanionMotion, NaetuQuery>,
     camera: Single<Has<CameraController>, With<Camera3d>>,
     mut flight: ResMut<Flight>,
 ) {
@@ -391,7 +421,7 @@ fn advance_companion(
         return;
     }
     let (mut player, mut velocity) = player.into_inner();
-    let (mut mount, mut mount_velocity, ecology) = mount.into_inner();
+    let (mut mount, mut mount_velocity, ecology, physiology, individual) = mount.into_inner();
     if !matches!(flight.mode, ControlMode::Mounted) {
         let on_back = matches!(flight.mode, ControlMode::Perched(a) if a.on_mount);
         let mut motion = Motion {
@@ -429,6 +459,8 @@ fn advance_companion(
             time.elapsed_secs(),
             mount_velocity.0.length(),
             &world,
+            physiology,
+            individual,
         );
         separate_from_mount(
             &mut player,
@@ -449,28 +481,31 @@ fn separate_from_mount(
     mount_velocity: Vec3,
 ) {
     for _ in 0..4 {
-        let point = mount.rotation.inverse() * (player.translation - mount.translation);
+        let scale = development::scale(body);
+        let point = mount.rotation.inverse() * (player.translation - mount.translation) / scale;
         if point.abs().cmpgt(body.opaque_bounds.truncate() + 1.0).any() {
             return;
         }
-        let distance = robustus::surface(point, body).distance;
+        let surface = |p| naetu::surface(development::body_point(p, body), body).distance;
+        let distance = surface(point) * scale.min_element();
         if distance >= 0.35 {
             return;
         }
-        let normal =
-            mount.rotation * estimate_normal(point, |p| robustus::surface(p, body).distance);
+        let normal = (mount.rotation * (estimate_normal(point, surface) / scale)).normalize();
         player.translation += normal * (0.35 - distance);
         let inward = (*velocity - mount_velocity).dot(normal).min(0.0);
         *velocity -= normal * inward;
     }
 }
 
-struct Steering {
+struct Steering<'a> {
     mount_velocity: Vec3,
     forward: Vec3,
     horizontal: Vec3,
     dt: f32,
     time: f32,
+    physiology: Option<&'a Physiology>,
+    individual: Option<&'a Individual>,
 }
 
 fn crawl(
@@ -500,6 +535,8 @@ fn crawl(
         steering.time,
         steering.mount_velocity.length(),
         world,
+        steering.physiology,
+        steering.individual,
     );
     if let Some(projected) = contact(point + movement, mount, &c, world) {
         anchor = projected;
@@ -665,7 +702,9 @@ mod tests {
                 Kind::Naetu,
                 0.0,
                 velocity.length(),
-                &WorldData::default()
+                &WorldData::default(),
+                None,
+                None,
             )
             .animation
             .y > 0.7,
@@ -676,7 +715,15 @@ mod tests {
     #[test]
     fn contact_uses_body_and_ignores_aur_dome() {
         let mount = Transform::from_translation(SPAWN).looking_to(Vec3::Y, Vec3::Z);
-        let body = instance(&mount, Kind::Naetu, 0.0, 0.0, &WorldData::default());
+        let body = instance(
+            &mount,
+            Kind::Naetu,
+            0.0,
+            0.0,
+            &WorldData::default(),
+            None,
+            None,
+        );
         let world = WorldData::default();
         let anchor = contact(mount.transform_point(ROSETTE), &mount, &body, &world)
             .expect("rosette must be reachable from the back");
@@ -699,12 +746,20 @@ mod tests {
     #[test]
     fn flying_body_collision_removes_inward_velocity() {
         let mount = Transform::from_translation(SPAWN);
-        let body = instance(&mount, Kind::Naetu, 0.0, 0.0, &WorldData::default());
+        let body = instance(
+            &mount,
+            Kind::Naetu,
+            0.0,
+            0.0,
+            &WorldData::default(),
+            None,
+            None,
+        );
         let mut player = Transform::from_translation(SPAWN + Vec3::X * 3.0);
         let mut velocity = -Vec3::X * 10.0;
         separate_from_mount(&mut player, &mount, &body, &mut velocity, Vec3::ZERO);
         assert!(
-            robustus::surface(player.translation - SPAWN, &body).distance > 0.30,
+            naetu::surface(player.translation - SPAWN, &body).distance > 0.30,
             "Næ remains embedded in Nætu"
         );
         assert!(velocity.x >= -0.01, "collision must remove inward velocity");

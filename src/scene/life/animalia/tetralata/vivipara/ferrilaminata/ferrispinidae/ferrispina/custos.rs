@@ -2,6 +2,8 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::{Biology, Social};
 
 pub const BIOLOGY: Biology = Biology {
+    maturity_days: 2200.0,
+    lifespan_days: 42000.0,
     social: Social::Guardian,
     ..super::BIOLOGY
 };

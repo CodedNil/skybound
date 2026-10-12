@@ -1,10 +1,10 @@
-use spirv_std::glam::{FloatExt, Vec3, Vec4Swizzles, vec3};
+use spirv_std::glam::{FloatExt, Vec3};
+use spirv_std::num_traits::Float;
 
 use crate::scene::climate::Climate;
 pub use crate::scene::climate::{
     CLOUD_BOTTOM as CLOUD_BOTTOM_HEIGHT, CLOUD_TOP as CLOUD_TOP_HEIGHT,
 };
-use crate::scene::planet::surface_coordinates;
 use crate::scene::render::utils::Textures;
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
@@ -15,64 +15,63 @@ pub fn sample_clouds(
     footprint: f32,
     textures: &Textures,
 ) -> f32 {
-    let pos = surface_coordinates(point);
-    if pos.z < CLOUD_BOTTOM_HEIGHT || pos.z > CLOUD_TOP_HEIGHT {
+    let altitude = point.length() - PLANET_RADIUS;
+    if altitude < CLOUD_BOTTOM_HEIGHT || altitude > CLOUD_TOP_HEIGHT {
         return 0.0;
     }
     let weather = if view.weather.x >= 0.0 {
         view.weather
     } else {
-        textures.weather(Climate::weather_uv(pos, view.time()))
+        textures.weather_on_planet(point, view.time())
     };
     let climate = Climate::on_planet(point, view.time(), weather);
     let mut support: f32 = 0.0;
     for index in 0..4 {
         let layer = climate.layer(index);
-        if pos.z >= layer.x && pos.z <= layer.x + layer.y {
+        if altitude >= layer.x && altitude <= layer.x + layer.y {
             support = support.max(layer.z);
         }
     }
     if support <= 0.001 {
         return 0.0;
     }
-    // Advect each altitude with the circulation; stronger upper winds shear rising towers.
+    // Planet-space billows keep their shape when the camera or local frame moves.
     let flowing = point - climate.wind * view.time();
-    let coordinates = flowing + (weather.xyz() - 0.5) * 18_000.0;
-    let cirrus = pos.z.smoothstep(9500.0, 14_000.0) * (1.0 - climate.storm);
-    let scale = Vec3::splat(0.0001).lerp(vec3(0.00016, 0.000035, 0.00022), cirrus);
-    let shape = textures.base_filtered(coordinates * scale, footprint * scale.max_element());
+    let cirrus = altitude.smoothstep(28_500.0, 42_000.0) * (1.0 - climate.storm);
+    let shape = textures.billows(flowing * 0.000035, footprint * 0.000035);
+    let lobes = textures.billows(flowing * 0.00012, footprint * 0.00012).x;
+    let surface = point.normalize() * PLANET_RADIUS;
+    let towers = textures.billows(surface * 0.000012, footprint * 0.000012);
     let mut density: f32 = 0.0;
-    let mut profile: f32 = 0.0;
     for index in 0..4 {
         let layer = climate.layer(index);
-        let h = (pos.z - layer.x) / layer.y;
+        let h = (altitude - layer.x) / layer.y;
         if h < 0.0 || h > 1.0 || layer.z <= 0.001 {
             continue;
         }
-        let fade = h.smoothstep(0.0, 0.12) * (1.0 - h.smoothstep(0.65, 1.0));
-        let cover = if index == 3 {
-            let tower = textures
-                .base_filtered(
-                    (point.normalize() * PLANET_RADIUS - climate.wind * view.time()) * 0.000_045,
-                    footprint * 0.000_045,
-                )
-                .y;
-            layer.z * tower.smoothstep(0.52 - h.smoothstep(0.7, 0.95) * 0.08, 0.70)
+        let fade = h.smoothstep(0.0, 0.08) * (1.0 - h.smoothstep(0.78, 1.0));
+        let hull = if index == 3 {
+            let anvil = h.smoothstep(0.65, 0.85) * 0.07;
+            let taper = (h * core::f32::consts::PI).sin() * 0.025;
+            let column = towers.y + (lobes - 0.65) * 0.24 + anvil + taper;
+            (column - (0.69 - layer.z * 0.08)).smoothstep(-0.025, 0.075)
         } else {
-            let cells = if index == 2 { shape.z } else { shape.y };
-            layer.z * cells.smoothstep(0.43, 0.65)
+            let coverage = if index == 2 { shape.z } else { shape.y };
+            let mass = shape.x * 0.65 + lobes * 0.35;
+            let edge = 0.79 - layer.z * 0.19 - (coverage - 0.5) * 0.24;
+            (mass - edge).smoothstep(-0.04, 0.14)
         };
-        let edge = 0.83 - cover * 0.28 + (1.0 - fade) * 0.12;
-        let hull = shape.x.smoothstep(edge, edge + 0.16) * cover * fade;
-        density = density.max(hull);
-        profile = profile.max(fade);
+        density = density.max(hull * fade * layer.z * (1.0 - cirrus * 0.65));
     }
     if !simple && density > 0.0 {
         let detail = textures.details_filtered(flowing * 0.000_8, footprint * 0.000_8);
-        let erosion = detail.x * 0.35 + detail.y * 0.40 + detail.z * 0.25;
-        let camera = view.to_planet(view.world_position.xyz());
-        let distant = point.distance(camera).smoothstep(12_000.0, 80_000.0);
-        density = (density - erosion.lerp(0.5, distant) * (0.07 + 0.05 * (1.0 - profile))).max(0.0);
+        let erosion = detail.x * 0.5 + detail.y * 0.3 + detail.z * 0.2;
+        let billow = textures
+            .base_filtered(flowing * 0.00035, footprint * 0.00035)
+            .x;
+        density = (density + (billow - 0.65) * 0.18 * density.smoothstep(0.0, 0.08)
+            - erosion * 0.12 * (1.0 - density).powi(2))
+        .max(0.0);
     }
     density
 }

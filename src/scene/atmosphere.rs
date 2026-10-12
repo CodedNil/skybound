@@ -82,13 +82,14 @@ fn calculate_transmittance(optical_depth: Vec3) -> Vec3 {
     (-extinction).exp()
 }
 
-fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3) -> Vec3 {
+fn integrate_optical_depth(ray_start: Vec3, ray_dir: Vec3, distance: f32) -> Vec3 {
     let intersection = intersect_sphere(ray_start, ray_dir, ATMOSPHERE_RADIUS);
-    let ray_length = intersection.y.max(0.0);
+    let start = intersection.x.max(0.0);
+    let ray_length = (intersection.y.min(distance) - start).max(0.0);
     let step_size = ray_length / LIGHT_STEPS as f32;
     let mut optical_depth = Vec3::ZERO;
     for i in 0..LIGHT_STEPS {
-        let local_pos = ray_start + ray_dir * (i as f32 + 0.5) * step_size;
+        let local_pos = ray_start + ray_dir * (start + (i as f32 + 0.5) * step_size);
         let h = altitude(local_pos);
         if h <= ATMOSPHERE_HEIGHT {
             optical_depth += density_atmosphere(h) * step_size;
@@ -111,11 +112,7 @@ fn occlusion_factor(pos: Vec3, dir: Vec3) -> f32 {
     f * f * (3.0 - 2.0 * f)
 }
 
-fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, pole_dir: Vec3) -> Vec3 {
-    let cos_theta = ray_dir.dot(pole_dir);
-    let phase_r = phase_rayleigh(cos_theta);
-    let phase_m = henyey_greenstein(cos_theta, MIE_G);
-
+fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, source: Vec3) -> Vec3 {
     let ray_height = altitude(ray_start);
     let sample_exp = 1.0 + (1.0 - ray_height / ATMOSPHERE_HEIGHT).saturate() * 8.0;
 
@@ -137,6 +134,12 @@ fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, pole_di
         }
 
         let local_density = density_atmosphere(h);
+        let offset = source - local_pos;
+        let light_distance = offset.length().max(1.0);
+        let pole_dir = offset / light_distance;
+        let cos_theta = ray_dir.dot(pole_dir);
+        let phase_r = phase_rayleigh(cos_theta);
+        let phase_m = henyey_greenstein(cos_theta, MIE_G);
         optical_depth_view += local_density * step_size;
         aur_depth += (-h / 350.0).clamp(-20.0, 12.0).exp() * 0.0008 * step_size;
         let view_transmittance = calculate_transmittance(optical_depth_view) * (-aur_depth).exp();
@@ -157,7 +160,7 @@ fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, pole_di
 
         let occ = occlusion_factor(local_pos, pole_dir);
         let light_transmittance = if occ < 1.0 {
-            let optical_depth_light = integrate_optical_depth(local_pos, pole_dir);
+            let optical_depth_light = integrate_optical_depth(local_pos, pole_dir, light_distance);
             calculate_transmittance(optical_depth_light) * (1.0 - occ)
         } else {
             Vec3::splat(0.0)
@@ -175,7 +178,7 @@ fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, pole_di
     (radiance + aur_scatter * AUR_RADIANCE) * EXPOSURE
 }
 
-pub fn render_sky(rd: Vec3, ro_relative: Vec3, pole_dir: Vec3) -> Vec3 {
+pub fn render_sky(rd: Vec3, ro_relative: Vec3, source: Vec3) -> Vec3 {
     let atmosphere_isect = intersect_sphere(ro_relative, rd, ATMOSPHERE_RADIUS);
 
     if atmosphere_isect.y < 0.0 {
@@ -191,12 +194,15 @@ pub fn render_sky(rd: Vec3, ro_relative: Vec3, pole_dir: Vec3) -> Vec3 {
     }
     let ray_start = ro_relative + rd * ray_start_dist;
 
-    integrate_scattering(ray_start, rd, ray_length, pole_dir).max(Vec3::ZERO)
+    integrate_scattering(ray_start, rd, ray_length, source).max(Vec3::ZERO)
 }
 
-pub fn get_pole_light_color(ro_relative: Vec3, pole_dir: Vec3) -> Vec3 {
+pub fn get_pole_light_color(ro_relative: Vec3, source: Vec3) -> Vec3 {
+    let offset = source - ro_relative;
+    let distance = offset.length().max(1.0);
+    let pole_dir = offset / distance;
     let cam_occ = occlusion_factor(ro_relative, pole_dir);
-    let optical_depth_light = integrate_optical_depth(ro_relative, pole_dir);
+    let optical_depth_light = integrate_optical_depth(ro_relative, pole_dir, distance);
     let light_transmittance = calculate_transmittance(optical_depth_light) * (1.0 - cam_occ);
     let pole_base = vec3(1.0, 0.97, 0.90) * POLE_INTENSITY;
     pole_base * light_transmittance * EXPOSURE

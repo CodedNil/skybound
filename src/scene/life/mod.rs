@@ -19,6 +19,10 @@ pub struct CreatureInstance {
     pub previous_position: Vec4,
     pub previous_rotation: Vec4,
     pub kind: UVec4,
+    pub life: Vec4, // Age in days, juvenile development, senescence, developmental form.
+    pub identity: Vec4, // Stable individual traits; seed zero is the reference specimen.
+    pub proportions: Vec4, // Body scale and wing development.
+    pub previous_proportions: Vec4,
     pub tail: [Vec4; 6],
     pub previous_tail: [Vec4; 6],
     pub ribbons: [Vec4; 30],
@@ -29,6 +33,24 @@ pub struct CreatureInstance {
 #[cfg(not(target_arch = "spirv"))]
 impl CreatureInstance {
     pub fn new(position: Vec4, rotation: Vec4, animation: Vec4, kind: u32) -> Self {
+        Self::specimen(
+            position,
+            rotation,
+            animation,
+            kind,
+            KINDS[kind as usize].biology().maturity_days * 1.25,
+            0,
+        )
+    }
+
+    pub fn specimen(
+        position: Vec4,
+        rotation: Vec4,
+        animation: Vec4,
+        kind: u32,
+        age_days: f32,
+        seed: u32,
+    ) -> Self {
         let mut c = Self {
             position,
             rotation,
@@ -39,14 +61,19 @@ impl CreatureInstance {
             kind: UVec4::new(kind, 0, 0, 0),
             ..Self::default()
         };
+        development::prepare(&mut c, KINDS[kind as usize].biology(), age_days, seed);
+        c.previous_proportions = c.proportions;
+        c.previous_animation = c.animation;
         prepare_instance(&mut c);
         c.previous_tail = c.tail;
         c.position.w = c.position.w.max(c.opaque_bounds.truncate().length());
+        c.position.w *= development::scale(&c).max_element().max(1.0);
         c
     }
 }
 
 fn prepare_pose(c: &mut CreatureInstance, length: f32, tail: f32, ribbons: usize) {
+    let tail = tail * (0.35 + c.life.y * 0.65);
     for i in 0..6 {
         let t = i as f32 / 5.0;
         c.tail[i] = vec3(
@@ -96,6 +123,7 @@ pub mod anatomy;
 pub mod animalia;
 pub mod behaviour;
 pub mod biology;
+pub mod development;
 pub mod physiology;
 pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 pub mod plantae;
@@ -132,10 +160,12 @@ macro_rules! species {
         }
         #[cfg(not(target_arch = "spirv"))]
         pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+            if c.life.w > 0.0 { return development::render_juvenile(ray, c); }
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::render(ray, c),)* _ => TraceResult::MISS }
         }
         #[cfg(not(target_arch = "spirv"))]
         pub fn body_surface(point: Vec3, c: &CreatureInstance) -> crate::scene::surface::Surface {
+            if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => crate::scene::surface::Surface::new(1e6, 0) }
         }
         #[cfg(not(target_arch = "spirv"))]
@@ -170,9 +200,9 @@ species! {
     Umbravola: animalia::tetralata::vivipara::grandivora::herbivolidae::umbravola::tacita;
     Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
     Custos: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::custos;
-    Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus;
+    Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu;
     Antiquus: animalia::tetralata::vivipara::grandivora::vocigenidae::vocigenus::antiquus;
-    Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus;
+    Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae;
     Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus::communis;
     Luminiflora: plantae::pneumatophyta::micrococcopsida::luminiflorales::luminifloraceae::luminiflora::symbiotica;
     Aerothallus: plantae::pneumatophyta::macrophyllopsida::aerothallales::aerothallaceae::aerothallus::vittatus;
@@ -194,11 +224,11 @@ species! {
 #[cfg(target_arch = "spirv")]
 pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus::render_opaque(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::render_opaque(
             ray, c,
         )
     } else {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus::render_opaque(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::render_opaque(
             ray, c,
         )
     }
@@ -324,17 +354,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn species_have_binomial_names_and_complete_taxonomic_paths() {
+    fn species_have_complete_taxonomic_paths() {
         for (kind, taxon) in SPECIES.iter().enumerate() {
             assert_eq!(taxon.rank, Rank::Species, "renderable taxa must be species");
             let genus = taxon.parent.expect("species genus");
             assert_eq!(genus.rank, Rank::Genus);
             assert_eq!(genus.parent.expect("genus family").rank, Rank::Family);
-            let (generic, epithet) = taxon.name.split_once(' ').expect("binomial species name");
-            assert_eq!(generic, genus.name);
+            let epithet = if matches!(KINDS[kind], Kind::Nae | Kind::Naetu) {
+                taxon.name.to_lowercase()
+            } else {
+                taxon
+                    .name
+                    .strip_prefix(&format!("{} ", genus.name))
+                    .expect("species genus prefix")
+                    .to_owned()
+            };
             assert!(epithet.bytes().all(|letter| letter.is_ascii_lowercase()));
             let module = SPECIES_MODULES[kind].split_whitespace().collect::<String>();
-            assert!(module.ends_with(&format!("::{}::{epithet}", generic.to_lowercase())));
+            assert!(module.ends_with(&format!("::{}::{epithet}", genus.name.to_lowercase())));
             let mut ancestor = *taxon;
             loop {
                 assert!(
@@ -369,50 +406,62 @@ mod tests {
     fn every_species_renders_finite_hits_and_respects_depth_limits() {
         for (kind, taxon) in SPECIES.iter().enumerate() {
             let radius = KINDS[kind].render_radius();
-            let c =
-                CreatureInstance::new(Vec3::ZERO.extend(radius), Vec4::W, Vec4::ZERO, kind as u32);
-            let origin = vec3(0.0, 0.0, -radius * 1.7);
-            let mut hits = 0;
-            for x in -5..=5 {
-                for y in -5..=5 {
-                    let direction = vec3(x as f32 * 0.07, y as f32 * 0.07, 1.0).normalize();
-                    let ray = Ray {
-                        origin,
-                        direction,
-                        light: Vec3::Y,
-                        max_distance: 1e6,
-                        footprint: 0.001,
-                        ambient: vec3(0.30, 0.36, 0.45),
-                        radiance: Vec3::ONE,
-                    };
-                    let hit = render(ray, &c).front();
-                    if hit.is_hit() {
-                        hits += 1;
-                        assert!(
-                            hit.color_depth.is_finite() && hit.normal.is_finite(),
-                            "invalid hit for {}",
-                            taxon.name
-                        );
-                        assert!((hit.normal.length() - 1.0).abs() < 0.001, "invalid normal");
-                        assert!(
-                            hit.distance() > 0.0 && hit.distance() < radius * 3.0,
-                            "invalid depth"
-                        );
-                        assert!(
-                            !render(
-                                Ray {
-                                    max_distance: hit.distance() - 0.1,
-                                    ..ray
-                                },
-                                &c
-                            )
-                            .is_hit(),
-                            "trace ignored the depth limit"
-                        );
+            for panel in [0, 2, 3, 5, 8] {
+                let c = CreatureInstance::specimen(
+                    Vec3::ZERO.extend(radius),
+                    Vec4::W,
+                    Vec4::ZERO,
+                    kind as u32,
+                    development::grid_age(KINDS[kind].biology(), panel),
+                    53,
+                );
+                let origin = vec3(0.0, 0.0, -radius * 1.7);
+                let mut hits = 0;
+                for x in -5..=5 {
+                    for y in -5..=5 {
+                        let direction = vec3(x as f32 * 0.07, y as f32 * 0.07, 1.0).normalize();
+                        let ray = Ray {
+                            origin,
+                            direction,
+                            light: Vec3::Y,
+                            max_distance: 1e6,
+                            footprint: 0.001,
+                            ambient: vec3(0.30, 0.36, 0.45),
+                            radiance: Vec3::ONE,
+                        };
+                        let hit = render(ray, &c).front();
+                        if hit.is_hit() {
+                            hits += 1;
+                            assert!(
+                                hit.color_depth.is_finite() && hit.normal.is_finite(),
+                                "invalid hit for {}",
+                                taxon.name
+                            );
+                            assert!((hit.normal.length() - 1.0).abs() < 0.001, "invalid normal");
+                            assert!(
+                                hit.distance() > 0.0 && hit.distance() < radius * 3.0,
+                                "invalid depth"
+                            );
+                            assert!(
+                                !render(
+                                    Ray {
+                                        max_distance: hit.distance() - 0.1,
+                                        ..ray
+                                    },
+                                    &c
+                                )
+                                .is_hit(),
+                                "trace ignored the depth limit"
+                            );
+                        }
                     }
                 }
+                assert!(
+                    hits > 0,
+                    "empty render for {} at lifecycle panel {panel}",
+                    taxon.name
+                );
             }
-            assert!(hits > 0, "empty render for {}", taxon.name);
         }
     }
 
@@ -450,11 +499,11 @@ mod tests {
 #[cfg(target_arch = "spirv")]
 pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
     if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::lucidus::visit_thin(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::visit_thin(
             ray, c, emit,
         );
     } else {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::robustus::visit_thin(
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::visit_thin(
             ray, c, emit,
         );
     }

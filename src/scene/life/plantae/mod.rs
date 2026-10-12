@@ -76,6 +76,7 @@ pub fn rosette(p: Vec3, petals: usize, length: f32, width: f32, curl: f32) -> f3
 }
 
 pub fn sway(mut p: Vec3, c: &CreatureInstance) -> Vec3 {
+    p.y += c.life.z * p.z.abs() * 0.15;
     p.x -= (p.y * 0.4 + c.animation.z * 0.7).sin() * p.y.abs() * 0.045;
     p.z -= (p.y * 0.3 + c.animation.z * 0.5).cos() * p.y.abs() * 0.035;
     p

@@ -5,7 +5,7 @@ use spirv_std::glam::{FloatExt, Quat, Vec2, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Kind};
+use crate::scene::life::{CreatureInstance, Kind, development};
 
 #[derive(Clone, Copy)]
 pub struct Ray {
@@ -264,9 +264,10 @@ fn normal_at<F: FnMut(Vec3) -> f32>(point: Vec3, epsilon: f32, mut sdf: F) -> Ve
 
 pub fn local_ray(ray: Ray, c: &CreatureInstance) -> Ray {
     let rotation = Quat::from_array(c.rotation.to_array()).conjugate();
+    let scale = development::scale(c);
     Ray {
-        origin: rotation * (ray.origin - c.position.truncate()),
-        direction: rotation * ray.direction,
+        origin: (rotation * (ray.origin - c.position.truncate())) / scale,
+        direction: (rotation * ray.direction) / scale,
         light: rotation * ray.light,
         ..ray
     }
@@ -281,12 +282,20 @@ pub fn make_hit(
     material: Material,
 ) -> Hit {
     let rotation = Quat::from_array(c.rotation.to_array());
-    let world_normal = rotation * normal;
+    let scale = development::scale(c);
+    let world_normal = (rotation * (normal / scale)).normalize();
+    let material = development::appearance(material, previous, c);
     let cosine = world_normal.dot(ray.direction).abs().clamp(0.0, 1.0);
     Hit {
         color_depth: material.shade(world_normal, ray).extend(t),
         normal: world_normal,
-        previous_position: Quat::from_array(c.previous_rotation.to_array()) * previous
+        previous_position: Quat::from_array(c.previous_rotation.to_array())
+            * (previous
+                * if c.previous_proportions.x > 0.0 {
+                    c.previous_proportions.truncate()
+                } else {
+                    scale
+                })
             + c.previous_position.truncate(),
         transmittance: material.transmittance(cosine),
         part: 0,
@@ -314,6 +323,12 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     material: M,
 ) -> Hit {
     let local = local_ray(ray, c);
+    let scale = development::scale(c).min_element();
+    let surface = |point, c: &CreatureInstance| {
+        let mut hit = surface(development::body_point(point, c), c);
+        hit.distance *= 1.0 - (1.0 - c.life.y) * 0.2;
+        hit
+    };
     let bounds = c.opaque_bounds.truncate();
     let nonzero = |value: f32| if value.abs() < 1e-8 { 1e-8 } else { value };
     let safe = vec3(
@@ -332,7 +347,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
         }
         let point = local.origin + local.direction * distance;
         let sample = surface(point, c);
-        let epsilon = (ray.footprint * distance * 0.35)
+        let epsilon = (ray.footprint * distance * 0.35 / scale)
             .clamp(c.position.w * 0.000_01, c.position.w * 0.000_35);
         if sample.distance < epsilon {
             let normal = normal_at(point, epsilon.max(c.position.w * 0.000_05), |q| {
@@ -375,7 +390,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
                 material(point, sample.material),
             );
         }
-        distance += (sample.distance * 0.80).max(epsilon * 0.5);
+        distance += (sample.distance * scale * 0.80).max(epsilon * scale * 0.5);
     }
     Hit::MISS
 }
@@ -527,9 +542,14 @@ pub fn visit_paired_sheets<F: FnMut(Hit)>(
     pigment: Vec4,
     mut emit: F,
 ) {
-    let chord = dimensions.y;
-    let reach = dimensions.x * (1.0 - c.animation.y * 0.65);
-    let old_reach = dimensions.x * (1.0 - c.previous_animation.y * 0.65);
+    let development = if c.proportions.x > 0.0 {
+        0.25 + c.proportions.w * 0.75
+    } else {
+        1.0
+    };
+    let chord = dimensions.y * development.sqrt();
+    let reach = dimensions.x * development * (1.0 - c.animation.y * 0.65);
+    let old_reach = dimensions.x * development * (1.0 - c.previous_animation.y * 0.65);
     for i in 0..2 {
         let side = if i == 0 { -1.0 } else { 1.0 };
         let center = root
