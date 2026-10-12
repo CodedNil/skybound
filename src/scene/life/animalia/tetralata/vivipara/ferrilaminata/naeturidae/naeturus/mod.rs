@@ -7,13 +7,13 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-pub mod lucidus;
-pub mod robustus;
+pub mod nae;
+pub mod naetu;
 
 pub const TAXON: Taxon = Taxon {
     name: "Naeturus",
     english_name: "Nae Kin",
-    description: "Aur-adapted relatives in this genus share quadratic close bond between small Næ and enormous Nætu. \
+    description: "Aur-adapted relatives in this genus share a close bond between small Næ and enormous Nætu. \
         Feathered tails and paired wings connect very different body sizes, while specialised aur organs enable unusually intimate use of the energy below. \
         Cooperative travel, grooming and protection are central to the association.",
     rank: Rank::Genus,

@@ -33,6 +33,7 @@ pub struct FrameUniform {
     pub view: ViewUniform,
     pub players: [CreatureInstance; 2],
     pub viewport: Vec4,
+    pub volume_size: Vec4,
 }
 
 impl ViewUniform {
@@ -51,17 +52,12 @@ impl ViewUniform {
             self.ro_relative(),
         );
         let up = (self.world_position.xyz() - self.planet_center()).normalize();
-        let offset = pole - self.world_position.xyz();
-        let pole_dir = if offset.length_squared() < 0.0001 {
-            up
-        } else {
-            offset.normalize()
-        };
+        let source = pole - self.planet_center();
         let ro = self.ro_relative();
         self.pole_position = pole.extend(0.0);
-        self.pole_color = get_pole_light_color(ro, pole_dir).extend(0.0);
+        self.pole_color = get_pole_light_color(ro, source).extend(0.0);
         self.ambient_color =
-            (render_sky(up, ro, pole_dir) * 0.7 + render_sky(-up, ro, pole_dir) * 0.15).extend(0.0);
+            (render_sky(up, ro, source) * 0.7 + render_sky(-up, ro, source) * 0.15).extend(0.0);
         let position = self.surface_position(self.world_position.xyz());
         self.ambient_color += super::aur::ambient(position, self.time()).extend(0.0);
     }
@@ -103,11 +99,11 @@ impl ViewUniform {
                         (time * 0.4 + point.y * 9.0).cos(),
                     );
                     let center = (cell + point.xy() * 0.65 + motion * 0.12) * 10_000.0;
-                    let strength =
-                        envelope * (0.75 + 0.25 * (time * 17.0 + point.x * 31.0).sin().abs());
+                    let strength = envelope
+                        * (0.25 + 0.75 * (time * 19.0 + point.x * 31.0).sin().max(0.0).powi(4));
                     if strength > 0.0 {
                         self.aur_flashes[count] =
-                            center.extend(250.0 + point.z * 900.0).extend(strength);
+                            center.extend(650.0 + point.z * 1500.0).extend(strength);
                         count += 1;
                     }
                     let flicker = (time * 11.0 + point.z * 19.0).fract();
@@ -116,9 +112,9 @@ impl ViewUniform {
                     }
                     let strike = (time * 11.0).floor();
                     let bolt_seed = hash(point.z * 317.0 + strike);
-                    let origin = center.extend(-120.0);
+                    let origin = center.extend(-1500.0);
                     let direction =
-                        ((bolt_seed.xy() - 0.5) * 650.0).extend(400.0 + bolt_seed.z * 650.0);
+                        ((bolt_seed.xy() - 0.5) * 5400.0).extend(8400.0 + bolt_seed.z * 7200.0);
                     let mut start = origin;
                     for segment in 1..=7 {
                         if bolt_count == self.aur_bolts.len() {
@@ -126,21 +122,21 @@ impl ViewUniform {
                         }
                         let t = segment as f32 / 7.0;
                         let jitter = (hash(strike + point.z * 97.0 + segment as f32) - 0.5)
-                            * (110.0 * (PI * t).sin());
+                            * (960.0 * (PI * t).sin());
                         let end = origin + direction * t + jitter;
                         self.aur_bolts[bolt_count] = [
-                            start.extend(2.5 * (1.0 - t * 0.6)),
-                            end.extend(strength * 55.0 * (1.0 - flicker / 0.28)),
+                            start.extend(12.0 * (1.0 - t * 0.6)),
+                            end.extend(strength * 24.0 * (1.0 - flicker / 0.28)),
                         ];
                         bolt_count += 1;
                         if segment == 3 || segment == 5 {
                             if bolt_count == self.aur_bolts.len() {
                                 break;
                             }
-                            let branch = (hash(strike + segment as f32 * 37.0) - 0.5) * 350.0
-                                + Vec3::Z * 120.0;
+                            let branch = (hash(strike + segment as f32 * 37.0) - 0.5) * 3000.0
+                                + Vec3::Z * 1050.0;
                             self.aur_bolts[bolt_count] =
-                                [end.extend(0.8), (end + branch).extend(strength * 24.0)];
+                                [end.extend(2.4), (end + branch).extend(strength * 24.0)];
                             bolt_count += 1;
                         }
                         start = end;

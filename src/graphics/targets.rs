@@ -21,7 +21,7 @@ impl Default for VolumeScale {
                 .ok()
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| v.is_finite())
-                .unwrap_or(0.5)
+                .unwrap_or(0.75)
                 .clamp(0.25, 1.0),
         )
     }

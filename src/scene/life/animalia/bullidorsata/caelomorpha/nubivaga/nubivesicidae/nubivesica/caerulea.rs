@@ -1,6 +1,8 @@
 use crate::scene::life::biology::Biology;
 
 pub const BIOLOGY: Biology = Biology {
+    maturity_days: 120.0,
+    lifespan_days: 9000.0,
     adult_mass: 3.0,
     altitude: (2500.0, 9000.0),
     ..super::BIOLOGY

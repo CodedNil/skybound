@@ -6,8 +6,8 @@ use spirv_std::num_traits::Float;
 use super::{PLANET_RADIUS, noise::fbm};
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
-pub const CLOUD_BOTTOM: f32 = 900.0;
-pub const CLOUD_TOP: f32 = 26_000.0;
+pub const CLOUD_BOTTOM: f32 = 2700.0;
+pub const CLOUD_TOP: f32 = 78_000.0;
 
 pub fn weather_map(uv: Vec2) -> Vec4 {
     let p = uv.extend(0.0);
@@ -49,10 +49,36 @@ impl Climate {
     }
 
     pub fn on_planet(point: Vec3, seconds: f32, weather: Vec4) -> Self {
-        let mut climate = Self::at(super::planet::surface_coordinates(point), seconds, weather);
+        let radius = point.length();
+        let latitude = (point.z / radius).clamp(-1.0, 1.0).asin();
+        let mut climate = Self::from_weather(
+            Vec3::Z * (radius - PLANET_RADIUS),
+            seconds,
+            latitude,
+            Vec3::Y,
+            weather,
+        );
         let frame = super::planet::surface_frame(point);
-        climate.wind = frame * vec3(climate.wind.x, -climate.wind.y, climate.wind.z);
+        let taper = point.normalize().truncate().length();
+        climate.wind = frame
+            * vec3(
+                climate.wind.x * taper,
+                climate.wind.y * taper,
+                climate.wind.z,
+            );
         climate
+    }
+
+    pub fn weather_coordinates(point: Vec3, seconds: f32) -> Vec3 {
+        (point.normalize() * PLANET_RADIUS - vec3(1.2, -0.7, 0.9) * seconds) * WEATHER_SCALE
+    }
+
+    pub fn weather_on_planet(point: Vec3, seconds: f32) -> Vec4 {
+        let p = Self::weather_coordinates(point, seconds);
+        let weights = point.normalize() * point.normalize();
+        weather_map(p.yz()) * weights.x
+            + weather_map(p.zx()) * weights.y
+            + weather_map(p.xy()) * weights.z
     }
 
     pub fn weather_uv(position: Vec3, seconds: f32) -> Vec2 {
@@ -86,7 +112,7 @@ impl Climate {
         let humidity =
             (moisture * (0.7 + weather.w * 0.3) * (1.0 - sinking * 0.75)).clamp(0.02, 1.0);
         let storm = moisture.smoothstep(0.55, 0.95) * convection.smoothstep(0.65, 0.95);
-        let upper = altitude.smoothstep(3000.0, 14_000.0);
+        let upper = altitude.smoothstep(9000.0, 42_000.0);
         let basal_lift = (8.0 + convection * 4.0) * (-altitude / 1800.0).exp();
         let vertical = (basal_lift + (1.6 + convection * 3.0) * (1.0 - upper) + storm * 5.0)
             * (0.65 + activity * 0.35)
@@ -115,7 +141,7 @@ impl Climate {
     }
 
     pub fn layer(self, index: usize) -> Vec3 {
-        match index {
+        let layer = match index {
             0 => vec3(
                 self.condensation,
                 1800.0 + self.humidity * 3200.0,
@@ -132,7 +158,8 @@ impl Climate {
                 19_000.0 + self.humidity * 3000.0,
                 self.storm,
             ),
-        }
+        };
+        vec3(layer.x * 3.0, layer.y * 3.0, layer.z)
     }
 }
 
@@ -169,6 +196,20 @@ mod tests {
         assert!(at(15_000.0, -0.8).wind.y < 0.0);
         assert!(at(15_000.0, 1.57).wind.z < 0.0);
         assert!(at(15_000.0, 0.0).temperature < at(15_000.0, 1.57).temperature);
+        let left = vec3(-2.0, 0.0, PLANET_RADIUS + 15_000.0);
+        let right = vec3(2.0, 0.0, PLANET_RADIUS + 15_000.0);
+        let a = Climate::weather_on_planet(left, 100.0);
+        let b = Climate::weather_on_planet(right, 100.0);
+        assert!(
+            (a - b).abs().max_element() < 0.001,
+            "weather seam at the pole"
+        );
+        let a = Climate::on_planet(left, 100.0, a);
+        let b = Climate::on_planet(right, 100.0, b);
+        assert!(
+            a.wind.distance(b.wind) < 0.01,
+            "wind discontinuity at the pole"
+        );
     }
 
     #[test]

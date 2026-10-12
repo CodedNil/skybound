@@ -13,8 +13,9 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
 use skybound::scene::aur::{EJECTION_CELL, ejection, ejection_fill};
+use skybound::scene::polar::REACTION_RADIUS;
 use skybound::scene::{
-    ViewUniform,
+    PLANET_RADIUS, ViewUniform,
     planet::{surface_frame, surface_point},
 };
 
@@ -76,7 +77,8 @@ fn setup(params: BenchmarkSetup) {
         "equator" => Some(0.0),
         "sunrise" => Some(0.87),
         "polar" => Some(1.4),
-        "polar-reaction" => Some(1.1),
+        "polar-reaction" | "polar-beam" => Some(1.1),
+        "polar-orbit" => Some(1.53),
         _ => None,
     };
     if let Some(latitude) = latitude {
@@ -117,9 +119,17 @@ fn setup(params: BenchmarkSetup) {
     } else if scene == "aur-overhead" {
         Transform::from_translation(mount.translation + Vec3::Z * 200.0)
             .looking_at(mount.translation.with_z(0.0) + direction * 2000.0, Vec3::Z)
+    } else if scene == "polar-orbit" || scene == "polar-beam" {
+        let radius = if scene == "polar-beam" {
+            REACTION_RADIUS
+        } else {
+            PLANET_RADIUS
+        };
+        Transform::from_translation(mount.translation + vec3(0.0, -1000.0, 100.0))
+            .looking_at(world.local(DVec3::Z * f64::from(radius)), Vec3::Z)
     } else if scene == "cloud-tower" {
-        Transform::from_translation(mount.translation - direction * 12_000.0 + Vec3::Z * 8000.0)
-            .looking_at(mount.translation - Vec3::Z * 5000.0, Vec3::Z)
+        Transform::from_translation(mount.translation - direction * 30_000.0 + Vec3::Z * 8000.0)
+            .looking_at(mount.translation - Vec3::Z * 12_000.0, Vec3::Z)
     } else {
         Transform::from_translation(mount.translation - direction * 85.0 + Vec3::Z * 18.0)
             .looking_at(mount.translation + Vec3::Z * 5.0, Vec3::Z)
@@ -150,12 +160,14 @@ fn setup(params: BenchmarkSetup) {
 fn scene_altitude(scene: &str) -> f32 {
     match scene {
         "cloud-edge" => 6350.0,
-        "cloud-high" => 8000.0,
-        "cloud-tower" => 26_000.0,
+        "cloud-high" => 48_000.0,
+        "cloud-tower" => 78_000.0,
         "cloud-interior" => 7500.0,
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
         "aur-overhead" => 4000.0,
+        "polar-orbit" => 77_559.0,
+        "polar-beam" => 450_000.0,
         "aur-ejection" | "aur-lightning" => 650.0,
         "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar"
         | "polar-reaction" => 2400.0,
@@ -168,8 +180,8 @@ fn scene_weather(scene: &str) -> Option<Vec4> {
         "cloud-high" => Some(vec4(0.1, 0.1, 0.95, 0.3)),
         "cloud-tower" => Some(vec4(0.95, 0.95, 0.7, 0.95)),
         "cloud-edge" | "cloud-interior" => Some(vec4(0.95, 0.85, 0.3, 0.8)),
-        "aur-horizon" | "aur-overhead" | "clear" | "equator" | "sunrise" | "polar"
-        | "polar-reaction" => Some(Vec4::ZERO),
+        "aur-horizon" | "aur-overhead" | "aur-ejection" | "clear" | "equator" | "sunrise"
+        | "polar" | "polar-reaction" => Some(Vec4::ZERO),
         _ => None,
     }
 }
@@ -217,13 +229,19 @@ fn focus_aur(
     } else {
         event[0].truncate().truncate()
     };
-    let point = surface_point(center.extend(world.altitude(mount.translation) as f32));
+    let altitude = if lightning {
+        world.altitude(mount.translation) as f32
+    } else {
+        event[1].w * 0.25 + 1000.0
+    };
+    let point = surface_point(center.extend(altitude));
     let direction = if lightning {
         Vec3::Y
     } else {
         world.rotate_to_local(surface_frame(point) * vec3(-event[1].y, -event[1].x, 0.0))
     };
-    let position = world.local(point.as_dvec3()) - direction * 1600.0;
+    let distance = if lightning { 4000.0 } else { 36_000.0 };
+    let position = world.local(point.as_dvec3()) - direction * distance;
     let up = world.up(position);
     mount.translation = position;
     mount.rotation = Transform::default().looking_to(direction, up).rotation;

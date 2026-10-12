@@ -8,16 +8,16 @@ use poles::{poles_raymarch_entry, sample_poles};
 use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
 use spirv_std::num_traits::Float;
 
-use crate::scene::aur::ejection_clearance;
+use crate::scene::aur::{EJECTION_HEIGHT, EJECTION_WIDTH, ejection_clearance, ejection_field};
 use crate::scene::render::utils::{
     AtmosphereData, Textures, intersect_sphere, ray_shell_intersect,
 };
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
 const DENSITY: f32 = 0.018;
-const MAX_STEPS: i32 = 512;
-const AUR_LIGHT_COLOR_A: Vec3 = vec3(0.36, 0.18, 0.48);
-const AUR_LIGHT_COLOR_B: Vec3 = vec3(0.18, 0.09, 0.36);
+const MAX_STEPS: i32 = 768;
+const AUR_LIGHT_COLOR_A: Vec3 = vec3(0.40, 0.34, 0.52);
+const AUR_LIGHT_COLOR_B: Vec3 = vec3(0.28, 0.48, 0.44);
 
 const SCATTERING_ALBEDO: f32 = 0.65;
 const ATMOSPHERIC_FOG_DENSITY: f32 = 0.000_000_8;
@@ -53,21 +53,28 @@ fn sample_volume(
     if clouds {
         let density = sample_clouds(planet_point, view, false, footprint, textures);
         sample.add(VolumeSample {
-            density,
+            density: density * 0.35,
             cloud_density: density,
             color: Vec3::ONE,
             emission: Vec3::ZERO,
         });
     }
     if ocean {
-        sample.add(sample_ocean(pos, view, false, footprint, textures));
+        sample.add(sample_ocean(
+            pos,
+            planet_point,
+            view,
+            false,
+            footprint,
+            textures,
+        ));
     }
     if poles {
         let mut polar = sample_poles(planet_point, view, footprint, textures);
         polar.emission *= view.sky_horizon.y;
         sample.add(polar);
     }
-    if sample.density > 0.0001 {
+    if sample.density > 0.0 {
         sample.color /= sample.density;
         sample.emission /= sample.density;
     }
@@ -84,8 +91,7 @@ fn cloud_lighting(
     let source = crate::scene::polar::light_position(position);
     let light = (source - position).normalize();
     let sunlight =
-        crate::scene::atmosphere::get_pole_light_color(position, light) * view.sky_horizon.y;
-    let local = crate::scene::planet::surface_coordinates(position);
+        crate::scene::atmosphere::get_pole_light_color(position, source) * view.sky_horizon.y;
     let near = sample_clouds(
         position + light * 250.0,
         view,
@@ -107,21 +113,35 @@ fn cloud_lighting(
     let diffuse = (-optical_depth * 0.25).exp();
     let camera = view.to_planet(view.world_position.xyz());
     let facing = (position - camera).normalize().dot(light).max(0.0).powi(4);
-    let upward = vec3(0.04, 0.006, 0.09) * (-local.z.max(0.0) / 6000.0).exp() * view.sky_horizon.y;
-    ((sunlight * 0.025 + vec3(0.008, 0.012, 0.02)) * (0.20 + diffuse * 0.30)
+    let below = sample_clouds(
+        position - position.normalize() * 600.0,
+        view,
+        true,
+        footprint,
+        textures,
+    );
+    let aur_depth = (density * 80.0 + below * 600.0) * 0.003;
+    let upward = aur_lighting(position, view.time(), textures)
+        * view.sky_horizon.y
+        * (0.18 + (-aur_depth).exp() * 0.82);
+    ((sunlight * 0.10 + vec3(0.06, 0.08, 0.12)) * (0.45 + diffuse * 0.30)
         + sunlight * direct * (0.15 + facing * 0.85)
-        + upward * diffuse)
+        + upward)
         * SCATTERING_ALBEDO
 }
 
 fn aur_lighting(pos: Vec3, time: f32, textures: &Textures) -> Vec3 {
-    let fade = (1.0 - pos.z.max(0.0) / 12000.0).saturate().powi(2);
-    if fade <= 0.0 {
+    let altitude = pos.length() - PLANET_RADIUS;
+    let fade = (1.0 - altitude.max(0.0) / 12000.0).saturate().powi(2);
+    if altitude > EJECTION_HEIGHT + EJECTION_WIDTH * 8.0 {
         return Vec3::ZERO;
     }
-    let noise = textures.weather(pos.xy() * 0.00008 + time * 0.01);
-    let caustic = (1.0 - (noise.x * 2.0 - 1.0).abs()).powi(6);
-    AUR_LIGHT_COLOR_A.lerp(AUR_LIGHT_COLOR_B, noise.y) * (0.8 + caustic * 12.0 * fade) * fade
+    let noise = textures.billows(pos * 0.000014 + Vec3::Z * time * 0.004, 0.0);
+    let caustic = noise.w.smoothstep(0.35, 0.7);
+    let curve = ejection_field(crate::scene::planet::surface_coordinates(pos), time);
+    let arc = (-curve.x / (EJECTION_WIDTH * 6.0)).exp() * curve.z;
+    AUR_LIGHT_COLOR_A.lerp(AUR_LIGHT_COLOR_B, noise.y) * (0.5 + caustic * 1.5) * fade
+        + vec3(1.5, 0.85, 0.4) * arc * 3.0
 }
 
 #[derive(Copy, Clone)]
@@ -188,6 +208,9 @@ pub fn raymarch_volumetrics(
     let mut accumulated_weighted_depth = 0.0;
     let mut accumulated_density = 0.0;
     let mut threshold_depth: f32 = t_max;
+    let mut cloud_light = Vec3::ZERO;
+    let mut lit_position = Vec3::ZERO;
+    let mut lit_density = -1.0f32;
 
     let camera_alt = (ro - planet_center).length() - PLANET_RADIUS;
     let init_fog = ATMOSPHERIC_FOG_DENSITY * (-camera_alt.max(0.0) / 20_000.0).exp();
@@ -200,9 +223,9 @@ pub fn raymarch_volumetrics(
     };
     let pole_axis = view.planet_rotation.mul_vec3(Vec3::Z).normalize();
     let fog_color = atmosphere.sky
-        + aur_lighting(view.surface_position(ro), view.time(), textures) * view.sky_horizon.y * 0.1;
+        + aur_lighting(view.to_planet(ro), view.time(), textures) * view.sky_horizon.y * 0.1;
 
-    for _ in 0..MAX_STEPS {
+    for iteration in 0..MAX_STEPS {
         if t >= t_end || transmittance < 0.01 {
             break;
         }
@@ -244,7 +267,7 @@ pub fn raymarch_volumetrics(
         }
         // Probe the un-eroded hull first; enter fine mode before integrating a cloudy interval.
         if inside_clouds && !inside_ocean && !inside_poles && volume_empty {
-            let coarse = (300.0 + t * 0.012).min(1400.0).min(segment_end - t);
+            let coarse = (180.0 + t * 0.006).min(1800.0).min(segment_end - t);
             let probe = ro + rd * (t + coarse);
             let probe_alt = probe.distance(planet_center) - PLANET_RADIUS;
             let probe_world = view.to_planet(probe);
@@ -268,7 +291,7 @@ pub fn raymarch_volumetrics(
         }
         let depth = (PLANET_RADIUS - (ro + rd * t).distance(planet_center)).max(0.0);
         let mut step = if inside_clouds && !volume_empty {
-            (48.0 + t * 0.004).min(600.0)
+            (32.0 + t * 0.002).max(t * pixel_angle * 0.5).min(1500.0)
         } else if inside_clouds {
             (120.0 + t * 0.02).min(2000.0)
         } else if volume_empty {
@@ -284,7 +307,7 @@ pub fn raymarch_volumetrics(
             let along = relative.dot(pole_axis);
             let radial = (relative - pole_axis * along).length();
             let width = 1200.0 + (along.abs() - PLANET_RADIUS).max(0.0).sqrt() * 5.0;
-            let bound = (radial * 0.2).max(width * 0.25);
+            let bound = (radial * 0.2).max(width * 0.5).max(t * pixel_angle * 0.5);
             step = if inside_clouds || inside_ocean {
                 step.min(bound)
             } else {
@@ -292,8 +315,12 @@ pub fn raymarch_volumetrics(
             };
             if radial < crate::scene::polar::REACTION_SPREAD * 1.6 {
                 let shell = (relative.length() - crate::scene::polar::REACTION_RADIUS).abs();
-                let angular_width = (radial / 27.0 * 0.25).clamp(250.0, 1500.0);
-                step = step.min(((shell - 45_000.0) * 0.5).max(angular_width));
+                let detail_step = (t * pixel_angle * 0.5).max(200.0);
+                step = step.min(((shell - 45_000.0) * 0.5).max(detail_step));
+                if !inside_clouds && !inside_ocean && shell > 60_000.0 {
+                    step = step.max((segment_end - t) / (MAX_STEPS - iteration) as f32);
+                    step = step.min(((shell - 45_000.0) * 0.5).max(detail_step));
+                }
             }
         }
         if inside_ocean && volume_empty {
@@ -301,12 +328,13 @@ pub fn raymarch_volumetrics(
             let altitude = point.distance(planet_center) - PLANET_RADIUS;
             let world = view.surface_position(point);
             let mut clearance = ejection_clearance(world, view.time());
-            if altitude > 1900.0 {
-                clearance = clearance.min(altitude - 1900.0);
+            if altitude > 3700.0 {
+                clearance = clearance.min(altitude - 3700.0);
             }
             step = step.min(clearance.max(120.0));
         }
-        let jitter = dither * 0.9 + 0.05;
+        step = step.min(segment_end - t);
+        let jitter = (dither + iteration as f32 * 0.754_877).fract() * 0.9 + 0.05;
         let pos_raw = ro + rd * (t + jitter * step);
         let altitude = pos_raw.distance(planet_center) - PLANET_RADIUS;
         let world_pos = view.surface_position(pos_raw);
@@ -333,28 +361,23 @@ pub fn raymarch_volumetrics(
 
         if step_density > 0.0 {
             let in_scattering = if sample.cloud_density > 0.0001 {
-                cloud_lighting(
-                    view.to_planet(pos_raw),
-                    view,
-                    sample.cloud_density,
-                    (t * pixel_angle).max(4.0),
-                    textures,
-                )
+                let point = view.to_planet(pos_raw);
+                let footprint = (t * pixel_angle).max(4.0);
+                if point.distance_squared(lit_position) > (240.0 + footprint).powi(2)
+                    || (sample.cloud_density - lit_density).abs() > 0.08
+                {
+                    cloud_light =
+                        cloud_lighting(point, view, sample.cloud_density, footprint, textures);
+                    lit_position = point;
+                    lit_density = sample.cloud_density;
+                }
+                cloud_light
             } else {
                 atmosphere.ambient * 0.2
             };
 
             let emission = sample.emission;
-            let cloud_aur_boost = if sample.cloud_density > 0.0001 {
-                aur_lighting(world_pos, view.time(), textures)
-                    * view.sky_horizon.y
-                    * (-sample.cloud_density * 24.0).exp()
-                    * (sample.cloud_density / step_density)
-            } else {
-                Vec3::ZERO
-            };
-
-            let volume_color = in_scattering * sample.color + emission + cloud_aur_boost;
+            let volume_color = in_scattering * sample.color + emission;
             acc_color += volume_color * transmittance * alpha_step;
 
             let contribution = alpha_step * transmittance;

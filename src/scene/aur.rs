@@ -31,6 +31,9 @@ pub fn ambient(pos: Vec3, time: f32) -> Vec3 {
 }
 
 pub const EJECTION_CELL: f32 = 40_000.0;
+pub const EJECTION_WIDTH: f32 = 1050.0;
+pub const EJECTION_REACH: f32 = 36_000.0;
+pub const EJECTION_HEIGHT: f32 = 12_150.0;
 
 fn eruption_hash(cell: Vec2) -> Vec3 {
     let mut hash = (cell.xyx() * vec3(0.1031, 0.1030, 0.0973)).fract_gl();
@@ -43,9 +46,10 @@ pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
     let period = 55.0 + seed.x * 45.0;
     let cycle = time / period + seed.y;
     let random = eruption_hash(cell + vec2(37.1, 91.7) * (cycle.floor() + 1.0));
-    let phase = (cycle.fract_gl() * period / (12.0 + seed.z * 6.0)).min(1.0);
+    let phase = (cycle.fract_gl() * period / (5.0 + seed.z * 3.0)).min(1.0);
     let center = (cell + random.xy()) * EJECTION_CELL;
     let angle = random.z * TAU;
+    let radius = 10_800.0 + seed.x * 5400.0;
     [
         center
             .extend(phase)
@@ -53,8 +57,8 @@ pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
         Vec4::new(
             angle.cos(),
             angle.sin(),
-            1200.0 + seed.x * 600.0,
-            650.0 + seed.z * 700.0,
+            radius,
+            (5850.0 + seed.z * 6300.0).min(radius - 2700.0),
         ),
     ]
 }
@@ -85,7 +89,7 @@ pub fn ejection_field(position: Vec3, time: f32) -> Vec3 {
         let neighbour = cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
         let outside =
             ((position.xy() / EJECTION_CELL - neighbour - 0.5).abs() - 0.5).max(Vec2::ZERO);
-        if outside.max_element() * EJECTION_CELL > 4000.0 {
+        if outside.max_element() * EJECTION_CELL > EJECTION_REACH {
             continue;
         }
         let event = ejection(neighbour, time);
@@ -101,7 +105,7 @@ pub fn ejection_field(position: Vec3, time: f32) -> Vec3 {
 }
 
 pub fn ejection_clearance(position: Vec3, time: f32) -> f32 {
-    ((ejection_field(position, time).x - 625.0) * 0.5).clamp(0.0, 2000.0)
+    ((ejection_field(position, time).x - EJECTION_WIDTH) * 0.5).clamp(0.0, 2000.0)
 }
 
 #[cfg(test)]
@@ -146,7 +150,7 @@ mod tests {
                             }
                         }
                     }
-                    if distance < 1875.0 {
+                    if distance < EJECTION_WIDTH * 3.0 {
                         assert!((ejection_field(point, time).x - distance).abs() < 0.01);
                     }
                 }

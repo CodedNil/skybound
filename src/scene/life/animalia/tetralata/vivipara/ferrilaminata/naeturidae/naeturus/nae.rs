@@ -2,6 +2,8 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::Biology;
 
 pub const BIOLOGY: Biology = Biology {
+    maturity_days: 5500.0,
+    lifespan_days: 44000.0,
     oral_pairs: 4,
     speed: 30.0,
     adult_mass: 0.3,
@@ -19,7 +21,7 @@ use crate::scene::surface::{Hit, Material, Ray, Surface, TraceResult, trace_mate
 pub const RENDER_RADIUS: f32 = 3.2;
 
 pub const TAXON: Taxon = Taxon {
-    name: "Naeturus lucidus",
+    name: "Nae",
     english_name: "Næ",
     description: "Næ are small, intelligent, four-winged animals with pear-shaped bodies, swept feather crests and long gripping tails. \
         Eight sensitive oral tentacles emerge around the mouth and throat; the longest pair reaches outward to hold tools while shorter pairs stabilise objects and guide food into the digestive crop. \

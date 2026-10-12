@@ -15,7 +15,7 @@ pub struct Vitals {
     pub health: f32,
     pub fatigue: f32,
     pub aur: f32,
-    pub age: f32,
+    pub age_days: f64,
 }
 
 #[derive(Default)]
@@ -36,7 +36,7 @@ impl Vitals {
             health: 1.0,
             fatigue: 0.0,
             aur: 0.0,
-            age: 0.0,
+            age_days: biology.maturity_days as f64,
         }
     }
 
@@ -53,6 +53,7 @@ impl Vitals {
         dt: f32,
     ) -> Waste {
         let mut waste = self.digest(biology, dt);
+        self.age_days += f64::from(dt.max(0.0)) / f64::from(super::development::DAY);
         let exchange = match biology.organs.exchange {
             Exchange::Surface => 0.15,
             Exchange::Pores => 0.3,
@@ -75,7 +76,6 @@ impl Vitals {
         }
         if climate.altitude < 0.0 {
             self.health = 0.0;
-            self.age += dt;
             return waste;
         } else if climate.altitude < 50.0 {
             if biology.organs.aur_capacity > 0.0 {
@@ -92,7 +92,11 @@ impl Vitals {
             self.mass -= catabolism;
             waste.mass += catabolism;
         }
-        self.age += dt;
+        let senescence = (self.age_days as f32 / biology.lifespan_days - 0.75).max(0.0);
+        self.health = (self.health - senescence * dt / super::development::DAY).max(0.0);
+        if self.age_days >= f64::from(biology.lifespan_days) {
+            self.health = 0.0;
+        }
         waste
     }
 
@@ -152,6 +156,23 @@ impl Climate {
 mod tests {
     use super::*;
     use crate::scene::life::{KINDS, Kind};
+
+    #[test]
+    fn ancient_organisms_age_by_one_fixed_tick_and_die_at_their_lifespan() {
+        let biology = Kind::Antiquus.biology();
+        let mut body = Vitals::new(biology);
+        let tick_days = 1.0 / 64.0 / f64::from(super::super::development::DAY);
+        body.age_days = f64::from(biology.lifespan_days) - tick_days;
+        let before = body.age_days;
+        body.metabolize(
+            biology,
+            Climate::sample(vec3(0.0, 0.0, 1000.0), 0.0, 0.0),
+            0.0,
+            1.0 / 64.0,
+        );
+        assert!((body.age_days - before - tick_days).abs() < 1e-9);
+        assert!(body.health < f32::EPSILON);
+    }
 
     #[test]
     fn digestion_conserves_biomass_and_excretes_bound_aur() {

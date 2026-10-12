@@ -41,6 +41,7 @@ pub fn oral_tentacles(
     scale: f32,
     pairs: u32,
 ) -> f32 {
+    let scale = scale * (0.35 + creature.life.y * 0.65);
     let bounds = ((point - mouth - vec3(0.0, -0.6, -0.4) * scale).abs()
         - vec3(1.3, 0.8, 0.8) * scale)
         .max(Vec3::ZERO)

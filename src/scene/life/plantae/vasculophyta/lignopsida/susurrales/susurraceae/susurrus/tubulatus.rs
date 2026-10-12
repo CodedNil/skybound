@@ -2,6 +2,8 @@ use crate::scene::life::biology::{Biology, Social};
 use crate::scene::life::biology::{Lift, Organs};
 
 pub const BIOLOGY: Biology = Biology {
+    maturity_days: 7300.0,
+    lifespan_days: 365_000.0,
     organs: Organs {
         lift: Lift::Chimney,
         ..super::BIOLOGY.organs

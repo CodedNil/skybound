@@ -2,6 +2,8 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::Biology;
 
 pub const BIOLOGY: Biology = Biology {
+    maturity_days: 7300.0,
+    lifespan_days: 180_000.0,
     speed: 24.0,
     adult_mass: 150.0,
     ..super::BIOLOGY
@@ -22,7 +24,7 @@ use crate::scene::surface::{
 pub const RENDER_RADIUS: f32 = 70.0;
 
 pub const TAXON: Taxon = Taxon {
-    name: "Naeturus robustus",
+    name: "Naetu",
     english_name: "Nætu",
     description: "Nætu are enormous four-winged carriers with a broad, gently tapered body, soft external exchange frills and a trailing feathered tail. \
         Six oral tentacles gather vegetation and hold food against the broad mouth. \

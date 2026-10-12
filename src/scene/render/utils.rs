@@ -18,6 +18,17 @@ pub struct Textures<'a> {
 }
 
 impl Textures<'_> {
+    pub fn billows(&self, p: Vec3, footprint: f32) -> Vec4 {
+        let rotated = Vec3::new(
+            p.dot(Vec3::new(0.36, 0.48, -0.8)),
+            p.dot(Vec3::new(-0.8, 0.6, 0.0)),
+            p.dot(Vec3::new(0.48, 0.64, 0.6)),
+        ) * 0.754_877
+            + Vec3::new(0.37, 0.19, 0.63);
+        (self.base_filtered(p, footprint) + self.base_filtered(rotated, footprint * 0.754_877))
+            * 0.5
+    }
+
     pub fn base_filtered(&self, p: Vec3, footprint: f32) -> Vec4 {
         self.base
             .sample_by_lod(*self.sampler, p, (footprint * 128.0).max(1.0).log2())
@@ -30,6 +41,14 @@ impl Textures<'_> {
 
     pub fn weather(&self, p: Vec2) -> Vec4 {
         self.weather.sample_by_lod(*self.sampler, p, 0.0)
+    }
+
+    pub fn weather_on_planet(&self, point: Vec3, time: f32) -> Vec4 {
+        let p = crate::scene::climate::Climate::weather_coordinates(point, time);
+        let weights = point.normalize() * point.normalize();
+        self.weather(p.yz()) * weights.x
+            + self.weather(p.zx()) * weights.y
+            + self.weather(p.xy()) * weights.z
     }
 }
 

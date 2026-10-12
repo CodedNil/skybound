@@ -1,4 +1,10 @@
-pub use super::BIOLOGY;
+use crate::scene::life::biology::Biology;
+
+pub const BIOLOGY: Biology = Biology {
+    maturity_days: 3.0,
+    lifespan_days: 35.0,
+    ..super::BIOLOGY
+};
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 

@@ -126,6 +126,8 @@ impl Organs {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Biology {
+    pub maturity_days: f32,
+    pub lifespan_days: f32,
     pub organs: Organs,
     pub anatomy: Anatomy,
     pub wing_pairs: u32,
@@ -142,6 +144,8 @@ pub struct Biology {
 }
 
 pub const ANCESTRAL: Biology = Biology {
+    maturity_days: 90.0,
+    lifespan_days: 3000.0,
     organs: Organs::POROUS,
     anatomy: Anatomy::Porous,
     wing_pairs: 0,
@@ -202,6 +206,10 @@ mod tests {
     fn descendant_body_plans_and_food_web_remain_consistent() {
         for kind in KINDS {
             let biology = kind.biology();
+            assert!(
+                biology.maturity_days > 0.0 && biology.lifespan_days > biology.maturity_days,
+                "invalid life history for {kind:?}"
+            );
             assert!(
                 biology.altitude.0 < biology.altitude.1,
                 "invalid habitat for {kind:?}"
