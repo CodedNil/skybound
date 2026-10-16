@@ -6,6 +6,7 @@ pub mod aur;
 pub mod climate;
 mod geometry;
 mod lighting;
+pub(crate) mod math;
 pub mod noise;
 pub mod planet;
 pub mod polar;

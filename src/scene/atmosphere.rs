@@ -1,5 +1,7 @@
 use core::f32::consts::PI;
 
+pub mod air;
+
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -7,11 +9,17 @@ use spirv_std::num_traits::Float;
 use crate::scene::PLANET_RADIUS;
 use crate::scene::geometry::intersect_sphere;
 use crate::scene::lighting::henyey_greenstein;
+use crate::scene::math::square;
 
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 
 const POLE_INTENSITY: f32 = 12.0;
 const EXPOSURE: f32 = 3.0;
+pub const POLE_RADIANCE: Vec3 = vec3(
+    POLE_INTENSITY * EXPOSURE,
+    0.97 * POLE_INTENSITY * EXPOSURE,
+    0.90 * POLE_INTENSITY * EXPOSURE,
+);
 const ATMOSPHERE_HEIGHT: f32 = super::polar::REACTION_HEIGHT;
 const ATMOSPHERE_RADIUS: f32 = PLANET_RADIUS + ATMOSPHERE_HEIGHT;
 const RAYLEIGH_SCALE_HEIGHT: f32 = 8000.0;
@@ -32,6 +40,42 @@ const LIGHT_STEPS: i32 = 8;
 const AUR_RADIANCE: Vec3 = vec3(0.08, 0.012, 0.16);
 
 pub const SKY_SIZE: u32 = 128;
+pub const TRANSMITTANCE_SIZE: u32 = 512;
+
+pub fn transmittance_coordinates(position: Vec3, direction: Vec3) -> Vec2 {
+    let radius = position.length().max(PLANET_RADIUS);
+    let height = ((radius - PLANET_RADIUS) / ATMOSPHERE_HEIGHT)
+        .clamp(0.0, 1.0)
+        .sqrt();
+    let cosine = (position / radius).dot(direction).clamp(-1.0, 1.0);
+    let horizon = -(1.0 - square(PLANET_RADIUS / radius)).max(0.0).sqrt();
+    let delta = cosine - horizon;
+    let sign = if delta >= 0.0 { 1.0 } else { -1.0 };
+    let angle = (delta.abs() / (1.0 - horizon * sign).max(0.0001)).sqrt() * sign;
+    let uv = vec2(angle * 0.5 + 0.5, height);
+    (uv * (TRANSMITTANCE_SIZE - 1) as f32 + 0.5) / TRANSMITTANCE_SIZE as f32
+}
+
+fn transmittance_ray(uv: Vec2) -> (Vec3, Vec3) {
+    let radius = PLANET_RADIUS + uv.y * uv.y * ATMOSPHERE_HEIGHT;
+    let horizon = -(1.0 - square(PLANET_RADIUS / radius)).max(0.0).sqrt();
+    let angle = uv.x * 2.0 - 1.0;
+    let cosine = horizon + angle * angle.abs() * (1.0 - horizon * angle.signum());
+    let direction = vec3((1.0 - cosine * cosine).max(0.0).sqrt(), 0.0, cosine);
+    let position = Vec3::Z * radius;
+    (position, direction)
+}
+
+pub fn transmittance_texel(uv: Vec2) -> Vec3 {
+    let (position, direction) = transmittance_ray(uv);
+    calculate_transmittance(integrate_optical_depth(position, direction, 10_000_000.0))
+        * (1.0 - occlusion_factor(position, direction))
+}
+
+pub fn air_texel(uv: Vec2) -> f32 {
+    let (position, direction) = transmittance_ray(uv);
+    air::optical_depth(position, direction, 10_000_000.0)
+}
 
 pub fn sky_direction(uv: Vec2, horizon: f32) -> Vec3 {
     let y = uv.y * 2.0 - 1.0;
@@ -152,7 +196,7 @@ fn integrate_scattering(ray_start: Vec3, ray_dir: Vec3, ray_length: f32, source:
             0.0,
         );
         let incoming = calculate_transmittance(upward_depth);
-        let solid_angle = (PLANET_RADIUS / local_pos.length().max(PLANET_RADIUS)).powi(2);
+        let solid_angle = square(PLANET_RADIUS / local_pos.length().max(PLANET_RADIUS));
         let up = local_pos.normalize();
         let scattering = C_RAYLEIGH * local_density.x * 0.5
             + C_MIE * MIE_STRENGTH * local_density.y * (0.5 - ray_dir.dot(up) * 0.25);
@@ -204,6 +248,42 @@ pub fn get_pole_light_color(ro_relative: Vec3, source: Vec3) -> Vec3 {
     let cam_occ = occlusion_factor(ro_relative, pole_dir);
     let optical_depth_light = integrate_optical_depth(ro_relative, pole_dir, distance);
     let light_transmittance = calculate_transmittance(optical_depth_light) * (1.0 - cam_occ);
-    let pole_base = vec3(1.0, 0.97, 0.90) * POLE_INTENSITY;
-    pole_base * light_transmittance * EXPOSURE
+    POLE_RADIANCE * light_transmittance
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_transmittance_matches_light_integration_across_cloud_altitudes() {
+        let mut error = 0.0f32;
+        for height in [2700.0, 6350.0, 12_000.0, 26_100.0, 48_000.0, 78_000.0] {
+            let position = Vec3::Z * (PLANET_RADIUS + height);
+            for index in 0..1024 {
+                let cosine = index as f32 / 1023.0 * 2.0 - 1.0;
+                let direction = vec3((1.0 - cosine * cosine).max(0.0).sqrt(), 0.0, cosine);
+                let uv = transmittance_coordinates(position, direction) * TRANSMITTANCE_SIZE as f32
+                    - Vec2::splat(0.5);
+                let base = uv.floor();
+                let mix = uv - base;
+                let fetch = |x: f32, y: f32| {
+                    transmittance_texel(vec2(x, y) / (TRANSMITTANCE_SIZE - 1) as f32)
+                };
+                let cached = fetch(base.x, base.y)
+                    .lerp(fetch(base.x + 1.0, base.y), mix.x)
+                    .lerp(
+                        fetch(base.x, base.y + 1.0).lerp(fetch(base.x + 1.0, base.y + 1.0), mix.x),
+                        mix.y,
+                    );
+                let exact = calculate_transmittance(integrate_optical_depth(
+                    position,
+                    direction,
+                    10_000_000.0,
+                )) * (1.0 - occlusion_factor(position, direction));
+                error = error.max((cached - exact).abs().max_element());
+            }
+        }
+        assert!(error < 0.005, "maximum transmittance error: {error}");
+    }
 }

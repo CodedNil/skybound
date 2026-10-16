@@ -1,4 +1,36 @@
-use spirv_std::glam::{IVec3, Vec3, ivec3};
+use spirv_std::glam::{IVec3, Vec3, ivec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+pub fn cellular(position: Vec3, period: i32, seed: u32) -> f32 {
+    let p = position * period as f32;
+    let cell = p.floor().as_ivec3();
+    let mut nearest = 3.0f32;
+    for z in -1..=1 {
+        for y in -1..=1 {
+            for x in -1..=1 {
+                let c = cell + ivec3(x, y, z);
+                let feature = c.as_vec3()
+                    + vec3(
+                        lattice(c, period, seed),
+                        lattice(c, period, seed.wrapping_add(31)),
+                        lattice(c, period, seed.wrapping_add(67)),
+                    );
+                nearest = nearest.min(p.distance_squared(feature));
+            }
+        }
+    }
+    nearest.sqrt().min(1.0)
+}
+
+pub fn rotated(p: Vec3) -> Vec3 {
+    vec3(
+        p.dot(vec3(0.36, 0.48, -0.8)),
+        p.dot(vec3(-0.8, 0.6, 0.0)),
+        p.dot(vec3(0.48, 0.64, 0.6)),
+    ) * 0.754_877
+        + vec3(0.37, 0.19, 0.63)
+}
 
 pub fn lattice(cell: IVec3, period: i32, seed: u32) -> f32 {
     let mut value = (cell.x.rem_euclid(period) as u32).wrapping_mul(73_856_093)
