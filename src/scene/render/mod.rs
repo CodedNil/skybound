@@ -16,6 +16,34 @@ use crate::scene::{FrameUniform, life};
 pub(crate) const T_MAX: f32 = 1_000_000.0;
 type Depth = Image!(2D, type=f32, depth=true, sampled=true, components=1);
 
+#[spirv(fragment(entry_point_name = "ejection_lookup"))]
+pub fn ejection_lookup(
+    #[spirv(frag_coord)] pixel: Vec4,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(location = 0)] out: &mut Vec4,
+) {
+    use crate::scene::aur::{EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection};
+    let x = pixel.x as u32;
+    let cell = vec2(
+        (x % EJECTION_GRID_WIDTH) as f32 - EJECTION_GRID_HALF as f32,
+        pixel.y.floor() - 1.0,
+    );
+    let mut event = ejection(cell, frame.view.time());
+    if x < EJECTION_GRID_WIDTH {
+        let mut active = 0u32;
+        for index in 0..9 {
+            let neighbour = cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
+            active |= u32::from(ejection(neighbour, frame.view.time())[0].w > 0.0) << index;
+        }
+        event[0].w += (active << 1) as f32;
+    }
+    *out = if x < EJECTION_GRID_WIDTH {
+        event[0]
+    } else {
+        event[1]
+    };
+}
+
 struct ThinLayers {
     color: [Vec4; 8],
     transmission: [Vec4; 8],
@@ -196,7 +224,7 @@ pub fn opaque(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
@@ -242,9 +270,11 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
+    #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_normal: &mut Vec4,
@@ -257,10 +287,12 @@ pub fn volume(
         base: base_texture,
         details: details_texture,
         weather: weather_texture,
+        transmittance: transmittance_texture,
+        ejections: ejection_texture,
         sampler,
     };
-    let dither =
-        (blue_noise(uv * frame.volume_size.xy()) + frame.view.frame_count() * 0.618_034).fract();
+    let spatial_dither = blue_noise(uv * frame.volume_size.xy());
+    let dither = (spatial_dither + frame.view.frame_count() * 0.618_034).fract();
     let volume = raymarch_volumetrics(
         ray.origin,
         ray.direction,
@@ -302,6 +334,7 @@ pub fn volume(
         0.0
     };
 }
+
 #[spirv(fragment(entry_point_name = "transparent"))]
 pub fn transparent(
     #[spirv(location = 0)] uv: Vec2,
@@ -309,9 +342,11 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
+    #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
@@ -344,6 +379,8 @@ pub fn transparent(
         base: base_texture,
         details: details_texture,
         weather: weather_texture,
+        transmittance: transmittance_texture,
+        ejections: ejection_texture,
         sampler,
     };
     let mut color = Vec3::ZERO;

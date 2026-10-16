@@ -76,6 +76,10 @@ impl SceneTargets {
         {
             return;
         }
+        info!(
+            "Render targets: native={}x{}, volumetrics={}x{}",
+            native.x, native.y, size.x, size.y
+        );
         let low = |format, label| texture(device, size, format, label);
         let native_texture = |label| texture(device, native, TextureFormat::Rgba16Float, label);
         self.0 = Some(Targets {

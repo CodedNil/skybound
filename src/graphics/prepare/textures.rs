@@ -8,8 +8,9 @@ use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use rayon::prelude::*;
-use skybound::scene::climate::weather_map;
-use skybound::scene::noise::{fbm, lattice};
+use skybound::scene::atmosphere::{TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
+use skybound::scene::climate::{WEATHER_SIZE, weather_texel};
+use skybound::scene::noise::{cellular, fbm};
 
 #[derive(Resource, ExtractResource, Clone)]
 #[extract_app(RenderApp)]
@@ -17,27 +18,44 @@ pub struct VolumeTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
     pub weather: Handle<Image>,
+    pub transmittance: Handle<Image>,
 }
 
-fn cellular(position: Vec3, period: i32, seed: u32) -> f32 {
-    let p = position * period as f32;
-    let cell = p.floor().as_ivec3();
-    let mut nearest = 3.0f32;
-    for z in -1..=1 {
-        for y in -1..=1 {
-            for x in -1..=1 {
-                let c = cell + ivec3(x, y, z);
-                let feature = c.as_vec3()
-                    + vec3(
-                        lattice(c, period, seed),
-                        lattice(c, period, seed.wrapping_add(31)),
-                        lattice(c, period, seed.wrapping_add(67)),
-                    );
-                nearest = nearest.min(p.distance_squared(feature));
+fn atmosphere_transmittance() -> Image {
+    let size = TRANSMITTANCE_SIZE;
+    let mut data = vec![0u8; (size * size) as usize * 8];
+    data.par_chunks_mut(8)
+        .enumerate()
+        .for_each(|(index, pixel)| {
+            let index = index as u32;
+            let uv = vec2((index % size) as f32, (index / size) as f32) / (size - 1) as f32;
+            let value = transmittance_texel(uv).extend(air_texel(uv));
+            for (bytes, channel) in pixel
+                .as_chunks_mut::<2>()
+                .0
+                .iter_mut()
+                .zip(value.to_array())
+            {
+                bytes.copy_from_slice(&half::f16::from_f32(channel).to_le_bytes());
             }
-        }
-    }
-    nearest.sqrt().min(1.0)
+        });
+    let mut image = Image::new_uninit(
+        Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        TextureFormat::Rgba16Float,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.data = Some(data);
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        mag_filter: ImageFilterMode::Linear,
+        min_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    image
 }
 
 fn mip_chain<const N: usize>(mut level: Vec<u8>, mut size: UVec3) -> (Vec<u8>, u32) {
@@ -163,9 +181,12 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
                     })
                 },
                 || {
-                    texture(256, 1, TextureFormat::Rgba8Unorm, |p| {
-                        weather_map(p.truncate()).to_array()
-                    })
+                    texture(
+                        WEATHER_SIZE as u32,
+                        WEATHER_SIZE as u32,
+                        TextureFormat::Rgba8Unorm,
+                        |p| weather_texel((p * WEATHER_SIZE as f32).as_ivec3()).to_array(),
+                    )
                 },
             )
         },
@@ -178,12 +199,14 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
         base: images.add(base),
         detail: images.add(detail),
         weather: images.add(weather),
+        transmittance: images.add(atmosphere_transmittance()),
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn volume_mips_average_all_axes_and_preserve_constant_fields() {
         let (data, levels) = mip_chain::<1>(vec![128; 64], UVec3::splat(4));

@@ -4,7 +4,7 @@ use crate::scene::atmosphere::{get_pole_light_color, render_sky};
 use crate::scene::geometry::get_pole_position;
 use crate::scene::life::CreatureInstance;
 
-pub const PLANET_RADIUS: f32 = 1_000_000.0;
+pub const PLANET_RADIUS: f32 = 1_500_000.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -23,7 +23,7 @@ pub struct ViewUniform {
     pub pole_color: Vec4,
     pub ambient_color: Vec4,
     pub sky_horizon: Vec4,
-    pub aur_flashes: [Vec4; 32],
+    pub aur_flashes: [[Vec4; 2]; 32],
     pub aur_bolts: [[Vec4; 2]; 32],
 }
 
@@ -64,6 +64,7 @@ impl ViewUniform {
 
     #[cfg(not(target_arch = "spirv"))]
     pub fn prepare_flashes(&mut self) {
+        use crate::scene::math::fourth;
         use std::f32::consts::PI;
 
         use spirv_std::glam::{FloatExt, Vec2, Vec3Swizzles, vec3};
@@ -72,9 +73,11 @@ impl ViewUniform {
             point += point.dot(point.yxz() + 33.33);
             ((point.x + point.y + point.z) * point).fract_gl()
         };
-        self.aur_flashes = [Vec4::ZERO; 32];
+        self.aur_flashes = [[Vec4::ZERO; 2]; 32];
         self.aur_bolts = [[Vec4::ZERO; 2]; 32];
-        let cell = (self.surface_position(self.world_position.xyz()).truncate() / 10_000.0).floor();
+        let cell_size = 7000.0;
+        let cell =
+            (self.surface_position(self.world_position.xyz()).truncate() / cell_size).floor();
         let time = self.time();
         let mut count = 0;
         let mut bolt_count = 0;
@@ -82,7 +85,7 @@ impl ViewUniform {
             for y in -1..=1 {
                 let cell = cell + Vec2::new(x as f32, y as f32);
                 let seed = hash(cell.dot(Vec2::new(127.1, 311.7)));
-                let age = (time - seed.x * 20.0).rem_euclid(20.0);
+                let age = (time - seed.x * 12.0).rem_euclid(12.0);
                 let duration = 1.0 + seed.y * 3.0;
                 if age >= duration {
                     continue;
@@ -98,12 +101,15 @@ impl ViewUniform {
                         (time * 0.5 + point.x * 10.0).sin(),
                         (time * 0.4 + point.y * 9.0).cos(),
                     );
-                    let center = (cell + point.xy() * 0.65 + motion * 0.12) * 10_000.0;
+                    let center = (cell + point.xy() * 0.65 + motion * 0.12) * cell_size;
                     let strength = envelope
-                        * (0.25 + 0.75 * (time * 19.0 + point.x * 31.0).sin().max(0.0).powi(4));
+                        * (0.25 + 0.75 * fourth((time * 19.0 + point.x * 31.0).sin().max(0.0)));
                     if strength > 0.0 {
-                        self.aur_flashes[count] =
-                            center.extend(650.0 + point.z * 1500.0).extend(strength);
+                        self.aur_flashes[count] = [
+                            super::planet::surface_point(center.extend(-120.0))
+                                .extend((650.0 + point.z * 1500.0).recip()),
+                            (vec3(0.45, 0.95, 1.25) * strength * 3.0).extend(strength),
+                        ];
                         count += 1;
                     }
                     let flicker = (time * 11.0 + point.z * 19.0).fract();
@@ -190,6 +196,7 @@ impl ViewUniform {
 
 #[cfg(test)]
 mod tests {
+    use crate::scene::polar::REACTION_RADIUS;
     use core::f32::consts::FRAC_PI_2;
     use spirv_std::glam::vec3;
 
@@ -207,10 +214,11 @@ mod tests {
             view.prepare_atmosphere();
             view.pole_color.truncate().length()
         };
+        let sunrise = (PLANET_RADIUS / REACTION_RADIUS).asin() + 0.05;
         assert!(light(0.0) < 0.001);
-        assert!(light(0.87) > light(0.0) + 0.1);
-        assert!(light(1.4) > light(0.87));
-        assert!((light(0.87) - light(-0.87)).abs() < 0.01);
+        assert!(light(sunrise) > light(0.0) + 0.1);
+        assert!(light(1.4) > light(sunrise));
+        assert!((light(sunrise) - light(-sunrise)).abs() < 0.01);
     }
 
     #[test]

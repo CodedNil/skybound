@@ -1,5 +1,6 @@
 use bevy::render::render_resource::MipmapFilterMode;
 use std::array::from_fn;
+use std::env;
 use std::mem::size_of;
 use std::num::NonZeroU64;
 use std::sync::atomic::Ordering;
@@ -30,6 +31,7 @@ use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
 use bevy::render::texture::GpuImage;
 use bevy::render::view::{ExtractedView, ViewTarget};
 use skybound::scene::atmosphere::SKY_SIZE;
+use skybound::scene::aur::{EJECTION_GRID_HEIGHT, EJECTION_GRID_WIDTH};
 use skybound::scene::{FrameUniform, ViewUniform};
 
 use crate::game::camera::DebugView;
@@ -37,7 +39,7 @@ use crate::game::flight::PlayerModel;
 use crate::game::world::WorldData;
 use crate::graphics::prepare::sky::SkyLookup;
 use crate::graphics::prepare::textures::VolumeTextures;
-use crate::graphics::targets::{SceneTargets, Targets, VolumeScale};
+use crate::graphics::targets::{SceneTargets, Targets, VolumeScale, texture};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -58,6 +60,7 @@ pub struct SceneBuffer {
     previous_debug: u32,
     previous_weather: Vec4,
     frame: u32,
+    profile: u32,
 }
 impl Default for SceneBuffer {
     fn default() -> Self {
@@ -71,6 +74,10 @@ impl Default for SceneBuffer {
             previous_debug: 0,
             previous_weather: Vec4::ZERO,
             frame: 0,
+            profile: env::var("SKYBOUND_PROFILE_VOLUME")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
         }
     }
 }
@@ -126,7 +133,12 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         world_from_clip_unjittered: world_from_view * view.clip_from_view.inverse(),
         world_position: position.extend(0.0),
         planet_center_value: world.local(DVec3::ZERO).extend(0.0),
-        camera_position: vec4(latitude, longitude, world.altitude(position) as f32, 0.0),
+        camera_position: vec4(
+            latitude,
+            longitude,
+            world.altitude(position) as f32,
+            buffer.profile as f32,
+        ),
         planet_rotation: rotation,
         weather: atmosphere.0,
         times: vec4(
@@ -199,6 +211,8 @@ pub struct ScenePipeline {
     volume: CachedRenderPipelineId,
     thin: CachedRenderPipelineId,
     sky: CachedRenderPipelineId,
+    ejection_lookup: CachedRenderPipelineId,
+    ejections: TextureView,
     filter: CachedRenderPipelineId,
     composite: CachedRenderPipelineId,
     repeat_sampler: Sampler,
@@ -236,6 +250,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         Some(base),
         Some(detail),
         Some(weather),
+        Some(transmittance),
     ) = (
         prepass.depth_only_view(),
         targets.0.as_ref(),
@@ -244,6 +259,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         images.get(&textures.base),
         images.get(&textures.detail),
         images.get(&textures.weather),
+        images.get(&textures.transmittance),
     )
     else {
         return;
@@ -280,6 +296,8 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             &weather.texture_view,
             &sky.view,
             depth,
+            &transmittance.texture_view,
+            &pipeline.ejections,
         )),
     );
     let sky_group = device.create_bind_group(
@@ -398,7 +416,9 @@ fn draw(
     );
     pass.set_render_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
+    pass.push_debug_group(label);
     pass.draw(0..3, 0..1);
+    pass.pop_debug_group();
     drop(pass);
     if let Some(span) = span {
         span.end(context.command_encoder());
@@ -413,15 +433,33 @@ pub fn raymarch_pass(
     let pipeline = world.resource::<ScenePipeline>();
     let cache = world.resource::<PipelineCache>();
     let sky = world.resource::<SkyLookup>();
-    let (Some(groups), Some(targets), Some(opaque), Some(volume), Some(sky_pipeline)) = (
+    let (
+        Some(groups),
+        Some(targets),
+        Some(opaque),
+        Some(volume),
+        Some(sky_pipeline),
+        Some(ejection_pipeline),
+    ) = (
         pipeline.groups.as_ref(),
         world.resource::<SceneTargets>().0.as_ref(),
         cache.get_render_pipeline(pipeline.opaque),
         cache.get_render_pipeline(pipeline.volume),
         cache.get_render_pipeline(pipeline.sky),
-    ) else {
+        cache.get_render_pipeline(pipeline.ejection_lookup),
+    )
+    else {
         return;
     };
+    draw(
+        &mut context,
+        ejection_pipeline,
+        &groups.sky,
+        &[Some(attachment(&pipeline.ejections, true))],
+        None,
+        UVec4::new(0, 0, EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
+        "ejection_lookup",
+    );
     for (view, target, prepass) in &views {
         let (Some(depth), Some(motion), Some(normal)) = (
             prepass.depth_only_view(),
@@ -486,9 +524,14 @@ pub fn composite_pass(
     ) else {
         return;
     };
-    if [pipeline.opaque, pipeline.volume, pipeline.sky]
-        .iter()
-        .any(|id| cache.get_render_pipeline(*id).is_none())
+    if [
+        pipeline.opaque,
+        pipeline.volume,
+        pipeline.sky,
+        pipeline.ejection_lookup,
+    ]
+    .iter()
+    .any(|id| cache.get_render_pipeline(*id).is_none())
     {
         targets.valid.store(false, Ordering::Relaxed);
         return;
@@ -557,14 +600,14 @@ impl Interfaces {
                 sampler(SamplerBindingType::Filtering),
                 texture_3d(TextureSampleType::Float { filterable: true }),
                 texture_3d(TextureSampleType::Float { filterable: true }),
-                float(),
+                texture_3d(TextureSampleType::Float { filterable: true }),
                 float(),
             ),
         );
         let mut volume = opaque.to_vec();
         let extra = BindGroupLayoutEntries::with_indices(
             ShaderStages::FRAGMENT,
-            ((6, texture_depth_2d()),),
+            ((6, texture_depth_2d()), (7, float()), (8, data())),
         );
         volume.extend_from_slice(&extra);
         let sky = BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, frame_entry());
@@ -711,11 +754,25 @@ impl FromWorld for ScenePipeline {
             ),
             sky: compiler.queue(
                 "sky",
-                scene_shader,
+                scene_shader.clone(),
                 "sky",
                 &sky_entries,
                 &[TextureFormat::Rgba16Float],
                 false,
+            ),
+            ejection_lookup: compiler.queue(
+                "ejection_lookup",
+                scene_shader,
+                "ejection_lookup",
+                &sky_entries,
+                &[TextureFormat::Rgba32Float],
+                false,
+            ),
+            ejections: texture(
+                device,
+                UVec2::new(EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
+                TextureFormat::Rgba32Float,
+                "ejection_lookup",
             ),
             filter: compiler.queue(
                 "volume_temporal",
@@ -733,21 +790,30 @@ impl FromWorld for ScenePipeline {
                 &[TextureFormat::Rgba16Float],
                 false,
             ),
-            repeat_sampler: device.create_sampler(&SamplerDescriptor {
-                address_mode_u: AddressMode::Repeat,
-                address_mode_v: AddressMode::Repeat,
-                address_mode_w: AddressMode::Repeat,
-                mag_filter: FilterMode::Linear,
-                min_filter: FilterMode::Linear,
-                mipmap_filter: MipmapFilterMode::Linear,
-                ..default()
-            }),
-            linear_sampler: device.create_sampler(&SamplerDescriptor {
-                mag_filter: FilterMode::Linear,
-                min_filter: FilterMode::Linear,
-                ..default()
-            }),
+            repeat_sampler: scene_sampler(device, true),
+            linear_sampler: scene_sampler(device, false),
             groups: None,
         }
     }
+}
+
+fn scene_sampler(device: &RenderDevice, repeat: bool) -> Sampler {
+    let address = if repeat {
+        AddressMode::Repeat
+    } else {
+        AddressMode::ClampToEdge
+    };
+    device.create_sampler(&SamplerDescriptor {
+        address_mode_u: address,
+        address_mode_v: address,
+        address_mode_w: address,
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: if repeat {
+            MipmapFilterMode::Linear
+        } else {
+            MipmapFilterMode::Nearest
+        },
+        ..default()
+    })
 }

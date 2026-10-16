@@ -1,22 +1,39 @@
 use core::f32::consts::{FRAC_PI_2, TAU};
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3, vec4};
+use spirv_std::glam::{FloatExt, IVec3, Vec2, Vec3, Vec3Swizzles, Vec4, ivec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use super::{PLANET_RADIUS, noise::fbm};
+use super::math::cube;
+use super::{PLANET_RADIUS, noise::lattice};
+
+pub mod clouds;
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 pub const CLOUD_BOTTOM: f32 = 2700.0;
 pub const CLOUD_TOP: f32 = 78_000.0;
 
-pub fn weather_map(uv: Vec2) -> Vec4 {
-    let p = uv.extend(0.0);
+pub const WEATHER_SIZE: i32 = 64;
+
+pub fn weather_texel(cell: IVec3) -> Vec4 {
+    let channel = |seed| (lattice(cell, WEATHER_SIZE, seed) * 255.0).round() / 255.0;
     vec4(
-        fbm(p, 4, 0x83),
-        fbm(p, 4, 0xc5),
-        fbm(p, 2, 0xf1),
-        fbm(p, 4, 0x133),
+        channel(0x81),
+        channel(0x81 + 1013),
+        channel(0x81 + 2026),
+        channel(0x81 + 3039),
     )
+}
+
+pub fn weather_at(point: Vec3) -> Vec4 {
+    let cell = point.floor().as_ivec3();
+    let fraction = point - point.floor();
+    let mut weather = Vec4::ZERO;
+    for index in 0..8 {
+        let offset = ivec3(index & 1, (index >> 1) & 1, (index >> 2) & 1);
+        let weight = Vec3::select(offset.cmpeq(IVec3::ZERO), Vec3::ONE - fraction, fraction);
+        weather += weather_texel(cell + offset) * (weight.x * weight.y * weight.z);
+    }
+    weather
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -29,7 +46,6 @@ pub struct Climate {
     pub aur: f32,
     pub storm: f32,
     pub temperature: f32,
-    pub condensation: f32,
     pub precipitation: f32,
     pub ice: f32,
     pub low_cloud: f32,
@@ -50,22 +66,17 @@ impl Climate {
 
     pub fn on_planet(point: Vec3, seconds: f32, weather: Vec4) -> Self {
         let radius = point.length();
-        let latitude = (point.z / radius).clamp(-1.0, 1.0).asin();
-        let mut climate = Self::from_weather(
+        let up = point / radius;
+        let mut climate = Self::from_polar(
             Vec3::Z * (radius - PLANET_RADIUS),
             seconds,
-            latitude,
+            up.z,
             Vec3::Y,
             weather,
         );
-        let frame = super::planet::surface_frame(point);
-        let taper = point.normalize().truncate().length();
-        climate.wind = frame
-            * vec3(
-                climate.wind.x * taper,
-                climate.wind.y * taper,
-                climate.wind.z,
-            );
+        let east = vec3(-up.y, up.x, 0.0);
+        let north = Vec3::Z - up * up.z;
+        climate.wind = east * climate.wind.x + north * climate.wind.y + up * climate.wind.z;
         climate
     }
 
@@ -75,10 +86,7 @@ impl Climate {
 
     pub fn weather_on_planet(point: Vec3, seconds: f32) -> Vec4 {
         let p = Self::weather_coordinates(point, seconds);
-        let weights = point.normalize() * point.normalize();
-        weather_map(p.yz()) * weights.x
-            + weather_map(p.zx()) * weights.y
-            + weather_map(p.xy()) * weights.z
+        weather_at(p)
     }
 
     pub fn weather_uv(position: Vec3, seconds: f32) -> Vec2 {
@@ -91,7 +99,7 @@ impl Climate {
             seconds,
             latitude,
             Vec3::Y,
-            weather_map(Self::weather_uv(position, seconds)),
+            weather_at(Self::weather_uv(position, seconds).extend(0.0)),
         )
     }
 
@@ -102,9 +110,19 @@ impl Climate {
         north: Vec3,
         weather: Vec4,
     ) -> Self {
+        Self::from_polar(position, seconds, latitude.sin(), north, weather)
+    }
+
+    fn from_polar(
+        position: Vec3,
+        seconds: f32,
+        latitude_sine: f32,
+        north: Vec3,
+        weather: Vec4,
+    ) -> Self {
         let activity = 0.1 + 0.9 * (0.5 + 0.5 * (seconds * TAU / 2400.0).cos());
         let altitude = position.z.max(0.0);
-        let polar = latitude.sin().abs();
+        let polar = latitude_sine.abs();
         let sinking = polar.smoothstep(0.94, 1.0);
         let moisture = (weather.x + (1.0 - polar) * 0.025).smoothstep(0.28, 0.72);
         let convection =
@@ -117,7 +135,7 @@ impl Climate {
         let vertical = (basal_lift + (1.6 + convection * 3.0) * (1.0 - upper) + storm * 5.0)
             * (0.65 + activity * 0.35)
             - sinking * (4.0 + upper * 12.0);
-        let direction = if latitude < 0.0 { -north } else { north };
+        let direction = north * latitude_sine;
         let wind = direction * ((4.0 + polar * 45.0) * upper)
             + vec3((weather.z - 0.5) * 5.0, 0.0, vertical);
         let temperature = 284.0 + polar * 25.0 - altitude * 0.0055;
@@ -127,39 +145,16 @@ impl Climate {
             altitude: position.z,
             pressure: (-altitude / 11_000.0).exp(),
             humidity,
-            light: activity * (0.08 + polar.powi(3) * 0.92) * (1.0 - moisture * 0.35),
+            light: activity * (0.08 + cube(polar) * 0.92) * (1.0 - moisture * 0.35),
             aur: activity * (-altitude / 1800.0).exp(),
             storm,
             temperature,
             precipitation: (storm + moisture.smoothstep(0.75, 1.0) * 0.2) * (1.0 - ice * 0.7),
             ice,
-            condensation: 3.0 * (300.0 + (1.0 - humidity) * 3400.0),
             low_cloud: humidity.smoothstep(0.25, 0.8) * (0.35 + convection * 0.65),
             middle_cloud: moisture.smoothstep(0.5, 0.95) * (1.0 - storm * 0.5),
             high_cloud: weather.z.smoothstep(0.43, 0.7) * (0.25 + moisture * 0.75),
         }
-    }
-
-    pub fn layer(self, index: usize) -> Vec3 {
-        let layer = match index {
-            0 => vec3(
-                self.condensation,
-                1800.0 + self.humidity * 3200.0,
-                self.low_cloud,
-            ),
-            1 => vec3(5500.0, 3200.0, self.middle_cloud),
-            2 => vec3(
-                11_000.0 + (1.0 - self.humidity) * 5000.0,
-                4500.0,
-                self.high_cloud,
-            ),
-            _ => vec3(
-                self.condensation,
-                19_000.0 + self.humidity * 3000.0,
-                self.storm,
-            ),
-        };
-        vec3(layer.x * 3.0, layer.y * 3.0, layer.z)
     }
 }
 
@@ -168,15 +163,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basal_updraft_and_condensation_leave_a_clear_lower_sky() {
+    fn basal_updraft_is_strongest_close_to_the_aur() {
         let wet = Vec4::splat(0.95);
         let surface = Climate::from_weather(Vec3::ZERO, 0.0, 0.0, Vec3::Y, wet);
         let upper = Climate::from_weather(Vec3::Z * 6000.0, 0.0, 0.0, Vec3::Y, wet);
         assert!(surface.wind.z > upper.wind.z + 8.0);
-        assert!((900.0..1200.0).contains(&surface.condensation));
-        for index in 0..4 {
-            assert!(surface.layer(index).x >= CLOUD_BOTTOM);
-        }
         let north = Climate::at(vec3(0.0, 800_000.0, 15_000.0), 0.0, wet);
         let south = Climate::at(
             vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 * 2.0) - 800_000.0, 15_000.0),
@@ -220,7 +211,6 @@ mod tests {
         let high = at(vec4(0.1, 0.1, 0.9, 0.5));
         assert!(high.high_cloud > 0.0 && high.low_cloud == 0.0);
         let wet = at(vec4(0.95, 0.95, 0.7, 0.95));
-        assert!(wet.storm > 0.9 && wet.layer(3).x + wet.layer(3).y > 22_000.0);
-        assert!(wet.condensation < high.condensation);
+        assert!(wet.storm > 0.9);
     }
 }
