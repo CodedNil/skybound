@@ -2,6 +2,7 @@ pub mod camera;
 pub mod ecosystem;
 pub mod flight;
 mod hud;
+pub mod weather;
 pub mod world;
 
 use bevy::prelude::*;
@@ -11,6 +12,7 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             world::WorldPlugin,
+            weather::WeatherPlugin,
             flight::PlayerPlugin,
             camera::CameraPlugin,
             hud::HudPlugin,

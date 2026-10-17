@@ -1,4 +1,4 @@
-use spirv_std::glam::{Mat4, Quat, Vec3, Vec4, Vec4Swizzles};
+use spirv_std::glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
 
 use crate::scene::atmosphere::{get_pole_light_color, render_sky};
 use crate::scene::geometry::get_pole_position;
@@ -12,7 +12,8 @@ pub struct ViewUniform {
     pub clip_from_world: Mat4,
     pub world_from_clip: Mat4,
     pub prev_clip_from_world: Mat4,
-    pub world_from_clip_unjittered: Mat4,
+    pub direction_from_clip_unjittered: Mat4,
+    pub direction_from_clip: Mat4,
     pub world_position: Vec4,
     pub camera_position: Vec4,
     pub planet_center_value: Vec4,
@@ -23,6 +24,10 @@ pub struct ViewUniform {
     pub pole_color: Vec4,
     pub ambient_color: Vec4,
     pub sky_horizon: Vec4,
+    pub cache_origin: Vec4,
+    pub cache_east: Vec4,
+    pub cache_north: Vec4,
+    pub cloud_time: Vec4,
     pub aur_flashes: [[Vec4; 2]; 32],
     pub aur_bolts: [[Vec4; 2]; 32],
 }
@@ -37,6 +42,19 @@ pub struct FrameUniform {
 }
 
 impl ViewUniform {
+    /// Reconstruct a ray without subtracting large world positions near the camera.
+    pub fn ray_direction(&self, uv: Vec2, jittered: bool) -> Vec3 {
+        let matrix = if jittered {
+            self.direction_from_clip
+        } else {
+            self.direction_from_clip_unjittered
+        };
+        let clip = (uv * Vec2::new(2.0, -2.0) + Vec2::new(-1.0, 1.0))
+            .extend(0.01)
+            .extend(1.0);
+        (matrix * clip).xyz().normalize()
+    }
+
     pub fn up(&self, local: Vec3) -> Vec3 {
         (local - self.planet_center()).normalize()
     }
@@ -64,90 +82,62 @@ impl ViewUniform {
 
     #[cfg(not(target_arch = "spirv"))]
     pub fn prepare_flashes(&mut self) {
-        use crate::scene::math::fourth;
+        use super::aur::lightning::events;
+        use super::planet::surface_frame;
+        use spirv_std::glam::vec3;
         use std::f32::consts::PI;
-
-        use spirv_std::glam::{FloatExt, Vec2, Vec3Swizzles, vec3};
-        let hash = |value: f32| {
-            let mut point = (Vec3::splat(value) * vec3(0.1031, 0.1030, 0.1029)).fract_gl();
-            point += point.dot(point.yxz() + 33.33);
-            ((point.x + point.y + point.z) * point).fract_gl()
-        };
         self.aur_flashes = [[Vec4::ZERO; 2]; 32];
         self.aur_bolts = [[Vec4::ZERO; 2]; 32];
-        let cell_size = 7000.0;
-        let cell =
-            (self.surface_position(self.world_position.xyz()).truncate() / cell_size).floor();
-        let time = self.time();
-        let mut count = 0;
+        let camera = self.to_planet(self.world_position.xyz());
+        let mut visible: Vec<_> = events(self.time())
+            .filter_map(|event| {
+                let offset = event.position - camera;
+                let distance = offset.length();
+                // Cull the solid planet, including the upper part of a tall strike.
+                if event.up.dot(camera) < PLANET_RADIUS - event.reach {
+                    return None;
+                }
+                let local = self.from_planet(event.position);
+                let clip = self.clip_from_world * local.extend(1.0);
+                let margin = (event.reach + event.radius) * 3.0 / distance.max(1.0);
+                if distance > event.reach + event.radius
+                    && (clip.w <= 0.0
+                        || (clip.truncate().truncate() / clip.w).abs().max_element() > 1.0 + margin)
+                {
+                    return None;
+                }
+                let importance = event.strength
+                    * (0.5 + 0.5 * (event.radius / distance.max(1.0)).sqrt().min(1.0));
+                Some((importance, event))
+            })
+            .collect();
+        visible.sort_unstable_by(|a, b| b.0.total_cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
         let mut bolt_count = 0;
-        for x in -1..=1 {
-            for y in -1..=1 {
-                let cell = cell + Vec2::new(x as f32, y as f32);
-                let seed = hash(cell.dot(Vec2::new(127.1, 311.7)));
-                let age = (time - seed.x * 12.0).rem_euclid(12.0);
-                let duration = 1.0 + seed.y * 3.0;
-                if age >= duration {
-                    continue;
-                }
-                let life = age / duration;
-                let envelope = life.smoothstep(0.0, 0.12) * (1.0 - life.smoothstep(0.75, 1.0));
-                for index in 0..4 {
-                    if count == self.aur_flashes.len() {
-                        return;
-                    }
-                    let point = hash(seed.z * 137.0 + index as f32 * 17.0);
-                    let motion = Vec2::new(
-                        (time * 0.5 + point.x * 10.0).sin(),
-                        (time * 0.4 + point.y * 9.0).cos(),
-                    );
-                    let center = (cell + point.xy() * 0.65 + motion * 0.12) * cell_size;
-                    let strength = envelope
-                        * (0.25 + 0.75 * fourth((time * 19.0 + point.x * 31.0).sin().max(0.0)));
-                    if strength > 0.0 {
-                        self.aur_flashes[count] = [
-                            super::planet::surface_point(center.extend(-120.0))
-                                .extend((650.0 + point.z * 1500.0).recip()),
-                            (vec3(0.45, 0.95, 1.25) * strength * 3.0).extend(strength),
-                        ];
-                        count += 1;
-                    }
-                    let flicker = (time * 11.0 + point.z * 19.0).fract();
-                    if strength <= 0.0 || flicker > 0.28 {
-                        continue;
-                    }
-                    let strike = (time * 11.0).floor();
-                    let bolt_seed = hash(point.z * 317.0 + strike);
-                    let origin = center.extend(-1500.0);
-                    let direction =
-                        ((bolt_seed.xy() - 0.5) * 5400.0).extend(8400.0 + bolt_seed.z * 7200.0);
-                    let mut start = origin;
-                    for segment in 1..=7 {
-                        if bolt_count == self.aur_bolts.len() {
-                            break;
-                        }
-                        let t = segment as f32 / 7.0;
-                        let jitter = (hash(strike + point.z * 97.0 + segment as f32) - 0.5)
-                            * (960.0 * (PI * t).sin());
-                        let end = origin + direction * t + jitter;
-                        self.aur_bolts[bolt_count] = [
-                            start.extend(12.0 * (1.0 - t * 0.6)),
-                            end.extend(strength * 24.0 * (1.0 - flicker / 0.28)),
-                        ];
-                        bolt_count += 1;
-                        if segment == 3 || segment == 5 {
-                            if bolt_count == self.aur_bolts.len() {
-                                break;
-                            }
-                            let branch = (hash(strike + segment as f32 * 37.0) - 0.5) * 3000.0
-                                + Vec3::Z * 1050.0;
-                            self.aur_bolts[bolt_count] =
-                                [end.extend(2.4), (end + branch).extend(strength * 24.0)];
-                            bolt_count += 1;
-                        }
-                        start = end;
-                    }
-                }
+        for (index, (_, event)) in visible.iter().take(32).enumerate() {
+            let root = event.up * (PLANET_RADIUS - 1400.0);
+            self.aur_flashes[index] = [
+                root.extend(event.radius.recip()),
+                (vec3(0.45, 0.95, 1.25) * event.strength * 3.0).extend(event.strength),
+            ];
+            if bolt_count + 3 > self.aur_bolts.len() {
+                continue;
+            }
+            let basis = surface_frame(event.up);
+            let lateral = basis.x_axis * ((event.random - 0.5) * 7000.0)
+                + basis.y_axis * ((event.random * 7.13).fract() - 0.5) * 7000.0;
+            let top = event.up * (PLANET_RADIUS + event.reach) + lateral;
+            let mut start = root;
+            for segment in 1..=3 {
+                let t = segment as f32 / 3.0;
+                let jag = basis.x_axis * (event.random * 31.0 + segment as f32 * 7.0).sin()
+                    + basis.y_axis * (event.random * 17.0 + segment as f32 * 11.0).cos();
+                let end = root.lerp(top, t) + jag * (1800.0 * (PI * t).sin());
+                self.aur_bolts[bolt_count] = [
+                    self.from_planet(start).extend(24.0 + event.random * 32.0),
+                    self.from_planet(end).extend(event.strength * 36.0),
+                ];
+                bolt_count += 1;
+                start = end;
             }
         }
     }
@@ -198,9 +188,63 @@ impl ViewUniform {
 mod tests {
     use crate::scene::polar::REACTION_RADIUS;
     use core::f32::consts::FRAC_PI_2;
-    use spirv_std::glam::vec3;
+    use spirv_std::glam::{camera::rh::proj::directx::perspective_infinite_reverse, vec3};
 
     use super::*;
+
+    #[test]
+    fn adjacent_pixel_rays_remain_distinct_after_large_world_translations() {
+        let matrix = Mat4::from_quat(Quat::from_rotation_x(0.7))
+            * perspective_infinite_reverse(1.0, 16.0 / 9.0, 0.1).inverse();
+        let mut view = ViewUniform {
+            direction_from_clip: matrix,
+            direction_from_clip_unjittered: matrix,
+            ..Default::default()
+        };
+        let uv = Vec2::new(0.7, 0.8);
+        let expected = view.ray_direction(uv, false);
+        for translation in [
+            Vec3::ZERO,
+            Vec3::splat(1_500_000.0),
+            Vec3::splat(100_000_000.0),
+        ] {
+            view.world_position = translation.extend(0.0);
+            let direction = view.ray_direction(uv, false);
+            let adjacent = view.ray_direction(uv + Vec2::X / 3840.0, false);
+            assert!(direction.distance(expected) < 1e-7);
+            assert!(direction.distance(adjacent) > 0.0001);
+        }
+    }
+
+    #[test]
+    fn lightning_remains_planet_fixed_when_local_coordinates_change() {
+        let mut first = ViewUniform {
+            planet_center_value: (-Vec3::Z * (PLANET_RADIUS + 476_000.0)).extend(0.0),
+            clip_from_world: perspective_infinite_reverse(1.2, 1.7, 0.1),
+            times: Vec4::new(17.5, 0.0, 0.0, 0.0),
+            ..ViewUniform::default()
+        };
+        first.prepare_flashes();
+        assert!(first.aur_bolts[0][0].w > 0.0);
+        let offset = vec3(10_000.0, 20_000.0, -5000.0);
+        let mut shifted = first;
+        shifted.world_position = offset.extend(0.0);
+        shifted.planet_center_value += offset.extend(0.0);
+        shifted.clip_from_world *= Mat4::from_translation(-offset);
+        shifted.prepare_flashes();
+        for (a, b) in first.aur_bolts.iter().zip(shifted.aur_bolts.iter()) {
+            if a[0].w <= 0.0 {
+                break;
+            }
+            for endpoint in 0..2 {
+                assert!((a[endpoint].truncate() + offset).distance(b[endpoint].truncate()) < 1.0);
+                assert!(
+                    (first.to_planet(a[endpoint].truncate()).length() - PLANET_RADIUS).abs()
+                        < 40_000.0
+                );
+            }
+        }
+    }
 
     #[test]
     fn polar_light_rises_symmetrically_from_dark_equatorial_conditions() {

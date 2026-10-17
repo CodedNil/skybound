@@ -93,6 +93,10 @@ impl WorldData {
 }
 
 pub struct WorldPlugin;
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum WorldSystems {
+    Rebase,
+}
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldData>()
@@ -101,6 +105,7 @@ impl Plugin for WorldPlugin {
                 PostUpdate,
                 (sync_positions, update)
                     .chain()
+                    .in_set(WorldSystems::Rebase)
                     .before(TransformSystems::Propagate)
                     .after(follow_camera),
             );

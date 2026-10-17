@@ -9,7 +9,7 @@ pub const BIOLOGY: Biology = Biology {
     ..super::BIOLOGY
 };
 
-use super::{feather, feathered_tail, wings};
+use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -61,7 +61,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     }
     let mut hit = Surface::new(body, if point.y > 3.5 { 10 } else { 0 });
     if point.z > 9.0 {
-        let tail = feathered_tail(point, creature, vec3(3.0, 3.0, 1.0), 2.4, 7.0, 1.5);
+        let tail = tail_shaft(point, creature, vec3(3.0, 3.0, 1.0), 2.4);
         let distance = smooth_min(hit.distance, tail.distance, 0.7);
         hit.join(tail.distance, tail.material);
         hit.distance = distance;
@@ -138,49 +138,65 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
 }
 
 pub fn render_opaque(ray: Ray, creature: &CreatureInstance) -> Hit {
-    trace_material(ray, creature, surface, |point, id| {
-        let bands = (point.z * 0.7 + (point.x * 0.6).sin() * 2.0)
-            .sin()
-            .smoothstep(0.55, 0.85);
-        let speckles = ((point.x * 2.3).sin() * (point.z * 3.1).sin()).abs();
-        let belly = (-point.y).smoothstep(0.0, 3.4);
-        let colour = vec3(0.035, 0.24, 0.28)
-            .lerp(vec3(0.31, 0.61, 0.54), bands * 0.55)
-            .lerp(vec3(0.81, 0.77, 0.59), belly);
-        let mut m = Material::skin(colour, 0.4);
-        match id {
-            1 => {
-                let vane = (point.z * 4.0 + point.x.abs() * 7.0).sin() * 0.035;
-                let gold = (point.x.abs() * 0.55 + point.z * 0.3)
-                    .sin()
-                    .smoothstep(0.6, 0.9);
-                m.color = vec3(0.08, 0.30, 0.36).lerp(vec3(0.63, 0.53, 0.25), gold) * (1.0 + vane);
-                m.roughness = 0.65;
-            }
-            2 => {
-                m.color = vec3(0.79, 0.29, 0.39).lerp(vec3(0.98, 0.72, 0.52), speckles);
-                m.translucency = 0.4;
-            }
-            3 => {
-                m.color = vec3(0.008, 0.025, 0.04);
-                m.roughness = 0.08;
-            }
-            8 => {
-                m.color = vec3(0.09, 0.065, 0.09);
-            }
-            9 => {
-                m.color = vec3(0.19, 0.82, 0.86);
-                m.emission = 0.7;
-                m.roughness = 0.18;
-            }
-            10 => {
-                m.color = vec3(0.07, 0.21, 0.12).lerp(vec3(0.23, 0.36, 0.16), speckles);
-                m.roughness = 0.92;
-            }
-            _ => {}
+    let body = trace_material(ray, creature, surface, material);
+    let feathers = render_tail_feathers(
+        Ray {
+            max_distance: body.distance().min(ray.max_distance),
+            ..ray
+        },
+        creature,
+        TailFeathers {
+            scale: vec3(3.0, 3.0, 1.0),
+            length: 7.0,
+            width: 1.5,
+        },
+        material,
+    );
+    if feathers.is_hit() { feathers } else { body }
+}
+
+fn material(point: Vec3, id: u32) -> Material {
+    let bands = (point.z * 0.7 + (point.x * 0.6).sin() * 2.0)
+        .sin()
+        .smoothstep(0.55, 0.85);
+    let speckles = ((point.x * 2.3).sin() * (point.z * 3.1).sin()).abs();
+    let belly = (-point.y).smoothstep(0.0, 3.4);
+    let colour = vec3(0.035, 0.24, 0.28)
+        .lerp(vec3(0.31, 0.61, 0.54), bands * 0.55)
+        .lerp(vec3(0.81, 0.77, 0.59), belly);
+    let mut m = Material::skin(colour, 0.4);
+    match id {
+        1 => {
+            let vane = (point.z * 4.0 + point.x.abs() * 7.0).sin() * 0.035;
+            let gold = (point.x.abs() * 0.55 + point.z * 0.3)
+                .sin()
+                .smoothstep(0.6, 0.9);
+            m.color = vec3(0.08, 0.30, 0.36).lerp(vec3(0.63, 0.53, 0.25), gold) * (1.0 + vane);
+            m.roughness = 0.65;
         }
-        m
-    })
+        2 => {
+            m.color = vec3(0.79, 0.29, 0.39).lerp(vec3(0.98, 0.72, 0.52), speckles);
+            m.translucency = 0.4;
+        }
+        3 => {
+            m.color = vec3(0.008, 0.025, 0.04);
+            m.roughness = 0.08;
+        }
+        8 => {
+            m.color = vec3(0.09, 0.065, 0.09);
+        }
+        9 => {
+            m.color = vec3(0.19, 0.82, 0.86);
+            m.emission = 0.7;
+            m.roughness = 0.18;
+        }
+        10 => {
+            m.color = vec3(0.07, 0.21, 0.12).lerp(vec3(0.23, 0.36, 0.16), speckles);
+            m.roughness = 0.92;
+        }
+        _ => {}
+    }
+    m
 }
 
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
