@@ -295,13 +295,13 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)]
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)]
     cloud_records: &[crate::scene::cloud::Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 14)] cloud_grid: &[u32],
-    #[spirv(descriptor_set = 0, binding = 12)] medium: &Image!(3D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
+    #[spirv(descriptor_set = 0, binding = 11)] medium: &Image!(3D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
-    #[spirv(location = 2)] out_normal: &mut Vec4,
+    #[spirv(location = 2)] out_metadata: &mut Vec4,
     #[spirv(frag_depth)] out_depth: &mut f32,
 ) {
     let ray = scene_ray(uv, frame, false);
@@ -359,7 +359,7 @@ pub fn volume(
     let previous = position - current * frame.view.times.w;
     *out_color = volume.color;
     *out_motion = motion(uv, previous, frame).extend(0.0).extend(0.0);
-    *out_normal = vec3(volume.depth, limit, volume.color.xyz().max_element()).extend(1.0);
+    *out_metadata = vec3(volume.depth, limit, volume.color.xyz().max_element()).extend(1.0);
     let clip = frame.view.clip_from_world * position.extend(1.0);
     *out_depth = if volume.depth < limit {
         clip.z / clip.w
@@ -382,9 +382,9 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)]
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)]
     cloud_records: &[crate::scene::cloud::Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 14)] cloud_grid: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
@@ -449,7 +449,6 @@ pub fn transparent(
             &environment,
             &frame.view,
             length,
-            0.5,
             &textures,
             cloud_records,
             cloud_grid,
@@ -473,7 +472,6 @@ pub fn transparent(
             &environment,
             &frame.view,
             (ray.max_distance - cursor).max(0.0),
-            0.5,
             &textures,
             cloud_records,
             cloud_grid,

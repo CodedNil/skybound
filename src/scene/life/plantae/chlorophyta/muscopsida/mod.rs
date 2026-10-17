@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aeromuscales;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Muscopsida",
-    english_name: "Moss Forms",
-    description: "Moss-like plants form small fuzzy growths that cling to other organisms. \
-        Fine leaves and dense surface coverage capture dew and moderate conditions close to the host. \
-        Their low profile helps the mats remain attached as their hosts move through the air.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Muscopsida",
+    "Moss Forms",
+    [
+        "Members of this class are small, attached plants with fine leaves and no extensive vascular network.",
+        "Water and nutrients move over short distances through moist tissues close to the host surface.",
+        "Dense growth conserves dew and traps debris, supporting slow recycling within the mat.",
+        "Their low mass and attachment let them persist without competing for an independent place in the updraft.",
+        "Changes in host texture, airflow and humidity therefore shape their habitats more strongly than broad altitude alone.",
+    ],
+);

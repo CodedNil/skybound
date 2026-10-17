@@ -1,3 +1,4 @@
+use crate::math::{ToEngine, ToScene};
 use bevy::render::render_resource::MipmapFilterMode;
 use std::array::from_fn;
 use std::env;
@@ -106,7 +107,7 @@ fn opaque_rectangle(players: &[CreatureInstance; 2], clip: Mat4, viewport: UVec4
             continue;
         }
         let rotation = Quat::from_array(player.rotation.to_array());
-        let scale = development::scale(player);
+        let scale = development::scale(player).to_engine();
         let mut projected_corners = [Vec4::ZERO; 8];
         let mut behind = 0;
         for (corner, projected) in projected_corners.iter_mut().enumerate() {
@@ -115,8 +116,8 @@ fn opaque_rectangle(players: &[CreatureInstance; 2], clip: Mat4, viewport: UVec4
                 if corner & 2 == 0 { -1.0 } else { 1.0 },
                 if corner & 4 == 0 { -1.0 } else { 1.0 },
             );
-            let point = player.position.truncate()
-                + rotation * (player.opaque_bounds.truncate() * scale * signs);
+            let point = player.position.truncate().to_engine()
+                + rotation * (player.opaque_bounds.truncate().to_engine() * scale * signs);
             *projected = clip * point.extend(1.0);
             behind += usize::from(projected.w <= 0.0);
         }
@@ -158,11 +159,11 @@ mod tests {
     #[test]
     fn creature_bounds_behind_the_camera_do_not_expand_visible_work() {
         let viewport = UVec4::new(0, 0, 3840, 2160);
-        let clip = perspective_infinite_reverse(1.2, 16.0 / 9.0, 0.1);
+        let clip = perspective_infinite_reverse(1.2, 16.0 / 9.0, 0.1).to_engine();
         let mut creature = CreatureInstance {
-            position: vec4(0.0, 0.0, 10.0, 2.0),
-            opaque_bounds: Vec4::ONE,
-            rotation: Vec4::W,
+            position: vec4(0.0, 0.0, 10.0, 2.0).to_scene(),
+            opaque_bounds: Vec4::ONE.to_scene(),
+            rotation: Vec4::W.to_scene(),
             ..default()
         };
         let hidden = opaque_rectangle(&[creature, CreatureInstance::default()], clip, viewport);
@@ -224,57 +225,44 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     let world_from_view = view.world_from_view.to_matrix();
     let world_from_clip = world_from_view * clip_from_view.inverse();
     let position = view.world_from_view.translation();
-    let (rotation, latitude, longitude) = world.planet_frame(position);
-    let mut uniform = ViewUniform {
-        clip_from_world: clip_from_view * world_from_view.inverse(),
-        world_from_clip,
-        prev_clip_from_world: buffer.previous_clip,
-        direction_from_clip_unjittered: Mat4::from_quat(view.world_from_view.rotation())
-            * view.clip_from_view.inverse(),
-        direction_from_clip: Mat4::from_quat(view.world_from_view.rotation())
-            * clip_from_view.inverse(),
-        world_position: position.extend(0.0),
-        planet_center_value: world.local(DVec3::ZERO).extend(0.0),
-        camera_position: vec4(
-            latitude,
-            longitude,
-            world.altitude(position) as f32,
-            buffer.profile as f32,
-        ),
-        planet_rotation: rotation,
-        weather: atmosphere.0,
-        cloud_time: vec4(
-            (time.elapsed_secs() - clouds.time).max(0.0),
-            clouds.time,
-            clouds.clouds.len() as f32,
-            0.0,
-        ),
-        times: vec4(
-            time.elapsed_secs_wrapped(),
-            frame_count.0 as f32,
-            debug.0 as f32,
-            time.delta_secs(),
-        ),
-        ..default()
-    };
+    let mut uniform = camera_uniform(
+        view,
+        clip_from_view,
+        &world,
+        buffer.previous_clip,
+        buffer.profile,
+    );
+    uniform.weather = atmosphere.0.to_scene();
+    uniform.cloud_time = vec4(
+        (time.elapsed_secs() - clouds.time).max(0.0),
+        clouds.time,
+        clouds.clouds.len() as f32,
+        0.0,
+    )
+    .to_scene();
+    uniform.times = vec4(
+        time.elapsed_secs_wrapped(),
+        frame_count.0 as f32,
+        debug.0 as f32,
+        time.delta_secs(),
+    )
+    .to_scene();
     prepare_lighting(&mut uniform, &mut sky);
     buffer.opaque_rect = if uniform.altitude() <= 0.0 {
         view.viewport
     } else {
-        opaque_rectangle(&player.0, uniform.clip_from_world, view.viewport)
+        opaque_rectangle(
+            &player.0,
+            uniform.clip_from_world.to_engine(),
+            view.viewport,
+        )
     };
     let valid = history_valid(&buffer, targets, view, &world, debug.0, atmosphere.0);
     buffer.uniform.clear();
     buffer.uniform.push(FrameUniform {
         view: uniform,
         players: player.0,
-        viewport,
-        volume_size: vec4(
-            targets.trace_size.x as f32,
-            targets.trace_size.y as f32,
-            targets.size.x as f32,
-            targets.size.y as f32,
-        ),
+        viewport: viewport.to_scene(),
     });
     buffer.resolve.clear();
     let profile = buffer.profile;
@@ -297,6 +285,41 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     buffer.frame = frame_count.0;
 }
 
+fn camera_uniform(
+    view: &ExtractedView,
+    clip_from_view: Mat4,
+    world: &WorldData,
+    previous: Mat4,
+    profile: u32,
+) -> ViewUniform {
+    let world_from_view = view.world_from_view.to_matrix();
+    let world_from_clip = world_from_view * clip_from_view.inverse();
+    let position = view.world_from_view.translation();
+    let (rotation, latitude, longitude) = world.planet_frame(position);
+    ViewUniform {
+        clip_from_world: (clip_from_view * world_from_view.inverse()).to_scene(),
+        world_from_clip: world_from_clip.to_scene(),
+        prev_clip_from_world: previous.to_scene(),
+        direction_from_clip_unjittered: (Mat4::from_quat(view.world_from_view.rotation())
+            * view.clip_from_view.inverse())
+        .to_scene(),
+        direction_from_clip: (Mat4::from_quat(view.world_from_view.rotation())
+            * clip_from_view.inverse())
+        .to_scene(),
+        world_position: position.extend(0.0).to_scene(),
+        planet_center_value: world.local(DVec3::ZERO).extend(0.0).to_scene(),
+        camera_position: vec4(
+            latitude,
+            longitude,
+            world.altitude(position) as f32,
+            profile as f32,
+        )
+        .to_scene(),
+        planet_rotation: rotation.to_scene(),
+        ..default()
+    }
+}
+
 fn prepare_cloud_buffers(
     buffer: &mut SceneBuffer,
     clouds: &CloudSnapshot,
@@ -307,9 +330,7 @@ fn prepare_cloud_buffers(
         return;
     }
     buffer.clouds.reserve(clouds.clouds.len(), device);
-    buffer
-        .cloud_grid
-        .reserve(clouds.grid.len().max(8_000_000), device);
+    buffer.cloud_grid.reserve(clouds.grid.len(), device);
     buffer.clouds.clear();
     buffer.cloud_grid.clear();
     for &cloud in clouds.clouds.iter() {
@@ -354,6 +375,7 @@ fn prepare_lighting(uniform: &mut ViewUniform, sky: &mut SkyLookup) {
 }
 
 struct BindGroups {
+    cloud_revision: u64,
     depth: TextureViewId,
     volume: TextureViewId,
     native: [TextureViewId; 2],
@@ -439,7 +461,8 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     };
     let native = [view.main_texture_view(), view.main_texture_other_view()];
     if pipeline.groups.as_ref().is_some_and(|groups| {
-        groups.depth == depth.id()
+        groups.cloud_revision == buffer.cloud_revision
+            && groups.depth == depth.id()
             && groups.volume == targets.color.id()
             && groups.native.contains(&native[0].id())
             && groups.native.contains(&native[1].id())
@@ -472,7 +495,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             &pipeline.ejections,
             &pipeline.column_targets.shape,
             &pipeline.column_targets.columns,
-            &pipeline.ejections,
             &pipeline.froxel.view,
             buffer.clouds.binding().expect("prepared cloud records"),
             buffer.cloud_grid.binding().expect("prepared cloud index"),
@@ -489,10 +511,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             &sky.view,
             &transmittance.texture_view,
         ],
-        [
-            buffer.clouds.binding().expect("prepared cloud records"),
-            buffer.cloud_grid.binding().expect("prepared cloud index"),
-        ],
     );
     let (filter, composite) =
         reconstruction_groups(&pipeline, &device, resolve, targets, depth, native);
@@ -504,7 +522,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         &pipeline.ejections,
         &pipeline.column_targets.shape,
         &pipeline.column_targets.columns,
-        &pipeline.ejections,
     ]
     .map(Clone::clone);
     let medium_sampler = pipeline.repeat_sampler.clone();
@@ -519,6 +536,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         },
     );
     pipeline.groups = Some(BindGroups {
+        cloud_revision: buffer.cloud_revision,
         depth: depth.id(),
         volume: targets.color.id(),
         native: native.map(TextureView::id),
@@ -560,7 +578,6 @@ fn column_group(
     device: &RenderDevice,
     frame: BindingResource<'_>,
     images: [&TextureView; 5],
-    clouds: [BindingResource<'_>; 2],
 ) -> BindGroup {
     device.create_bind_group(
         "column_cache",
@@ -574,8 +591,6 @@ fn column_group(
             images[3],
             images[4],
             &pipeline.ejections,
-            clouds[0].clone(),
-            clouds[1].clone(),
         )),
     )
 }
@@ -600,7 +615,6 @@ fn reconstruction_groups(
                 &targets.history[1 - index],
                 &targets.history_metadata[1 - index],
                 &pipeline.linear_sampler,
-                depth,
             )),
         )
     });
@@ -957,13 +971,12 @@ impl Interfaces {
                 (8, data()),
                 (9, float()),
                 (10, float()),
-                (11, data()),
                 (
-                    12,
+                    11,
                     texture_3d(TextureSampleType::Float { filterable: true }),
                 ),
+                (12, storage_buffer_read_only_sized(false, None)),
                 (13, storage_buffer_read_only_sized(false, None)),
-                (14, storage_buffer_read_only_sized(false, None)),
             ),
         );
         volume.extend_from_slice(&extra);
@@ -971,12 +984,7 @@ impl Interfaces {
         let mut columns = opaque.to_vec();
         columns.extend_from_slice(&BindGroupLayoutEntries::with_indices(
             ShaderStages::FRAGMENT,
-            (
-                (6, float()),
-                (7, data()),
-                (8, storage_buffer_read_only_sized(false, None)),
-                (9, storage_buffer_read_only_sized(false, None)),
-            ),
+            ((6, float()), (7, data())),
         ));
         let filter = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
@@ -988,7 +996,6 @@ impl Interfaces {
                 float(),
                 data(),
                 sampler(SamplerBindingType::Filtering),
-                texture_depth_2d(),
             ),
         );
         let composite = BindGroupLayoutEntries::sequential(
@@ -1065,10 +1072,6 @@ impl PipelineCompiler<'_> {
 }
 
 impl FromWorld for ScenePipeline {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Pipeline descriptors keep shader interfaces and attachment formats together"
-    )]
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
         let cache = world.resource::<PipelineCache>();
@@ -1086,6 +1089,10 @@ impl FromWorld for ScenePipeline {
         let layout =
             |name, entries: &[BindGroupLayoutEntry]| device.create_bind_group_layout(name, entries);
         let compiler = PipelineCompiler { cache, fullscreen };
+        let scene_pipeline =
+            |entry, entries: &[BindGroupLayoutEntry], formats: &[TextureFormat], depth| {
+                compiler.queue(entry, scene_shader.clone(), entry, entries, formats, depth)
+            };
         let opaque_formats = [
             TextureFormat::Rgba16Float,
             TextureFormat::Rg16Float,
@@ -1103,49 +1110,17 @@ impl FromWorld for ScenePipeline {
             column_layout: layout("column_cache", &column_entries),
             filter_layout: layout("volume_temporal", &filter_entries),
             composite_layout: layout("volume_composite", &composite_entries),
-            opaque: compiler.queue(
-                "opaque",
-                scene_shader.clone(),
-                "opaque",
-                &entries,
-                &opaque_formats,
-                true,
-            ),
-            background: compiler.queue(
-                "background",
-                scene_shader.clone(),
-                "background",
-                &entries,
-                &opaque_formats,
-                true,
-            ),
-            volume: compiler.queue(
-                "volume",
-                scene_shader.clone(),
-                "volume",
-                &volume_entries,
-                &volume_formats,
-                true,
-            ),
-            thin: compiler.queue(
-                "transparent",
-                scene_shader.clone(),
+            opaque: scene_pipeline("opaque", &entries, &opaque_formats, true),
+            background: scene_pipeline("background", &entries, &opaque_formats, true),
+            volume: scene_pipeline("volume", &volume_entries, &volume_formats, true),
+            thin: scene_pipeline(
                 "transparent",
                 &volume_entries,
                 &[TextureFormat::Rgba16Float; 3],
                 false,
             ),
-            sky: compiler.queue(
-                "sky",
-                scene_shader.clone(),
-                "sky",
-                &sky_entries,
-                &[TextureFormat::Rgba16Float],
-                false,
-            ),
-            ejection_lookup: compiler.queue(
-                "ejection_lookup",
-                scene_shader.clone(),
+            sky: scene_pipeline("sky", &sky_entries, &[TextureFormat::Rgba16Float], false),
+            ejection_lookup: scene_pipeline(
                 "ejection_lookup",
                 &sky_entries,
                 &[TextureFormat::Rgba32Float],
@@ -1157,9 +1132,7 @@ impl FromWorld for ScenePipeline {
                 TextureFormat::Rgba32Float,
                 "ejection_lookup",
             ),
-            columns: compiler.queue(
-                "column_cache",
-                scene_shader,
+            columns: scene_pipeline(
                 "column_cache",
                 &column_entries,
                 &[TextureFormat::Rgba16Float; 2],

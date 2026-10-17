@@ -69,11 +69,10 @@ pub fn froxel_medium(
     #[spirv(descriptor_set = 0, binding = 6)] ejections: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 7)] shape: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 8)] columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 9)] _unused: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 10)] output: &mut [UVec2],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 11)]
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 9)] output: &mut [UVec2],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 10)]
     cloud_records: &[crate::scene::cloud::Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_grid: &[u32],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 11)] cloud_grid: &[u32],
 ) {
     if id.x >= grid::WIDTH || id.y >= grid::HEIGHT || id.z >= grid::DEPTH {
         return;

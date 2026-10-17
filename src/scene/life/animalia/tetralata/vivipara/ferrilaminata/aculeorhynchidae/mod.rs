@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aculeorhynchus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aculeorhynchidae",
-    english_name: "Spined Beaks",
-    description: "Spined Snouts concentrate their predatory weapon at the front of the head. \
-        Long, rigid snout structures align with a streamlined body and powerful diving flight. \
-        The head and body align during a steep descent, concentrating the force of the strike at the snout.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Aculeorhynchidae",
+    "Spined Beaks",
+    [
+        "Members of this family concentrate their hunting weapon along the front of the head.",
+        "Long, rigid snouts align with narrow bodies and powerful wings to direct force into a short piercing strike.",
+        "Flexible mouth tentacles remain behind the weapon to handle captured food.",
+        "Their hunting depends on approach angle and a clear recovery path rather than on circling contact with prey.",
+        "Open Gardens and the edges of fast wind passages provide the vertical space their body plan requires.",
+    ],
+);

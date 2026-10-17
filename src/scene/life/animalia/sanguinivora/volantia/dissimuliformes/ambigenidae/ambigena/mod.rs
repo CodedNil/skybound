@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod fallax;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ambigena",
-    english_name: "Double-natured One",
-    description: "Double Natured animals imitate the swollen bodies and specialised mouth palps of Sweepers.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Ambigena",
+    "Double-natured One",
+    [
+        "Members of Ambigena are winged fluid feeders that approach larger animals as tolerated grooming companions.",
+        "Their rounded bodies and mouth fringes resemble those of unrelated cleaners sharing the same hosts.",
+        "Debris removal and antiseptic secretions provide a real benefit while concealing the cost of repeated fluid meals.",
+        "The feeding sucker remains inherited from parasitic ancestors, even where the surrounding appendages have become delicate grooming tools.",
+        "Busy herd routes favour this mixed relationship because an animal rejected by one host can quickly try another.",
+    ],
+);

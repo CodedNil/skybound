@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod volitans;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Spinivinea",
-    english_name: "Thorn Vine",
-    description: "Brambles form dense spheres or chains of thorny woody vines that drift independently on strong currents.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Spinivinea",
+    "Thorn Vine",
+    [
+        "Members of Spinivinea grow thorny woody vines into drifting spheres or connected chains.",
+        "Broad leaves supply drag while the branching framework yields slightly to changing currents.",
+        "Mild auric charge strengthens the defensive role of the thorns without making the whole plant tolerant of concentrated aur.",
+        "Interior gaps shelter small animals and retain nutrient-bearing debris.",
+        "Chains can spread across neighbouring streams, but must break or rearrange when the difference in airflow exceeds the strength of living connections.",
+    ],
+);

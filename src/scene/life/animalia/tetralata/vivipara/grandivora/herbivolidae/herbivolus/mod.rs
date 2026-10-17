@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod migratorius;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Herbivolus",
-    english_name: "Plant Flier",
-    description: "Grazers are large, slow-moving herbivores with broad feathered wings and long, soft tongue-like feeding appendages.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Herbivolus",
+    "Plant Flier",
+    [
+        "Members of Herbivolus are broad-winged herbivores that gather suspended plant food with soft mouth tentacles.",
+        "Slow, steady flight keeps the collecting appendages open across a useful portion of the current.",
+        "Social spacing lets many animals feed within the same air column without forming a single exhausted wake.",
+        "Journeys between clear Verdant Gardens and mineral-rich haze supply different parts of their nutritional needs.",
+        "The genus depends on remembered routes and companion recognition rather than the fine pursuit flight of its predatory relatives.",
+    ],
+);

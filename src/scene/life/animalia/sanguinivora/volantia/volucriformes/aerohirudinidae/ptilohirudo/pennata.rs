@@ -10,21 +10,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes, feathers, prepare_pose};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes, feathers, prepare_pose};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 30.4;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ptilohirudo pennata",
-    english_name: "Feathered Leeches",
-    description: "Feathered Leeches are small gliders whose feathered wings support quick approaches and retreats through cloud layers. \
-        Their compact bodies and wide-spectrum vision suit dim aur light and poor visibility. \
-        They attach briefly to feed, then release and glide back into cover. \
-        Clouds provide concealment between these hit-and-run visits.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Ptilohirudo pennata",
+    "Feathered Leeches",
+    [
+        "Feathered Leeches glide along cloud margins on finely fringed wings surrounding a compact body.",
+        "Their vision detects weak aur-lit contrasts, helping them find hosts hidden by mist.",
+        "A quick attachment supplies a fluid meal before they release and return to cover.",
+        "They favour broken cloud edges where passing animals are visible without requiring a long flight through dry air.",
+        "They favour humid cloud pockets on the warmer margins of the equatorial Highlands, avoiding both frozen Shard Peaks and the strongest poleward winds.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 4.5, 5.0, 0);

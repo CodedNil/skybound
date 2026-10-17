@@ -12,21 +12,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 24.7;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Sputator acidus",
-    english_name: "Spitfire Beetles",
-    description: "Spitfire Beetles are small, armoured predators with specialised mouths that launch sticky acidic saliva. \
-        The projected secretion can immobilise prey or corrode a threat before the animal approaches. \
-        Compact wings and gripping mouth palps steady them among vegetation and Weaver structures. \
-        Despite their size, their ability to attack from a distance makes them dangerous to disturb.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Sputator acidus",
+    "Spitfire Beetles",
+    [
+        "Spitfire Beetles are compact, armoured predators that project the adhesive secretion inherited from silk-making ancestors.",
+        "In this branch the secretion remains a sticky acidic droplet, arresting small grazers on a frond or suspended strand.",
+        "Mouth tentacles grip vegetation while the wings brace against recoil and the movement of the target.",
+        "A short attack across a feeding passage avoids the energy cost of chasing prey into open air.",
+        "They often hunt beside Weaver corridors, where concentrated traffic rewards precision but careless discharge can destroy a useful anchor.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 5.0, 5.0).extend(0.0);

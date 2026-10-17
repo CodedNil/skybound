@@ -17,21 +17,23 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::animalia::bullidorsata::caelomorpha::{
     GasChamber, drift_body, ribbons, tissue_distance,
 };
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, smooth_min};
+use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 15.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nubivesica caerulea",
-    english_name: "Cloud Balloons",
-    description: "Cloud Balloons have a rounded, lobed body dominated by large, closely packed gas chambers. \
-        Their translucent pale jade skin is threaded with delicate yellow-green veins and catches pearly reflections from the surrounding sky. \
-        A compact cluster of darker green gelatinous organs sits near the lower centre, above short, broad membranes that taper to curling points. \
-        They drift at high altitude, absorbing algae and plant fragments that adhere to their moist surfaces.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Nubivesica caerulea",
+    "Cloud Balloons",
+    [
+        "Cloud Balloons float on tightly packed gas chambers enclosed by pearly jade skin and delicate yellow-green veins.",
+        "A darker cluster of gelatinous organs sits above short membranes that curl beneath the body.",
+        "These moist folds intercept sparse algae and plant fragments without exposing the extensive ribbons of their lower-altitude relatives.",
+        "They drift mainly through cloud-bearing upper Gardens and Cloud Peaks, avoiding the driest High Drifts.",
+        "As the aur cycle dims they settle into denser air, avoiding the freezing equatorial Shard Peaks where ice can lock their moist folds.",
+    ],
+);
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn animate(c: &mut CreatureInstance) {

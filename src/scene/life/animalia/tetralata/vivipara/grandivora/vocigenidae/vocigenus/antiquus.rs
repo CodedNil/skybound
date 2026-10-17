@@ -11,23 +11,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, eyes, prepare_pose, ribbons, tapered_tail, torso,
-};
+use crate::scene::life::{CreatureInstance, eyes, prepare_pose, ribbons, tapered_tail, torso};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 55.6;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Vocigenus antiquus",
-    english_name: "Old Wise Ones",
-    description: "Old Wise Ones are exceptionally rare and huge, with enormous white fur growths resembling flowing beards. \
-        Their gentle movements and expansive wings give them a slow, stately silhouette. \
-        They consume only Laevensails and kelp, browsing through large floating plant communities. \
-        They belong to an intelligent live-bearing lineage noted for rich vocal communication. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Vocigenus antiquus",
+    "Old Wise Ones",
+    [
+        "Old Wise Ones are rare giants with expansive wings and long white fibres hanging beneath the head like a flowing beard.",
+        "Slow wing strokes and careful use of rising air carry their immense bodies between kelp forests and Laevensails.",
+        "Three pairs of mouth tentacles gather only those soft plants, giving the lineage a narrow dependence on healthy floating forests.",
+        "Rich calls pass between companions long before their pale bodies become visible through the haze.",
+        "Their young develop slowly within a live-bearing social lineage whose journeys preserve access to feeding areas across many aur cycles.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 10.0, 17.0, 5);

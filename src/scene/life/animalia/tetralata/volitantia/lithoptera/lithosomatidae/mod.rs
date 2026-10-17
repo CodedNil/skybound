@@ -8,14 +8,18 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lithosoma;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lithosomatidae",
-    english_name: "Stone Bodies",
-    description: "Dense mineral-crusted herbivores drift through lower currents, feeding on root-stars and mineral-rich growth.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Lithosomatidae",
+    "Stone Bodies",
+    [
+        "Members of this family are mineral-armoured herbivores adapted to the strongest stable currents of the lower Gardens.",
+        "Broad lifting surfaces slow descent rather than supporting the agile flight of lighter tetralates.",
+        "Dense protective tissues permit contact with tough root growth and drifting mineral debris.",
+        "Their dependence on Root-Stars keeps them near the lower edge of inhabited air without granting tolerance of pure aur.",
+        "Reduced updraft during the dim phase makes access to a reliable rising column central to their survival.",
+    ],
+);

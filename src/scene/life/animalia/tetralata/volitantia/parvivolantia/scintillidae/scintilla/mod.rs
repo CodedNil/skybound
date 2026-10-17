@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod scintillans;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Scintilla",
-    english_name: "Spark",
-    description: "Sparkies are tiny, intensely luminous four-winged animals that gather into vast shimmering swarms.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Scintilla",
+    "Spark",
+    [
+        "Members of Scintilla are tiny four-winged herbivores whose bodies emit conspicuous coloured light.",
+        "They gather algae and seeds while following the motion of nearby companions.",
+        "A swarm remains flexible, opening around obstacles and closing again where food becomes concentrated.",
+        "Glowing neighbours remain easier to follow when the aur cycle dims or mineral haze blocks distant contrasts.",
+        "The same signal that holds the group together also attracts predators, favouring constant collective movement.",
+    ],
+);

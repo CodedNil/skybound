@@ -1,3 +1,4 @@
+use crate::math::ToScene;
 use std::f32::consts::TAU;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -35,7 +36,7 @@ impl SkyLookup {
         let direction = view.pole_direction();
         let activity = 0.10 + 0.90 * (0.5 + 0.5 * (view.time() * TAU / 2400.0).cos());
         let horizon = -(1.0 - (PLANET_RADIUS / (PLANET_RADIUS + altitude.max(0.0))).powi(2)).sqrt();
-        view.sky_horizon = vec4(horizon, activity, 0.0, 0.0);
+        view.sky_horizon = vec4(horizon, activity, 0.0, 0.0).to_scene();
         view.pole_color *= activity;
         view.ambient_color *= activity;
         let current = vec3(

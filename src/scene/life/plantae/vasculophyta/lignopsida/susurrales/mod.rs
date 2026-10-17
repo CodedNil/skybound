@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod susurraceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Susurrales",
-    english_name: "Whispering",
-    description: "Whispering plants direct airflow through hollow woody structures. \
-        Their trunks provide lift and stability, while smaller hollow branches turn moving air into varied tones. \
-        Associations with luminous sap-feeding animals add active movement to an otherwise wind-supported plant body.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Susurrales",
+    "Whispering",
+    [
+        "Members of this order organise woody growth around hollow passages that direct moving air.",
+        "Broad trunk openings guide the updraft, while smaller tubular branches release it through apertures of different sizes.",
+        "The resulting tones reveal changes in airflow as well as the shape of the individual plant.",
+        "Vascular sap networks support luminous residents and carry chemical signals between occupied regions.",
+        "Their association with winged sap feeders adds controlled movement to a body whose primary support remains the planetary updraft.",
+    ],
+);

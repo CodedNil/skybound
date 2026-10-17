@@ -12,21 +12,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 11.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Polliniflora nectarifera",
-    english_name: "Blooms",
-    description: "Blooms are delicate flowering plants with layered petals and reservoirs of sweet, aur-rich nectar. \
-        Their flowers attract pollinators that carry pollen between widely separated individuals. \
-        Stored aur gives the tissues healing value for Næ as well as food value for animals. \
-        A buoyant supporting body and flexible stem hold the flower in the current.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Polliniflora nectarifera",
+    "Blooms",
+    [
+        "Blooms hold layered petals around reservoirs of sweet, aur-rich nectar on flexible stems.",
+        "A buoyant body maintains the flower in rising air while the stem yields beneath an approaching Misting.",
+        "Pollen brushes the visitor during feeding and travels onward when the animal leaves for another drifting plant.",
+        "Hygroscopic surfaces supply water, and vascular channels deliver the minerals needed to renew petals and nectar.",
+        "Their healing tissues are valued by Næ, so careful gathering preserves a living resource that also feeds the surrounding pollinator community.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 7.0, 6.0).extend(0.0);

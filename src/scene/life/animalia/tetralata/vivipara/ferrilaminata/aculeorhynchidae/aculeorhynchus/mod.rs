@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod acuminatus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aculeorhynchus",
-    english_name: "Spined Beak",
-    description: "Needlesharks carry a huge needle-like spike on the head of a streamlined four-winged body.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Aculeorhynchus",
+    "Spined Beak",
+    [
+        "Members of Aculeorhynchus are four-winged predators whose forward feeding structures have become rigid piercing weapons.",
+        "A streamlined body aligns behind the head spike during the final approach.",
+        "Separate control of the wing pairs steadies a dive and helps recover altitude after the strike.",
+        "The inherited mouth tentacles remain flexible, retaining and manipulating food after the rigid weapon has done its work.",
+        "This division between striking and handling suits open air where prey cannot be pinned against solid ground.",
+    ],
+);

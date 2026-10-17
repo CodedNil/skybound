@@ -12,21 +12,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule};
+use crate::scene::life::{CreatureInstance, capsule};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 13.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Spinivinea volitans",
-    english_name: "Brambles",
-    description: "Brambles form dense spheres or chains of thorny woody vines that drift independently on strong currents. \
-        Large lotus-shaped leaves catch the updraft and help support the framework. \
-        Thorns carry a mild auric charge that deters large grazers. \
-        Small, resilient animals shelter inside the tangles, while specialised Driftmunchers carefully strip the outer bark and spines.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Spinivinea volitans",
+    "Brambles",
+    [
+        "Brambles form dense spheres and linked chains of woody vines supported by large lotus-shaped leaves.",
+        "Their thorns carry a mild auric charge that discourages most large grazers from pressing into the tangle.",
+        "Small animals use interior gaps as shelter, while Driftmunchers work carefully through bark and spines on the outside.",
+        "Flexible connections let a chain bend around uneven airflow rather than behave as a rigid floating wall.",
+        "Spores establish new tangles as older chains separate, continually changing the passages and refuges inside a Bramble community.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(7.0, 7.0, 7.0).extend(0.0);

@@ -13,21 +13,23 @@ use spirv_std::glam::{Vec3, Vec3Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 17.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Laevivelum laeve",
-    english_name: "Smooth Sails",
-    description: "Smooth Sails are flat, broad, thin aurosynthetic membranes that can reach enormous sizes. \
-        Gentle undulation allows them to ride updrafts while maintaining a wide collecting surface. \
-        Small glands along the edge produce a soft bioluminescent glow. \
-        Overlapping sails shade and cool the air below, and wind-dispersed spores carry new growth to distant currents.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Laevivelum laeve",
+    "Smooth Sails",
+    [
+        "Smooth Sails spread broad, thin aur-collecting membranes almost horizontally through rising air.",
+        "Gentle undulation changes drag and sheds uneven loads of rain before they distort the whole surface.",
+        "Small marginal glands produce a soft glow when the surrounding aur light dims.",
+        "Overlapping sails cool and shelter the air below, creating patches useful to moisture-sensitive organisms.",
+        "Windborne spores establish new membranes, while browsing Old Wise Ones keep mature sails connected to the wider food web.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(11.0, 3.0, 11.0).extend(0.0);

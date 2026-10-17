@@ -8,21 +8,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 19.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Scintilla scintillans",
-    english_name: "Sparkies",
-    description: "Sparkies are tiny, intensely luminous four-winged animals that gather into vast shimmering swarms. \
-        Algae and seeds fuel their brilliant glow, making individual bodies appear as moving points of coloured light. \
-        They are a nuisance to larger animals and Næ settlements but a vital food source for small aerial predators. \
-        Their collective motion produces conspicuous drifting clouds of light.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Scintilla scintillans",
+    "Sparkies",
+    [
+        "Sparkies appear as moving points of intense colour as vast swarms gather algae and suspended seeds.",
+        "Two pairs of quick wings let each animal adjust to its neighbours and to small changes in the feeding current.",
+        "Their light preserves contact through dim aur phases, but also draws Shimmerays and other small-prey hunters.",
+        "Fast growth allows dense swarms to appear around a brief food pulse and disperse before the current empties.",
+        "Such gatherings trouble larger animals and Næ settlements while supplying an essential link between microscopic plant life and aerial predators.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(1.0, 1.0, 2.0).extend(0.0);

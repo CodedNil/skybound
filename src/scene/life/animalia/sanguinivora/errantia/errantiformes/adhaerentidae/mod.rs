@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod adhaerens;
 pub mod fluitans;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Adhaerentidae",
-    english_name: "Clingers",
-    description: "Tenacious Ones specialise in remaining attached to a host after an initial drifting phase. \
-        Low-profile, flexible bodies and strong sucker grips resist airflow and grooming. \
-        Camouflage reflects the place of attachment or the vegetation where juveniles wait for a host.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Adhaerentidae",
+    "Clingers",
+    [
+        "Members of this family are flattened parasites that remain attached after finding a host.",
+        "Flexible bodies and strong suckers resist both airflow and the movements of an animal in flight.",
+        "Their young reach hosts either by drifting freely or by waiting among vegetation visited by grazers.",
+        "Camouflage develops around the surface on which each form waits or feeds.",
+        "Slow feeding and concealment reduce removal, but specialised cleaners keep these parasites from occupying every suitable patch of skin.",
+    ],
+);

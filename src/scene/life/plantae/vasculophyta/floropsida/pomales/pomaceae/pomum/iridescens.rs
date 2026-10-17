@@ -12,21 +12,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::rosette;
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 10.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Pomum iridescens",
-    english_name: "Fruit",
-    description: "Fruit plants drift in fields of large buoyant bodies enclosed by thick iridescent aur-collecting rinds. \
-        The fleshy interior is a primary food source for many animals. \
-        Ripe fruit opens in a gentle burst that releases featherpods. \
-        These feathery seedpods use motile rudders and barbed filaments to catch currents and adhere to fur, allowing larger animals to carry them far from the parent field.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Pomum iridescens",
+    "Fruit",
+    [
+        "Fruit plants gather in loose fields of buoyant bodies covered by thick iridescent rinds.",
+        "The rind collects dispersed aur while vascular channels supply a fleshy interior eaten by many animals.",
+        "At ripeness, the covering opens in a gentle burst rather than a violent discharge that would scatter seeds toward lethal lower air.",
+        "Released featherpods use flexible rudders to adjust drag and barbed filaments to catch fur or sheltered plant growth.",
+        "Animal visitors both consume the crop and carry its descendants between currents, keeping a feeding ground from becoming an isolated lineage.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 6.0, 5.0).extend(0.0);

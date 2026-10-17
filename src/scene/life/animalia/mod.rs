@@ -7,22 +7,25 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, Vec4, vec3};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon};
+use crate::scene::life::CreatureInstance;
 use crate::scene::surface::{Ray, Surface, TraceResult, paired_sheets, trace};
 
 pub mod bullidorsata;
 pub mod sanguinivora;
 pub mod tetralata;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Animalia",
-    english_name: "Animals",
-    description: "Animals obtain chemical energy by digesting organic tissue. \
-        Gas-exchange surfaces and moisture-recovery membranes supply metabolism while conserving water; digestive residues carry unassimilated aur back into the currents. \
-        Porous lineages distribute nutrients locally, while larger active animals use pulsatile transport channels.",
-    rank: Rank::Kingdom,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Kingdom,
+    "Animalia",
+    "Animals",
+    [
+        "Animals obtain usable energy by consuming organic material made by other organisms.",
+        "Porous forms absorb food across wet surfaces, while active lineages gather it into a digestive crop and distribute nutrients through pulsatile channels.",
+        "Moisture-recovery folds conserve water, although sustained flight can still force animals to seek Pondplants or humid currents.",
+        "Lift comes from gas chambers, wings or attachment to another living body, and every lineage must survive the weaker updraft of the dim aur phase.",
+        "Direct exposure to concentrated aur remains lethal except within the carefully limited mist-skimming adaptations of the Nætu lineage.",
+    ],
+);
 
 /// Render the body and wing pairs (span, chord, root Z, opacity).
 pub fn render_wings<const N: usize>(

@@ -27,7 +27,7 @@ pub struct FroxelVolume {
 pub struct FroxelInputs<'a> {
     pub frame: BindingResource<'a>,
     pub sampler: &'a Sampler,
-    pub images: [&'a TextureView; 8],
+    pub images: [&'a TextureView; 7],
     pub clouds: BindingResource<'a>,
     pub grid: BindingResource<'a>,
 }
@@ -49,7 +49,6 @@ impl FroxelVolume {
                 data2(),
                 float2(),
                 float2(),
-                data2(),
                 storage_buffer_sized(false, None),
                 storage_buffer_read_only_sized(false, None),
                 storage_buffer_read_only_sized(false, None),
@@ -103,7 +102,6 @@ impl FroxelVolume {
                 inputs.images[4],
                 inputs.images[5],
                 inputs.images[6],
-                inputs.images[7],
                 self.buffer.as_entire_binding(),
                 inputs.clouds,
                 inputs.grid,

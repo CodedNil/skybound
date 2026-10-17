@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod vittatus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerothallus",
-    english_name: "Air Frond",
-    description: "Kelp grows as long ribbons of fibrous plant material with small gas bladders spaced along its length.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Aerothallus",
+    "Air Frond",
+    [
+        "Members of Aerothallus grow long fibrous strands supported by many spaced gas bladders.",
+        "Broad fronds collect dispersed aur while yielding to changing airflow.",
+        "Distributed lift keeps one damaged bladder from collapsing the entire strand toward the ocean.",
+        "Branches and neighbouring plants can interweave into three-dimensional forests without any rooted foundation.",
+        "These forests provide food, shelter and anchor sites, but must remain flexible enough to survive shifts in the currents carrying them.",
+    ],
+);

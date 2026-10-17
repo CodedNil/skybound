@@ -12,21 +12,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{frond, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 25.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerothallus vittatus",
-    english_name: "Kelp",
-    description: "Kelp grows as long ribbons of fibrous plant material with small gas bladders spaced along its length. \
-        Broad fronds sway around the buoyant strand and collect aur over a large surface. \
-        Balanced lift lets enormous strands spread into expansive, nearly horizontal forests. \
-        These forests feed grazers and Wise Ones while providing attachment sites and sheltered routes through the sky.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Aerothallus vittatus",
+    "Kelp",
+    [
+        "Kelp spreads long fibrous strands through the Gardens, with gas bladders supporting broad aur-collecting fronds at repeated intervals.",
+        "Each strand bends across several neighbouring currents, distributing lift instead of hanging from a single buoyant crown.",
+        "Dense growth interweaves into Jungles whose sheltered interior holds animals, attached plants and Weaver corridors.",
+        "Grazers and Old Wise Ones browse the outer fronds, while broken tissue feeds smaller scavengers downstream.",
+        "Spores establish new floating strands, allowing a forest to spread without a trunk rooted to any permanent surface.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(7.0, 5.0, 17.0).extend(0.0);

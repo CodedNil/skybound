@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod flexilora;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Flexiloraceae",
-    english_name: "Flexible Straps",
-    description: "Spirals attach flexible tendrils to trees or animals and convert repeated wind-driven deformation into chemical energy. \
-        Specialised fibres respond to stretching, bending and twisting. \
-        Broken pieces can establish new growth, making fragmentation both a means of dispersal and a natural consequence of their exposed habitat.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Flexiloraceae",
+    "Flexible Straps",
+    [
+        "Members of this family specialise in flexible tendrils that gather energy from mechanical deformation.",
+        "Their fibres respond to wind-driven stretching, bending and twisting around a living support.",
+        "Coiled growth spreads strain across several contact points while leaving collecting lengths free to move.",
+        "Fragmentation allows broken pieces to establish on another surface rather than requiring a seed-bearing stage.",
+        "They favour active airflow and moving hosts, though the strongest currents can destroy tissue faster than it is renewed.",
+    ],
+);

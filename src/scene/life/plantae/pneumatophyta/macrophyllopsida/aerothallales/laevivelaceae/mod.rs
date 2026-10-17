@@ -7,17 +7,19 @@ pub const BIOLOGY: Biology = Biology {
     ..super::BIOLOGY
 };
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lacufolium;
 pub mod laevivelum;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Laevivelaceae",
-    english_name: "Smooth Sails",
-    description: "Smooth Sails grow broad, thin collecting membranes that float mainly horizontally. \
-        Their spread surfaces create shade and cooler air beneath overlapping plants. \
-        Some retain the flat sail form, while others curve into protective water-holding basins.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Laevivelaceae",
+    "Smooth Sails",
+    [
+        "Members of this family develop broad, thin membranes from the collecting surfaces of floating frond ancestors.",
+        "Drag against rising air carries much of their weight, reducing dependence on bulky gas chambers.",
+        "Flat forms shed water and spread widely, while basin-shaped descendants retain rain within a curved rim.",
+        "Both must balance collecting area against the extra load imposed by wet tissues and visiting animals.",
+        "This shared flexible membrane explains the relationship between open sails and drinking ponds without requiring separate origins for their lifting surfaces.",
+    ],
+);

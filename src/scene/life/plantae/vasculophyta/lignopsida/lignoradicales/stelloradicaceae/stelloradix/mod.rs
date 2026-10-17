@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod pendula;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Stelloradix",
-    english_name: "Star Root",
-    description: "Root-Stars have a buoyant rubbery sphere above a star-shaped cluster of thick fleshy roots.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Stelloradix",
+    "Star Root",
+    [
+        "Members of Stelloradix carry star-shaped clusters of fleshy roots below rubbery buoyant crowns.",
+        "The roots reach into moist lower currents and supply distant tissues through vascular channels.",
+        "Continued aur exposure damages the outer root surfaces, eventually triggering separation before the injury reaches the crown.",
+        "Detached roots retain living tissue that curls into a new gas-bearing body.",
+        "This cycle couples nutrient gathering to vegetative reproduction while keeping established crowns above the lethal ocean.",
+    ],
+);

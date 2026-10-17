@@ -13,22 +13,24 @@ pub const BIOLOGY: Biology = Biology {
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, ellipsoid, eyes, feathers, prepare_pose, smooth_min, tail, torso,
+    CreatureInstance, ellipsoid, eyes, feathers, prepare_pose, smooth_min, tail, torso,
 };
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Crepusculofalx venatrix",
-    english_name: "Duskslicers",
-    description: "Duskslicers are medium-sized predators with camouflage suited to the dusty, dim Mineral Fields. \
-        A bioluminescent lure on the feathered tail draws prey close before bladed wing margins deliver an ambush. \
-        Their muted bodies contrast with the small bright lure. \
-        They also scavenge effectively when active hunting offers little reward. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Crepusculofalx venatrix",
+    "Duskslicers",
+    [
+        "Duskslicers conceal muted bodies in the mineral haze while displaying a small luminous lure on the feathered tail.",
+        "Small animals approaching the apparent feeding signal enter the sweep of sharpened wing margins.",
+        "A brief banking strike captures prey without exposing the whole body in a long chase.",
+        "Mouth tentacles secure the meal, and scavenging provides food when the lure attracts little attention.",
+        "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 5.0, 14.0, 0);

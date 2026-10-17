@@ -17,21 +17,23 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::animalia::bullidorsata::caelomorpha::{
     GasChamber, drift_body, ribbons, tissue_distance,
 };
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, smooth_min};
+use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 25.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Levitans taeniatus",
-    english_name: "Drifters",
-    description: "Drifters have a flattened, leaf-like body with a pointed leading edge and long trailing ribbons. \
-        Several rounded gas chambers surround a darker green cluster of gelatinous organs beneath a translucent yellow-green membrane. \
-        Fine golden veins branch across the body and ribbons, whose thin margins twist into broad loops and taper to delicate curling tips. \
-        They collect algae and plant fragments along their sticky surfaces, adjusting their orientation gently in response to light and airflow.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Levitans taeniatus",
+    "Drifters",
+    [
+        "Drifters carry a translucent yellow-green body ahead of long ribbons traced with golden veins.",
+        "Several rounded gas chambers surround a darker cluster of organs, keeping the pointed front poised in the updraft.",
+        "The ribbons curl through adjacent currents and collect algae and plant fragments on their sticky margins.",
+        "Gentle changes in orientation regulate collection, while folded ribbons reduce strain when the animal crosses a faster stream.",
+        "Their broad altitude range lets them follow suspended food upward during bright aur phases and settle toward richer air as the cycle dims.",
+    ],
+);
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn animate(c: &mut CreatureInstance) {

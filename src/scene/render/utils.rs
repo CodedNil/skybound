@@ -29,24 +29,9 @@ pub struct FilteredNoise<'a, 'b> {
 }
 
 impl FilteredNoise<'_, '_> {
-    pub fn details(&self, p: Vec3, scale: f32) -> Vec4 {
-        self.textures.details.sample_by_lod(
-            *self.textures.sampler,
-            p,
-            (self.lod - 1.0 + scale.log2()).max(0.0),
-        )
-    }
-
     pub fn billows(&self, p: Vec3, scale: f32) -> Vec4 {
         let (a, b) = self.pair(p, scale);
         (a + b) * 0.5
-    }
-
-    pub fn clouds(&self, p: Vec3, scale: f32) -> Vec4 {
-        let (a, b) = self.pair(p, scale);
-        let mut value = (a + b) * 0.5;
-        value.y = (a.x + b.x) * 0.5;
-        value
     }
 
     fn pair(&self, p: Vec3, scale: f32) -> (Vec4, Vec4) {

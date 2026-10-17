@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod gigantea;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Gigantiflora",
-    english_name: "Giant Flower",
-    description: "Gigantaflora produces towering flowers that can approach small trees in height.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Gigantiflora",
+    "Giant Flower",
+    [
+        "Members of Gigantiflora produce oversized flowers supported by substantial buoyant bodies.",
+        "Flexible supply channels feed large nectar reservoirs while broad luminous petals remain visible through humid or hazy air.",
+        "The flower yields around a visitor rather than requiring a stable perch.",
+        "Large pollinators can therefore feed without exhausting the reward immediately.",
+        "This expensive reproductive form ties the genus to rich Gardens with reliable lift and enough separation for long-distance pollen transport to matter.",
+    ],
+);

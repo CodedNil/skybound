@@ -7,17 +7,19 @@ pub const BIOLOGY: Biology = Biology {
     ..super::BIOLOGY
 };
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod floropsida;
 pub mod lignopsida;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Vasculophyta",
-    english_name: "Vessel Plants",
-    description: "Vessel Bearers have internal vascular tissues that move fluids and support larger, more organised bodies. \
-        These networks supply woody stems, hanging roots, flowers and fruit while keeping distant tissues connected. \
-        Hollow structures, buoyant organs and broad leaves support their aerial bodies.",
-    rank: Rank::Phylum,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Phylum,
+    "Vasculophyta",
+    "Vessel Plants",
+    [
+        "Members of this phylum connect distant tissues through internal vascular channels.",
+        "These networks supply flowers, woody supports and hanging roots while exposed surfaces recover water and dissolved minerals from the air.",
+        "Buoyant organs, broad leaves and hollow structures provide support without a rooted ground stage.",
+        "Reproductive branches exchange pollen and package seeds, while other lineages retain spores or reproduce through living fragments.",
+        "Their evolution permits large organised bodies whose specialised regions share resources across distances too great for surface exchange alone.",
+    ],
+);

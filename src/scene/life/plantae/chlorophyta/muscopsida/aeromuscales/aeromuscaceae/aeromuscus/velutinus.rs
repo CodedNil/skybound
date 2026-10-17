@@ -13,21 +13,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 9.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aeromuscus velutinus",
-    english_name: "Air Moss",
-    description: "Air Moss forms dense green velvet-like mats on bark and occasionally on rough-shelled animals. \
-        Fine clustered leaves trap dew and keep the air immediately above the surface moist. \
-        Slow decomposition recycles nutrients within the mat. \
-        These sheltered patches stabilise microclimates and support tiny insects and other animals that would struggle on an exposed host surface.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Aeromuscus velutinus",
+    "Air Moss",
+    [
+        "Air Moss carpets bark and rough animal shells with dense green leaves that hold dew between their tips.",
+        "The mat uses scattered aur light and dissolved nutrients retained from dust and decaying debris.",
+        "Its low profile keeps most growth within the sheltered air close to a moving host.",
+        "Tiny animals find moisture and refuge among the leaves, while slow decomposition returns their waste to the plant.",
+        "Detached pieces can start another patch, making close passages between living communities important opportunities for dispersal.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 3.0, 5.0).extend(0.0);

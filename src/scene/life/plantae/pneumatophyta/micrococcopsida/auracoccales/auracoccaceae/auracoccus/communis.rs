@@ -11,23 +11,25 @@ use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{
     Material, Ray, Shell, Surface, TraceResult, trace_material, visit_shell_material,
 };
 
 pub const RENDER_RADIUS: f32 = 0.00035;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Auracoccus communis",
-    english_name: "Algae",
-    description: "Algae are diverse microscopic plants suspended as individual particles in the updraft. \
-        Their small rounded cells synthesise energy from collected aur and multiply rapidly through asexual division. \
-        Budding and dividing cells form the smallest visible growth stages. \
-        They are a primary food source for filter feeders and accumulate on sticky animals, membranes and plant surfaces.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Auracoccus communis",
+    "Algae",
+    [
+        "Algae drift as minute rounded cells through air carrying diluted aur and moisture.",
+        "Individual cells collect energy and divide rapidly, allowing a suitable current to fill with food for larger organisms.",
+        "Small size keeps exchange distances short and lets the updraft carry them without a specialised lifting organ.",
+        "Sticky animal folds and plant membranes intercept them, concentrating microscopic growth into meals.",
+        "Only brief, resilient blooms reach the Veiland boundary, where the same energy source becomes too intense for sustained ordinary growth.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(0.0002, 0.0002, 0.0002).extend(0.0);

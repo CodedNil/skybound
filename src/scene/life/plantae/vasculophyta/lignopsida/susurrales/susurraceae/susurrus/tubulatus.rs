@@ -18,22 +18,23 @@ use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, plantae};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 32.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Susurrus tubulatus",
-    english_name: "Whisperwood",
-    description: "Whisperwood is a rare tree with a huge upright hollow trunk, wider at the base, that channels air for lift and stability. \
-        Bamboo-like ridges strengthen the cylinder, and hollow branches end in small openings that whistle at different pitches. \
-        Delicate fan leaves spread around the branches. \
-        Glowgnomes live in the wood, receiving sap and shelter while providing light and active movement. \
-        Six vertical sap veins carry pheromone requests to groups on different sides, allowing the tree to seek favourable climates or evade danger.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Susurrus tubulatus",
+    "Whisperwood",
+    [
+        "Whisperwood rises around a broad-based hollow trunk whose ridged walls guide the updraft through the body.",
+        "Tubular branches end in apertures that whistle at different pitches, surrounding delicate fan leaves with an audible record of the passing air.",
+        "Glowgnomes occupy sheltered wood cavities and receive sap while providing light and collective pulling force.",
+        "Six vertical sap veins carry pheromone requests to groups on different sides, allowing gradual movement toward favourable humidity or away from danger.",
+        "The partnership preserves lift and living support without roots, making an old tree a navigable refuge that travels with its inhabitants.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(13.0, 22.0, 13.0).extend(0.0);

@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod herbivolus;
 pub mod umbravola;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Herbivolidae",
-    english_name: "Plant Fliers",
-    description: "These large aerial feeders combine substantial bodies with broad feathered appendages and sensitive responses to air currents. \
-        Herbivorous branches gather plant material with soft feeding structures, while scavenging relatives search widely for carcasses. \
-        Communication and repeated journeys link feeding areas that are far apart in the sky.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Herbivolidae",
+    "Plant Fliers",
+    [
+        "Members of this family are large, live-bearing animals with broad wings and finely controlled mouth tentacles.",
+        "Herbivorous branches gather suspended algae, while scavenging branches search for the remains of larger prey.",
+        "Both depend on economical travel between food concentrations scattered through the Gardens.",
+        "Sensitivity to airflow and long-distance communication help companions find routes and share feeding opportunities.",
+        "Their common flight economy explains the relationship between pale herd grazers and the dark scavengers that follow other animals' journeys.",
+    ],
+);

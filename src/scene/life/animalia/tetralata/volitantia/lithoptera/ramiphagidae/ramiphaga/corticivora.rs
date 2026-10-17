@@ -9,21 +9,23 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, tapered_tail};
+use crate::scene::life::{CreatureInstance, ellipsoid, tapered_tail};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 26.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ramiphaga corticivora",
-    english_name: "Driftmunchers",
-    description: "Driftmunchers are slow, armoured herbivores with strong crushing mandibles and compact supporting wings. \
-        They feed on Bramble bark and thorns, carefully stripping the outer layers of each sphere. \
-        Their sturdy bodies tolerate contact with woody, defensive vegetation. \
-        By processing material that softer grazers cannot eat, they return nutrients locked in tough plant tissues to the wider ecosystem.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Ramiphaga corticivora",
+    "Driftmunchers",
+    [
+        "Driftmunchers brace compact wings around an armoured body while crushing the bark and thorns of drifting Brambles.",
+        "Reinforced mandibles work beside the inherited mouth appendages, which hold a branch without functioning as walking limbs.",
+        "They strip outer growth in small patches so that feeding does not immediately destroy the framework supporting them.",
+        "Protective tissues tolerate brief contact with charged spines, but the soft underside remains vulnerable during a careless turn.",
+        "Their feeding opens resistant woody nutrients to smaller scavengers and leaves sheltered gaps used by other inhabitants of the tangle.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 5.0, 7.0).extend(0.0);

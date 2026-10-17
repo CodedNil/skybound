@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lithosomatidae;
 pub mod ramiphagidae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lithoptera",
-    english_name: "Stone Wings",
-    description: "Broad Stone animals have dense bodies, heavy armour and strong feeding structures. \
-        Wide wings slow their descent through the updraft. \
-        They concentrate around tough plants and mineral-rich currents, where slow movement is compatible with a demanding herbivorous diet.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Lithoptera",
+    "Stone Wings",
+    [
+        "Members of this order are egg-laying tetralates with reinforced feeding structures and substantial protective coverings.",
+        "Broad wings counter the weight of armour, trading speed for controlled movement around resistant vegetation.",
+        "Mineral-crusted forms exploit lower root communities, while smaller woody grazers work through Bramble tangles.",
+        "Both retain the ancestral pair of mouth appendages, modified to secure food against a dense body.",
+        "Their evolutionary investment in protection and crushing distinguishes them from the lighter particle feeders and pollinators of the same class.",
+    ],
+);

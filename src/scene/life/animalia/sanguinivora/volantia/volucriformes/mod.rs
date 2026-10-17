@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aerohirudinidae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Volucriformes",
-    english_name: "Flyers",
-    description: "These winged leeches move between hosts during repeated short feeding visits. \
-        Their lightweight bodies and broad lifting surfaces support hovering, gliding and rapid withdrawal. \
-        Feeding grounds and cloud layers provide both cover and a supply of potential hosts.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Volucriformes",
+    "Flyers",
+    [
+        "Members of this order use a single pair of wings to make short, repeated feeding visits.",
+        "The inherited sucker secures a temporary grip while the wings follow the movement of a passing host.",
+        "Hovering and gliding branches exploit different kinds of cover around feeding grounds and clouds.",
+        "Their feeding strategy favours rapid withdrawal over permanent attachment or the reassuring disguises of other winged parasites.",
+        "Moisture and host density limit how long they can remain between visits, tying their movements to inhabited portions of the sky.",
+    ],
+);

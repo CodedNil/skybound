@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lithoptera;
 pub mod parvivolantia;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Volitantia",
-    english_name: "Flutterers",
-    description: "Flutterers retain conspicuous paired wings and comparatively simple aerial feeding strategies. \
-        Small forms flutter between food particles and flowers, while dense relatives use broad surfaces to slow their descent. \
-        Their appearance ranges from brilliant light and stained-glass membranes to mineral armour.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Volitantia",
+    "Flutterers",
+    [
+        "Members of this class retain the egg-laying life cycle and two wing pairs of early Tetralata.",
+        "A single ancestral pair of mouth appendages has diversified for collecting particles, visiting flowers or crushing tough vegetation.",
+        "Lightweight branches flutter between small food sources, while dense armoured branches use broad surfaces to slow descent.",
+        "Their eggs depend on sheltered living vegetation or other protected aerial attachments rather than terrestrial nesting sites.",
+        "The class shares this reproductive and anatomical foundation despite striking differences in adult weight, armour and luminosity.",
+    ],
+);

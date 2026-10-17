@@ -8,14 +8,18 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lucerna;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lucernidae",
-    english_name: "Lamps",
-    description: "Luminous four-winged filter feeders migrate vertically through the sky, gathering suspended nutrients and small luminous prey.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Lucernidae",
+    "Lamps",
+    [
+        "Members of this family are elongated, luminous filter feeders descended from small four-winged scavengers.",
+        "Broad wings and trailing tissues expand the volume of air sampled during a slow feeding pass.",
+        "Mouth appendages gather microscopic organic food, while emitted light attracts small prey into the same flow.",
+        "Vertical migration follows changes in food concentration and updraft strength through the aur cycle.",
+        "Their lower feeding journeys approach the Veilands without granting the tolerance of concentrated aur found in Nætu.",
+    ],
+);

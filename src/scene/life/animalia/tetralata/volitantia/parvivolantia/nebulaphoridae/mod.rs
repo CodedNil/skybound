@@ -8,14 +8,18 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod nebulaphora;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nebulaphoridae",
-    english_name: "Mistings",
-    description: "Large docile pollinators travel between floating flowers on broad translucent membrane wings.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Nebulaphoridae",
+    "Mistings",
+    [
+        "Members of this family are gentle nectar feeders with broad translucent membrane wings.",
+        "The two wing pairs hold a slow approach beside a flower whose stem may be moving in another current.",
+        "Flexible mouth appendages reach nectar while the body brushes pollen-bearing tissues.",
+        "Coloured membranes and fine veins remain visible in scattered aur light, helping nearby animals recognise a visiting pollinator.",
+        "Their journeys connect isolated flowers across gaps that pollen alone would rarely cross.",
+    ],
+);

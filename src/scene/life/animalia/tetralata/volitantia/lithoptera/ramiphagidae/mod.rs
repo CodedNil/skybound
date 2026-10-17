@@ -7,14 +7,18 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod ramiphaga;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ramiphagidae",
-    english_name: "Branch Eaters",
-    description: "Armoured herbivores strip tough woody plant tissue with reinforced feeding structures.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Ramiphagidae",
+    "Branch Eaters",
+    [
+        "Members of this family are armoured herbivores with reinforced mouth structures for woody plant tissue.",
+        "Compact wings hold the body close to a drifting framework while the feeding appendages secure a short-lived grip.",
+        "Tough outer coverings reduce damage from charged thorns and scraping branches.",
+        "Their feeding opens plant material that softer grazers cannot use, releasing nutrients through fragments and waste.",
+        "Dependence on woody vegetation makes dense Bramble communities more suitable than open columns of suspended algae.",
+    ],
+);

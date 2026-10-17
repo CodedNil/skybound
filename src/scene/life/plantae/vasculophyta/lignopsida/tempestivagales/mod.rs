@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod tempestivagaceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Tempestivagales",
-    english_name: "Storm Wanderers",
-    description: "Lightning Strikers harvest electrical energy in storm-prone air. \
-        Woody supporting structures carry broad sails that reposition the plant between charging opportunities. \
-        Their movements link energy collection to the changing location of storms.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Tempestivagales",
+    "Storm Wanderers",
+    [
+        "Members of this order are woody vascular plants specialised for electrical energy in storm-bearing air.",
+        "Collecting veins connect exposed membranes to storage tissues protected within the supporting body.",
+        "Broad sails alter drag so that changing currents carry the plant toward or away from a developing storm.",
+        "This energy source rewards intermittent charging rather than constant exposure to the brightest aur-lit air.",
+        "Their strengthened structure shares the foundation of other woody plants, while their collecting tissues and drift responses define a separate storm-adapted branch.",
+    ],
+);

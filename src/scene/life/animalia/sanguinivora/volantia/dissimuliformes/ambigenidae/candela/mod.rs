@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lucens;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Candela",
-    english_name: "Candle",
-    description: "Little Candles are luminous descendants of parasites whose association with plants has become mutualistic. \
-        Small bodies fit into sheltered cavities, and their light helps their plant hosts attract pollinators. \
-        Sap carries both nutrients and signals that coordinate the animals' activity.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Candela",
+    "Candle",
+    [
+        "Members of Candela are luminous sap feeders whose association with woody hosts has become mutualistic.",
+        "Their small bodies fit within cavities that protect them from drying, predators and the strongest crosswinds.",
+        "Sap carries both their food and the chemical signals that coordinate groups around the host.",
+        "A single pair of wings can produce useful collective force when many animals respond together.",
+        "Light, controlled feeding and coordinated movement distinguish this lineage from relatives that only disguise the cost of parasitism.",
+    ],
+);

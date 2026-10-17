@@ -1,11 +1,15 @@
 use core::f32::consts::{PI, TAU};
-use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3, vec4};
+use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use super::biology::{Anatomy, Biology, Reproduction};
+use super::biology::Biology;
+#[cfg(not(target_arch = "spirv"))]
+use super::biology::{Anatomy, Reproduction};
 use super::{CreatureInstance, ellipsoid, smooth_min};
 use crate::scene::surface::{Material, Ray, Surface, TraceResult, trace_material};
+#[cfg(not(target_arch = "spirv"))]
+use spirv_std::glam::vec4;
 
 pub const DAY: f32 = 86_400.0;
 

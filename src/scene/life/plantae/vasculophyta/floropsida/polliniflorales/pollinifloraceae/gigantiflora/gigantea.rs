@@ -10,21 +10,23 @@ pub const BIOLOGY: Biology = Biology {
 use spirv_std::glam::{Vec3, vec3};
 
 use crate::scene::life::plantae::{frond, rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, plantae};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 30.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Gigantiflora gigantea",
-    english_name: "Giant Blooms",
-    description: "Gigantaflora produces towering flowers that can approach small trees in height. \
-        Extensive luminous petals surround large nectar reservoirs with a faint internal glow. \
-        The scale of these flowers attracts large pollinators that cannot feed efficiently from smaller Blooms. \
-        They thrive in fertile aur-rich areas where stable currents can support their substantial flowering bodies.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Gigantiflora gigantea",
+    "Giant Blooms",
+    [
+        "Giant Blooms raise luminous flowers that approach the height of small trees above buoyant supporting bodies.",
+        "Broad petals surround deep nectar reservoirs supplied through flexible vascular tissues.",
+        "Their scale rewards large visitors whose energy needs cannot be met efficiently by ordinary Blooms.",
+        "Slow, steady currents in fertile aur-rich Gardens support the heavy flowering structures and reduce damage during feeding.",
+        "A rare successful visit can carry pollen across a large gap, making dependable attraction more useful than producing many tiny flowers.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(14.0, 20.0, 14.0).extend(0.0);

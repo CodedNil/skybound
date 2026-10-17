@@ -91,7 +91,11 @@ fn circulation(up: Vec3, cyclones: &[Cyclone]) -> (Vec3, f32, f32) {
     let mut convergence = 0.0f32;
     let mut arms = 0.0f32;
     for storm in cyclones {
-        let delta = storm.center - up * up.dot(storm.center);
+        let cosine = up.dot(storm.center);
+        if cosine <= 0.0 {
+            continue;
+        }
+        let delta = storm.center - up * cosine;
         let distance = delta.length() * PLANET_RADIUS;
         if distance > storm.radius * 3.0 || distance < 1.0 {
             continue;
@@ -390,6 +394,20 @@ impl PlanetWeather {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cyclones_do_not_affect_the_opposite_side_of_the_planet() {
+        let storm = Cyclone {
+            center: vec3(0.8, 0.0, 0.6),
+            radius: 200_000.0,
+            intensity: 1.0,
+            phase: 0.0,
+        };
+        let nearby = (storm.center + Vec3::Y * 0.03).normalize();
+        assert!(circulation(nearby, &[storm]).1 > 0.1);
+        let opposite = -nearby;
+        assert_eq!(circulation(opposite, &[storm]), circulation(opposite, &[]));
+    }
+
     #[test]
     fn regional_weather_creates_clear_zones_and_concentrates_cloud_births() {
         let planet = PlanetWeather::new(17, 0.0);

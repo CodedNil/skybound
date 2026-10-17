@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod errantiformes;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Errantia",
-    english_name: "Wanderers",
-    description: "Wanderers spend their unattached lives being carried between potential hosts by wind or floating vegetation. \
-        Their soft, elongated bodies favour concealment and secure attachment over powered flight. \
-        Once a suitable host is reached, many settle permanently and alter their appearance to match it.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Errantia",
+    "Wanderers",
+    [
+        "Members of this class retain the soft bodies and attachment organs of the ancestral fluid-feeding lineage.",
+        "They lack the powered wings of their more mobile relatives and depend on wind or living carriers for transport.",
+        "Concealment protects the unattached stage, while a sucker or internal invasion secures access to food.",
+        "Many forms settle permanently once a suitable host is reached, investing in close attachment instead of further travel.",
+        "Their distribution follows animal traffic through the Gardens more closely than it follows aur brightness alone.",
+    ],
+);

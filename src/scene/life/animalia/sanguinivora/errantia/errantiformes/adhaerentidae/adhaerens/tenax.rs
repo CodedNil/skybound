@@ -9,21 +9,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 20.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Adhaerens tenax",
-    english_name: "Attached Ones",
-    description: "Attached Ones begin as windborne leeches and settle permanently when they encounter an animal. \
-        Their flattened, segmented bodies fit close to the host, and their exterior develops colours and patterns resembling its fur. \
-        A broad sucker maintains contact while they draw fluids slowly. \
-        Air currents carry unattached juveniles between potential hosts.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Adhaerens tenax",
+    "Attached Ones",
+    [
+        "Attached Ones begin as flattened, segmented juveniles carried between animals by the updraft.",
+        "A broad sucker secures the first suitable host and becomes the centre of a permanent feeding attachment.",
+        "As the body grows, its colours and surface texture resemble the host's fur, concealing the parasite from casual grooming.",
+        "Small, sustained meals limit the disturbance that would provoke removal or attract Sweepers.",
+        "Dense herds and shared drinking sites offer the young better chances of attachment than the sparse air between feeding communities.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(1.2, 1.0, 4.0).extend(0.0);

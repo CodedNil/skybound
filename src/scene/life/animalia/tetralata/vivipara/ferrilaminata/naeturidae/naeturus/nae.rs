@@ -15,23 +15,23 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose, smooth_min};
+use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, smooth_min};
 use crate::scene::surface::{Hit, Material, Ray, Surface, TraceResult, trace_material};
 
 pub const RENDER_RADIUS: f32 = 3.2;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nae",
-    english_name: "Næ",
-    description: "Næ are small, intelligent, four-winged animals with pear-shaped bodies, swept feather crests and long gripping tails. \
-        Eight sensitive oral tentacles emerge around the mouth and throat; the longest pair reaches outward to hold tools while shorter pairs stabilise objects and guide food into the digestive crop. \
-        Fine sensory pads and independently controlled tips allow delicate craftwork. \
-        Moisture-recovery folds and compact breathing channels support short flights. \
-        Isolated aur sacs recharge in the Veiland mists and supply their magical abilities. \
-        Families live with bonded Nætu, tending their companions and building sheltered homes on their backs.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Nae",
+    "Næ",
+    [
+        "Næ are small, intelligent four-winged animals with pear-shaped bodies, swept crests and long gripping tails.",
+        "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs, with long outer tips holding tools while shorter tips steady objects and guide food.",
+        "Moisture-recovery folds support short flights, although active travel still requires drinks from living basins.",
+        "Isolated aur sacs support their magical abilities and are replenished through the protected life they share with bonded Nætu.",
+        "Families groom their companions, tend sheltered homes among dorsal fibres and navigate between drifting communities by currents and the distant polar beams.",
+    ],
+);
 
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 0.45, 1.5, 0);

@@ -9,21 +9,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose, ribbons};
+use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, ribbons};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 26.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Fluitans crypticus",
-    english_name: "Floating Ones",
-    description: "Floating Ones are born among aerial kelp mats, with green-brown colours and thin lateral folds that resemble surrounding vegetation. \
-        Their soft trailing folds sway with the kelp, concealing the body among its fronds. \
-        They wait for a feeding creature to brush past, attach with a sucker and remain on that host permanently. \
-        Dispersal is carried by the wind and the movement of their nursery mats.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Fluitans crypticus",
+    "Floating Ones",
+    [
+        "Floating Ones begin life among kelp, where green-brown bodies and swaying lateral folds blend with the fronds.",
+        "Instead of searching open air, they wait in the narrow spaces through which feeding animals draw vegetation.",
+        "A passing grazer brings the sucker within reach, allowing the parasite to leave the plant and settle permanently on the host.",
+        "The trailing folds then lie against the new surface, reducing drag during travel.",
+        "Dense Jungles favour this ambush life cycle, while the movement of kelp mats carries unattached young into new feeding routes.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 4.5, 9.0, 2);

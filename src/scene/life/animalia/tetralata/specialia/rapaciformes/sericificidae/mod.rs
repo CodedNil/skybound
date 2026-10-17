@@ -7,15 +7,19 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod sericifex;
 pub mod sputator;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Sericificidae",
-    english_name: "Silk Makers",
-    description: "Silk-making predators anchor aerial webs between drifting plants. Oral palps manipulate silk, captured prey and nesting material.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Sericificidae",
+    "Silk Makers",
+    [
+        "Members of this family produce adhesive feeding secretions handled by muscular mouth tentacles.",
+        "In the silk-building branch, the secretion becomes tensioned strands stretched between independently drifting plants.",
+        "More mobile relatives project a sticky acidic form that restrains prey without constructing a lasting trap.",
+        "Both branches use controlled wing strokes to compensate for moving anchors and sudden changes in current.",
+        "The family flourishes where plants funnel small grazers through narrow feeding passages, especially within the intertwined Jungles.",
+    ],
+);

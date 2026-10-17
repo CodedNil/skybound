@@ -10,23 +10,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, eyes, gills, prepare_pose, smooth_min, tail, torso,
-};
+use crate::scene::life::{CreatureInstance, eyes, gills, prepare_pose, smooth_min, tail, torso};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ferrispina custos",
-    english_name: "Iron Spined Guardians",
-    description: "Iron Spined Guardians are a nursery-guarding species of Shredder, with a robust serpentine body and conspicuous spinal blades. \
-        They retain the fast banking flight and cutting attacks of their genus. \
-        Their presence around nursery zones discourages approaching threats. \
-        A heavier silhouette and guarded movements distinguish them from the more roaming forms of Ferrispinae. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Ferrispina custos",
+    "Iron Spined Guardians",
+    [
+        "Iron Spined Guardians are heavy-bodied Shredders that remain near communal nursery currents.",
+        "Conspicuous spinal blades and repeated banking patrols discourage predators from approaching slowly developing young.",
+        "Their attacks retain the sweeping motion of roaming relatives, but begin from a defended area rather than a prolonged pursuit.",
+        "Vocal exchanges and the motion of nearby adults help maintain a loose moving boundary around the nursery.",
+        "The nursery travels with a suitable current, so protection depends on recognising companions rather than defending a fixed place.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 6.0, 14.0, 0);

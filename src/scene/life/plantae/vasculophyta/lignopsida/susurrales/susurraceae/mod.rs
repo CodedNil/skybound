@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod susurrus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Susurraceae",
-    english_name: "Whispers",
-    description: "Whispers grow hollow, ridged trunks and tubular branches with delicate fan leaves. \
-        Air moving through branch openings produces individual whistles, creating an audible signature for each tree. \
-        Sap networks also carry signals to resident Glowgnomes, whose coordinated wing movements help the host reposition.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Susurraceae",
+    "Whispers",
+    [
+        "Members of this family grow ridged hollow trunks and tubular branches with delicate fan leaves.",
+        "Airflow through branch openings produces a changing whistle pattern that reflects both anatomy and current strength.",
+        "Sap channels supply tissues around the hollow core without filling the lifting passage.",
+        "Resident Glowgnomes use the sheltered wood and respond to chemical signals carried through those channels.",
+        "Their combined wing force helps the tree adjust its position, making a living partnership part of the family's control of drift.",
+    ],
+);

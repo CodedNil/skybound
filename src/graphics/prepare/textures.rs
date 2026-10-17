@@ -11,6 +11,7 @@ use rayon::prelude::*;
 use skybound::scene::atmosphere::{TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
 use skybound::scene::climate::{WEATHER_SIZE, weather_texel};
 use skybound::scene::noise::{cellular, fbm};
+use spirv_std::glam::{Vec3, vec2, vec3};
 
 #[derive(Resource, ExtractResource, Clone)]
 #[extract_app(RenderApp)]

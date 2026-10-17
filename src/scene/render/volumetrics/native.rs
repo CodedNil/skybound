@@ -38,7 +38,6 @@ fn cloud_density(
 fn guidance(
     uv: Vec2,
     distance: f32,
-    _view: &ViewUniform,
     textures: &Textures,
     field: &Image!(3D, type=f32, sampled=true),
 ) -> Vec4 {
@@ -133,7 +132,7 @@ pub fn integrate(
         }
         if inside_ocean {
             let altitude = point.length() - PLANET_RADIUS;
-            let clearance = guidance(uv, t, view, textures, field).w;
+            let clearance = guidance(uv, t, textures, field).w;
             if clearance < 64.0 {
                 curve = textures.ejection_field(
                     crate::scene::planet::surface_coordinates(point),
@@ -214,8 +213,7 @@ pub fn integrate(
                     grid,
                 );
                 let shadow = 0.4 + 0.6 * (-near * 1800.0).exp();
-                scattering +=
-                    guidance(uv, distance, view, textures, field).xyz() * density * shadow;
+                scattering += guidance(uv, distance, textures, field).xyz() * density * shadow;
             }
         }
         if inside_ocean {
@@ -232,8 +230,9 @@ pub fn integrate(
                     super::VolumeSample::default()
                 }
             } else {
-                let cached = super::super::cache::sample(sample_point, view, footprint, textures);
-                let (wave, normal, palette) = if let Some((shape, palette)) = cached {
+                let (shape, palette) =
+                    super::super::cache::sample(sample_point, view, footprint, textures);
+                let (wave, normal, palette) = if palette.w > 0.0 {
                     (shape.x * 4096.0, shape.yzw().normalize(), palette)
                 } else {
                     (

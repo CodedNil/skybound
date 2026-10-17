@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod grave;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lithosoma",
-    english_name: "Stone Body",
-    description: "Grounders are massive, mineral-crusted herbivores with rocky hides and broad lifting surfaces.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Lithosoma",
+    "Stone Body",
+    [
+        "Members of Lithosoma are dense herbivores whose outer tissues accumulate a protective mineral crust.",
+        "Broad wings act mainly as brakes against descent, with strong regional updrafts carrying much of the body's weight.",
+        "Mouth structures gather Root-Star tissue from below while the animal avoids the mist into which the plant's roots extend.",
+        "Their heavy form tolerates rough vegetation but limits movement across weak or sharply sheared currents.",
+        "Feeding and mineral replenishment therefore keep them close to dependable lower-Garden air columns.",
+    ],
+);

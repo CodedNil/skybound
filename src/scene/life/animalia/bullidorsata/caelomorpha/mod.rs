@@ -3,7 +3,7 @@ use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, smooth_min};
+use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 use crate::scene::surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material};
 
 pub mod aerogigantiformes;
@@ -356,15 +356,18 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
     }
 }
 
-pub const TAXON: Taxon = Taxon {
-    name: "Caelomorpha",
-    english_name: "Sky Forms",
-    description: "Sky Shapes are buoyant sponge-like animals whose bodies range from rounded balloons and ribbon-bearing leaves to enormous arched canopies. \
-        Translucent skins enclose multiple gas chambers and a lobed mass of gelatinous organs. \
-        Their wet surfaces collect algae and plant debris as they drift with the updraft.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Caelomorpha",
+    "Sky Forms",
+    [
+        "Members of this class are porous, buoyant animals with translucent skins surrounding gas chambers and gelatinous organs.",
+        "Their bodies range from rounded balloons to ribbon-bearing leaves and immense arched canopies.",
+        "Food adheres to moist surfaces and passes into absorptive tissues, leaving no need for a grasping mouth.",
+        "Changes in chamber inflation and exposed surface area control drift and orientation rather than sustained powered flight.",
+        "Different arrangements of the same chambers and feeding folds divide the class between sparse high currents and richer lower Gardens.",
+    ],
+);
 
 #[cfg(test)]
 mod tests {

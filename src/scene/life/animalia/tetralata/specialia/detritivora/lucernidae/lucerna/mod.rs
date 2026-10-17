@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod undulata;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lucerna",
-    english_name: "Lamp",
-    description: "Shimmerays are long, softly bioluminescent drifters with broad wings and trailing structures.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Lucerna",
+    "Lamp",
+    [
+        "Members of Lucerna are long filter feeders with broad wings and softly luminous trailing surfaces.",
+        "Their mouth appendages gather suspended organic particles while the wings hold the body across a useful feeding current.",
+        "Light attracts small luminous prey, supplementing the sparse material available in open air.",
+        "They rise during the bright aur phase and descend toward richer lower currents when the forty-minute cycle dims.",
+        "These repeated vertical journeys let a single body plan exploit food layers that move as the updraft changes.",
+    ],
+);

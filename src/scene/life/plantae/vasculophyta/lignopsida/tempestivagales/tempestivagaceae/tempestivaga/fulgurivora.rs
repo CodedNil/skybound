@@ -13,21 +13,23 @@ use core::f32::consts::FRAC_PI_2;
 use spirv_std::glam::{Vec3, vec3};
 
 use crate::scene::life::plantae::{leaf, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, plantae};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 20.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Tempestivaga fulgurivora",
-    english_name: "Stormchasers",
-    description: "Stormchasers are sail-bearing woody plants common in electrically active regions. \
-        They sense approaching storms, position themselves to capture lightning energy and then use their sails to move onward. \
-        Broad upright membranes surround a narrow supporting body, with energy travelling through collecting veins. \
-        Their arrival is a warning that storm conditions may soon follow.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Tempestivaga fulgurivora",
+    "Stormchasers",
+    [
+        "Stormchasers carry broad upright sails around a slender woody body strengthened for turbulent air.",
+        "Electrical changes in an approaching storm trigger adjustments that expose collecting veins while altering the plant's drift.",
+        "Captured discharge passes into protected storage tissues, providing energy between charging opportunities.",
+        "After a storm passes, changed sail orientation carries the plant onward rather than leaving it permanently in the most violent air.",
+        "Their gathering is a warning of electrical activity, especially where humid geyser-fed currents meet stronger poleward winds.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(10.0, 12.0, 10.0).extend(0.0);

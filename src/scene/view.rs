@@ -38,7 +38,6 @@ pub struct FrameUniform {
     pub view: ViewUniform,
     pub players: [CreatureInstance; 2],
     pub viewport: Vec4,
-    pub volume_size: Vec4,
 }
 
 impl ViewUniform {
