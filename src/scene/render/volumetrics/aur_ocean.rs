@@ -1,9 +1,9 @@
-use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
+use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use spirv_std::num_traits::Float;
 
 use super::VolumeSample;
-use crate::scene::aur::{CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH};
-use crate::scene::math::{cube, fourth, square};
+use crate::scene::aur::{CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH, energy_color};
+use crate::scene::math::{cube, square};
 use crate::scene::render::utils::Textures;
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
@@ -38,7 +38,7 @@ pub(crate) fn wave_base(position: Vec3, time: f32, footprint: f32, textures: &Te
     (broad - 0.5) * 4200.0 + (folds - 0.5) * 3300.0 - 120.0
 }
 
-/// Keep fine relief separate from the broad gradients used for illumination.
+/// Fine relief changes the volume boundary, independently of broad lighting.
 pub(crate) fn wave_detail(position: Vec3, time: f32, footprint: f32, textures: &Textures) -> f32 {
     let flowing = position.normalize() * PLANET_RADIUS - CURRENT * time;
     (textures
@@ -49,6 +49,69 @@ pub(crate) fn wave_detail(position: Vec3, time: f32, footprint: f32, textures: &
         * 240.0
 }
 
+/// Blend differently oriented samples so the periodic detail texture cannot
+/// impose a visible grid. Altitude stays in the coordinates: this is a volume.
+fn ocean_detail(point: Vec3, time: f32, footprint: f32, textures: &Textures) -> Vec4 {
+    let altitude = point.length() - PLANET_RADIUS;
+    let coordinates = ((point - CURRENT * time) * 0.00006
+        + Vec3::Z * (altitude * 0.0003 - time * 0.025))
+        * vec3(3.0, 3.0, 1.0);
+    (textures.details_filtered(coordinates, footprint * 0.00036)
+        + textures.details_filtered(
+            crate::scene::noise::rotated(coordinates),
+            footprint * 0.00027,
+        ))
+        * 0.5
+}
+
+/// Cache the original depth-lit material, rather than a flat colour swatch.
+pub(crate) fn column_material(
+    point: Vec3,
+    view: &ViewUniform,
+    footprint: f32,
+    normal: Vec3,
+    textures: &Textures,
+) -> Vec4 {
+    let time = view.time();
+    let flowing = point - CURRENT * time;
+    let flow = textures.billows(
+        flowing * vec3(0.00006, 0.00006, 0.0001) - Vec3::Z * time * 0.003,
+        footprint * 0.0001,
+    );
+    let detail = ocean_detail(point, time, footprint, textures);
+    let noise = detail.w * 2.0 - 1.0;
+    let wisp = cube((1.0 - noise.abs() * 2.0).max(0.0));
+    let granules = flow.w.smoothstep(0.25, 0.75);
+    let facing = normal.dot(vec3(-0.48, 0.36, 0.8)).max(0.0);
+    let hue = vec3(0.12, 0.09, 0.23).lerp(vec3(0.38, 0.24, 0.32), flow.y.smoothstep(0.35, 0.65));
+    let core = hue.lerp(vec3(0.40, 0.61, 0.57), flow.z.smoothstep(0.4, 0.65));
+    let energy = (flow.w * 0.7 + detail.w * 0.3).smoothstep(0.30, 0.70);
+    // The column is evaluated 100 m inside the veil, matching the depth used
+    // to normalise its lighting in the native pass.
+    let depth_glow = 1.0 - (-135.0_f32 / 180.0).exp();
+    let pulse = 0.85 + 0.15 * (time * 1.4 + flow.y * 9.0).sin();
+    let mut flash = Vec3::ZERO;
+    for index in 0..32 {
+        let event = view.aur_flashes[index];
+        if event[1].w <= 0.0 {
+            break;
+        }
+        let delta = (point - event[0].xyz()) * event[0].w;
+        flash += event[1].xyz()
+            * (-delta.length_squared()).exp()
+            * (0.35 + granules * 0.45 + wisp * 0.2);
+    }
+    let light = (hue * (0.65 + facing * 0.85)
+        + core * depth_glow * (0.65 + cube(energy) * 3.5) * (0.35 + facing * 1.5)
+        + vec3(0.26, 0.40, 0.42) * wisp * energy * 2.0)
+        * pulse
+        + flash;
+    let density = (1.0 - (-100.0 + noise * 65.0).smoothstep(-170.0, 90.0))
+        * (0.075 + granules * 0.09 + wisp * 0.06 + 0.03)
+        + crate::scene::math::fourth(granules) * wisp * 0.035;
+    (light * view.sky_horizon.y + hue * view.ambient_color.xyz() * 0.2).extend(density.max(0.01))
+}
+
 pub(crate) fn ejections(
     planet_point: Vec3,
     view: &ViewUniform,
@@ -56,136 +119,80 @@ pub(crate) fn ejections(
     curve: Vec3,
     textures: &Textures,
 ) -> VolumeSample {
-    if curve.z <= 0.0 || curve.x > EJECTION_WIDTH * 6.0 {
+    if curve.z <= 0.0 || curve.x > EJECTION_WIDTH * 3.0 {
         return VolumeSample::default();
     }
-    let flowing = planet_point - CURRENT * view.time();
-    let turbulence = textures.details_filtered(flowing * 0.0003, footprint.max(120.0) * 0.0003);
-    // A constant-width tube joins the veil naturally; no altitude-dependent
-    // skirt, root flare or separate hot-coloured emitter at either endpoint.
-    let width = EJECTION_WIDTH * (0.8 + turbulence.w * 0.2);
-    let distance = curve.x * curve.x;
-    let halo = (-distance / (width * width)).exp();
-    let core = (-distance / (width * width * 0.24)).exp();
-    let filament = turbulence.z.smoothstep(0.2, 0.75);
-    let density = (halo * (0.085 + filament * 0.025) + core * 0.045) * curve.z;
+    let time = view.time();
+    let flowing = planet_point - CURRENT * time;
+    let turbulence = textures.details_filtered(
+        flowing * 0.0003 + Vec3::Z * (curve.y * 2.0 - time * 0.12),
+        footprint * 0.0003,
+    );
+    let width = EJECTION_WIDTH * (0.6 + turbulence.w * 0.25);
+    let halo = (-square(curve.x / width)).exp();
+    let core = (-square(curve.x / (width * 0.28))).exp();
+    let strands = cube((1.0 - turbulence.y).max(0.0));
+    let surge = 0.5 + 0.5 * (curve.y * 45.0 - time * 6.0 + turbulence.w * 8.0).sin();
+    let density = (halo * (0.018 + strands * 0.08) + core * 0.085) * curve.z;
     let flow = textures.billows(
-        flowing * vec3(0.00006, 0.00006, 0.0001) - Vec3::Z * view.time() * 0.003,
+        flowing * vec3(0.00006, 0.00006, 0.0001) - Vec3::Z * time * 0.003,
         footprint * 0.0001,
     );
-    let hue = vec3(0.12, 0.09, 0.23).lerp(vec3(0.38, 0.24, 0.32), flow.y.smoothstep(0.35, 0.65));
-    let tint = hue.lerp(vec3(0.40, 0.61, 0.57), flow.z.smoothstep(0.4, 0.65)) * view.sky_horizon.y;
+    let tint = energy_color(flow.y + (turbulence.w - 0.5) * 0.3, flow.z);
     VolumeSample {
         density,
         color: Vec3::ZERO,
-        emission: tint * (1.4 + filament * 0.5 + core * 0.5),
+        emission: (tint * (2.0 + strands * 12.0 + surge * 3.0)
+            + vec3(0.8, 1.1, 0.95) * core * surge * 4.0)
+            * view.sky_horizon.y,
     }
 }
 
-pub fn sample_ocean(
+pub fn sample_body(
     planet_point: Vec3,
     view: &ViewUniform,
     footprint: f32,
     curve: Vec3,
     wave: f32,
-    normal: Vec3,
-    palette: spirv_std::glam::Vec4,
+    height_span: f32,
+    palette: Vec4,
     textures: &Textures,
 ) -> VolumeSample {
-    let pos = if curve.z > 0.0 {
-        crate::scene::planet::surface_coordinates(planet_point)
-    } else {
-        Vec3::new(0.0, 0.0, planet_point.length() - PLANET_RADIUS)
-    };
-    if pos.z > OCEAN_TOP_HEIGHT {
+    let altitude = planet_point.length() - PLANET_RADIUS;
+    let height = altitude - wave;
+    if altitude > 3700.0 || height - height_span > 900.0 {
         return VolumeSample::default();
     }
     let time = view.time();
-    let jets = if view.camera_position.w as u32 & 128 == 0 {
-        ejections(planet_point, view, footprint, curve, textures)
-    } else {
-        VolumeSample::default()
-    };
-    if pos.z > 3700.0 {
-        return jets;
-    }
-    let flowing = planet_point - CURRENT * time;
-    let altitude = pos.z - wave;
-    if altitude > 900.0 {
-        return jets;
-    }
-    let coordinates = flowing * 0.00006 + Vec3::Z * (pos.z * 0.0003 - time * 0.025);
-    if palette.w > 0.0 {
-        let detail =
-            textures.details_filtered(coordinates * vec3(3.0, 3.0, 1.0), footprint * 0.00036);
-        let noise = detail.w * 2.0 - 1.0;
-        let wisp = cube((1.0 - noise.abs() * 2.0).max(0.0));
-        let body = 1.0 - (altitude + noise * 65.0).smoothstep(-170.0, 90.0);
-        let depth = (-altitude).max(0.0);
-        let plume = (-altitude.max(0.0) / 180.0).exp();
-        let base = (palette.w - 0.03).max(0.075);
-        let body_density = (body * (base + depth.min(1200.0) * 0.0003) + plume * wisp * 0.008)
-            * (1.0 - pos.z.smoothstep(3300.0, 3700.0));
-        let depth_glow = 1.0 - (-(depth + 35.0) / 180.0).exp();
-        let arc_glow = (-square(curve.x / (EJECTION_WIDTH * 0.85))).exp() * curve.z;
-        let source = palette.xyz() * (0.65 + 0.35 * depth_glow / 0.5276) * (0.8 + detail.w * 0.4)
-            + vec3(0.3, 0.5, 0.48) * (wisp * plume * 0.15 + arc_glow * 0.35) * view.sky_horizon.y;
-        let density = body_density + jets.density;
-        return VolumeSample {
-            density,
-            color: Vec3::ZERO,
-            emission: (source * body_density + jets.emission * jets.density)
-                / density.max(0.0000001),
-        };
-    }
-    let flow = textures.billows(
-        flowing * vec3(0.00006, 0.00006, 0.0001) - Vec3::Z * time * 0.003,
-        footprint * 0.0001,
-    );
-    let detail = textures.details_filtered(coordinates * vec3(3.0, 3.0, 1.0), footprint * 0.00036);
+    let detail = ocean_detail(planet_point, time, footprint, textures);
     let noise = detail.w * 2.0 - 1.0;
+    let low = (height + noise * 65.0 - height_span + 170.0) / 260.0;
+    let high = (height + noise * 65.0 + height_span + 170.0) / 260.0;
+    let body = 1.0 - crate::scene::volume::smoothstep_mean(low, high);
     let wisp = cube((1.0 - noise.abs() * 2.0).max(0.0));
-    let granules = flow.w.smoothstep(0.25, 0.75);
-    let body = 1.0 - (altitude + noise * 65.0).smoothstep(-170.0, 90.0);
-    let depth = (-altitude).max(0.0);
-    let plume = (-altitude.max(0.0) / 180.0).exp();
-    let body_density = (body
-        * (0.075 + granules * 0.09 + wisp * 0.06 + depth.min(1200.0) * 0.0003)
-        + plume * fourth(granules) * wisp * 0.035)
-        * (1.0 - pos.z.smoothstep(3300.0, 3700.0));
-    let mut sample = VolumeSample {
-        density: body_density + jets.density,
-        ..VolumeSample::default()
+    let depth = (-height).max(0.0);
+    let plume = (-height.max(0.0) / 180.0).exp();
+    let material = if palette.w > 0.0 {
+        palette
+    } else {
+        column_material(
+            planet_point.normalize() * (PLANET_RADIUS + wave - 100.0),
+            view,
+            footprint,
+            planet_point.normalize(),
+            textures,
+        )
     };
-    if sample.density > 0.0001 {
-        let facing = normal.dot(vec3(-0.48, 0.36, 0.8)).max(0.0);
-        let hue =
-            vec3(0.12, 0.09, 0.23).lerp(vec3(0.38, 0.24, 0.32), flow.y.smoothstep(0.35, 0.65));
-        let core = hue.lerp(vec3(0.40, 0.61, 0.57), flow.z.smoothstep(0.4, 0.65));
-        let energy = (flow.w * 0.7 + detail.w * 0.3).smoothstep(0.30, 0.70);
-        let depth_glow = 1.0 - (-(depth + 35.0) / 180.0).exp();
-        let pulse = 0.85 + 0.15 * (time * 1.4 + flow.y * 9.0).sin();
-        let mut flash = Vec3::ZERO;
-        for index in 0..32 {
-            let event = view.aur_flashes[index];
-            if event[1].w <= 0.0 {
-                break;
-            }
-            let distance = planet_point.distance(event[0].xyz()) * event[0].w;
-            let structure = 0.35 + granules * 0.45 + wisp * 0.2;
-            flash += event[1].xyz() * (-distance * distance).exp() * structure;
-        }
-        let arc_glow = (-square(curve.x / (EJECTION_WIDTH * 0.85))).exp() * curve.z;
-        let emission = (hue * (0.65 + facing * 0.85)
-            + core * depth_glow * (0.65 + cube(energy) * 3.5) * (0.35 + facing * 1.5)
-            + vec3(0.26, 0.40, 0.42) * wisp * plume * energy * 2.0)
-            * pulse
-            + flash
-            + core * arc_glow * (0.2 + granules * 0.3);
-        sample.color = hue;
-        sample.emission = (emission * body_density * view.sky_horizon.y
-            + jets.emission * jets.density)
-            / sample.density;
+    let base = (material.w - 0.03).max(0.075);
+    let density = (body * (base + depth.min(1200.0) * 0.0003) + plume * wisp * 0.008)
+        * (1.0 - altitude.smoothstep(3300.0, 3700.0));
+    let depth_glow = 1.0 - (-(depth + 35.0) / 180.0).exp();
+    let arc_glow = (-square(curve.x / (EJECTION_WIDTH * 0.85))).exp() * curve.z;
+    let source = material.xyz() * (0.65 + 0.35 * depth_glow / 0.5276) * (0.8 + detail.w * 0.4)
+        + vec3(0.3, 0.5, 0.48) * (wisp * plume * 0.15 + arc_glow * 0.35) * view.sky_horizon.y;
+    VolumeSample {
+        density,
+        color: Vec3::ZERO,
+        emission: source,
     }
-    sample
 }

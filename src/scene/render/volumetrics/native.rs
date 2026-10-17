@@ -1,6 +1,6 @@
 //! Native opacity and emission; the view grid supplies cloud illumination only.
 use super::super::utils::{AtmosphereData, Textures, intersect_sphere, ray_shell_intersect};
-use super::{RaymarchResult, aur_ocean, clouds, height_at, poles};
+use super::{RaymarchResult, aur_ocean, clouds, poles};
 use crate::scene::{
     PLANET_RADIUS, ViewUniform,
     cloud::{Cloud, RayEvent, ray_event},
@@ -9,6 +9,8 @@ use crate::scene::{
 use spirv_std::Image;
 use spirv_std::glam::{Vec2, Vec3, Vec4, Vec4Swizzles};
 use spirv_std::num_traits::Float;
+
+const VEIL_STEP: f32 = 112.0;
 
 fn cloud_density(
     event: &RayEvent,
@@ -126,6 +128,9 @@ pub fn integrate(
             end = end.min(event.end);
         }
         let mut step = end - t;
+        let mut ocean_height = 1.0e10;
+        let mut ocean_shape = Vec4::ZERO;
+        let mut ocean_palette = Vec4::ZERO;
         let mut curve = Vec3::new(1.0e10, 0.0, 0.0);
         if inside_clouds && event.count > 0 {
             step = step.min(event.step.max(footprint));
@@ -135,7 +140,7 @@ pub fn integrate(
             let clearance = guidance(uv, t, textures, field).w;
             if clearance < 64.0 {
                 curve = textures.ejection_field(
-                    crate::scene::planet::surface_coordinates(point),
+                    crate::scene::planet::surface_coordinates(point + rd * (VEIL_STEP * 0.5)),
                     crate::scene::aur::EJECTION_WIDTH * 6.0 + 4000.0,
                 );
             } else {
@@ -144,10 +149,18 @@ pub fn integrate(
             // Bound the spatial change of the wave, then resolve the thin veil
             // deterministically instead of jittering long coarse depth slabs.
             let body_step = if altitude < 3700.0 {
-                let height = height_at(point, view, footprint, textures);
+                (ocean_shape, ocean_palette) =
+                    super::super::cache::sample(point, view, footprint, textures);
+                let wave = if ocean_palette.w > 0.0 {
+                    ocean_shape.x * 4096.0
+                } else {
+                    aur_ocean::wave_height(point, view.time(), footprint, textures)
+                };
+                let height = altitude - wave;
+                ocean_height = height;
                 let radial_slope = rd.dot(point.normalize()).abs();
                 let clearance = (height - 320.0).max(0.0) * 0.7 / (radial_slope + 0.35);
-                clearance.max(160.0 + (-height).max(0.0) * 0.7 + footprint * 0.5)
+                clearance.max(VEIL_STEP + (-height).max(0.0) * 0.49 + footprint * 0.5)
             } else {
                 (altitude - 3700.0).max(80.0)
             };
@@ -217,48 +230,56 @@ pub fn integrate(
             }
         }
         if inside_ocean {
-            if curve.z > 0.0 {
-                curve = textures.ejection_field(
-                    crate::scene::planet::surface_coordinates(sample_point),
-                    crate::scene::aur::EJECTION_WIDTH * 6.0,
-                );
-            }
-            let aur = if sample_point.length() - PLANET_RADIUS > 3700.0 {
-                if profile & 128 == 0 {
-                    aur_ocean::ejections(sample_point, view, footprint, curve, textures)
-                } else {
-                    super::VolumeSample::default()
-                }
+            // The near-field arc query is centred on the short ocean step;
+            // reuse it for emission as well as stepping instead of traversing
+            // the same planetary candidates twice.
+            let jet = if profile & 128 == 0 {
+                aur_ocean::ejections(sample_point, view, footprint, curve, textures)
             } else {
-                let (shape, palette) =
-                    super::super::cache::sample(sample_point, view, footprint, textures);
-                let (wave, normal, palette) = if palette.w > 0.0 {
-                    (shape.x * 4096.0, shape.yzw().normalize(), palette)
+                super::VolumeSample::default()
+            };
+            let density = jet.density * 0.018;
+            sigma += density;
+            scattering += jet.emission * density;
+            if sample_point.length() - PLANET_RADIUS <= 3700.0 {
+                let wave = if ocean_palette.w > 0.0 {
+                    // The cache already provides a height gradient. Reuse it
+                    // across this short segment instead of fetching the same
+                    // two cache textures again at its midpoint.
+                    let up = point.normalize();
+                    let normal = ocean_shape.yzw().normalize();
+                    let gradient = (up - normal / normal.dot(up).max(0.01)) * 0.1;
+                    ocean_shape.x * 4096.0 + gradient.dot(rd) * step * 0.5
                 } else {
-                    (
-                        aur_ocean::wave_height(sample_point, view.time(), footprint, textures),
-                        sample_point.normalize(),
-                        Vec4::ZERO,
-                    )
+                    aur_ocean::wave_height(sample_point, view.time(), footprint, textures)
                 };
-                aur_ocean::sample_ocean(
+                let span = if ocean_height < 1.0e9 {
+                    (sample_point.length() - PLANET_RADIUS - wave - ocean_height).abs()
+                } else {
+                    0.0
+                };
+                let body = aur_ocean::sample_body(
                     sample_point,
                     view,
-                    footprint,
-                    curve,
+                    footprint.max(step * 0.5),
+                    if profile & 128 == 0 {
+                        curve
+                    } else {
+                        Vec3::new(1.0e10, 0.0, 0.0)
+                    },
                     wave,
-                    normal,
+                    span,
                     if profile & 256 == 0 {
-                        palette
+                        ocean_palette
                     } else {
                         Vec4::ZERO
                     },
                     textures,
-                )
-            };
-            let density = aur.density * 0.018;
-            sigma += density;
-            scattering += (aur.emission + aur.color * view.ambient_color.xyz() * 0.2) * density;
+                );
+                let density = body.density * 0.018;
+                sigma += density;
+                scattering += body.emission * density;
+            }
         }
         if inside_poles {
             let beam = poles::sample_poles(sample_point, view, footprint, textures);
