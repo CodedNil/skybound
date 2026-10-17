@@ -347,8 +347,8 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
         }
         let point = local.origin + local.direction * distance;
         let sample = surface(point, c);
-        let epsilon = (ray.footprint * distance * 0.35 / scale)
-            .clamp(c.position.w * 0.000_01, c.position.w * 0.000_35);
+        let epsilon = (ray.footprint * distance * 0.55 / scale)
+            .clamp(c.position.w * 0.000_01, c.position.w * 0.002);
         if sample.distance < epsilon {
             let normal = normal_at(point, epsilon.max(c.position.w * 0.000_05), |q| {
                 surface(q, c).distance

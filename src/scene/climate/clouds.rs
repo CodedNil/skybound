@@ -7,6 +7,8 @@ use crate::scene::{PLANET_RADIUS, geometry::intersect_sphere, noise::lattice};
 pub const LAYERS: usize = 6;
 pub const STORM: usize = LAYERS;
 pub const ALL_KINDS: u32 = (1 << (LAYERS + 1)) - 1;
+/// One coherent formation per altitude regime, plus independently bounded storms.
+pub const ACTIVE_KINDS: u32 = (1 << 0) | (1 << 2) | (1 << 4) | (1 << STORM);
 pub const HIGH_KINDS: u32 = (1 << 4) | (1 << 5);
 
 pub const fn cloud_type(kind: usize) -> usize {
@@ -93,7 +95,7 @@ pub const fn layer_bounds(kind: usize) -> Vec2 {
         1 => vec2(10_000.0, 19_000.0),
         2 => vec2(16_500.0, 25_500.0),
         3 => vec2(23_500.0, 33_000.0),
-        4 => vec2(33_000.0, 54_000.0),
+        4 => vec2(33_000.0, 73_500.0),
         5 => vec2(46_000.0, 73_500.0),
         _ => vec2(super::CLOUD_BOTTOM, super::CLOUD_TOP),
     }
@@ -109,10 +111,10 @@ pub fn region_coordinates(point: Vec3, kind: usize) -> Vec3 {
 }
 
 pub const fn base_variation(kind: usize) -> f32 {
-    if cloud_type(kind) == 2 {
-        14_000.0
-    } else {
-        5000.0
+    match cloud_type(kind) {
+        0 => 700.0,
+        1 => 1200.0,
+        _ => 28_000.0,
     }
 }
 
@@ -145,9 +147,9 @@ pub fn column_clearance(altitude: f32, base: f32, kind: usize) -> f32 {
 
 pub fn column_height(seed: f32, kind: usize) -> f32 {
     match cloud_type(kind) {
-        0 => 1000.0 + seed * 2300.0,
-        1 => 800.0 + seed * 2200.0,
-        _ => 600.0 + seed * 1600.0,
+        0 => 1800.0 + seed * 4700.0,
+        1 => 700.0 + seed * 2200.0,
+        _ => 350.0 + seed * 1100.0,
     }
 }
 
@@ -187,7 +189,7 @@ pub fn layer_density(altitude: f32, coverage: f32, kind: usize, noise: Vec4, fil
     if coverage <= 0.0 || altitude <= bounds.x || altitude >= bounds.y {
         return 0.0;
     }
-    let threshold = 0.82 - coverage * 0.30;
+    let threshold = if cloud_type(kind) == 0 { 0.72 } else { 0.82 } - coverage * 0.30;
     let interior = ((noise.y - threshold + filter) / (1.0 - threshold + filter)).saturate();
     let bottom = bounds.x + noise.z * base_variation(kind) + (1.0 - interior) * 350.0;
     let height = column_height(noise.w, kind);
@@ -197,9 +199,10 @@ pub fn layer_density(altitude: f32, coverage: f32, kind: usize, noise: Vec4, fil
         interior.sqrt().sqrt()
     };
     let top = (bottom + height * dome).min(bounds.y);
-    let softness = if cloud_type(kind) == 0 { 700.0 } else { 350.0 };
-    let envelope = altitude.smoothstep(bottom - 100.0, bottom + softness)
-        * (1.0 - altitude.smoothstep(top - softness, top));
+    let base_softness = if cloud_type(kind) == 0 { 180.0 } else { 250.0 };
+    let top_softness = if cloud_type(kind) == 0 { 650.0 } else { 350.0 };
+    let envelope = altitude.smoothstep(bottom - 100.0, bottom + base_softness)
+        * (1.0 - altitude.smoothstep(top - top_softness, top));
     let density = if cloud_type(kind) == 2 { 0.055 } else { 0.22 };
     envelope
         * interior.smoothstep(0.0, 0.25)
@@ -227,7 +230,31 @@ impl CloudVolume {
         let vertical = direction.dot(self.up);
         let local_direction =
             (direction - self.up * vertical) / self.radius + self.up * (vertical / self.height);
-        intersect_sphere(local_origin, local_direction, 1.0)
+        let height = local_origin.dot(self.up);
+        let along = local_direction.dot(self.up);
+        let radial = local_origin - self.up * height;
+        let across = local_direction - self.up * along;
+        let tower = intersect_sphere(
+            radial / 0.55 + self.up * height,
+            across / 0.55 + self.up * along,
+            1.0,
+        );
+        let anvil = intersect_sphere(
+            radial / 0.72 + self.up * ((height - 0.4) / 0.55),
+            across / 0.72 + self.up * (along / 0.55),
+            1.0,
+        );
+        let tower = if tower.x < tower.y && tower.y > 0.0 {
+            tower
+        } else {
+            vec2(f32::MAX, -f32::MAX)
+        };
+        let anvil = if anvil.x < anvil.y && anvil.y > 0.0 {
+            anvil
+        } else {
+            vec2(f32::MAX, -f32::MAX)
+        };
+        vec2(tower.x.min(anvil.x), tower.y.max(anvil.y))
     }
 }
 
@@ -286,9 +313,13 @@ pub fn ray_event(point: Vec3, direction: Vec3, seconds: f32, kind: usize, seed: 
             vec2(0.0, region_size(kind) * 0.125)
         };
     }
+    storm_ray_event(point, direction, storm_at(point + direction * 8.0, seconds))
+}
+
+pub fn storm_ray_event(point: Vec3, direction: Vec3, storm: Option<CloudVolume>) -> Vec2 {
     // Forward cells avoid zero-length exits at negative-direction crossings.
     let cell_point = point + direction * 8.0;
-    let size = region_size(kind);
+    let size = region_size(STORM);
     let cell = (cell_point / size).floor();
     let edge = (cell + Vec3::select(direction.cmpgt(Vec3::ZERO), Vec3::ONE, Vec3::ZERO)) * size;
     let exit = Vec3::select(
@@ -298,7 +329,7 @@ pub fn ray_event(point: Vec3, direction: Vec3, seconds: f32, kind: usize, seed: 
     )
     .min_element()
     .max(0.0);
-    if let Some(cloud) = storm_at(cell_point, seconds) {
+    if let Some(cloud) = storm {
         let interval = cloud.ray_interval(point, direction);
         if interval.y > 0.0 && interval.x < interval.y {
             return vec2(
@@ -351,8 +382,8 @@ mod tests {
         assert!(a.distance(b) < 0.2);
         let core = Vec4::new(0.8, 0.95, 0.0, 1.0);
         let edge = Vec4::new(0.8, 0.65, 0.0, 1.0);
-        assert!(layer_density(8200.0, 1.0, 0, core, 0.0) > 0.0);
-        assert!(layer_density(8200.0, 1.0, 0, edge, 0.0).abs() < 1e-6);
+        assert!(layer_density(11_000.0, 1.0, 0, core, 0.0) > 0.0);
+        assert!(layer_density(11_000.0, 1.0, 0, edge, 0.0).abs() < 1e-6);
         assert!(layer_density(18_000.0, 1.0, 2, core, 0.0) > 0.0);
         assert!(layer_density(24_000.0, 1.0, 2, core, 0.0).abs() < 1e-6);
         assert!(layer_density(34_000.0, 1.0, 4, core, 0.0) > 0.0);
@@ -462,8 +493,8 @@ mod tests {
             let low = Vec4::new(0.8, 0.8, 0.0, 1.0);
             let high = Vec4::new(0.8, 0.8, 1.0, 1.0);
             let offset = match cloud_type(kind) {
-                0 => 1600.0,
-                1 => 2000.0,
+                0 => 400.0,
+                1 => 600.0,
                 _ => 700.0,
             };
             assert!(layer_density(bounds.x + offset, 1.0, kind, low, 0.0) > 0.0);

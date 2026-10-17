@@ -1,14 +1,16 @@
+pub mod cache;
+pub mod froxel;
 pub(crate) mod solids;
 mod utils;
 mod volumetrics;
 
-use spirv_std::glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3};
+use spirv_std::glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
 use self::solids::aur_spikes::raymarch_aur_spikes;
-use self::utils::{AtmosphereData, Textures, blue_noise, intersect_sphere};
-use self::volumetrics::{raymarch_volumetrics, short_volume};
+use self::utils::{AtmosphereData, Textures, intersect_sphere};
+use self::volumetrics::short_volume;
 use crate::scene::atmosphere::{render_sky, sky_direction, sky_uv};
 use crate::scene::surface::{Hit, Ray};
 use crate::scene::{FrameUniform, life};
@@ -78,14 +80,9 @@ fn world_point(uv: Vec2, depth: f32, matrix: Mat4) -> Vec3 {
 fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     let view = &frame.view;
     let origin = view.world_position.xyz();
-    let matrix = if jittered {
-        view.world_from_clip
-    } else {
-        view.world_from_clip_unjittered
-    };
     Ray {
         origin,
-        direction: (world_point(uv, 0.01, matrix) - origin).normalize(),
+        direction: view.ray_direction(uv, jittered),
         light: view.pole_direction(),
         ambient: view.ambient_color.xyz().min(Vec3::splat(0.8)),
         radiance: view.pole_color.xyz().min(Vec3::splat(1.5)),
@@ -127,8 +124,8 @@ fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLa
         if bolt[0].w <= 0.0 {
             break;
         }
-        let start = energy_point(bolt[0].xyz(), view);
-        let end = energy_point(bolt[1].xyz(), view);
+        let start = bolt[0].xyz();
+        let end = bolt[1].xyz();
         let axis = end - start;
         let length = axis.length_squared().max(0.001);
         let center = (start + end) * 0.5;
@@ -169,10 +166,6 @@ fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLa
     }
 }
 
-fn energy_point(point: Vec3, view: &crate::scene::ViewUniform) -> Vec3 {
-    view.from_planet(crate::scene::planet::surface_point(point))
-}
-
 fn depth_limit(uv: Vec2, frame: &FrameUniform, depth: &Depth, ray: Ray) -> f32 {
     let pixel = (uv * frame.viewport.zw()).as_ivec2();
     let d = depth.fetch(pixel);
@@ -204,10 +197,7 @@ fn atmosphere(
             0.0,
         )
         .xyz();
-    AtmosphereData {
-        sky,
-        ambient: frame.view.ambient_color.xyz() + sky * 0.12,
-    }
+    AtmosphereData { sky }
 }
 fn motion(uv: Vec2, position: Vec3, frame: &FrameUniform) -> Vec2 {
     let clip = frame.view.prev_clip_from_world * position.extend(1.0);
@@ -216,6 +206,31 @@ fn motion(uv: Vec2, position: Vec3, frame: &FrameUniform) -> Vec2 {
     } else {
         Vec2::ZERO
     }
+}
+#[spirv(fragment(depth_replacing, entry_point_name = "background"))]
+pub fn background(
+    #[spirv(location = 0)] uv: Vec2,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(location = 0)] out_color: &mut Vec4,
+    #[spirv(location = 1)] out_motion: &mut Vec4,
+    #[spirv(location = 2)] out_normal: &mut Vec4,
+    #[spirv(frag_depth)] out_depth: &mut f32,
+) {
+    let ray = scene_ray(uv, frame, true);
+    let mv = motion(uv, ray.origin + ray.direction * T_MAX, frame);
+    let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
+    *out_color = match frame.view.times.z as u32 {
+        1 => Vec3::ZERO,
+        2 => Vec3::splat(0.5),
+        3 => (mv.abs() / frame.view.times.w.max(0.0001)).extend(0.0),
+        _ => sky,
+    }
+    .extend(1.0);
+    *out_motion = mv.extend(0.0).extend(0.0);
+    *out_normal = Vec4::splat(0.5);
+    *out_depth = 0.0;
 }
 #[spirv(fragment(depth_replacing, entry_point_name = "opaque"))]
 pub fn opaque(
@@ -233,6 +248,9 @@ pub fn opaque(
 ) {
     let ray = scene_ray(uv, frame, true);
     let hit = opaque_hit(ray, frame);
+    if !hit.is_hit() {
+        spirv_std::arch::kill();
+    }
     let environment = atmosphere(uv, frame, sampler, sky_texture);
     let _ = (base_texture, details_texture, weather_texture);
     let point = ray.origin + ray.direction * hit.distance();
@@ -275,13 +293,24 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
     #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)]
+    cloud_records: &[crate::scene::cloud::Cloud],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 14)] cloud_grid: &[u32],
+    #[spirv(descriptor_set = 0, binding = 12)] medium: &Image!(3D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_normal: &mut Vec4,
     #[spirv(frag_depth)] out_depth: &mut f32,
 ) {
     let ray = scene_ray(uv, frame, false);
-    let limit = depth_limit(uv, frame, depth_texture, ray);
+    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    let limit = if geometry_limit >= T_MAX - 1.0 {
+        10_000_000.0
+    } else {
+        geometry_limit
+    };
     let atmosphere = atmosphere(uv, frame, sampler, sky_texture);
     let textures = Textures {
         base: base_texture,
@@ -289,19 +318,23 @@ pub fn volume(
         weather: weather_texture,
         transmittance: transmittance_texture,
         ejections: ejection_texture,
+        cache_shape,
+        cache_columns,
+        cached: true,
         sampler,
     };
-    let spatial_dither = blue_noise(uv * frame.volume_size.xy());
-    let dither = (spatial_dither + frame.view.frame_count() * 0.618_034).fract();
-    let volume = raymarch_volumetrics(
+    let volume = volumetrics::native::integrate(
+        uv,
         ray.origin,
         ray.direction,
-        &atmosphere,
         &frame.view,
         limit,
-        dither,
-        2.0 / frame.volume_size.y,
+        ray.footprint,
+        &atmosphere,
         &textures,
+        medium,
+        cloud_records,
+        cloud_grid,
     );
     let position = ray.origin + ray.direction * volume.depth;
     let altitude = position.distance(frame.view.planet_center()) - crate::scene::PLANET_RADIUS;
@@ -328,7 +361,7 @@ pub fn volume(
     *out_motion = motion(uv, previous, frame).extend(0.0).extend(0.0);
     *out_normal = vec3(volume.depth, limit, volume.color.xyz().max_element()).extend(1.0);
     let clip = frame.view.clip_from_world * position.extend(1.0);
-    *out_depth = if volume.depth < T_MAX {
+    *out_depth = if volume.depth < limit {
         clip.z / clip.w
     } else {
         0.0
@@ -347,14 +380,24 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
     #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)]
+    cloud_records: &[crate::scene::cloud::Cloud],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 14)] cloud_grid: &[u32],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
 ) {
     let mut ray = scene_ray(uv, frame, false);
-    ray.max_distance = depth_limit(uv, frame, depth_texture, ray);
+    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    ray.max_distance = if geometry_limit >= T_MAX - 1.0 {
+        10_000_000.0
+    } else {
+        geometry_limit
+    };
     let mut hits = ThinLayers {
-        color: [Hit::MISS.color_depth; 8],
+        color: [vec4(0.0, 0.0, 0.0, 10_000_000.0); 8],
         transmission: [Vec4::ONE; 8],
         count: 0,
     };
@@ -374,6 +417,12 @@ pub fn transparent(
         }
         life::visit_thin(ray, c, |hit| hits.add(hit));
     }
+    if hits.count == 0 && ray.max_distance >= 1000.0 {
+        *out_color = Vec4::ZERO;
+        *out_transmittance = Vec4::ONE;
+        *out_prefix = Vec4::W;
+        return;
+    }
     let environment = atmosphere(uv, frame, sampler, sky_texture);
     let textures = Textures {
         base: base_texture,
@@ -381,6 +430,9 @@ pub fn transparent(
         weather: weather_texture,
         transmittance: transmittance_texture,
         ejections: ejection_texture,
+        cache_shape,
+        cache_columns,
+        cached: true,
         sampler,
     };
     let mut color = Vec3::ZERO;
@@ -399,6 +451,8 @@ pub fn transparent(
             length,
             0.5,
             &textures,
+            cloud_records,
+            cloud_grid,
         );
         if hits.transmission[i].w > 0.5 {
             color += transmission * fog.color.w * hit.xyz();
@@ -421,6 +475,8 @@ pub fn transparent(
             (ray.max_distance - cursor).max(0.0),
             0.5,
             &textures,
+            cloud_records,
+            cloud_grid,
         );
         color += transmission * fog.color.xyz();
         transmission *= fog.color.w;

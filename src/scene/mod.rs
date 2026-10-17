@@ -3,7 +3,10 @@ pub use view::{FrameUniform, PLANET_RADIUS, ViewUniform};
 
 pub mod atmosphere;
 pub mod aur;
+pub mod cache;
 pub mod climate;
+pub mod cloud;
+pub mod froxel;
 mod geometry;
 mod lighting;
 pub(crate) mod math;
@@ -18,3 +21,4 @@ pub mod life;
 pub mod surface;
 
 pub mod terrain;
+pub mod volume;

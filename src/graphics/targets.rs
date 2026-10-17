@@ -10,6 +10,27 @@ use bevy::render::render_resource::{
     TextureViewDescriptor,
 };
 use bevy::render::renderer::RenderDevice;
+use skybound::scene::cache;
+
+pub struct ColumnTargets {
+    pub shape: TextureView,
+    pub columns: TextureView,
+}
+
+impl ColumnTargets {
+    pub fn new(device: &RenderDevice) -> Self {
+        let size = UVec2::new(cache::SIZE * cache::CASCADES, cache::SIZE * cache::ROWS);
+        Self {
+            shape: texture(device, size, TextureFormat::Rgba16Float, "column_shape"),
+            columns: texture(
+                device,
+                size,
+                TextureFormat::Rgba16Float,
+                "column_parameters",
+            ),
+        }
+    }
+}
 
 #[derive(Resource, Clone, ExtractResource)]
 #[extract_app(RenderApp)]
@@ -21,7 +42,7 @@ impl Default for VolumeScale {
                 .ok()
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| v.is_finite())
-                .unwrap_or(0.75)
+                .unwrap_or(1.0)
                 .clamp(0.25, 1.0),
         )
     }
@@ -54,6 +75,7 @@ pub fn texture(
 pub struct SceneTargets(pub Option<Targets>);
 pub struct Targets {
     pub size: UVec2,
+    pub trace_size: UVec2,
     pub native_size: UVec2,
     pub color: TextureView,
     pub motion: TextureView,
@@ -80,15 +102,18 @@ impl SceneTargets {
             "Render targets: native={}x{}, volumetrics={}x{}",
             native.x, native.y, size.x, size.y
         );
+        let trace_size = size;
         let low = |format, label| texture(device, size, format, label);
+        let traced = |format, label| texture(device, trace_size, format, label);
         let native_texture = |label| texture(device, native, TextureFormat::Rgba16Float, label);
         self.0 = Some(Targets {
             size,
+            trace_size,
             native_size: native,
-            color: low(TextureFormat::Rgba16Float, "volume_radiance"),
-            motion: low(TextureFormat::Rg16Float, "volume_motion"),
-            metadata: low(TextureFormat::Rgba32Float, "volume_depth"),
-            depth: low(TextureFormat::Depth32Float, "volume_depth_attachment"),
+            color: traced(TextureFormat::Rgba16Float, "volume_radiance"),
+            motion: traced(TextureFormat::Rg16Float, "volume_motion"),
+            metadata: traced(TextureFormat::Rgba32Float, "volume_depth"),
+            depth: traced(TextureFormat::Depth32Float, "volume_depth_attachment"),
             history: from_fn(|_| low(TextureFormat::Rgba16Float, "volume_history")),
             history_metadata: from_fn(|_| low(TextureFormat::Rgba32Float, "volume_history_depth")),
             thin_color: native_texture("thin_radiance"),

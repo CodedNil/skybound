@@ -1,4 +1,6 @@
 use core::f32::consts::{PI, TAU};
+#[cfg(not(target_arch = "spirv"))]
+pub mod lightning;
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3,
 };

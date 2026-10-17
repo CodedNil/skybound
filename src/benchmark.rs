@@ -1,19 +1,22 @@
-use bevy::math::DVec3;
-use std::env;
-use std::f64::consts::FRAC_PI_2;
+use bevy::math::{DQuat, DVec3};
+use std::collections::BTreeMap;
+use std::f64::consts::{FRAC_PI_2, TAU};
 use std::time::Duration;
+use std::{env, fs, io};
 
 use bevy::camera::RenderTarget;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::ecs::system::SystemParam;
+use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 use bevy::render::render_resource::TextureFormat;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
+use skybound::scene::aur::lightning::events as lightning_events;
 use skybound::scene::aur::{EJECTION_CELL, ejection, ejection_fill};
-use skybound::scene::polar::REACTION_RADIUS;
+use skybound::scene::polar::{REACTION_RADIUS, light_position};
 use skybound::scene::{
     PLANET_RADIUS, ViewUniform,
     planet::{surface_frame, surface_point},
@@ -21,7 +24,8 @@ use skybound::scene::{
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
-use crate::game::world::WorldData;
+use crate::game::weather::WeatherSimulation;
+use crate::game::world::{WorldData, WorldSystems};
 use crate::graphics::AtmosphereSettings;
 
 #[derive(Resource)]
@@ -35,8 +39,10 @@ impl Plugin for BenchmarkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(RenderDiagnosticsPlugin)
             .init_resource::<BenchmarkCaptures>()
+            .init_resource::<BenchmarkRun>()
             .add_systems(PostStartup, setup)
-            .add_systems(Update, (measure, fly_route));
+            .add_systems(Update, (measure, fly_route))
+            .add_systems(PostUpdate, replay_route.before(WorldSystems::Rebase));
     }
 }
 
@@ -57,8 +63,14 @@ struct BenchmarkSetup<'w, 's> {
     clock: ResMut<'w, Time>,
     images: ResMut<'w, Assets<Image>>,
     world: ResMut<'w, WorldData>,
+    run: ResMut<'w, BenchmarkRun>,
+    weather: Res<'w, WeatherSimulation>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "benchmark scene and camera initialization"
+)]
 fn setup(params: BenchmarkSetup) {
     let BenchmarkSetup {
         mut commands,
@@ -72,6 +84,8 @@ fn setup(params: BenchmarkSetup) {
         mut clock,
         mut images,
         mut world,
+        mut run,
+        weather,
     } = params;
     commands.insert_resource(WinitSettings::continuous());
     let resolution = resolution();
@@ -85,6 +99,8 @@ fn setup(params: BenchmarkSetup) {
         "polar" => Some(1.4),
         "polar-reaction" | "polar-beam" => Some(1.1),
         "polar-orbit" | "planet-orbit" => Some(1.53),
+        "climate-orbit" => Some(0.5),
+        "pole-distant" => Some(0.9),
         _ => None,
     };
     if let Some(latitude) = latitude {
@@ -117,7 +133,7 @@ fn setup(params: BenchmarkSetup) {
     window
         .resolution
         .set(resolution.x as f32, resolution.y as f32);
-    if !env::args().any(|arg| arg == "--live" || arg == "--animate") {
+    if !env::args().any(|arg| arg == "--live" || arg == "--animate" || arg == "--route") {
         time.pause();
     }
     let (entity, camera, transform) = &mut *camera;
@@ -132,6 +148,15 @@ fn setup(params: BenchmarkSetup) {
         direction,
         phase,
     );
+    if let Some(cloud_view) = cloud_camera(&scene, &world, &weather) {
+        **transform = cloud_view;
+    }
+    if env::args().any(|arg| arg == "--route") {
+        run.route = Some(Route {
+            origin: world.position(transform.translation),
+            rotation: world.basis * transform.rotation.as_dquat(),
+        });
+    }
     camera.viewport = None;
     let target = (!env::args().any(|arg| arg == "--window")).then(|| {
         images.add(Image::new_target_texture(
@@ -155,6 +180,78 @@ fn setup(params: BenchmarkSetup) {
     }
 }
 
+fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> Option<Transform> {
+    if !scene.starts_with("cloud-") {
+        return None;
+    }
+    if scene == "cloud-storm" {
+        let storm = weather
+            .0
+            .cyclones
+            .iter()
+            .max_by(|a, b| a.intensity.total_cmp(&b.intensity))?;
+        let center = storm.center * (PLANET_RADIUS + 12_000.0);
+        let frame = surface_frame(center);
+        return Some(
+            Transform::from_translation(
+                world.local(
+                    (center + storm.center * 160_000.0 - frame.y_axis * 120_000.0).as_dvec3(),
+                ),
+            )
+            .looking_at(
+                world.local(center.as_dvec3()),
+                world.rotate_to_local(frame.y_axis),
+            ),
+        );
+    }
+    let origin = world.position(Vec3::ZERO).as_vec3();
+    let cloud = weather
+        .0
+        .clouds
+        .iter()
+        .filter(|cloud| scene == "cloud-high" || cloud.appearance.x > 0.0003)
+        .filter(|cloud| {
+            if scene == "cloud-high" {
+                cloud.up.w < 1200.0
+            } else if scene == "cloud-tower" {
+                cloud.up.w > 6000.0
+            } else {
+                cloud.up.w > 2000.0 && cloud.up.w < 6000.0
+            }
+        })
+        .min_by(|a, b| {
+            a.center
+                .truncate()
+                .distance_squared(origin)
+                .total_cmp(&b.center.truncate().distance_squared(origin))
+        })?;
+    let center = cloud.center.truncate();
+    let up = cloud.up.truncate();
+    let east = cloud.east.truncate();
+    let position = match scene {
+        "cloud-interior" => center + east * cloud.center.w * 0.15,
+        "cloud-top" | "cloud-high" => {
+            center + up * (cloud.up.w + cloud.center.w * 1.2) - east * cloud.center.w
+        }
+        "cloud-edge" => center - up * cloud.up.w * 0.5 - east * cloud.center.w * 1.1,
+        "cloud-tower" => center + up * (cloud.up.w + 30_000.0) - east * cloud.center.w * 3.0,
+        _ => {
+            center
+                + (light_position(center) - center).normalize() * cloud.center.w * 2.8
+                + up * cloud.up.w * 0.2
+        }
+    };
+    let target = if scene == "cloud-interior" {
+        position + east * cloud.center.w
+    } else {
+        center
+    };
+    Some(
+        Transform::from_translation(world.local(position.as_dvec3()))
+            .looking_at(world.local(target.as_dvec3()), world.rotate_to_local(up)),
+    )
+}
+
 fn scene_camera(
     scene: &str,
     world: &WorldData,
@@ -175,8 +272,14 @@ fn scene_camera(
     } else if scene == "aur-overhead" {
         Transform::from_translation(mount + Vec3::Z * 200.0)
             .looking_at(mount.with_z(0.0) + direction * 2000.0, Vec3::Z)
-    } else if scene == "planet-orbit" {
-        Transform::from_translation(mount).looking_at(world.local(DVec3::ZERO), Vec3::Y)
+    } else if scene == "planet-orbit" || scene == "climate-orbit" {
+        Transform::from_translation(mount + Vec3::Y * 1000.0)
+            .looking_at(world.local(DVec3::ZERO), Vec3::Y)
+    } else if scene == "pole-distant" {
+        Transform::from_translation(mount + Vec3::Y * 1000.0).looking_at(
+            world.local(DVec3::Z * f64::from(REACTION_RADIUS)),
+            world.up(mount),
+        )
     } else if scene == "polar-orbit" || scene == "polar-beam" {
         let radius = if scene == "polar-beam" {
             REACTION_RADIUS
@@ -278,7 +381,8 @@ fn scene_altitude(scene: &str) -> f32 {
         "aur-horizon" => 12_000.0,
         "aur-overhead" => 4000.0,
         "polar-orbit" => 77_559.0,
-        "planet-orbit" => 350_000.0,
+        "planet-orbit" | "pole-distant" => 350_000.0,
+        "climate-orbit" => 476_000.0,
         "polar-beam" => 450_000.0,
         "aur-ejection" | "aur-lightning" => 650.0,
         "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar"
@@ -295,7 +399,7 @@ fn scene_weather(scene: &str) -> Option<Vec4> {
         "cloud-tower" => Some(vec4(0.95, 0.95, 0.7, 0.95)),
         "cloud-edge" | "cloud-interior" => Some(vec4(0.95, 0.85, 0.3, 0.8)),
         "aur-horizon" | "aur-overhead" | "aur-ejection" | "clear" | "equator" | "sunrise"
-        | "polar" | "polar-reaction" => Some(Vec4::ZERO),
+        | "polar" | "polar-reaction" | "pole-distant" => Some(Vec4::ZERO),
         _ => None,
     }
 }
@@ -307,6 +411,28 @@ fn focus_aur(
     player: &mut Transform,
     lightning: bool,
 ) -> Vec3 {
+    if lightning {
+        let origin = world.position(Vec3::ZERO).as_vec3();
+        if let Some(event) = lightning_events(phase)
+            .filter(|event| event.strength > 0.2)
+            .min_by(|a, b| {
+                a.position
+                    .distance_squared(origin)
+                    .total_cmp(&b.position.distance_squared(origin))
+            })
+        {
+            let basis = surface_frame(event.up);
+            let point = event.up * (PLANET_RADIUS + event.reach * 0.4);
+            let direction = world.rotate_to_local(basis.y_axis);
+            let position = world.local(point.as_dvec3()) - direction * 24_000.0;
+            let up = world.up(position);
+            mount.translation = position;
+            mount.rotation = Transform::default().looking_to(direction, up).rotation;
+            player.translation = position + up * 5.8;
+            player.rotation = mount.rotation;
+            return direction;
+        }
+    }
     let mut view = ViewUniform {
         planet_center_value: world.local(DVec3::ZERO).extend(0.0),
         planet_rotation: world.basis.conjugate().as_quat(),
@@ -365,10 +491,53 @@ fn focus_aur(
 }
 
 #[derive(Default)]
+struct GpuSamples {
+    values: Vec<f64>,
+    last: Option<Instant>,
+}
+
+struct Route {
+    origin: DVec3,
+    rotation: DQuat,
+}
+
+#[derive(Resource)]
 struct BenchmarkRun {
     samples: Vec<f64>,
     captured: u32,
     started: Option<f64>,
+    warmup: f64,
+    duration: f64,
+    capture: bool,
+    sequence: bool,
+    gpu: BTreeMap<String, GpuSamples>,
+    route: Option<Route>,
+}
+
+impl Default for BenchmarkRun {
+    fn default() -> Self {
+        let seconds = |name, default| {
+            option(name).map_or(default, |s| {
+                let value = s.parse::<f64>().expect("benchmark seconds");
+                assert!(
+                    value.is_finite() && value > 0.0,
+                    "benchmark seconds must be positive and finite"
+                );
+                value
+            })
+        };
+        Self {
+            samples: Vec::new(),
+            captured: 0,
+            started: None,
+            warmup: seconds("--warmup", 10.0),
+            duration: seconds("--duration", 20.0),
+            capture: !env::args().any(|arg| arg == "--no-capture"),
+            sequence: env::args().any(|arg| arg == "--animate" || arg == "--capture-sequence"),
+            gpu: BTreeMap::new(),
+            route: None,
+        }
+    }
 }
 
 fn measure(
@@ -377,7 +546,7 @@ fn measure(
     diagnostics: Res<DiagnosticsStore>,
     target: Res<BenchmarkTarget>,
     captures: Res<BenchmarkCaptures>,
-    mut run: Local<BenchmarkRun>,
+    mut run: ResMut<BenchmarkRun>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -392,12 +561,13 @@ fn measure(
         return;
     }
     let elapsed = now - *run.started.get_or_insert(now);
-    if elapsed < 10.0 {
+    if elapsed < run.warmup {
         return;
     }
-    let sequence = env::args().any(|arg| arg == "--animate");
-    if run.captured < if sequence { 3 } else { 1 }
-        && elapsed >= 10.0 + f64::from(run.captured) * 2.0
+    let sequence = run.sequence;
+    if run.capture
+        && run.captured < if sequence { 3 } else { 1 }
+        && elapsed >= run.warmup + f64::from(run.captured) * 2.0
     {
         let mut path = env::var("SKYBOUND_SCREENSHOT")
             .unwrap_or_else(|_| "/tmp/skybound-benchmark.png".to_owned());
@@ -420,20 +590,52 @@ fn measure(
         run.captured += 1;
         return;
     }
-    if elapsed < 30.0 {
+    if elapsed < run.warmup + run.duration {
         run.samples.push(time.delta_secs_f64() * 1000.0);
+        for diagnostic in diagnostics
+            .iter()
+            .filter(|d| d.path().as_str().ends_with("elapsed_gpu"))
+        {
+            if let Some(measurement) = diagnostic.measurement() {
+                let samples = run
+                    .gpu
+                    .entry(diagnostic.path().as_str().to_owned())
+                    .or_default();
+                if samples.last != Some(measurement.time) {
+                    samples.values.push(measurement.value);
+                    samples.last = Some(measurement.time);
+                }
+            }
+        }
     }
-    if elapsed < 30.0 {
+    if elapsed < run.warmup + run.duration {
         return;
     }
     if captures.0 < run.captured {
-        if elapsed < 90.0 {
+        if elapsed < run.warmup + run.duration + 60.0 {
             return;
         }
         error!("BENCHMARK failed: screenshot readback did not complete");
         exit.write(AppExit::error());
         return;
     }
+    if run.samples.is_empty() {
+        error!("BENCHMARK failed: no frame samples");
+        exit.write(AppExit::error());
+        return;
+    }
+    match report(&mut run) {
+        Ok(()) => {
+            exit.write(AppExit::Success);
+        }
+        Err(error) => {
+            error!("BENCHMARK failed to write results: {error}");
+            exit.write(AppExit::error());
+        }
+    }
+}
+
+fn report(run: &mut BenchmarkRun) -> io::Result<()> {
     let samples = &mut run.samples;
     samples.sort_by(f64::total_cmp);
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
@@ -443,15 +645,49 @@ fn measure(
         samples.len(),
         1000.0 / mean
     );
-    for diagnostic in diagnostics
-        .iter()
-        .filter(|d| d.path().as_str().ends_with("elapsed_gpu"))
-    {
-        if let Some(ms) = diagnostic.average() {
-            println!("GPU {} {ms:.3} ms", diagnostic.path().as_str());
-        }
+    let mut report = serde_json::json!({
+        "scene": option("--scene").unwrap_or_else(|| "garden".to_owned()),
+        "width": resolution().x, "height": resolution().y,
+        "frames": samples.len(), "mean_ms": mean, "p95_ms": p95, "fps": 1000.0 / mean,
+        "capture": run.capture, "route": run.route.is_some(), "passes": {},
+    });
+    for (name, samples) in &mut run.gpu {
+        samples.values.sort_by(f64::total_cmp);
+        let mean = samples.values.iter().sum::<f64>() / samples.values.len() as f64;
+        let p95 = samples.values[(samples.values.len() - 1) * 95 / 100];
+        println!("GPU {name} {mean:.3} ms p95={p95:.3} ms");
+        report["passes"][name] =
+            serde_json::json!({"mean_ms": mean, "p95_ms": p95, "samples": samples.values.len()});
     }
-    exit.write(AppExit::Success);
+    println!("BENCHMARK_JSON {report}");
+    if let Some(path) = option("--output") {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&report).expect("serializable benchmark results"),
+        )?;
+    }
+    Ok(())
+}
+
+fn replay_route(
+    time: Res<Time<Real>>,
+    run: Res<BenchmarkRun>,
+    world: Res<WorldData>,
+    mut camera: Single<&mut Transform, With<Camera3d>>,
+) {
+    let (Some(route), Some(started)) = (&run.route, run.started) else {
+        return;
+    };
+    let seconds = time.elapsed_secs_f64() - started;
+    let phase = seconds * TAU / 30.0;
+    let offset = DVec3::new(
+        phase.sin() * 2500.0,
+        (1.0 - (phase * 0.5).cos()) * 2500.0,
+        -seconds * 160.0,
+    );
+    camera.translation = world.local(route.origin + route.rotation * offset);
+    let rotation = route.rotation * DQuat::from_rotation_y(phase.sin() * 0.35);
+    camera.rotation = (world.basis.conjugate() * rotation).as_quat();
 }
 
 fn resolution() -> UVec2 {

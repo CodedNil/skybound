@@ -52,7 +52,7 @@ fn reconstruct(@location(0) uv: vec2<f32>) -> FilterOutput {
         let thin_edge = max(current.a, old.a) > 0.8;
         if difference.y < tolerance.y && (difference.x < tolerance.x || thin_edge) {
             let screen_motion = length(textureLoad(motion, p, 0).xy * parameters.size.xy);
-            weight = mix(0.88, 0.65, smoothstep(0.25, 3.0, screen_motion));
+            weight = mix(0.20, 0.05, smoothstep(0.25, 3.0, screen_motion));
             let luminance_change = abs(dot(old.rgb - current.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
             let brightness = max(dot(current.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.1);
             weight *= 1.0 - smoothstep(0.08, 0.5, luminance_change / brightness);

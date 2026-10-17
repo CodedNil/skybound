@@ -4621,6 +4621,7 @@ dependencies = [
  "half",
  "image",
  "rayon",
+ "serde_json",
  "spirv-builder",
  "spirv-std",
 ]

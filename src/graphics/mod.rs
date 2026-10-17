@@ -1,4 +1,5 @@
 use bevy::anti_alias::taa::temporal_anti_alias;
+mod froxel;
 pub mod pipeline;
 mod prepare;
 mod targets;
@@ -12,6 +13,7 @@ use bevy::shader::Shader;
 
 use crate::game::camera::DebugView;
 use crate::game::flight::PlayerModel;
+use crate::game::weather::CloudSnapshot;
 use crate::game::world::WorldData;
 use crate::graphics::pipeline::{
     SceneBuffer, ScenePipeline, composite_pass, prepare_bindings, prepare_scene_view, raymarch_pass,
@@ -48,6 +50,7 @@ impl Plugin for GraphicsPlugin {
                 ExtractResourcePlugin::<AtmosphereSettings>::default(),
                 ExtractResourcePlugin::<PlayerModel>::default(),
                 ExtractResourcePlugin::<WorldData>::default(),
+                ExtractResourcePlugin::<CloudSnapshot>::default(),
                 ExtractResourcePlugin::<DebugView>::default(),
                 ExtractResourcePlugin::<targets::VolumeScale>::default(),
             ))

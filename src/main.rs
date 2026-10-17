@@ -5,10 +5,21 @@ mod graphics;
 use std::env;
 
 use bevy::prelude::*;
+use bevy::window::{PresentMode, WindowPlugin};
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins((DefaultPlugins, game::GamePlugin, graphics::GraphicsPlugin));
+    app.add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                present_mode: PresentMode::Fifo,
+                ..default()
+            }),
+            ..default()
+        }),
+        game::GamePlugin,
+        graphics::GraphicsPlugin,
+    ));
     if env::args().any(|arg| arg == "--benchmark") {
         app.add_plugins(benchmark::BenchmarkPlugin);
     }

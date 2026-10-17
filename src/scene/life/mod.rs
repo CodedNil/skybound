@@ -235,6 +235,10 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
 }
 
 pub fn ellipsoid(p: Vec3, radius: Vec3) -> f32 {
+    let exterior = (p.abs() - radius).max_element();
+    if exterior > radius.min_element() * 0.2 {
+        return exterior;
+    }
     ((p / radius).length() - 1.0) * radius.min_element()
 }
 
@@ -352,6 +356,37 @@ mod tests {
     use spirv_std::glam::Quat;
 
     use super::*;
+
+    #[test]
+    fn anisotropic_distance_bounds_keep_surfaces_and_signed_interiors() {
+        let radius = vec3(20.0, 0.02, 2.0);
+        assert!(ellipsoid(Vec3::ZERO, radius) < 0.0);
+        for index in 1..100 {
+            let direction = vec3(
+                (index as f32 * 1.17).sin(),
+                (index as f32 * 0.73).cos(),
+                0.4,
+            )
+            .normalize();
+            let surface = direction * radius;
+            assert!(ellipsoid(surface, radius).abs() < 0.00001);
+            for offset in [0.01, 0.1, 1.0, 10.0] {
+                let normal = (direction / radius).normalize();
+                let point = surface + normal * offset;
+                let distance = ellipsoid(point, radius);
+                assert!(
+                    distance > 0.0 && distance <= offset + 0.0001,
+                    "non-conservative ellipsoid distance {distance} > {offset}"
+                );
+            }
+        }
+        let point = vec3(30.0, 0.01, 0.0);
+        let previous = ((point / radius).length() - 1.0) * radius.min_element();
+        assert!(
+            ellipsoid(point, radius) > previous * 1.5,
+            "flat details must not force the old microscopic steps"
+        );
+    }
 
     #[test]
     fn species_have_complete_taxonomic_paths() {

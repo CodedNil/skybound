@@ -34,7 +34,10 @@ fn composite(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
         }
     }
     let fog = accumulated / max(total, 0.000001);
+    let profile = u32(parameters.native.w);
+    if (profile & 32u) != 0u { return vec4<f32>(fog.rgb + fog.a * background, 1.0); }
     let thin = textureLoad(thin_color, p, 0);
+    if (profile & 64u) != 0u { return vec4<f32>(thin.rgb, 1.0); }
     let transmission = textureLoad(thin_transmission, p, 0).rgb;
     if thin.a < 0.0 { return vec4<f32>(thin.rgb + transmission * background, 1.0); }
     let prefix = textureLoad(thin_prefix, p, 0);

@@ -10,7 +10,7 @@ pub const BIOLOGY: Biology = Biology {
     ..super::BIOLOGY
 };
 
-use super::{feather, feathered_tail, wings};
+use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -60,7 +60,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
         ellipsoid(point - vec3(0.0, 0.26, -0.17), vec3(0.044, 0.055, 0.026)),
         7,
     );
-    let tail = feathered_tail(point, creature, vec3(0.20, 0.25, 1.0), 0.07, 0.38, 0.085);
+    let tail = tail_shaft(point, creature, vec3(0.20, 0.25, 1.0), 0.07);
     hit.join(tail.distance, tail.material);
     hit
 }
@@ -124,57 +124,73 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
 }
 
 pub fn render_opaque(ray: Ray, creature: &CreatureInstance) -> Hit {
-    trace_material(ray, creature, surface, |point, id| {
-        let mask = (point.y - 0.58).smoothstep(0.0, 0.1) * (-point.z).smoothstep(0.10, 0.22);
-        let mut m = Material::skin(
-            vec3(0.16, 0.38, 0.40).lerp(vec3(0.80, 0.74, 0.52), mask),
-            0.56,
-        );
-        let clothed = id == 0 && point.y > -0.32 && point.y < 0.30 && point.x.abs() < 0.24;
-        match if clothed { 5 } else { id } {
-            2 => {
-                m.color = vec3(0.34, 0.58, 0.54)
-                    .lerp(vec3(0.84, 0.65, 0.40), (-point.z).smoothstep(0.25, 0.7));
-                m.roughness = 0.4;
-                m.translucency = 0.25;
-            }
-            1 => {
-                m.color = vec3(0.10, 0.35, 0.37).lerp(
-                    vec3(0.76, 0.54, 0.24),
-                    (point.z * 24.0).sin().smoothstep(0.0, 0.7),
-                );
-                m.roughness = 0.7;
-            }
-            3 => {
-                m.color = vec3(0.006, 0.014, 0.021);
-                m.roughness = 0.075;
-            }
-            4 => {
-                m.color = vec3(0.23, 0.16, 0.12);
-            }
-            5 => {
-                let stitch = ((point.x.abs() - 0.17).abs()).smoothstep(0.006, 0.018);
-                m.color = vec3(0.74, 0.49, 0.18).lerp(vec3(0.035, 0.10, 0.16), stitch);
-                m.roughness = 0.85;
-            }
-            7 => {
-                m.color = vec3(0.84, 0.57, 0.18);
-                m.metal = 0.65;
-                m.roughness = 0.25;
-            }
-            8 => {
-                m.color = vec3(0.17, 0.075, 0.055);
-                m.roughness = 0.3;
-            }
-            9 => {
-                m.color = vec3(0.18, 0.72, 0.70);
-                m.roughness = 0.16;
-                m.emission = 0.15;
-            }
-            _ => {}
+    let body = trace_material(ray, creature, surface, material);
+    let feathers = render_tail_feathers(
+        Ray {
+            max_distance: body.distance().min(ray.max_distance),
+            ..ray
+        },
+        creature,
+        TailFeathers {
+            scale: vec3(0.20, 0.25, 1.0),
+            length: 0.38,
+            width: 0.085,
+        },
+        material,
+    );
+    if feathers.is_hit() { feathers } else { body }
+}
+
+fn material(point: Vec3, id: u32) -> Material {
+    let mask = (point.y - 0.58).smoothstep(0.0, 0.1) * (-point.z).smoothstep(0.10, 0.22);
+    let mut m = Material::skin(
+        vec3(0.16, 0.38, 0.40).lerp(vec3(0.80, 0.74, 0.52), mask),
+        0.56,
+    );
+    let clothed = id == 0 && point.y > -0.32 && point.y < 0.30 && point.x.abs() < 0.24;
+    match if clothed { 5 } else { id } {
+        2 => {
+            m.color = vec3(0.34, 0.58, 0.54)
+                .lerp(vec3(0.84, 0.65, 0.40), (-point.z).smoothstep(0.25, 0.7));
+            m.roughness = 0.4;
+            m.translucency = 0.25;
         }
-        m
-    })
+        1 => {
+            m.color = vec3(0.10, 0.35, 0.37).lerp(
+                vec3(0.76, 0.54, 0.24),
+                (point.z * 24.0).sin().smoothstep(0.0, 0.7),
+            );
+            m.roughness = 0.7;
+        }
+        3 => {
+            m.color = vec3(0.006, 0.014, 0.021);
+            m.roughness = 0.075;
+        }
+        4 => {
+            m.color = vec3(0.23, 0.16, 0.12);
+        }
+        5 => {
+            let stitch = ((point.x.abs() - 0.17).abs()).smoothstep(0.006, 0.018);
+            m.color = vec3(0.74, 0.49, 0.18).lerp(vec3(0.035, 0.10, 0.16), stitch);
+            m.roughness = 0.85;
+        }
+        7 => {
+            m.color = vec3(0.84, 0.57, 0.18);
+            m.metal = 0.65;
+            m.roughness = 0.25;
+        }
+        8 => {
+            m.color = vec3(0.17, 0.075, 0.055);
+            m.roughness = 0.3;
+        }
+        9 => {
+            m.color = vec3(0.18, 0.72, 0.70);
+            m.roughness = 0.16;
+            m.emission = 0.15;
+        }
+        _ => {}
+    }
+    m
 }
 
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {

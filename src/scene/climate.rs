@@ -7,6 +7,8 @@ use super::math::cube;
 use super::{PLANET_RADIUS, noise::lattice};
 
 pub mod clouds;
+#[cfg(all(not(target_arch = "spirv"), feature = "desktop"))]
+pub mod simulation;
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 pub const CLOUD_BOTTOM: f32 = 2700.0;

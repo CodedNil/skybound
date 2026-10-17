@@ -1,4 +1,4 @@
-use spirv_std::glam::{Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec4};
+use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec4};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
@@ -9,10 +9,12 @@ use crate::scene::noise::rotated;
 
 pub struct AtmosphereData {
     pub sky: Vec3,
-    pub ambient: Vec3,
 }
 
 pub struct Textures<'a> {
+    pub cache_shape: &'a Image!(2D, type=f32, sampled=true),
+    pub cache_columns: &'a Image!(2D, type=f32, sampled=true),
+    pub cached: bool,
     pub base: &'a Image!(3D, type=f32, sampled=true),
     pub details: &'a Image!(3D, type=f32, sampled=true),
     pub weather: &'a Image!(3D, type=f32, sampled=true),
@@ -45,11 +47,6 @@ impl FilteredNoise<'_, '_> {
         let mut value = (a + b) * 0.5;
         value.y = (a.x + b.x) * 0.5;
         value
-    }
-
-    pub fn cloud_details(&self, p: Vec3, scale: f32) -> Vec4 {
-        self.details(p, scale) * 0.65
-            + self.details(rotated(p * 1.618_034), scale * 1.221_392) * 0.35
     }
 
     fn pair(&self, p: Vec3, scale: f32) -> (Vec4, Vec4) {
@@ -148,21 +145,6 @@ impl Textures<'_> {
         let p = crate::scene::climate::Climate::weather_coordinates(point, time);
         self.weather(p)
     }
-}
-
-pub fn hash21(p: Vec2) -> f32 {
-    let mut v3 = (p.xyx() * 0.1031).fract_gl();
-    v3 += v3.dot(v3.yzx() + 33.33);
-    ((v3.x + v3.y) * v3.z).fract()
-}
-
-pub fn blue_noise(uv: Vec2) -> f32 {
-    let s0 = hash21(uv + vec2(-1.0, 0.0));
-    let s1 = hash21(uv + vec2(1.0, 0.0));
-    let s2 = hash21(uv + vec2(0.0, 1.0));
-    let s3 = hash21(uv + vec2(0.0, -1.0));
-    let s = s0 + s1 + s2 + s3;
-    hash21(uv) - s * 0.25 + 0.5
 }
 
 pub fn ray_shell_intersect(
