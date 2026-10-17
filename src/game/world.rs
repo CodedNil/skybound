@@ -14,6 +14,7 @@ use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
+use bevy::render::view::DebandDither;
 use skybound::scene::{PLANET_RADIUS, planet::surface_coordinates};
 
 use crate::game::ecosystem::{EcologicalMotion, Relations};
@@ -125,6 +126,7 @@ fn setup(mut commands: Commands) {
         NoBackgroundMotionVectors,
         Msaa::Off,
         Hdr,
+        DebandDither::Enabled,
         Bloom::NATURAL,
         TemporalAntiAliasing::default(),
         ContrastAdaptiveSharpening {

@@ -7,6 +7,14 @@ use spirv_std::glam::{
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+pub fn energy_color(warm: f32, charged: f32) -> Vec3 {
+    let violet = vec3(0.12, 0.09, 0.23);
+    let rose = vec3(0.38, 0.24, 0.32);
+    violet
+        .lerp(rose, warm.smoothstep(0.35, 0.65))
+        .lerp(vec3(0.40, 0.61, 0.57), charged.smoothstep(0.4, 0.65))
+}
+
 pub const CURRENT: Vec3 = vec3(35.0, -20.0, 0.0);
 
 pub fn curl(mut pos: Vec2, time: f32) -> Vec2 {

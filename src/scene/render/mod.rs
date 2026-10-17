@@ -152,7 +152,12 @@ fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLa
         let core = (-separation / (core_width * core_width)).exp();
         let glow = (-separation / (radius * radius)).exp();
         let energy = bolt[1].w * bolt[0].w / core_width;
-        let color = (vec3(0.70, 0.92, 1.0) * core + vec3(0.08, 0.38, 0.65) * glow * 0.12) * energy;
+        let phase = view.time() * 3.0 - along * 18.0 + start.x * 0.0002;
+        let tint = crate::scene::aur::energy_color(
+            0.5 + phase.sin() * 0.2,
+            0.55 + (phase * 0.7).cos() * 0.2,
+        );
+        let color = (tint.lerp(Vec3::ONE, 0.5) * core + tint * glow * 0.3) * energy;
         if color.max_element() < 0.001 {
             continue;
         }

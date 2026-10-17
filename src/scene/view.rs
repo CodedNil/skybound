@@ -82,9 +82,6 @@ impl ViewUniform {
     #[cfg(not(target_arch = "spirv"))]
     pub fn prepare_flashes(&mut self) {
         use super::aur::lightning::events;
-        use super::planet::surface_frame;
-        use spirv_std::glam::vec3;
-        use std::f32::consts::PI;
         self.aur_flashes = [[Vec4::ZERO; 2]; 32];
         self.aur_bolts = [[Vec4::ZERO; 2]; 32];
         let camera = self.to_planet(self.world_position.xyz());
@@ -113,30 +110,23 @@ impl ViewUniform {
         visible.sort_unstable_by(|a, b| b.0.total_cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
         let mut bolt_count = 0;
         for (index, (_, event)) in visible.iter().take(32).enumerate() {
-            let root = event.up * (PLANET_RADIUS - 1400.0);
+            let root = event.up * (PLANET_RADIUS - 900.0);
             self.aur_flashes[index] = [
                 root.extend(event.radius.recip()),
-                (vec3(0.45, 0.95, 1.25) * event.strength * 3.0).extend(event.strength),
+                (super::aur::energy_color(event.random, 0.45 + event.random * 0.2)
+                    * event.strength
+                    * 9.0)
+                    .extend(event.strength),
             ];
-            if bolt_count + 3 > self.aur_bolts.len() {
+            if bolt_count + 8 > self.aur_bolts.len() {
                 continue;
             }
-            let basis = surface_frame(event.up);
-            let lateral = basis.x_axis * ((event.random - 0.5) * 7000.0)
-                + basis.y_axis * ((event.random * 7.13).fract() - 0.5) * 7000.0;
-            let top = event.up * (PLANET_RADIUS + event.reach) + lateral;
-            let mut start = root;
-            for segment in 1..=3 {
-                let t = segment as f32 / 3.0;
-                let jag = basis.x_axis * (event.random * 31.0 + segment as f32 * 7.0).sin()
-                    + basis.y_axis * (event.random * 17.0 + segment as f32 * 11.0).cos();
-                let end = root.lerp(top, t) + jag * (1800.0 * (PI * t).sin());
+            for segment in event.segments() {
                 self.aur_bolts[bolt_count] = [
-                    self.from_planet(start).extend(24.0 + event.random * 32.0),
-                    self.from_planet(end).extend(event.strength * 36.0),
+                    self.from_planet(segment[0].truncate()).extend(segment[0].w),
+                    self.from_planet(segment[1].truncate()).extend(segment[1].w),
                 ];
                 bolt_count += 1;
-                start = end;
             }
         }
     }
@@ -239,7 +229,7 @@ mod tests {
                 assert!((a[endpoint].truncate() + offset).distance(b[endpoint].truncate()) < 1.0);
                 assert!(
                     (first.to_planet(a[endpoint].truncate()).length() - PLANET_RADIUS).abs()
-                        < 40_000.0
+                        < 30_000.0
                 );
             }
         }

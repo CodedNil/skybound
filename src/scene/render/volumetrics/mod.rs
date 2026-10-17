@@ -38,6 +38,7 @@ impl RaymarchResult {
             self.depth = (self.depth * opacity + distance * weight) / (opacity + weight);
         }
         self.color = (self.color.xyz() + radiance * weight).extend(self.color.w * transmission);
+        self.color = crate::scene::volume::finish_opaque(self.color, radiance);
     }
 }
 
@@ -98,21 +99,6 @@ pub(super) fn cloud_lighting(
         + upward
         + view.ambient_color.xyz() * 0.45
         + vec3(0.025, 0.035, 0.055)
-}
-
-pub(super) fn height_at(
-    point: Vec3,
-    view: &ViewUniform,
-    footprint: f32,
-    textures: &Textures,
-) -> f32 {
-    let (field, palette) = cache::sample(point, view, footprint, textures);
-    let wave = if palette.w > 0.0 {
-        field.x * 4096.0
-    } else {
-        aur_ocean::wave_height(point, view.time(), footprint, textures)
-    };
-    point.length() - PLANET_RADIUS - wave
 }
 
 pub fn short_volume(

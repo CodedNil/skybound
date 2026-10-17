@@ -120,16 +120,5 @@ pub fn column_cache(
         .normalize();
     *shape = vec4(wave / 4096.0, normal.x, normal.y, normal.z);
     let material_point = point.normalize() * (crate::scene::PLANET_RADIUS + wave - 100.0);
-    let material = aur_ocean::sample_ocean(
-        material_point,
-        view,
-        spacing * 0.5,
-        spirv_std::glam::vec3(1.0e10, 0.0, 0.0),
-        wave,
-        normal,
-        Vec4::ZERO,
-        &textures,
-    );
-    *column = (material.emission + material.color * view.ambient_color.xyz() * 0.2)
-        .extend(material.density.max(0.01));
+    *column = aur_ocean::column_material(material_point, view, spacing * 0.5, normal, &textures);
 }
