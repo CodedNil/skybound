@@ -10,21 +10,23 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 pub use super::render_wings;
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 21.6;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Manduca gregaria",
-    english_name: "Nibblers",
-    description: "Nibblers are tiny, opportunistic four-winged scavengers that gather in large feeding swarms. \
-        They consume many kinds of organic debris and are among the ecosystem's primary decomposers. \
-        Compact bodies and quick wing movements support spectacular coordinated murmurations. \
-        Related cleaners concentrate this scavenging behaviour on the surfaces of larger animals.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Manduca gregaria",
+    "Nibblers",
+    [
+        "Nibblers are tiny four-winged scavengers whose compact bodies turn quickly around suspended organic debris.",
+        "Feeding swarms gather where damaged plants, carcasses or crowded grazing routes release loose material.",
+        "Each animal follows nearby motion and food cues, producing coordinated murmurations without a fixed leader.",
+        "Rapid growth lets a swarm exploit a short-lived concentration before the current scatters it.",
+        "By intercepting debris before it falls toward the aur ocean, they keep nutrients circulating among the Gardens.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 4.0, 4.0).extend(0.0);

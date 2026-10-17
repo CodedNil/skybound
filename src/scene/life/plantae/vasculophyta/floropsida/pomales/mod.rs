@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod pomaceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Pomales",
-    english_name: "Fruit-bearing",
-    description: "Fruit-bearing plants package stored nutrients and seeds into buoyant bodies. \
-        Thick collecting rinds support growth while allowing fruit fields to drift together through suitable air. \
-        Ripening releases seeds gently, and specialised seed coverings use currents and passing animals to travel farther.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Pomales",
+    "Fruit-bearing",
+    [
+        "Members of this order package seeds and stored nutrients inside buoyant reproductive bodies.",
+        "Thick collecting rinds help maintain the parent while the interior accumulates food reserves.",
+        "Flowers are less conspicuous than the mature fruit, shifting the greatest reproductive investment toward seed provisioning and dispersal.",
+        "Ripening releases lightweight seed bodies that respond to currents or attach to passing animals.",
+        "Drifting fruit fields consequently serve as feeding grounds while distributing their descendants beyond the air column that supported their growth.",
+    ],
+);

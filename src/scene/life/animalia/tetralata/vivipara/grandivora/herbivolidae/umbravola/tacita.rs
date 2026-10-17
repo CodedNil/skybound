@@ -13,23 +13,24 @@ pub const BIOLOGY: Biology = Biology {
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, eyes, feathers, prepare_pose, smooth_min, tail, tapered_tail,
-    torso,
+    CreatureInstance, eyes, feathers, prepare_pose, smooth_min, tail, tapered_tail, torso,
 };
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 49.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Umbravola tacita",
-    english_name: "Shadowings",
-    description: "Shadowings are large, intelligent scavengers covered in muted, light-absorbing dark plumage. \
-        Fine sensitivity to wind and thermal currents helps them search vast territories for carcasses left by apex predators. \
-        Sharp, echoing cries warn kin and other animals, coordinate safe feeding and discourage threats. \
-        Broad wings support long journeys and patient circling over potential feeding sites. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Umbravola tacita",
+    "Shadowings",
+    [
+        "Shadowings circle through broad currents on wings clothed in muted, light-absorbing plumage.",
+        "Fine sensitivity to wind and thermal changes helps them find the disturbed air around a falling carcass.",
+        "Mouth tentacles pull free tissue while the wing pairs match the remains' descent.",
+        "Sharp, echoing cries call companions to food and warn other animals when a large predator remains nearby.",
+        "Remembered routes and the always-visible polar beams guide their searches between meals that never remain in one place for long.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 8.0, 14.0, 0);

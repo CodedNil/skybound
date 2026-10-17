@@ -1,16 +1,18 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod chromacorallaceae;
 pub mod flexiloraceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Flexilorales",
-    english_name: "Flexible Straps",
-    description: "Tendril-shaped plants use slender, flexible or branching bodies to occupy the surfaces of other lifeforms. \
-        Attached spirals and fans exploit motion or ambient aur while their hosts provide support and transport. \
-        Their attachment creates intricate living layers on trees, kelp and slow-moving animals.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Flexilorales",
+    "Flexible Straps",
+    [
+        "Members of this order are attached descendants of flexible, ribbon-bearing floating plants.",
+        "Narrow tissues wrap around living supports, while branches or free tendrils extend into the surrounding air.",
+        "Fan-bearing forms collect dispersed aur, and the flexible-strap lineage has specialised its fibres to obtain energy from deformation.",
+        "Reliance on a host reduces the need for independent buoyancy but makes attachment and controlled yielding essential.",
+        "These shared supports and flexible growth connect the order despite the different energy sources of its families.",
+    ],
+);

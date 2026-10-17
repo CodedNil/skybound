@@ -1,16 +1,18 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aerothallales;
 pub mod flexilorales;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Macrophyllopsida",
-    english_name: "Large Leaf Forms",
-    description: "Large Leaves spread broad collecting surfaces through the air and distribute lift across multiple gas bladders. \
-        Membranes, ribbons and branching fans gather energy while flexible tissues accommodate changing currents. \
-        Different growth forms create shade, drinking basins, aerial forests or smaller attached colonies.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Macrophyllopsida",
+    "Large Leaf Forms",
+    [
+        "Members of this class expand thin collecting tissues into ribbons, broad membranes or branching fans.",
+        "Flexible body organisation distributes the forces of rising air across many small regions rather than a rigid stem.",
+        "Free-floating branches use gas bladders or broad drag surfaces, while attached branches let another organism supply support.",
+        "Changes in the same collecting tissues produce forests, rain basins, shaded pockets and layered host colonies.",
+        "Their diversity reflects different balances of load, moisture and exposure rather than separate inventions of a ground-rooted plant body.",
+    ],
+);

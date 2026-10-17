@@ -1,3 +1,4 @@
+use crate::math::{ToEngine, ToScene};
 use std::collections::HashMap;
 
 use bevy::math::DVec3;
@@ -39,6 +40,7 @@ pub struct Relations {
 
 impl Relations {
     pub fn rotate(&mut self, rotation: Quat) {
+        let rotation = rotation.to_scene();
         let senses = &mut self.senses;
         for direction in [
             &mut senses.wind,
@@ -182,9 +184,9 @@ type Organisms<'a> = (
 );
 
 fn climate_at(world: &WorldData, local: Vec3, now: f32) -> Climate {
-    let weather = Climate::weather_on_planet(world.position(local).as_vec3(), now);
-    let mut climate = Climate::on_planet(world.position(local).as_vec3(), now, weather);
-    climate.wind = world.rotate_to_local(climate.wind);
+    let weather = Climate::weather_on_planet(world.position(local).as_vec3().to_scene(), now);
+    let mut climate = Climate::on_planet(world.position(local).as_vec3().to_scene(), now, weather);
+    climate.wind = world.rotate_to_local(climate.wind.to_engine()).to_scene();
     climate
 }
 
@@ -240,9 +242,9 @@ fn simulate(
         let senses = perceive(agent, &mut relations, climate, &neighbours, now, &world);
         relations.senses = senses;
         let mut movement = Motion {
-            position: Vec3::ZERO,
-            velocity: motion.0,
-            rotation: transform.rotation,
+            position: Vec3::ZERO.to_scene(),
+            velocity: motion.0.to_scene(),
+            rotation: transform.rotation.to_scene(),
         };
         let controls = movement.advance(species.0, &senses, dt);
         relations.activity = controls.activity;
@@ -271,12 +273,12 @@ fn simulate(
             } else {
                 relations.host = None;
                 if let Ok(mut coordinate) = coordinates.get_mut(entity) {
-                    coordinate.translate(movement.position, &mut transform, &world);
+                    coordinate.translate(movement.position.to_engine(), &mut transform, &world);
                 } else {
-                    transform.translation += movement.position;
+                    transform.translation += movement.position.to_engine();
                 }
-                transform.rotation = movement.rotation;
-                motion.0 = movement.velocity;
+                transform.rotation = movement.rotation.to_engine();
+                motion.0 = movement.velocity.to_engine();
             }
         }
         if ecosystem.living < POPULATION_LIMIT
@@ -370,7 +372,7 @@ fn perceive(
     let biology = kind.biology();
     let mut senses = Senses {
         wind: climate.wind,
-        up: world.up(position),
+        up: world.up(position).to_scene(),
         aur: climate.aur,
         time: now,
         energy: body.energy,
@@ -379,7 +381,7 @@ fn perceive(
         ..Senses::default()
     };
     for other in neighbours.iter().filter(|other| other.entity != entity) {
-        let offset = other.position - position;
+        let offset = (other.position - position).to_scene();
         if senses.food.is_none()
             && ((edible(kind, other.kind) && other.vitals.health > 0.0)
                 || (biology.feeding == Feeding::Scavenger && other.vitals.health <= 0.0))
@@ -408,7 +410,7 @@ fn perceive(
         if other.kind == kind && other.vitals.health > 0.0 {
             senses.separation -= offset / offset.length_squared().max(1.0);
             if matches!(biology.social, Social::Herd | Social::Swarm) {
-                senses.alignment += other.velocity * 0.02;
+                senses.alignment += other.velocity.to_scene() * 0.02;
             }
         }
     }
@@ -422,7 +424,7 @@ fn perceive(
         {
             relations.remembered_food = None;
         } else {
-            senses.food = Some(world.local(location) - position);
+            senses.food = Some((world.local(location) - position).to_scene());
         }
     }
     let target_altitude = if biology.organs.aur_capacity > 0.0 && body.aur < 0.15 {
@@ -436,7 +438,7 @@ fn perceive(
         senses.habitat = Some(senses.up * (target_altitude - climate.altitude));
     }
     if climate.storm > 0.1 {
-        senses.storm = Some(Vec3::Y * 100.0);
+        senses.storm = Some(Vec3::Y.to_scene() * 100.0);
     }
     senses.buoyancy = match biology.organs.lift {
         Lift::Bladders | Lift::Membrane | Lift::Chimney => {
@@ -735,13 +737,13 @@ mod tests {
             position: agent.position - origin,
             ..agent
         };
-        let climate = Climate::sample(agent.position, 2.0, 0.0);
+        let climate = Climate::sample(agent.position.to_scene(), 2.0, 0.0);
         let senses = perceive(shifted, &mut relations, climate, &[], 2.0, &coordinates);
         assert!(
             senses
                 .food
                 .expect("remembered food")
-                .distance(Vec3::X * 80.0)
+                .distance(Vec3::X.to_scene() * 80.0)
                 < 1e-5
         );
         let expired = perceive(shifted, &mut relations, climate, &[], 10.0, &coordinates);

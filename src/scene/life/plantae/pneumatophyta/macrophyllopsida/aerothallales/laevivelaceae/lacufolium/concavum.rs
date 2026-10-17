@@ -8,23 +8,24 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 15.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lacufolium concavum",
-    english_name: "Pondplants",
-    description: "Pondplants turn a broad floating leaf into a concave basin that stores rainwater. \
-        Their shallow aerial ponds are crucial drinking sites for animals that cannot extract enough moisture themselves. \
-        Water stored in the basin also discourages grazing: damage to the leaf spills the contents and disrupts the feeding surface.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Lacufolium concavum",
+    "Pondplants",
+    [
+        "Pondplants curve a broad floating leaf into a shallow basin supported by a flexible outer rim.",
+        "Rain accumulates above the collecting membrane, providing drinking water for animals whose moisture-recovery organs cannot meet the cost of active flight.",
+        "The basin flexes as its load changes, spilling excess water before the plant loses safe lift.",
+        "Hygroscopic tissues supply the plant itself, while the pond remains an exposed resource visited by drinkers, cleaners and opportunistic parasites.",
+        "Grazing damage drains this shared water store, so frequent visitors benefit from keeping the living rim intact.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(9.0, 4.0, 9.0).extend(0.0);

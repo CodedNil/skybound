@@ -1,14 +1,16 @@
 pub use super::BIOLOGY;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod nubivesica;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nubivesicidae",
-    english_name: "Cloud Bladders",
-    description: "Light Shapes have rounded, lobed envelopes enclosing tightly packed gas chambers. \
-        Their pale jade membranes reflect the surrounding sky, and fine yellow-green veins join the chambers around a basal cluster of gelatinous organs. \
-        Short, broad trailing membranes sway beneath the body as the animals drift through high-altitude currents and absorb sparse airborne food.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Nubivesicidae",
+    "Cloud Bladders",
+    [
+        "Members of this family enclose closely packed gas chambers within rounded, pale jade membranes.",
+        "Feeding organs gather near the lower centre, above short trailing folds that catch suspended particles.",
+        "The compact envelope exposes less delicate tissue to dry high-altitude air than a long ribbon would.",
+        "Fine veins carry absorbed nutrients between the folds and the chamber-lined body.",
+        "They favour the moist edges of Cloud Peaks, where buoyancy and water retention matter more than rapid pursuit of food.",
+    ],
+);

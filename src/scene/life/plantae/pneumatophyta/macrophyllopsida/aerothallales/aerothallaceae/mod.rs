@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aerothallus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerothallaceae",
-    english_name: "Air Fronds",
-    description: "Kelps grow long fibrous ribbons supported by many regularly spaced gas bladders. \
-        Repeated lift points help strands remain broadly level despite their great length. \
-        Dense stands form aerial forests that offer food, shelter and a framework for other attached organisms.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Aerothallaceae",
+    "Air Fronds",
+    [
+        "Members of this family combine fibrous strands, broad collecting fronds and regularly repeated gas bladders.",
+        "Lift remains distributed along the plant, allowing great length without a single heavy support organ.",
+        "Flexible connections accommodate the different forces acting on neighbouring portions of a strand.",
+        "Interwoven colonies turn open air into sheltered passages that retain humidity and suspended food.",
+        "Their forests depend on continued rising air, so damage and weaker aur phases favour gradual rearrangement rather than a rigid, permanent canopy.",
+    ],
+);

@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod corticivora;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ramiphaga",
-    english_name: "Branch Eater",
-    description: "Driftmunchers are slow, armoured herbivores with strong crushing mandibles and compact supporting wings.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Ramiphaga",
+    "Branch Eater",
+    [
+        "Members of Ramiphaga are slow herbivores with crushing mandibles and compact supporting wings.",
+        "Their mouth appendages secure a grip on woody growth while the jaws remove bark or defensive tissue.",
+        "Armour protects the body from scraping vegetation, allowing feeding within Bramble tangles that exclude softer animals.",
+        "Small patches are worked in sequence as the plant turns through the current.",
+        "This feeding style depends on a living drifting framework rather than a surface on which the animal can stand.",
+    ],
+);

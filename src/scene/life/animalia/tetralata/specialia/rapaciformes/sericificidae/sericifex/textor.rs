@@ -10,21 +10,23 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 pub use super::render_wings;
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 36.7;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Sericifex textor",
-    english_name: "Weavers",
-    description: "Weavers are aerial engineers that spin silk between separate plants, turning loose vegetation into connected habitats. \
-        Sticky strands catch small prey, while stronger structural silk helps hold fruit fields together. \
-        Some build nests and collect shiny objects among their webs. \
-        Their muscular oral palps handle silk and anchors, and their work creates routes and resources used by many other organisms and Næ crafters.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Sericifex textor",
+    "Weavers",
+    [
+        "Weavers hold themselves between kelp fronds on four wings while mouth tentacles draw out and fasten silk.",
+        "Loose catching strands hang across feeding approaches, while stronger braided lines keep neighbouring plants from drifting beyond reach.",
+        "They read changes in tension to distinguish grazing visitors from moving anchors, then reel captured prey toward the sheltered centre.",
+        "Lines are loosened or replaced as currents shift, allowing the structure to breathe with a Jungle rather than resist it as a rigid net.",
+        "Nests, collected bright fragments and the work of Næ crafters accumulate along old anchor corridors, turning a feeding apparatus into a persistent aerial neighbourhood.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 5.0, 6.0).extend(0.0);

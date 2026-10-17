@@ -5,7 +5,7 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 5000.0,
     adult_mass: 7.0,
     reproduction: Reproduction::Fragmentation,
-    altitude: (20.0, 800.0),
+    altitude: (50.0, 800.0),
     ..super::BIOLOGY
 };
 
@@ -16,21 +16,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::rotate;
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 16.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Stelloradix pendula",
-    english_name: "Root-Stars",
-    description: "Root-Stars have a buoyant rubbery sphere above a star-shaped cluster of thick fleshy roots. \
-        The roots hang into lower aur mists and absorb nutrients from rising energy-rich air. \
-        Continued exposure eventually kills and detaches them. \
-        Detached roots drift upward, curl and burst into new rubbery bodies that grow their own hanging roots, making this loss part of the reproductive cycle.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Stelloradix pendula",
+    "Root-Stars",
+    [
+        "Root-Stars float on rubbery crowns while thick fleshy roots radiate downward into nutrient-rich lower air.",
+        "Vascular channels lift absorbed moisture and minerals from the roots into the body.",
+        "Roots reaching the upper Veiland mists suffer progressive surface damage and are shed before exposure spreads into the crown.",
+        "Surviving inner tissue in a detached root curls, forms a buoyant body and rises to begin another plant.",
+        "Grounders feed on these rich root structures, linking a dangerous collecting strategy to one of the lower Gardens' most specialised grazing relationships.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(7.0, 11.0, 7.0).extend(0.0);

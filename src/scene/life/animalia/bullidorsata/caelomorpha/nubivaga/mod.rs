@@ -1,16 +1,17 @@
 pub use super::BIOLOGY;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod levitantidae;
 pub mod nubivesicidae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nubivaga",
-    english_name: "Cloud Wanderers",
-    description: "Cloud Drifters are light, translucent bubblebacks adapted to open air and cloud margins. \
-        Their pale green bodies enclose prominent rounded gas chambers, with gelatinous feeding tissues gathered around the lower centre. \
-        Rounded envelopes and trailing membranes catch the light and move gently with surrounding currents. \
-        They feed on intercepted plant matter and make small changes in orientation through buoyancy and drag.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Nubivaga",
+    "Cloud Wanderers",
+    [
+        "Members of this order are lightweight bubblebacks that feed in open currents and along cloud margins.",
+        "Rounded gas chambers hold their gelatinous organs clear of broad, moisture-retaining membranes.",
+        "Their feeding surfaces remain exposed to moving air, unlike the sheltered arches of the canopy-bearing lineage.",
+        "Compact balloons conserve collecting tissues in sparse air, while ribbon-bearing forms trade protection for a larger feeding reach.",
+        "Cloud moisture and changes in updraft strength determine how high these animals can remain without drying or losing lift.",
+    ],
+);

@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod crepusculofalx;
 pub mod ferrispina;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ferrispinidae",
-    english_name: "Iron Spines",
-    description: "Blade Sweepers use hardened wing margins or spinal blades in sudden aerial attacks. \
-        Streamlined bodies and paired wings support fast turns around prey, and some lineages supplement hunting with scavenging. \
-        Camouflage, luminous lures and coordinated juvenile groups provide different routes to a successful strike.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Ferrispinidae",
+    "Iron Spines",
+    [
+        "Members of this family develop hardened cutting surfaces along wing margins or the spine.",
+        "Their flexible bodies and paired wings bring those surfaces across prey during a controlled banking pass.",
+        "Camouflaged ambushers use short turns, while larger roaming hunters make wider sweeps and sometimes cooperate.",
+        "Feeding tentacles secure the result without turning the cutting surface into a grasping limb.",
+        "These related approaches divide the family between mineral haze, open herd routes and the defence of moving nurseries.",
+    ],
+);

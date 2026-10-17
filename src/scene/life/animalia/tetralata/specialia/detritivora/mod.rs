@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod lucernidae;
 pub mod manducidae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Detritivora",
-    english_name: "Debris Eaters",
-    description: "Debris Eaters collect nutrients from suspended waste, organic particles and the bodies of larger animals. \
-        Small agile cleaners and swarm decomposers share the order with elongated filter feeders. \
-        Their feeding recycles material that would otherwise fall out of the inhabited sky.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Detritivora",
+    "Debris Eaters",
+    [
+        "Members of this order reclaim organic material drifting through the air or clinging to larger animals.",
+        "Their four-winged ancestors already used mouth appendages to hold small food items against a moving body.",
+        "Swarm scavengers retain that compact form, cleaners specialise in close host contact and filter feeders extend the collecting surface.",
+        "The food source therefore links very different sizes and flight styles within a shared anatomical lineage.",
+        "Their activity slows the continual loss of usable nutrients from the Gardens toward the lethal aur ocean.",
+    ],
+);

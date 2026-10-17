@@ -119,6 +119,26 @@ pub struct Taxon {
     pub parent: Option<&'static Self>,
 }
 
+/// Taxonomic modules inherit their parent from the enclosing module.
+/// Write each description sentence as a separate string; they are joined with
+/// single spaces at compile time.
+macro_rules! taxon {
+    ($rank:ident, $name:expr, $english:expr, [$first:literal $(, $rest:literal)* $(,)?] $(,)?) => {
+        taxon!($rank, $name, $english, concat!($first $(, " ", $rest)*));
+    };
+    ($rank:ident, $name:expr, $english:expr, $description:expr $(,)?) => {
+        pub const TAXON: $crate::scene::life::Taxon = $crate::scene::life::Taxon {
+            name: $name,
+            english_name: $english,
+            description: $description,
+            rank: $crate::scene::life::Rank::$rank,
+            parent: taxon!(@parent $rank),
+        };
+    };
+    (@parent Root) => { None };
+    (@parent $rank:ident) => { Some(&super::TAXON) };
+}
+
 pub mod anatomy;
 pub mod animalia;
 pub mod behaviour;
@@ -128,14 +148,18 @@ pub mod physiology;
 pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 pub mod plantae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Vita",
-    english_name: "Life",
-    description: "Life above the aur ocean is sustained by rising energy, moisture and wind. \
-        Organisms occupy changing layers of the sky, exchanging nutrients through grazing, decomposition, parasitism and mutual dependence; buoyancy and attachment are as important as active flight.",
-    rank: Rank::Root,
-    parent: None,
-};
+taxon!(
+    Root,
+    "Vita",
+    "Life",
+    [
+        "Life above the aur ocean depends on energy and moisture rising through a world without solid ground.",
+        "Plants gather dispersed aur, its scattered light, wind deformation or electrical discharges, while animals obtain food from the resulting living tissues.",
+        "Buoyancy, drag, powered flight and attachment keep organisms within usable air as the forty-minute aur cycle changes light and lift.",
+        "Water and minerals arrive in dangerous geyser-fed currents, making the edges of those plumes valuable habitats even when the jets themselves are lethal.",
+        "Evolution repeatedly favours water conservation, secure living attachments and ways to avoid losing nutrients or young into the ocean below.",
+    ],
+);
 
 macro_rules! species {
     ($($id:ident: $($path:ident)::+;)*) => {

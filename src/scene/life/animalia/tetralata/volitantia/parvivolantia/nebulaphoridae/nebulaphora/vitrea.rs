@@ -8,21 +8,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, smooth_min};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, smooth_min};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 19.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Nebulaphora vitrea",
-    english_name: "Mistings",
-    description: "Mistings are large, docile moth-like pollinators with two pairs of thin, transparent wings. \
-        Veins and coloured membranes catch light like stained glass, surrounding a soft central body. \
-        They carry pollen between widely separated plant clusters and are especially attracted to Blooms. \
-        Their slow, gentle flight carries them between flowering plants and distant pollen sources.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Nebulaphora vitrea",
+    "Mistings",
+    [
+        "Mistings spread transparent, coloured wings around a soft central body, catching scattered aur light along fine supporting veins.",
+        "Each wing pair adjusts separately as they hover beside a swaying Bloom.",
+        "Flexible mouth appendages reach the nectar without forcing the animal to land on the petals.",
+        "Pollen clings during contact and travels with the next visit, linking flowers across open gaps in the Gardens.",
+        "They favour sheltered flowers along humid Swampland margins, where rainfall provides moisture without requiring an approach to the lethal geyser jets.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(2.0, 2.1, 4.0).extend(0.0);

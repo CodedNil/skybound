@@ -1,3 +1,4 @@
+use crate::math::{ToEngine, ToScene};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
 use bevy::math::{DQuat, DVec3};
@@ -77,7 +78,7 @@ impl WorldData {
         -self.up(local)
     }
     pub fn surface_position(&self, local: Vec3) -> Vec3 {
-        surface_coordinates(self.position(local).as_vec3())
+        surface_coordinates(self.position(local).as_vec3().to_scene()).to_engine()
     }
     pub fn planet_frame(&self, local: Vec3) -> (Quat, f32, f32) {
         let point = self.position(local);

@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod vocigenus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Vocigenidae",
-    english_name: "Voice-born Ones",
-    description: "Born of Voices are enormous, gentle herbivores associated with slow travel and communication across open air. \
-        Broad lifting surfaces support substantial bodies and pale insulating growths. \
-        They browse large floating plants, especially kelp and Laevensails.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Vocigenidae",
+    "Voice-born Ones",
+    [
+        "Members of this family are immense herbivores that browse large floating plants during slow journeys.",
+        "Broad wings support the body while long insulating fibres protect exposed tissues in cooler currents.",
+        "Their mouth tentacles gather soft kelp and sail membranes without the crushing apparatus of armoured grazers.",
+        "Complex calls maintain contact between widely separated animals and guide slowly developing young.",
+        "Dependence on extensive plant communities makes the continuity of floating forests more important than short-lived concentrations of suspended algae.",
+    ],
+);

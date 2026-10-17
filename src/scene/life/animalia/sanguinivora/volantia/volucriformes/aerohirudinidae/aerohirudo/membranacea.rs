@@ -12,21 +12,23 @@ use spirv_std::glam::{Vec2, Vec3, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 24.2;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerohirudo membranacea",
-    english_name: "Air Leeches",
-    description: "Air Leeches carry large, translucent, bat-like membrane wings around a narrow flexible body. \
-        Fine supporting structures remain visible through the wing surfaces, while the feeding end bears a rapid sucker grip. \
-        They hover near busy feeding grounds and ambush passing animals or plants. \
-        A brief attachment draws blood or sap before they release and withdraw into cover.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Aerohirudo membranacea",
+    "Air Leeches",
+    [
+        "Air Leeches hover beside busy feeding routes on broad translucent wings supported by fine visible struts.",
+        "A narrow, flexible body hangs behind the feeding sucker, keeping the mouth steady as a passing host moves through the current.",
+        "They take a brief meal of blood or sap and release before the host can turn toward the disturbance.",
+        "Broad wings provide control in the sheltered air around plants but make exposed River currents difficult to cross.",
+        "During the dim aur phase, crowded drinking sites offer better feeding opportunities than searching the dark open Gardens.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(1.4, 1.4, 5.0).extend(0.0);

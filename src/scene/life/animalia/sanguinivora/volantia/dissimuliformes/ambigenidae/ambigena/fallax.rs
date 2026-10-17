@@ -11,21 +11,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 22.6;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ambigena fallax",
-    english_name: "Double Natured",
-    description: "Double Natured animals imitate the swollen bodies and specialised mouth palps of Sweepers. \
-        They remove debris and provide an antiseptic cleaning benefit while slowly drawing fluids from the same host. \
-        Their appearance and careful movements encourage hosts to tolerate close contact. \
-        Hosts often tolerate their careful grooming movements, allowing prolonged access to a food source.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Ambigena fallax",
+    "Double Natured",
+    [
+        "Double Natured animals resemble Sweepers, with swollen bodies and mobile mouth fringes used during close grooming visits.",
+        "They remove debris and apply antiseptic secretions while taking small amounts of host fluid through the inherited feeding sucker.",
+        "Genuine cleaning reduces the irritation of feeding and gives the host a reason to tolerate their presence.",
+        "Frequent short visits are safer than remaining attached where a host can repeatedly inspect the same patch of skin.",
+        "Their deceptive resemblance arose in a winged parasite lineage distinct from the four-winged cleaners they imitate.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 5.0, 4.0).extend(0.0);

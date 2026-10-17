@@ -1,3 +1,4 @@
+use crate::math::{ToEngine, ToScene};
 use bevy::ecs::system::SystemParam;
 use bevy::input::InputSystems;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
@@ -113,9 +114,9 @@ fn instance(
     let stroke = (time * 4.0).sin() * (0.06 + (speed / 100.0).min(1.0) * 0.28) * (1.0 - dive);
     let fold = dive * 1.1;
     CreatureInstance::specimen(
-        transform.translation.extend(radius),
+        transform.translation.extend(radius).to_scene(),
         transform.rotation.to_array().into(),
-        Vec4::new(stroke, fold, time, speed),
+        Vec4::new(stroke, fold, time, speed).to_scene(),
         kind as u32,
         physiology.map_or_else(
             || kind.biology().maturity_days * 1.25,
@@ -162,7 +163,7 @@ fn extract_player(
                 vec3(0.0, -2.5, 0.2),
                 vec3(0.0, -2.3, 0.3),
             ]) {
-                *knot = point.extend(0.0);
+                *knot = point.extend(0.0).to_scene();
             }
         }
         let old = model.0[index];
@@ -224,13 +225,13 @@ fn contact(
     let mut found = None;
     for direction in [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z] {
         let ray = Ray {
-            origin: position,
-            direction,
-            light: Vec3::Z,
+            origin: position.to_scene(),
+            direction: direction.to_scene(),
+            light: Vec3::Z.to_scene(),
             max_distance: nearest,
             footprint: 0.001,
-            ambient: vec3(0.30, 0.36, 0.45),
-            radiance: Vec3::ONE,
+            ambient: vec3(0.30, 0.36, 0.45).to_scene(),
+            radiance: Vec3::ONE.to_scene(),
         };
         let result = naetu::render(ray, c);
         let mut hit = result.opaque;
@@ -241,20 +242,24 @@ fn contact(
         }
         if hit.is_hit() && hit.distance() < nearest {
             nearest = hit.distance();
-            let point = position + direction * nearest + hit.normal * 0.62;
+            let point = position + direction * nearest + hit.normal.to_engine() * 0.62;
             found = Some(PerchAnchor {
                 point: (mount.rotation.inverse() * (point - mount.translation)).as_dvec3(),
-                normal: mount.rotation.inverse() * hit.normal,
+                normal: mount.rotation.inverse() * hit.normal.to_engine(),
                 on_mount: true,
             });
         }
     }
     let terrain_point = world.surface_position(position);
-    let distance = spike_distance(terrain_point, Vec2::ZERO);
+    let distance = spike_distance(terrain_point.to_scene(), Vec2::ZERO.to_scene());
     if distance.abs() < nearest {
-        let normal = estimate_normal(position, |p| {
-            spike_distance(world.surface_position(p), Vec2::ZERO)
-        });
+        let normal = estimate_normal(position.to_scene(), |p| {
+            spike_distance(
+                world.surface_position(p.to_engine()).to_scene(),
+                Vec2::ZERO.to_scene(),
+            )
+        })
+        .to_engine();
         found = Some(PerchAnchor {
             point: world.position(position + normal * (0.62 - distance)),
             normal: world.basis.as_quat() * normal,
@@ -354,7 +359,7 @@ fn fly(
         physiology,
         individual,
     );
-    let rosette = ROSETTE * development::scale(&c);
+    let rosette = ROSETTE * development::scale(&c).to_engine();
     if keys.just_pressed(KeyCode::Space) && matches!(flight.mode, ControlMode::Perched(_)) {
         flight.mode = ControlMode::Flying;
         player_velocity.0 = mount_velocity.0 + up * 3.0;
@@ -425,26 +430,29 @@ fn advance_companion(
     if !matches!(flight.mode, ControlMode::Mounted) {
         let on_back = matches!(flight.mode, ControlMode::Perched(a) if a.on_mount);
         let mut motion = Motion {
-            position: mount.translation,
-            velocity: mount_velocity.0,
-            rotation: mount.rotation,
+            position: mount.translation.to_scene(),
+            velocity: mount_velocity.0.to_scene(),
+            rotation: mount.rotation.to_scene(),
         };
         motion.advance(
             Kind::Naetu,
             &Senses {
-                up: world.up(mount.translation),
-                companion: Some(if on_back {
-                    Vec3::ZERO
-                } else {
-                    player.translation - mount.translation
-                }),
+                up: world.up(mount.translation).to_scene(),
+                companion: Some(
+                    if on_back {
+                        Vec3::ZERO
+                    } else {
+                        player.translation - mount.translation
+                    }
+                    .to_scene(),
+                ),
                 ..ecology.map_or_else(Senses::default, |relations| relations.senses)
             },
             dt,
         );
-        mount.translation = motion.position;
-        mount.rotation = motion.rotation;
-        mount_velocity.0 = motion.velocity;
+        mount.translation = motion.position.to_engine();
+        mount.rotation = motion.rotation.to_engine();
+        mount_velocity.0 = motion.velocity.to_engine();
         if let ControlMode::Perched(anchor) = flight.mode
             && anchor.on_mount
         {
@@ -481,17 +489,23 @@ fn separate_from_mount(
     mount_velocity: Vec3,
 ) {
     for _ in 0..4 {
-        let scale = development::scale(body);
+        let scale = development::scale(body).to_engine();
         let point = mount.rotation.inverse() * (player.translation - mount.translation) / scale;
-        if point.abs().cmpgt(body.opaque_bounds.truncate() + 1.0).any() {
+        if point
+            .abs()
+            .cmpgt(body.opaque_bounds.truncate().to_engine() + 1.0)
+            .any()
+        {
             return;
         }
         let surface = |p| naetu::surface(development::body_point(p, body), body).distance;
-        let distance = surface(point) * scale.min_element();
+        let distance = surface(point.to_scene()) * scale.min_element();
         if distance >= 0.35 {
             return;
         }
-        let normal = (mount.rotation * (estimate_normal(point, surface) / scale)).normalize();
+        let normal = (mount.rotation
+            * (estimate_normal(point.to_scene(), surface).to_engine() / scale))
+            .normalize();
         player.translation += normal * (0.35 - distance);
         let inward = (*velocity - mount_velocity).dot(normal).min(0.0);
         *velocity -= normal * inward;
@@ -759,7 +773,7 @@ mod tests {
         let mut velocity = -Vec3::X * 10.0;
         separate_from_mount(&mut player, &mount, &body, &mut velocity, Vec3::ZERO);
         assert!(
-            naetu::surface(player.translation - SPAWN, &body).distance > 0.30,
+            naetu::surface((player.translation - SPAWN).to_scene(), &body).distance > 0.30,
             "Næ remains embedded in Nætu"
         );
         assert!(velocity.x >= -0.01, "collision must remove inward velocity");

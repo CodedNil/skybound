@@ -21,8 +21,8 @@ crate-type = ["dylib", "lib"]
 
 [dependencies]
 bytemuck = { version = "1.25.2", features = ["derive"] }
-spirv-std = { version = "0.10.0", features = ["bytemuck"] }
-bevy = { optional = true, version = "0.20.0", default-features = false, features = [
+spirv-std = { version = "0.11.0", features = ["bytemuck"] }
+bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "85503941e488152711a4695bbe248e9ed9f453fc", default-features = false, features = [
     "wayland",
     "std",
     "async_executor",
@@ -53,7 +53,7 @@ half = { version = "2.7.1", optional = true }
 serde_json = { version = "1.0", optional = true }
 
 [build-dependencies]
-spirv-builder = "0.10.0"
+spirv-builder = "0.11.0"
 
 [lints.rust]
 unsafe_code = "forbid"

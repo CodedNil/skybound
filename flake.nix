@@ -14,7 +14,7 @@
         inherit system;
         overlays = [ rust-overlay.overlays.default ];
       };
-      rustToolchain = pkgs.rust-bin.nightly."2026-07-03".default.override {
+      rustToolchain = pkgs.rust-bin.nightly."2026-08-15".default.override {
         extensions = [
           "rust-src"
           "rustc-dev"

@@ -10,21 +10,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 17.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Haematozoon invasor",
-    english_name: "Blood Dwellers",
-    description: "Blood Dwellers are parasites that invade and develop within a host's bloodstream. \
-        Developing parasites produce external juvenile growths that eventually detach to seek new hosts. \
-        Their free-living stages have compact, soft bodies adapted to passive dispersal. \
-        Free stages disperse passively, while most growth takes place within or immediately against a living host.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Haematozoon invasor",
+    "Blood Dwellers",
+    [
+        "Blood Dwellers spend most of their lives dividing within the fluid circulation of a host.",
+        "Their small, soft bodies obtain nutrients directly from that enclosed environment rather than maintaining an exposed feeding grip.",
+        "Dispersal growths develop near the host's surface and eventually release compact juveniles into the air.",
+        "These juveniles have only a brief opportunity to enter another host before their reserves are exhausted.",
+        "Crowded feeding grounds and close contact between animals therefore shape their spread more strongly than the long-distance wind that carries them.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(1.0, 1.0, 3.0).extend(0.0);

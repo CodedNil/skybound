@@ -1,3 +1,4 @@
+use crate::math::{ToEngine, ToScene};
 use bevy::math::{DQuat, DVec3};
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -18,9 +19,10 @@ use skybound::scene::aur::lightning::events as lightning_events;
 use skybound::scene::aur::{EJECTION_CELL, ejection, ejection_fill};
 use skybound::scene::polar::{REACTION_RADIUS, light_position};
 use skybound::scene::{
-    PLANET_RADIUS, ViewUniform,
+    PLANET_RADIUS,
     planet::{surface_frame, surface_point},
 };
+use spirv_std::glam::Vec4 as SceneVec4;
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
@@ -146,7 +148,6 @@ fn setup(params: BenchmarkSetup) {
         mount.translation,
         player.translation,
         direction,
-        phase,
     );
     if let Some(cloud_view) = cloud_camera(&scene, &world, &weather) {
         **transform = cloud_view;
@@ -195,12 +196,14 @@ fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> 
         return Some(
             Transform::from_translation(
                 world.local(
-                    (center + storm.center * 160_000.0 - frame.y_axis * 120_000.0).as_dvec3(),
+                    (center + storm.center * 160_000.0 - frame.y_axis * 120_000.0)
+                        .as_dvec3()
+                        .to_engine(),
                 ),
             )
             .looking_at(
-                world.local(center.as_dvec3()),
-                world.rotate_to_local(frame.y_axis),
+                world.local(center.as_dvec3().to_engine()),
+                world.rotate_to_local(frame.y_axis.to_engine()),
             ),
         );
     }
@@ -222,12 +225,12 @@ fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> 
         .min_by(|a, b| {
             a.center
                 .truncate()
-                .distance_squared(origin)
-                .total_cmp(&b.center.truncate().distance_squared(origin))
+                .distance_squared(origin.to_scene())
+                .total_cmp(&b.center.truncate().distance_squared(origin.to_scene()))
         })?;
-    let center = cloud.center.truncate();
-    let up = cloud.up.truncate();
-    let east = cloud.east.truncate();
+    let center = cloud.center.truncate().to_engine();
+    let up = cloud.up.truncate().to_engine();
+    let east = cloud.east.truncate().to_engine();
     let position = match scene {
         "cloud-interior" => center + east * cloud.center.w * 0.15,
         "cloud-top" | "cloud-high" => {
@@ -237,7 +240,9 @@ fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> 
         "cloud-tower" => center + up * (cloud.up.w + 30_000.0) - east * cloud.center.w * 3.0,
         _ => {
             center
-                + (light_position(center) - center).normalize() * cloud.center.w * 2.8
+                + (light_position(center.to_scene()).to_engine() - center).normalize()
+                    * cloud.center.w
+                    * 2.8
                 + up * cloud.up.w * 0.2
         }
     };
@@ -258,13 +263,8 @@ fn scene_camera(
     mount: Vec3,
     player: Vec3,
     direction: Vec3,
-    phase: f32,
 ) -> Transform {
-    if scene == "cloud-storm" {
-        storm_camera(world, mount, phase)
-    } else if scene == "cloud-bank" {
-        cloud_bank_camera(world, mount, phase)
-    } else if scene == "cloud-top" {
+    if scene == "cloud-top" {
         Transform::from_translation(mount - direction * 5000.0 + Vec3::Z * 2500.0)
             .looking_at(mount + direction * 12_000.0 - Vec3::Z * 20_000.0, Vec3::Z)
     } else if scene == "nae-close" {
@@ -295,78 +295,6 @@ fn scene_camera(
         Transform::from_translation(mount - direction * 85.0 + Vec3::Z * 18.0)
             .looking_at(mount + Vec3::Z * 5.0, Vec3::Z)
     }
-}
-
-fn storm_camera(world: &WorldData, position: Vec3, seconds: f32) -> Transform {
-    use skybound::scene::climate::clouds::{STORM, region_size, storm_at};
-    let cell_size = region_size(STORM);
-    let origin = world.position(position).as_vec3();
-    let mut closest = None;
-    let mut distance = f32::MAX;
-    for x in -7..=7 {
-        for y in -7..=7 {
-            for z in -7..=7 {
-                let point = vec3(x as f32, y as f32, z as f32) * cell_size;
-                if let Some(storm) = storm_at(point, seconds) {
-                    let candidate = storm.center.distance_squared(origin);
-                    if candidate < distance {
-                        closest = Some(storm);
-                        distance = candidate;
-                    }
-                }
-            }
-        }
-    }
-    let storm = closest.expect("storm benchmark requires a storm");
-    let side = (Vec3::Z - storm.up * storm.up.z).normalize_or(Vec3::X);
-    let target = world.local(storm.center.as_dvec3());
-    let up = world.rotate_to_local(storm.up);
-    let camera = world.local((storm.center + side * storm.radius * 4.0).as_dvec3());
-    Transform::from_translation(camera).looking_at(target, up)
-}
-
-fn cloud_bank_camera(world: &WorldData, position: Vec3, seconds: f32) -> Transform {
-    use skybound::scene::climate::{Climate, clouds, weather_at};
-    use skybound::scene::noise::{cellular, fbm, rotated};
-    let origin = world.position(position).as_vec3();
-    let frame = surface_frame(origin);
-    let mut target = origin;
-    let mut best = -1.0;
-    for x in -10..=10 {
-        for y in -10..=10 {
-            let point =
-                (origin + frame.x_axis * (x as f32 * 2000.0) + frame.y_axis * (y as f32 * 2000.0))
-                    .normalize()
-                    * (PLANET_RADIUS + 11_000.0);
-            let climate = Climate::on_planet(point, seconds, vec4(0.95, 0.65, 0.8, 0.9));
-            let weather = weather_at(clouds::region_coordinates(clouds::column_point(point), 0));
-            let coverage =
-                clouds::region_value(weather.x, seconds).clamp(0.0, 1.0) * climate.low_cloud;
-            let sample = |p| {
-                let q = rotated(p);
-                let shape = |p| 1.0 - (1.0 - fbm(p, 4, 0x11)) * cellular(p, 4, 0xd3);
-                vec4(
-                    0.8,
-                    shape(p).midpoint(shape(q)),
-                    fbm(p, 4, 0x35).midpoint(fbm(q, 4, 0x35)),
-                    fbm(p, 4, 0x61).midpoint(fbm(q, 4, 0x61)),
-                )
-            };
-            let flow = clouds::flow(clouds::column_point(point), seconds, 0);
-            let mut noise = sample(flow.previous).lerp(sample(flow.current), flow.blend);
-            noise.z = weather.w * 0.9375 + noise.z * 0.0625;
-            let density = clouds::layer_density(11_000.0, coverage, 0, noise, 0.0);
-            if density > best {
-                best = density;
-                target = point;
-            }
-        }
-    }
-    let camera = target - frame.y_axis * 25_000.0 - frame.z_axis * 7000.0;
-    Transform::from_translation(world.local(camera.as_dvec3())).looking_at(
-        world.local(target.as_dvec3()),
-        world.rotate_to_local(frame.z_axis),
-    )
 }
 
 fn scene_altitude(scene: &str) -> f32 {
@@ -411,77 +339,53 @@ fn focus_aur(
     player: &mut Transform,
     lightning: bool,
 ) -> Vec3 {
-    if lightning {
-        let origin = world.position(Vec3::ZERO).as_vec3();
-        if let Some(event) = lightning_events(phase)
+    let (position, direction) = if lightning {
+        let origin = world.position(Vec3::ZERO).as_vec3().to_scene();
+        let event = lightning_events(phase)
             .filter(|event| event.strength > 0.2)
             .min_by(|a, b| {
                 a.position
                     .distance_squared(origin)
                     .total_cmp(&b.position.distance_squared(origin))
             })
-        {
-            let basis = surface_frame(event.up);
-            let point = event.up * (PLANET_RADIUS + event.reach * 0.4);
-            let direction = world.rotate_to_local(basis.y_axis);
-            let position = world.local(point.as_dvec3()) - direction * 24_000.0;
-            let up = world.up(position);
-            mount.translation = position;
-            mount.rotation = Transform::default().looking_to(direction, up).rotation;
-            player.translation = position + up * 5.8;
-            player.rotation = mount.rotation;
-            return direction;
-        }
-    }
-    let mut view = ViewUniform {
-        planet_center_value: world.local(DVec3::ZERO).extend(0.0),
-        planet_rotation: world.basis.conjugate().as_quat(),
-        ..default()
-    };
-    view.times.x = phase
-        + if env::args().any(|arg| arg == "--animate") {
-            10.0
-        } else {
-            0.0
-        };
-    view.prepare_flashes();
-    let cell = (world.surface_position(Vec3::ZERO).truncate() / EJECTION_CELL).floor();
-    let event = (0..49)
-        .map(|index| {
-            ejection(
-                cell + vec2((index / 7) as f32 - 3.0, (index % 7) as f32 - 3.0),
-                view.time(),
-            )
-        })
-        .max_by(|a, b| {
-            let score = |event: &[Vec4; 2]| event[0].w * ejection_fill(0.5, event[0].z);
-            score(a).total_cmp(&score(b))
-        })
-        .expect("ejection cells");
-    let center = if lightning {
-        view.aur_bolts
-            .iter()
-            .find(|bolt| bolt[0].w > 0.0)
-            .map_or_else(
-                || event[0].truncate().truncate(),
-                |bolt| bolt[0].truncate().truncate(),
-            )
+            .expect("planetary lightning activity");
+        let direction = world.rotate_to_local(surface_frame(event.up).y_axis.to_engine());
+        let point = event.up * (PLANET_RADIUS + event.reach * 0.4);
+        (
+            world.local(point.as_dvec3().to_engine()) - direction * 24_000.0,
+            direction,
+        )
     } else {
-        event[0].truncate().truncate()
+        let seconds = phase
+            + if env::args().any(|arg| arg == "--animate") {
+                10.0
+            } else {
+                0.0
+            };
+        let cell =
+            (world.surface_position(Vec3::ZERO).truncate().to_scene() / EJECTION_CELL).floor();
+        let event = (0..49)
+            .map(|index| {
+                ejection(
+                    cell + vec2((index / 7) as f32 - 3.0, (index % 7) as f32 - 3.0).to_scene(),
+                    seconds,
+                )
+            })
+            .max_by(|a, b| {
+                let score = |event: &[SceneVec4; 2]| event[0].w * ejection_fill(0.5, event[0].z);
+                score(a).total_cmp(&score(b))
+            })
+            .expect("ejection cells");
+        let center = event[0].truncate().truncate();
+        let point = surface_point(center.extend(event[1].w * 0.25 + 1000.0));
+        let direction = world.rotate_to_local(
+            (surface_frame(point) * vec3(-event[1].y, -event[1].x, 0.0).to_scene()).to_engine(),
+        );
+        (
+            world.local(point.as_dvec3().to_engine()) - direction * 36_000.0,
+            direction,
+        )
     };
-    let altitude = if lightning {
-        world.altitude(mount.translation) as f32
-    } else {
-        event[1].w * 0.25 + 1000.0
-    };
-    let point = surface_point(center.extend(altitude));
-    let direction = if lightning {
-        Vec3::Y
-    } else {
-        world.rotate_to_local(surface_frame(point) * vec3(-event[1].y, -event[1].x, 0.0))
-    };
-    let distance = if lightning { 4000.0 } else { 36_000.0 };
-    let position = world.local(point.as_dvec3()) - direction * distance;
     let up = world.up(position);
     mount.translation = position;
     mount.rotation = Transform::default().looking_to(direction, up).rotation;

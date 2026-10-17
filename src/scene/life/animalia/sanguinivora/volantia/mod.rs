@@ -9,17 +9,19 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod dissimuliformes;
 pub mod volucriformes;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Volantia",
-    english_name: "Flying Ones",
-    description: "Flying Ones retain the flexible bodies and feeding grips of leeches but have evolved wings for repeated journeys between hosts. \
-        Wing surfaces range from broad translucent membranes to small feathered gliding structures. \
-        Flight permits brief feeding visits and also supports disguises as harmless grooming animals.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Volantia",
+    "Flying Ones",
+    [
+        "Members of this class are fluid-feeding animals with a single pair of powered wings.",
+        "The wings developed within the sucker-bearing lineage, independently of the four-winged body plan of Tetralata.",
+        "Flight allows them to leave a host after feeding rather than depend on permanent attachment.",
+        "Broad membranes favour hovering approaches, while smaller fringed wings suit gliding through cloud cover.",
+        "Repeated short visits also provide the behavioural starting point for grooming mimicry and more enduring host partnerships.",
+    ],
+);

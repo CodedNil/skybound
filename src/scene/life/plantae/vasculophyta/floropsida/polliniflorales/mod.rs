@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod pollinifloraceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Polliniflorales",
-    english_name: "Pollen Flowers",
-    description: "Nectar-bearing plants store energy in flowers whose colour, light and sweetness attract visiting animals. \
-        Petals present broad visual signals, while nectar reservoirs reward contact with pollen-bearing structures. \
-        The order ranges from delicate small blooms to flowers as large as trees.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Polliniflorales",
+    "Pollen Flowers",
+    [
+        "Members of this order hold nectar-bearing flowers in the current on buoyant vascular bodies.",
+        "Petals and luminous tissues advertise a concentrated food reward against the diffuse aur-lit sky.",
+        "Flexible stems let a flower turn under a visitor's weight without breaking its supply channels.",
+        "Contact transfers pollen between plants whose independent drift makes direct reproductive contact unreliable.",
+        "Differences in flower scale divide the order between frequent small visitors and larger animals requiring substantial nectar stores.",
+    ],
+);

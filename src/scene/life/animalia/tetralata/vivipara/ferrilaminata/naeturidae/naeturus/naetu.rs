@@ -14,27 +14,25 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose, smooth_min, tapered_tail,
-};
+use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, smooth_min, tapered_tail};
 use crate::scene::surface::{
     Hit, Material, Ray, Surface, TraceResult, trace_material, visit_shell,
 };
 
 pub const RENDER_RADIUS: f32 = 70.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Naetu",
-    english_name: "Nætu",
-    description: "Nætu are enormous four-winged carriers with a broad, gently tapered body, soft external exchange frills and a trailing feathered tail. \
-        Six oral tentacles gather vegetation and hold food against the broad mouth. \
-        Grassy dorsal fibres anchor Næ dwellings, while pale ventral folds expand around a large digestive crop. \
-        Redundant gas chambers and pleated respiratory channels support slow economical flight. \
-        Aur sacs isolated from the nutrient circulation recharge during careful mist-skimming dives, sustaining healing and a protective dome over travelling families. \
-        Herd members recognise their Næ companions through close contact, grooming and vocal exchanges.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Naetu",
+    "Nætu",
+    [
+        "Nætu are enormous four-winged carriers with broad bodies, external exchange frills and trailing feathered tails.",
+        "Three pairs of mouth tentacles gather vegetation, while redundant gas chambers and pleated breathing channels reduce the cost of slow flight.",
+        "Grassy dorsal fibres anchor Næ dwellings above pale folds surrounding a large digestive crop.",
+        "Carefully controlled dives skim the mists above the aur ocean to recharge isolated aur sacs, sustaining healing and a protective dome without contact with pure aur.",
+        "Recognition through touch, grooming and vocal exchanges binds travelling herds to the Næ families that care for them.",
+    ],
+);
 
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 20.0, 25.0, 0);

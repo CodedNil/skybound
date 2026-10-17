@@ -12,17 +12,19 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod auracoccales;
 pub mod luminiflorales;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Micrococcopsida",
-    english_name: "Small Sphere Forms",
-    description: "Small Spheres are microscopic plants that drift freely or form fine growths on larger organisms. \
-        Their small size and low mass allow passive suspension in rising air. \
-        Rapid reproduction and efficient energy collection make these forms abundant food and important partners or parasites of larger life.",
-    rank: Rank::Class,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Class,
+    "Micrococcopsida",
+    "Small Sphere Forms",
+    [
+        "Members of this class are small aur-collecting plants with short internal exchange distances.",
+        "Free cells rely on the updraft for suspension, while colonial descendants form fine patches on larger organisms.",
+        "Rapid division is ancestral, with fragmentation becoming important after growth shifts onto a persistent surface.",
+        "Small size allows quick responses to moisture and energy but leaves exposed forms vulnerable to drying.",
+        "Their abundance turns fleeting favourable currents and living surfaces into food for a much larger aerial ecosystem.",
+    ],
+);

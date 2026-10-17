@@ -1,15 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod luminifloraceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Luminiflorales",
-    english_name: "Luminous Flowers",
-    description: "Light Bearers form small luminous growths that use ambient aur and live on larger organisms. \
-        Fast expansion and fragmentation allow patches to spread across suitable surfaces. \
-        Their light and edible tissues connect host-associated growth to the surrounding aerial food web.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Luminiflorales",
+    "Luminous Flowers",
+    [
+        "Members of this order have shifted from freely drifting microscopic growth to luminous colonies on living surfaces.",
+        "Closely packed cells share the protection and support of a host while retaining short exchange paths to the air.",
+        "Fragmentation spreads established tissue between organisms rather than requiring each colony to begin as an isolated aerial cell.",
+        "Aur collection supports both the visible glow and the production eaten by small grazers.",
+        "Their ecological effect depends on the host, ranging from useful nutrient exchange to competition and parasitism.",
+    ],
+);

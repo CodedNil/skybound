@@ -13,21 +13,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 21.6;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Purgator mutualis",
-    english_name: "Sweepers",
-    description: "Sweepers are small, bloated animals that flit around larger creatures using specialised mouth palps to remove parasites and debris. \
-        Their rounded bodies and repeated close approaches identify them as persistent grooming companions. \
-        They obtain food from this cleaning while improving the health of their hosts. \
-        Hosts tolerate their repeated visits in exchange for grooming and parasite removal.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Purgator mutualis",
+    "Sweepers",
+    [
+        "Sweepers carry small, swollen bodies on four wings that hold them close to the surfaces of larger animals.",
+        "Sensitive mouth appendages lift debris and parasites without requiring a biting grip on the host.",
+        "They work through short approaches, retreating when the host moves sharply and returning to tolerated areas.",
+        "Food and the sheltered wake reward the cleaner, while parasite removal rewards the animal being groomed.",
+        "Regular visits also make hosts familiar with their shape and movements, creating an opportunity exploited by unrelated Double Natured mimics.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 5.0, 5.0).extend(0.0);

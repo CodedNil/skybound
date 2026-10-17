@@ -12,22 +12,24 @@ pub const BIOLOGY: Biology = Biology {
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, capsule, eyes, feathers, prepare_pose, smooth_min, tail, torso,
+    CreatureInstance, capsule, eyes, feathers, prepare_pose, smooth_min, tail, torso,
 };
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 49.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Herbivolus migratorius",
-    english_name: "Grazers",
-    description: "Grazers are large, slow-moving herbivores with broad feathered wings and long, soft tongue-like feeding appendages. \
-        Their soft feeding appendages gather larger algae as they sweep through dense concentrations of food. \
-        Twice a year they return to the Mineral Fields in enormous migratory herds. \
-        Their steady flight and social gatherings make them a conspicuous part of the aerial landscape. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Herbivolus migratorius",
+    "Grazers",
+    [
+        "Grazers are large herbivores with broad feathered wings and soft, tongue-like mouth tentacles.",
+        "They spread those appendages through dense algae concentrations, gathering food while the wing pairs hold a steady course.",
+        "Herds space themselves across a rising food stream so that neighbours do not continually feed in one another's depleted wake.",
+        "Repeated journeys to the Mineral Fields replenish minerals absent from clearer feeding air.",
+        "Their migration routes link productive Gardens to dusty regions, carrying predators, cleaners and attached parasites between the same communities.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 8.0, 14.0, 0);

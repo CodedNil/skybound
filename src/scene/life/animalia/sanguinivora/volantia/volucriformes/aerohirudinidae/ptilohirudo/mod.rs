@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod pennata;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ptilohirudo",
-    english_name: "Feathered Leech",
-    description: "Feathered Leeches are small gliders whose feathered wings support quick approaches and retreats through cloud layers.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Ptilohirudo",
+    "Feathered Leech",
+    [
+        "Members of Ptilohirudo are small parasites with fringed wings suited to gliding through cloud layers.",
+        "Fine wing fibres spread the lifting surface without the mass of a broad, heavily supported membrane.",
+        "Wide-spectrum vision helps them locate silhouettes and aur-lit movement in poor visibility.",
+        "They emerge from cloud cover for a short fluid meal and retreat before the host can pursue them.",
+        "Their compact form suits the Cloud Peaks, where moisture is abundant but exposed air offers little food or shelter.",
+    ],
+);

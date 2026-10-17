@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod textor;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Sericifex",
-    english_name: "Silk Maker",
-    description: "Weavers are aerial engineers that spin silk between separate plants, turning loose vegetation into connected habitats.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Sericifex",
+    "Silk Maker",
+    [
+        "Weavers are four-winged predators that draw silk into suspended feeding lines between living plants.",
+        "Mouth tentacles adjust anchor points while the wings hold the body clear of vegetation moving in different currents.",
+        "Instead of a fixed flat web, they build yielding corridors that intercept small animals approaching leaves, fruit and flowers.",
+        "Changes in strand tension reveal both struggling prey and the approach of a wind surge that could tear the structure apart.",
+        "Stronger outer lines bind the plant cluster together, creating sheltered sites for eggs and routes used by other inhabitants.",
+    ],
+);

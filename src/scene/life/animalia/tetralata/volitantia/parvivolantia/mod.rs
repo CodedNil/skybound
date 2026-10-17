@@ -1,15 +1,17 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod nebulaphoridae;
 pub mod scintillidae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Parvivolantia",
-    english_name: "Small Flyer",
-    description: "Small Flyers are lightweight four-winged animals associated with suspended food and flowering plants. \
-        Their wings provide manoeuvrability around feeding sites, while luminous or translucent surfaces are prominent visual traits. \
-        Swarms and long-distance pollen transport make them important links between scattered plant communities.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Parvivolantia",
+    "Small Flyer",
+    [
+        "Members of this order are lightweight four-winged animals that feed on small plant resources.",
+        "Fine control of the wing pairs allows feeding beside particles or flowers moving independently in the current.",
+        "Luminous swarm feeders exploit suspended algae and seeds, while broad-winged pollinators visit concentrated nectar stores.",
+        "Their small bodies grow rapidly but lose moisture more readily than the heavy forms of related orders.",
+        "Sheltered Gardens, cloud margins and living plant communities provide the food and humidity needed between flights.",
+    ],
+);

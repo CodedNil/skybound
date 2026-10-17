@@ -85,10 +85,12 @@ pub(super) fn cloud_lighting(
             grid,
         ) * 640.0;
     }
-    let source = cache::sample(position, view, 4000.0, textures).map_or(
-        vec3(0.40, 0.34, 0.52) * view.sky_horizon.y,
-        |(_, palette)| palette.xyz(),
-    );
+    let (_, palette) = cache::sample(position, view, 4000.0, textures);
+    let source = if palette.w > 0.0 {
+        palette.xyz()
+    } else {
+        vec3(0.40, 0.34, 0.52) * view.sky_horizon.y
+    };
     let upward = source
         * (-altitude.max(0.0) / 16_000.0).exp()
         * ((-aur_depth).exp() * 0.7 + (-aur_depth * 0.2).exp() * 0.3);
@@ -104,12 +106,13 @@ pub(super) fn height_at(
     footprint: f32,
     textures: &Textures,
 ) -> f32 {
-    point.length()
-        - PLANET_RADIUS
-        - cache::sample(point, view, footprint, textures).map_or_else(
-            || aur_ocean::wave_height(point, view.time(), footprint, textures),
-            |(field, _)| field.x * 4096.0,
-        )
+    let (field, palette) = cache::sample(point, view, footprint, textures);
+    let wave = if palette.w > 0.0 {
+        field.x * 4096.0
+    } else {
+        aur_ocean::wave_height(point, view.time(), footprint, textures)
+    };
+    point.length() - PLANET_RADIUS - wave
 }
 
 pub fn short_volume(
@@ -118,7 +121,6 @@ pub fn short_volume(
     atmosphere: &AtmosphereData,
     view: &ViewUniform,
     length: f32,
-    _dither: f32,
     textures: &Textures,
     records: &[crate::scene::cloud::Cloud],
     grid: &[u32],

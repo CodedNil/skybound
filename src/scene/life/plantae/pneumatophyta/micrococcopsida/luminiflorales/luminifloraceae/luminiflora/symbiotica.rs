@@ -18,21 +18,23 @@ use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 7.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Luminiflora symbiotica",
-    english_name: "Lumaweed",
-    description: "Lumaweed is a widespread, rapidly growing bioluminescent plant that forms patches on larger lifeforms. \
-        It uses ambient aur and produces a soft pervasive glow, while its edible tissue feeds many small animals. \
-        Fragmentation spreads new colonies between surfaces. \
-        Animal hosts receive some of the nutrients it produces, but plant hosts such as kelp experience the association as parasitism.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Luminiflora symbiotica",
+    "Lumaweed",
+    [
+        "Lumaweed grows as rapidly expanding luminous patches on kelp, animal coverings and other living surfaces.",
+        "It collects dispersed aur and releases a soft glow through the dim phase, making occupied branches visible in mineral haze.",
+        "Fragments readily establish new patches when neighbouring organisms brush together.",
+        "Animal hosts receive some of its nutrients, but plant hosts lose resources and collecting space to the same growth.",
+        "Small grazers harvest the edible tissue, limiting its spread and carrying production from a host-bound patch into the surrounding food web.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 3.0, 4.0).extend(0.0);

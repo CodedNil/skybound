@@ -15,22 +15,23 @@ use spirv_std::num_traits::Float;
 use crate::scene::life::animalia::bullidorsata::caelomorpha::{
     GasChamber, drift_body, gel, skin, tissue_distance,
 };
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, smooth_min};
+use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 use crate::scene::surface::{Ray, Surface, TraceResult, local_ray, make_hit};
 
 pub const RENDER_RADIUS: f32 = 46.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerogigas auratus",
-    english_name: "Air Giants",
-    description: "Air Giants are enormous golden drifters with a broad, gently domed canopy and a deeply vaulted underside. \
-        Their translucent skin ranges from pale gold to rich amber, traced by fine golden veins and thicker, cream-gold branching ribs. \
-        Large gas chambers line the upper canopy, with smaller chambers filling the arches beneath it; the outer margin falls into long pointed scallops. \
-        Lobed gelatinous organs lie among the chambers, and amber-brown flecks of intercepted plant matter stipple the skin. \
-        They drift slowly through humid lower gardens, absorbing algae and plant fragments caught by their broad surfaces and sheltered folds.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Aerogigas auratus",
+    "Air Giants",
+    [
+        "Air Giants drift through the humid lower Gardens beneath broad golden canopies, their vaulted undersides enclosing sheltered pockets of air.",
+        "Large gas chambers support the crown while smaller chambers keep the scalloped fringe spread through the updraft.",
+        "Amber veins and pale branching ribs frame translucent tissues stippled with intercepted algae and plant fragments.",
+        "Feeding folds face into the passing current, so a slow change in tilt brings fresh food through the arches without powered flight.",
+        "During the dim phase of the aur cycle, the canopy settles lower and its moist underside becomes a refuge for smaller drifters.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(20.0, 13.0, 14.0).extend(0.0);

@@ -6,7 +6,6 @@ use spirv_std::num_traits::Float;
 use super::math::cube;
 use super::{PLANET_RADIUS, noise::lattice};
 
-pub mod clouds;
 #[cfg(all(not(target_arch = "spirv"), feature = "desktop"))]
 pub mod simulation;
 

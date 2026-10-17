@@ -8,14 +8,18 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod scintilla;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Scintillidae",
-    english_name: "Sparkies",
-    description: "Minute luminous herbivores feed on algae and seeds in coordinated aerial swarms.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Scintillidae",
+    "Sparkies",
+    [
+        "Members of this family are minute luminous herbivores with two pairs of rapidly controlled wings.",
+        "Algae and suspended seeds provide food that can be gathered without attachment to a large plant.",
+        "Light and local movement cues keep neighbours together as a swarm spreads across a feeding current.",
+        "Small bodies reproduce quickly enough to exploit food concentrations that persist for only a short time.",
+        "Their abundance converts microscopic production into prey for larger flyers, especially along the boundaries between feeding streams.",
+    ],
+);

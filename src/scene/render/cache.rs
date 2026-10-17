@@ -20,16 +20,20 @@ pub fn sample(
     view: &ViewUniform,
     footprint: f32,
     textures: &Textures,
-) -> Option<(Vec4, Vec4)> {
+) -> (Vec4, Vec4) {
+    // A zero column density marks a miss. Avoid an Option discriminant on the
+    // vector pair, which newer rustc lowers to an unsupported u128 constant.
     if view.cache_origin.w < 0.5 || !textures.cached {
-        return None;
+        return (Vec4::ZERO, Vec4::ZERO);
     }
-    let c = grid::coordinates(point, view)?;
+    let Some(c) = grid::coordinates(point, view) else {
+        return (Vec4::ZERO, Vec4::ZERO);
+    };
     let spatial = grid::cascade(c);
     let filter = grid::filter_level(footprint).min((grid::CASCADES - 1) as f32);
     let cascade = spatial.max(filter as u32);
     if cascade >= grid::CASCADES {
-        return None;
+        return (Vec4::ZERO, Vec4::ZERO);
     }
     let uv = atlas_uv(c, cascade);
     let mut shape = textures
@@ -59,7 +63,7 @@ pub fn sample(
             );
         }
     }
-    Some((shape, column))
+    (shape, column)
 }
 
 #[spirv(fragment(entry_point_name = "column_cache"))]
@@ -73,9 +77,6 @@ pub fn column_cache(
     #[spirv(descriptor_set = 0, binding = 5)] _sky: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 6)] transmittance: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 7)] ejections: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 8)]
-    _cloud_records: &[crate::scene::cloud::Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 9)] _cloud_grid: &[u32],
     #[spirv(location = 0)] shape: &mut Vec4,
     #[spirv(location = 1)] column: &mut Vec4,
 ) {

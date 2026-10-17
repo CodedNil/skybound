@@ -11,23 +11,23 @@ use crate::scene::life::animalia::tetralata::oral_tentacles;
 use spirv_std::glam::{Vec3, vec3, vec4};
 
 pub use super::render_wings;
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, eyes, prepare_pose, smooth_min, tail, torso,
-};
+use crate::scene::life::{CreatureInstance, eyes, prepare_pose, smooth_min, tail, torso};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Ferrispina falcata",
-    english_name: "Shredders",
-    description: "Shredders are agile, serpentine apex predators with razor-sharp blades along their spines. \
-        Long flexible bodies and two pairs of wings let them sweep past prey in tight, cutting arcs. \
-        The spinal blades cut through tough hides during a sweeping pass. \
-        Younger animals often hunt in coordinated packs, separating prey from protective groups before striking. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Ferrispina falcata",
+    "Shredders",
+    [
+        "Shredders are long, flexible predators with two wing pairs and hardened blades running along the spine.",
+        "They bank past prey in curved cutting passes, keeping the vulnerable underside away from a struggling target.",
+        "Young animals hunt in loose coordinated groups that split feeding herds and exploit the openings created by a companion.",
+        "Mouth tentacles retain a captured piece of food while the body recovers into rising air.",
+        "Their hunting follows herd routes and open gaps between plant communities, where a long body has room to turn.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 7.0, 14.0, 0);

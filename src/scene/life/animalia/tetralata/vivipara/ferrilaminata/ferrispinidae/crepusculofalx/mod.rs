@@ -1,13 +1,17 @@
 pub use super::BIOLOGY;
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod venatrix;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Crepusculofalx",
-    english_name: "Dusk Scythe",
-    description: "Duskslicers are medium-sized predators with camouflage suited to the dusty, dim Mineral Fields.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Crepusculofalx",
+    "Dusk Scythe",
+    [
+        "Members of Crepusculofalx are camouflaged hunters of the dusty Mineral Fields.",
+        "A luminous tail lure attracts small animals into reach of hardened wing margins.",
+        "The body remains quiet in the haze until a short banking movement brings those edges across the target.",
+        "Scavenging supplements hunting when mineral dust masks the lure or scatters potential prey.",
+        "Their light is most useful against a dim background, linking their hunting success to the local dust load and aur cycle.",
+    ],
+);

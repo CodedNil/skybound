@@ -145,10 +145,6 @@ pub(crate) fn ejection_field_with(
     )
 }
 
-pub fn ejection_clearance(position: Vec3, time: f32) -> f32 {
-    ((ejection_field(position, time).x - EJECTION_WIDTH) * 0.5).clamp(0.0, 2000.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

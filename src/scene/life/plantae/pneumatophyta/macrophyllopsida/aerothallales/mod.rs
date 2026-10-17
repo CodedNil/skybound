@@ -1,16 +1,18 @@
 pub use super::BIOLOGY;
 pub use super::render;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod aerothallaceae;
 pub mod laevivelaceae;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aerothallales",
-    english_name: "Air Fronds",
-    description: "Kelp-like plants use broad membranes and fibrous structures to occupy extensive areas of the sky. \
-        Distributed buoyancy supports their broad surfaces along the length of the plant. \
-        The order includes ribbon forests, horizontal sails and concave leaves that retain water.",
-    rank: Rank::Order,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Order,
+    "Aerothallales",
+    "Air Fronds",
+    [
+        "Members of this order expand aur-collecting membranes around flexible supporting tissues.",
+        "Distributed gas chambers support the long axes of kelp, while sail-derived forms rely more heavily on drag across a wide surface.",
+        "The same yielding tissues let related plants form ribbon forests, horizontal sheets or shallow rain basins.",
+        "Water and dissolved nutrients are gathered across exposed surfaces rather than from a terrestrial root system.",
+        "Their habitats emerge from the balance between lift, rain load and flexibility in currents that differ across the length of a single plant.",
+    ],
+);

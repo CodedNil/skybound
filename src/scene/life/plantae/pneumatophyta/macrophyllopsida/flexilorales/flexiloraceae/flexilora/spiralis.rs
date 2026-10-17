@@ -18,22 +18,24 @@ use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+use crate::scene::life::CreatureInstance;
 use crate::scene::life::plantae::{frond, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 12.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Flexilora spiralis",
-    english_name: "Cicaia",
-    description: "Cicaia forms long spiralling tendrils attached to trees or animals. \
-        Piezoelectric fibres convert bending, twisting and stretching in the wind into chemical energy. \
-        The flexible coils stretch and twist with the movement of their host and the surrounding currents. \
-        Detached fragments can grow into new individuals, allowing ordinary breakage to spread the plant.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Flexilora spiralis",
+    "Cicaia",
+    [
+        "Cicaia forms long spiralling tendrils that attach to trees or animals while loose coils move in the passing air.",
+        "Piezoelectric fibres convert stretching, bending and twisting into chemical energy.",
+        "Several flexible contact points spread the load, letting the plant exploit a host's motion without making every gust a tearing force.",
+        "Strongly sheared currents near Rivers provide abundant movement but also increase the risk of breakage.",
+        "Surviving fragments can attach elsewhere and grow, turning that mechanical risk into a means of reproduction.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 8.0, 4.0).extend(0.0);

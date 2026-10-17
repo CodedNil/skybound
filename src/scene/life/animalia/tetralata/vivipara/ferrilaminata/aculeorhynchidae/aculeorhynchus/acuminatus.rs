@@ -12,21 +12,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes, tapered_tail, torso};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes, tapered_tail, torso};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Aculeorhynchus acuminatus",
-    english_name: "Needlesharks",
-    description: "Needlesharks carry a huge needle-like spike on the head of a streamlined four-winged body. \
-        They approach from above and align the whole animal with the intended strike. \
-        A sudden swoop drives the spike toward vital organs before prey has time to respond. \
-        Their pointed silhouette and steep attack angle distinguish them from the blade-bearing hunters nearby in the tree. Their inherited oral tentacles pull food into the digestive crop and retain it during flight.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Aculeorhynchus acuminatus",
+    "Needlesharks",
+    [
+        "Needlesharks carry a long rigid head spike ahead of a streamlined body and two pairs of swept wings.",
+        "They approach from higher air, using the updraft to recover altitude between steep, carefully aligned strikes.",
+        "The spike concentrates force along the body axis, favouring a single puncture over a prolonged struggle.",
+        "Mouth tentacles secure the wounded prey while the wings turn the animal clear of a falling or twisting target.",
+        "Open feeding routes suit their attack better than tangled Jungles, where a missed strike could drive the spike into living wood.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 5.0, 19.0).extend(0.0);

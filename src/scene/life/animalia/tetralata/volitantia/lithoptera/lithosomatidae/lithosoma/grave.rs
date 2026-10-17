@@ -11,21 +11,23 @@ use spirv_std::glam::{Vec3, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid, eyes};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 46.8;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lithosoma grave",
-    english_name: "Grounders",
-    description: "Grounders are massive, mineral-crusted herbivores with rocky hides and broad lifting surfaces. \
-        Their dense bodies drift slowly downward through the lower mid-level currents. \
-        They inhabit lower mid-level currents and feed on dense Root-Stars and materials around mineral geysers. \
-        Mineral armour covers their substantial bodies, and their movements are slow and deliberate.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Lithosoma grave",
+    "Grounders",
+    [
+        "Grounders carry heavy mineral armour over dense bodies supported by broad lifting surfaces.",
+        "They move slowly through the lower Gardens, grazing Root-Stars while staying above the lethal Veiland mists.",
+        "Wide wings brake descent through strong updrafts, so the animals favour reliable rising columns rather than weak or rapidly shifting air.",
+        "Mineral-rich currents renew the crust but expose them to dusty haze and the danger of nearby geyser jets.",
+        "Their feeding routes skirt those jets, and the dim aur phase forces a careful balance between remaining near food and maintaining safe altitude.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(12.0, 10.0, 13.0).extend(0.0);

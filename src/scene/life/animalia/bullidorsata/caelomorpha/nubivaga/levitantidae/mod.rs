@@ -1,14 +1,16 @@
 pub use super::BIOLOGY;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod levitans;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Levitantidae",
-    english_name: "Levitators",
-    description: "Ribbon Shapes have flattened, leaf-like green bodies enclosing several gas chambers. \
-        Long, thin membranes extend into curling ribbons, with branching veins and tapered edges that flex in the airflow. \
-        The ribbons collect suspended plant matter, while light-sensitive changes in orientation provide gentle directional control through drag.",
-    rank: Rank::Family,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Family,
+    "Levitantidae",
+    "Levitators",
+    [
+        "Members of this family have flattened green bodies extended by long, vascular feeding ribbons.",
+        "Gas chambers remain concentrated around the central organs, leaving the trailing membranes light and flexible.",
+        "The ribbons sample a wider volume of air than the body alone and pass absorbed nutrients inward along branching channels.",
+        "Their changing drag provides steering without the muscular wings of more active animals.",
+        "These forms favour layered currents where food drifts between neighbouring air streams and a rigid canopy would be difficult to control.",
+    ],
+);

@@ -1,14 +1,16 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod antiquus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Vocigenus",
-    english_name: "Voice-born One",
-    description: "These rare giants carry extensive white fur, including long beard-like growths that hang beneath the head. \
-        Their broad wings and unhurried movements suit a diet of large, soft aerial plants. \
-        They feed exclusively on kelp and Laevensails, making healthy floating forests essential to their survival.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Vocigenus",
+    "Voice-born One",
+    [
+        "Members of Vocigenus are enormous, slow-moving herbivores with broad wings and extensive white insulating fibres.",
+        "Their diet is restricted to kelp and Laevensails, whose large soft tissues reward patient browsing.",
+        "Mouth tentacles select and hold vegetation while the body remains clear of the plant's lifting surfaces.",
+        "Vocal communication keeps companions connected across gaps between forest communities.",
+        "Long development ties the lineage to remembered forest routes, with the polar beams providing bearings even as the aur cycle dims.",
+    ],
+);

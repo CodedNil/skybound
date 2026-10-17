@@ -1,6 +1,7 @@
 mod benchmark;
 mod game;
 mod graphics;
+mod math;
 
 use std::env;
 

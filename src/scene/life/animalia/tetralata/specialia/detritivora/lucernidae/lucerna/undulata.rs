@@ -8,23 +8,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{
-    CreatureInstance, Rank, Taxon, ellipsoid, prepare_pose, ribbons, smooth_min, tail,
-};
+use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, ribbons, smooth_min, tail};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 40.4;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lucerna undulata",
-    english_name: "Shimmerays",
-    description: "Shimmerays are long, softly bioluminescent drifters with broad wings and trailing structures. \
-        They filter microscopic nutrients and discarded auric particles from the air, and their glow also attracts Sparkies that they consume. \
-        During the day they rise into higher currents; at night they descend toward the air just above the Veilands. \
-        Their elongated luminous bodies make these vertical migrations visible across dim skies.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Lucerna undulata",
+    "Shimmerays",
+    [
+        "Shimmerays spread broad wings and luminous trailing structures through currents carrying algae and other organic particles.",
+        "Their glow also draws Sparkies close enough for the mouth appendages to sweep them into the feeding stream.",
+        "During the bright aur phase they rise, then descend toward the upper edge of the Veilands as the cycle dims.",
+        "Food comes from living particles and organic residues carried above the ocean, while concentrated aur remains dangerous to their tissues.",
+        "Seen from afar, their coordinated vertical movement forms long shifting ribbons of light over the lower Gardens.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 7.0, 17.0, 2);

@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod concavum;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Lacufolium",
-    english_name: "Lake Leaf",
-    description: "Pondplants turn a broad floating leaf into a concave basin that stores rainwater.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Lacufolium",
+    "Lake Leaf",
+    [
+        "Members of Lacufolium are sail-derived plants whose broad membranes curve into water-holding basins.",
+        "A spread rim maintains drag while the centre bears the weight of captured rain.",
+        "Flexible curvature allows excess water to escape rather than forcing the whole plant downward.",
+        "Animals use the resulting pond, creating a meeting place that brings both protection and the risk of feeding damage.",
+        "This water-storing form is most viable in rainy Gardens with dependable lift, rather than the dry upper drifts.",
+    ],
+);

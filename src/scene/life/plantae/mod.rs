@@ -18,24 +18,25 @@ use spirv_std::glam::{FloatExt, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon};
+use crate::scene::life::CreatureInstance;
 use crate::scene::surface::{Material, Ray, Surface, TraceResult, trace_material};
 
 pub mod chlorophyta;
 pub mod pneumatophyta;
 pub mod vasculophyta;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Plantae",
-    english_name: "Plants",
-    description: "Plants build edible organic tissue using aur, scattered aur light, wind deformation or electrical discharges. \
-        Hygroscopic surfaces collect airborne moisture, and selective membranes retain dissolved minerals from dust and rain. \
-        Gas chambers, broad drag surfaces and hollow airflow channels maintain altitude; attachment occurs between living organisms and their silk networks. \
-        Vascular lineages distribute fluids through flexible channels, while microscopic forms exchange materials directly across their surfaces. \
-        Spores, fragments and drifting seeds disperse through the currents.",
-    rank: Rank::Kingdom,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Kingdom,
+    "Plantae",
+    "Plants",
+    [
+        "Plants build organic tissue using dispersed aur, scattered aur light, wind deformation or storm electricity.",
+        "Hygroscopic surfaces recover airborne moisture, while selective tissues retain minerals from dust and rain.",
+        "Some remain aloft through low mass, gas chambers or drag surfaces, and others attach to living bodies that carry their weight.",
+        "Larger vascular forms connect distant tissues through flexible channels, allowing flowers, woody frameworks and hanging roots to share resources.",
+        "Spores, fragments and specialised seeds disperse through currents or on animal hosts, with no soil or fixed ground stage in their life cycles.",
+    ],
+);
 
 pub fn rotate(p: Vec3, angle: f32) -> Vec3 {
     let (sine, cosine) = angle.sin_cos();

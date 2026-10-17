@@ -1,12 +1,16 @@
 pub use super::{BIOLOGY, render};
-use crate::scene::life::{Rank, Taxon};
 
 pub mod tubulatus;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Susurrus",
-    english_name: "Whisper",
-    description: "Whisperwood is a rare tree with a huge upright hollow trunk, wider at the base, that channels air for lift and stability.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Susurrus",
+    "Whisper",
+    [
+        "Members of Susurrus are hollow-trunked trees that channel rising air through an upright woody body.",
+        "Reinforcing ridges maintain the passage while tubular branches divide the airflow into whistles.",
+        "A wide lower opening and lighter crown favour stability without a rooted base.",
+        "Six major sap veins carry both nutrients and signals to resident Glowgnomes on different sides.",
+        "The residents' coordinated movement lets the tree respond to local danger or changing humidity more actively than its lifting structure alone would allow.",
+    ],
+);

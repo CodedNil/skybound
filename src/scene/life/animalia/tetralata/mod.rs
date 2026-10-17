@@ -13,7 +13,7 @@ pub const BIOLOGY: Biology = Biology {
 
 pub use super::render_wings;
 use crate::scene::life::{CreatureInstance, tapered_tail};
-use crate::scene::life::{Rank, Taxon};
+
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -23,16 +23,18 @@ pub mod specialia;
 pub mod vivipara;
 pub mod volitantia;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Tetralata",
-    english_name: "Four Winged",
-    description: "Tetralata have an elongated, limbless body with two ancestral pairs of wings and paired muscular mouth palps. \
-        A continuous digestive crop passes food from the mouth to a posterior waste outlet. \
-        Pleated air channels exchange respiratory gases, and an annular pulsatile transport network distributes dissolved nutrients. \
-        The mouth palps, wing margins and tail specialise into feeding, attachment and manipulation structures throughout the phylum.",
-    rank: Rank::Phylum,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Phylum,
+    "Tetralata",
+    "Four Winged",
+    [
+        "Tetralata descend from elongated, limbless animals with two pairs of wings and a pair of muscular mouth tentacles.",
+        "Wings control movement through the updraft, while the tentacles gather food, hold anchors and manipulate objects without walking limbs.",
+        "A digestive crop and pulsatile nutrient channels support more concentrated feeding than the absorptive surfaces of bubblebacks.",
+        "Pleated respiratory passages recover moisture, although vigorous flight still creates a need for drinking or humid air.",
+        "Later lineages modify wing margins and feeding tentacles, with extra tentacle pairs and internal brooding evolving in the live-bearing branch.",
+    ],
+);
 
 pub fn oral_tentacles(
     point: Vec3,

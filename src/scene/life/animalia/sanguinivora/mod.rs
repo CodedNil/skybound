@@ -14,17 +14,19 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub use super::render_wings;
-use crate::scene::life::{Rank, Taxon};
 
 pub mod errantia;
 pub mod volantia;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Sanguinivora",
-    english_name: "Blood Eaters",
-    description: "Blood Eaters descend from soft-bodied, sucker-bearing parasites that obtain fluids from living hosts. \
-        Their elongated bodies range from camouflaged, permanently attached leeches to agile winged visitors. \
-        Some lineages disguise feeding as grooming; others have evolved mutualistic relationships with their hosts.",
-    rank: Rank::Phylum,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Phylum,
+    "Sanguinivora",
+    "Blood Eaters",
+    [
+        "Members of this phylum descend from soft-bodied animals with a muscular feeding sucker and paired mouth appendages.",
+        "Fluid drawn from living hosts supplies both nutrients and water, allowing the feeding end to serve as an anchor as well as a mouth.",
+        "One branch remains wingless and settles for long periods, while another has evolved a single pair of wings for repeated visits.",
+        "These wings arose separately from the two ancestral pairs of Tetralata.",
+        "Grooming mimicry and plant mutualism developed from brief, restrained feeding, giving some descendants a lasting place in their hosts' lives.",
+    ],
+);

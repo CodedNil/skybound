@@ -13,21 +13,23 @@ pub const BIOLOGY: Biology = Biology {
 
 use spirv_std::glam::{Vec3, vec3, vec4};
 
-use crate::scene::life::{CreatureInstance, Rank, Taxon, ellipsoid};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 16.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Candela lucens",
-    english_name: "Glowgnomes",
-    description: "Glowgnomes are tiny luminous sap feeders that live in burrows within Whisperwood. \
-        Their bioluminescence helps attract pollinators, while their wings collectively pull the tree toward favourable climates or away from danger. \
-        Pheromones carried through the tree's six sap veins coordinate groups on different sides. \
-        Although descended from disguised parasites, they now receive food and shelter in exchange for useful light and active movement.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Candela lucens",
+    "Glowgnomes",
+    [
+        "Glowgnomes are tiny luminous sap feeders that inhabit sheltered burrows in Whisperwood.",
+        "They retain the single wing pair of their parasitic ancestors, but coordinated wing strokes now help draw the host toward favourable currents.",
+        "Pheromone signals carried through six vertical sap veins recruit groups on different sides of the trunk.",
+        "Their light draws visitors through nearby flowering growth during the dim aur phase, while sap and wood cavities provide food and shelter.",
+        "Limited feeding and shared movement have turned an ancestral parasitic visit into a partnership on which the drifting tree depends.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 4.0, 3.0).extend(0.0);

@@ -17,21 +17,23 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::{CreatureInstance, Rank, Taxon, capsule, ellipsoid, plantae};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 10.0;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Chromacorallum versicolor",
-    english_name: "Color Coral",
-    description: "Colour Coral forms bright branching growths on kelp and Laevensail trunks and branches. \
-        Frilly fan-like appendages spread greens, yellows, pinks, blues and purples over the host surface. \
-        The fans collect aur and emit a faint bioluminescent glow at night. \
-        The host provides a stable support and carries the colony through the surrounding air.",
-    rank: Rank::Species,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Species,
+    "Chromacorallum versicolor",
+    "Color Coral",
+    [
+        "Colour Coral spreads branching fans of green, yellow, pink, blue and purple across kelp and Laevensail growth.",
+        "Frilled surfaces collect dispersed aur while narrow attachments leave much of the host exposed to passing air.",
+        "Flexible junctions let each fan turn independently when a long frond twists in the current.",
+        "A faint glow reveals living margins during dim aur phases and attracts small organisms into the sheltered branches.",
+        "The colony gains support and transport, while excessive growth can shade or weigh down the plant carrying it.",
+    ],
+);
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(5.0, 6.0, 5.0).extend(0.0);

@@ -1,7 +1,7 @@
 pub use super::{BIOLOGY, render_wings};
 use crate::scene::geometry::intersect_sphere;
 use crate::scene::life::CreatureInstance;
-use crate::scene::life::{Rank, Taxon, ellipsoid, tapered_tail};
+use crate::scene::life::{ellipsoid, tapered_tail};
 use crate::scene::surface::{Hit, Material, Ray, Surface, local_ray, make_hit};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
@@ -11,15 +11,18 @@ use spirv_std::num_traits::Float;
 pub mod nae;
 pub mod naetu;
 
-pub const TAXON: Taxon = Taxon {
-    name: "Naeturus",
-    english_name: "Nae Kin",
-    description: "Aur-adapted relatives in this genus share a close bond between small Næ and enormous Nætu. \
-        Feathered tails and paired wings connect very different body sizes, while specialised aur organs enable unusually intimate use of the energy below. \
-        Cooperative travel, grooming and protection are central to the association.",
-    rank: Rank::Genus,
-    parent: Some(&super::TAXON),
-};
+taxon!(
+    Genus,
+    "Naeturus",
+    "Nae Kin",
+    [
+        "Members of Naeturus share four wings, feathered tails and aur-storage organs isolated from the digestive circulation.",
+        "The genus has diverged into small dexterous Næ and enormous carrying Nætu.",
+        "Mouth tentacles retain their ancestral feeding role while also supporting grooming, construction and close social contact.",
+        "Their complementary sizes let one lineage maintain dwellings and tools while the other carries families between distant communities.",
+        "Shared recognition and dependence on safely stored aur sustain the association through journeys that either form would struggle to make alone.",
+    ],
+);
 
 pub fn feather(point: Vec3, root: Vec3, length: f32, width: f32, sweep: f32) -> f32 {
     let center = root + vec3(length * 0.5 * sweep, 0.0, length * 0.5);
