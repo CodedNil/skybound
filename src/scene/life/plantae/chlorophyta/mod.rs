@@ -1,5 +1,6 @@
-use crate::scene::life::biology::{Biology, Energy, Reproduction};
-use crate::scene::life::biology::{Lift, Organs};
+pub use super::render;
+use crate::scene::life::biology::{Biology, Energy, Lift, Organs, Reproduction};
+pub mod muscopsida;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
@@ -10,10 +11,6 @@ pub const BIOLOGY: Biology = Biology {
     reproduction: Reproduction::Fragmentation,
     ..super::BIOLOGY
 };
-
-pub use super::render;
-
-pub mod muscopsida;
 
 taxon!(
     Phylum,

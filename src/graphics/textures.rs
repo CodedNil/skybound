@@ -1,4 +1,6 @@
 use std::env;
+use std::f32::consts::TAU;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use bevy::asset::RenderAssetUsages;
@@ -6,12 +8,17 @@ use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerD
 use bevy::prelude::*;
 use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureView};
+use bevy::render::renderer::RenderDevice;
 use rayon::prelude::*;
-use skybound::scene::atmosphere::{TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
+use skybound::scene::atmosphere::{SKY_SIZE, TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
 use skybound::scene::climate::{WEATHER_SIZE, weather_texel};
-use skybound::scene::noise::{cellular, fbm};
+use skybound::scene::math::{cellular, fbm};
+use skybound::scene::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{Vec3, vec2, vec3};
+
+use crate::graphics::targets::texture;
+use crate::math::ToScene;
 
 #[derive(Resource, ExtractResource, Clone)]
 #[extract_app(RenderApp)]
@@ -20,6 +27,53 @@ pub struct VolumeTextures {
     pub detail: Handle<Image>,
     pub weather: Handle<Image>,
     pub transmittance: Handle<Image>,
+}
+
+#[derive(Resource)]
+pub struct SkyLookup {
+    pub view: TextureView,
+    pub dirty: AtomicBool,
+    last: Vec3,
+}
+
+impl FromWorld for SkyLookup {
+    fn from_world(world: &mut World) -> Self {
+        Self {
+            view: texture(
+                world.resource::<RenderDevice>(),
+                UVec2::splat(SKY_SIZE),
+                TextureFormat::Rgba16Float,
+                "sky_lookup",
+            ),
+            dirty: AtomicBool::new(true),
+            last: Vec3::splat(f32::INFINITY),
+        }
+    }
+}
+
+impl SkyLookup {
+    pub fn update(&mut self, view: &mut ViewUniform) {
+        let altitude = view.altitude();
+        let direction = view.pole_direction();
+        let activity = 0.10 + 0.90 * (0.5 + 0.5 * (view.time() * TAU / 2400.0).cos());
+        let horizon = -(1.0 - (PLANET_RADIUS / (PLANET_RADIUS + altitude.max(0.0))).powi(2)).sqrt();
+        view.sky_horizon = vec4(horizon, activity, 0.0, 0.0).to_scene();
+        view.pole_color *= activity;
+        view.ambient_color *= activity;
+        let current = vec3(
+            altitude,
+            direction.dot(view.up(view.world_position.truncate())),
+            activity,
+        );
+        let dirty = self.dirty.load(Ordering::Relaxed)
+            || (current.x - self.last.x).abs() >= 0.5
+            || (current.y - self.last.y).abs() >= 0.000_01
+            || (current.z - self.last.z).abs() >= 0.0001;
+        self.dirty.store(dirty, Ordering::Relaxed);
+        if dirty {
+            self.last = current;
+        }
+    }
 }
 
 fn atmosphere_transmittance() -> Image {
@@ -99,7 +153,7 @@ fn mip_chain<const N: usize>(mut level: Vec<u8>, mut size: UVec3) -> (Vec<u8>, u
     (data, levels)
 }
 
-fn texture<const N: usize>(
+fn noise_texture<const N: usize>(
     size: u32,
     depth: u32,
     format: TextureFormat,
@@ -159,7 +213,7 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
         });
     let (base, (detail, weather)) = rayon::join(
         || {
-            texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
+            noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
                 let billow = 1.0 - (1.0 - fbm(p, 4, seed ^ 0x11)) * cellular(p, 4, seed ^ 0xd3);
                 [
                     billow,
@@ -172,7 +226,7 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
         || {
             rayon::join(
                 || {
-                    texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
+                    noise_texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
                         [
                             cellular(p, 3, seed ^ 0x17),
                             cellular(p, 6, seed ^ 0x2b),
@@ -182,7 +236,7 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
                     })
                 },
                 || {
-                    texture(
+                    noise_texture(
                         WEATHER_SIZE as u32,
                         WEATHER_SIZE as u32,
                         TextureFormat::Rgba8Unorm,

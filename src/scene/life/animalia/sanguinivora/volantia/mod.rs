@@ -1,5 +1,7 @@
-use crate::scene::life::biology::Biology;
-use crate::scene::life::biology::Organs;
+pub use super::render_wings;
+use crate::scene::life::biology::{Biology, Organs};
+pub mod dissimuliformes;
+pub mod volucriformes;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs::ANIMAL,
@@ -7,11 +9,6 @@ pub const BIOLOGY: Biology = Biology {
     speed: 14.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod dissimuliformes;
-pub mod volucriformes;
 
 taxon!(
     Class,

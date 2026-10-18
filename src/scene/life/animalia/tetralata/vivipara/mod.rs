@@ -1,4 +1,7 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Reproduction, Social};
+pub mod ferrilaminata;
+pub mod grandivora;
 
 pub const BIOLOGY: Biology = Biology {
     oral_pairs: 3,
@@ -8,11 +11,6 @@ pub const BIOLOGY: Biology = Biology {
     perception: 700.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod ferrilaminata;
-pub mod grandivora;
 
 taxon!(
     Class,

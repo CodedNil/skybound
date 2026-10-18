@@ -1,5 +1,22 @@
 use super::Kind;
 
+pub const ANCESTRAL: Biology = Biology {
+    maturity_days: 90.0,
+    lifespan_days: 3000.0,
+    organs: Organs::POROUS,
+    anatomy: Anatomy::Porous,
+    wing_pairs: 0,
+    oral_pairs: 0,
+    feeding: Feeding::Absorption,
+    energy: Energy::Food,
+    reproduction: Reproduction::Eggs,
+    social: Social::Solitary,
+    speed: 0.0,
+    perception: 180.0,
+    altitude: (50.0, 6000.0),
+    adult_mass: 1.0,
+};
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anatomy {
@@ -142,23 +159,6 @@ pub struct Biology {
     /// Relative dry biomass at maturity, shared by resource transfers and reproduction.
     pub adult_mass: f32,
 }
-
-pub const ANCESTRAL: Biology = Biology {
-    maturity_days: 90.0,
-    lifespan_days: 3000.0,
-    organs: Organs::POROUS,
-    anatomy: Anatomy::Porous,
-    wing_pairs: 0,
-    oral_pairs: 0,
-    feeding: Feeding::Absorption,
-    energy: Energy::Food,
-    reproduction: Reproduction::Eggs,
-    social: Social::Solitary,
-    speed: 0.0,
-    perception: 180.0,
-    altitude: (50.0, 6000.0),
-    adult_mass: 1.0,
-};
 
 pub fn edible(consumer: Kind, resource: Kind) -> bool {
     if consumer == resource {

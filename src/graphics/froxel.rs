@@ -1,3 +1,6 @@
+use std::mem::size_of;
+use std::num::NonZeroU64;
+
 use bevy::prelude::*;
 use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::render_resource::binding_types::{
@@ -14,7 +17,6 @@ use bevy::render::render_resource::{
 };
 use bevy::render::renderer::{RenderContext, RenderDevice};
 use skybound::scene::{FrameUniform, froxel as grid};
-use std::{mem::size_of, num::NonZeroU64};
 
 pub struct FroxelVolume {
     pub view: TextureView,
@@ -61,7 +63,7 @@ impl FroxelVolume {
                     label: Some("froxel_medium".into()),
                     layout: vec![BindGroupLayoutDescriptor::new("froxel_medium", &entries)],
                     shader: world.resource::<super::SceneShader>().0.clone(),
-                    entry_point: Some("scene::render::froxel::froxel_medium".into()),
+                    entry_point: Some("froxel_medium".into()),
                     ..default()
                 });
         let texture = device.create_texture(&TextureDescriptor {

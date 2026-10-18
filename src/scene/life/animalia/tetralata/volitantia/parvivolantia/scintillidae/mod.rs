@@ -1,4 +1,6 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Social};
+pub mod scintilla;
 
 pub const BIOLOGY: Biology = Biology {
     social: Social::Swarm,
@@ -6,10 +8,6 @@ pub const BIOLOGY: Biology = Biology {
     speed: 11.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod scintilla;
 
 taxon!(
     Family,

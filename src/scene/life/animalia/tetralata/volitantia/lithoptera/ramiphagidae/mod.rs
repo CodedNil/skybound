@@ -1,14 +1,12 @@
+pub use super::render_wings;
 use crate::scene::life::biology::Biology;
+pub mod ramiphaga;
 
 pub const BIOLOGY: Biology = Biology {
     speed: 3.0,
     adult_mass: 2.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod ramiphaga;
 
 taxon!(
     Family,

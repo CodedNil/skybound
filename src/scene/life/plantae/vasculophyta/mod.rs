@@ -1,4 +1,8 @@
+pub use super::render;
 use crate::scene::life::biology::{Biology, Organs, Transport};
+pub mod floropsida;
+pub mod lignopsida;
+
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
         transport: Transport::Vascular,
@@ -6,10 +10,6 @@ pub const BIOLOGY: Biology = Biology {
     },
     ..super::BIOLOGY
 };
-pub use super::render;
-
-pub mod floropsida;
-pub mod lignopsida;
 
 taxon!(
     Phylum,

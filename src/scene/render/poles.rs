@@ -1,10 +1,10 @@
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 use spirv_std::num_traits::Float;
 
-use super::VolumeSample;
 use crate::scene::math::{cube, fourth, square};
-use crate::scene::polar::{REACTION_SPREAD, reaction_coordinates};
-use crate::scene::render::utils::Textures;
+use crate::scene::planet::{REACTION_RADIUS, REACTION_SPREAD, reaction_coordinates};
+use crate::scene::render::march::VolumeSample;
+use crate::scene::render::textures::Textures;
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
 pub const POLE_WIDTH: f32 = 400_000.0;
@@ -25,8 +25,7 @@ pub fn sample_poles(
     let sheath_envelope = (-distance / (width * width * 36.0)).exp() * 0.00012;
     let halo = (-distance / (width * width * 625.0)).exp() * 0.000004;
     let near_reaction = distance < square(REACTION_SPREAD * 1.6 * 1.04)
-        && (relative.length() - crate::scene::polar::REACTION_RADIUS).abs()
-            < 45_000.0 + footprint * 2.0;
+        && (relative.length() - REACTION_RADIUS).abs() < 45_000.0 + footprint * 2.0;
     if !near_reaction && core_envelope + sheath_envelope * 1.5 + halo < 0.0000001 {
         return VolumeSample::default();
     }

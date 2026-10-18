@@ -1,4 +1,6 @@
+pub use super::render_wings;
 use crate::scene::life::biology::Biology;
+pub mod lithosoma;
 
 pub const BIOLOGY: Biology = Biology {
     speed: 1.0,
@@ -6,10 +8,6 @@ pub const BIOLOGY: Biology = Biology {
     altitude: (60.0, 1500.0),
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod lithosoma;
 
 taxon!(
     Family,

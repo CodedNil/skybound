@@ -1,12 +1,11 @@
 use crate::scene::life::biology::{Biology, Feeding};
+pub mod caelomorpha;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Absorption,
     speed: 0.0,
     ..super::BIOLOGY
 };
-
-pub mod caelomorpha;
 
 taxon!(
     Phylum,

@@ -1,11 +1,11 @@
+use bevy::prelude::*;
+
 pub mod camera;
 pub mod ecosystem;
 pub mod flight;
 mod hud;
 pub mod weather;
 pub mod world;
-
-use bevy::prelude::*;
 
 pub struct GamePlugin;
 impl Plugin for GamePlugin {

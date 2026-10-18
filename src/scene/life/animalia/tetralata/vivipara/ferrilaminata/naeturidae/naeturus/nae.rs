@@ -1,5 +1,12 @@
+use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{Hit, Material, Ray, Surface, TraceResult, trace_material};
+use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, smooth_min};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 5500.0,
@@ -9,14 +16,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.3,
     ..super::BIOLOGY
 };
-
-use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
-use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::{CreatureInstance, ellipsoid, prepare_pose, smooth_min};
-use crate::scene::surface::{Hit, Material, Ray, Surface, TraceResult, trace_material};
 
 pub const RENDER_RADIUS: f32 = 3.2;
 

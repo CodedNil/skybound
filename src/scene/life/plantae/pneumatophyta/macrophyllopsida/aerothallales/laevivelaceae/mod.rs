@@ -1,4 +1,8 @@
+pub use super::render;
 use crate::scene::life::biology::{Biology, Lift, Organs};
+pub mod lacufolium;
+pub mod laevivelum;
+
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
         lift: Lift::Membrane,
@@ -6,10 +10,6 @@ pub const BIOLOGY: Biology = Biology {
     },
     ..super::BIOLOGY
 };
-pub use super::render;
-
-pub mod lacufolium;
-pub mod laevivelum;
 
 taxon!(
     Family,

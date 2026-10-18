@@ -73,6 +73,33 @@ pub struct Controls {
     pub wing_fold: f32,
 }
 
+#[derive(Clone, Copy)]
+pub struct Motion {
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub rotation: Quat,
+}
+
+impl Motion {
+    pub fn advance(&mut self, kind: Kind, senses: &Senses, seconds: f32) -> Controls {
+        let controls = super::behave(kind, senses);
+        let dt = seconds.max(0.0);
+        let response = controls.response.max(0.001);
+        let decay = (-response * dt).exp();
+        self.position += controls.velocity * dt
+            + (self.velocity - controls.velocity) * ((1.0 - decay) / response);
+        self.velocity = controls.velocity + (self.velocity - controls.velocity) * decay;
+        let forward = controls.facing.normalize_or_zero();
+        let up = senses.up.normalize_or_zero();
+        let right = forward.cross(up).normalize_or_zero();
+        if right.length_squared() > 0.5 {
+            let rotation = Quat::from_mat3(&Mat3::from_cols(right, right.cross(forward), -forward));
+            self.rotation = self.rotation.slerp(rotation, 1.0 - decay);
+        }
+        controls
+    }
+}
+
 pub fn drift(s: &Senses, lift: f32) -> Controls {
     Controls {
         activity: Activity::Drift,
@@ -135,33 +162,6 @@ pub fn steer(s: &Senses, target: Option<Vec3>, speed: f32) -> Controls {
         controls.velocity += controls.facing * speed;
     }
     controls
-}
-
-#[derive(Clone, Copy)]
-pub struct Motion {
-    pub position: Vec3,
-    pub velocity: Vec3,
-    pub rotation: Quat,
-}
-
-impl Motion {
-    pub fn advance(&mut self, kind: Kind, senses: &Senses, seconds: f32) -> Controls {
-        let controls = super::behave(kind, senses);
-        let dt = seconds.max(0.0);
-        let response = controls.response.max(0.001);
-        let decay = (-response * dt).exp();
-        self.position += controls.velocity * dt
-            + (self.velocity - controls.velocity) * ((1.0 - decay) / response);
-        self.velocity = controls.velocity + (self.velocity - controls.velocity) * decay;
-        let forward = controls.facing.normalize_or_zero();
-        let up = senses.up.normalize_or_zero();
-        let right = forward.cross(up).normalize_or_zero();
-        if right.length_squared() > 0.5 {
-            let rotation = Quat::from_mat3(&Mat3::from_cols(right, right.cross(forward), -forward));
-            self.rotation = self.rotation.slerp(rotation, 1.0 - decay);
-        }
-        controls
-    }
 }
 
 #[cfg(test)]

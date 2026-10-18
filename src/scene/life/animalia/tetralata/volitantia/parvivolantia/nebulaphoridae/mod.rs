@@ -1,4 +1,6 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding};
+pub mod nebulaphora;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Nectar,
@@ -6,10 +8,6 @@ pub const BIOLOGY: Biology = Biology {
     speed: 5.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod nebulaphora;
 
 taxon!(
     Family,

@@ -1,8 +1,5 @@
-pub use crate::scene::climate::Climate;
-#[cfg(test)]
-use spirv_std::glam::vec3;
-
 use super::biology::{Anatomy, Biology, Digestion, Energy, Exchange, Transport};
+use crate::scene::climate::Climate;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vitals {
@@ -154,6 +151,8 @@ impl Climate {
 
 #[cfg(test)]
 mod tests {
+    use spirv_std::glam::vec3;
+
     use super::*;
     use crate::scene::life::{KINDS, Kind};
 

@@ -3,10 +3,10 @@ use spirv_std::glam::{FloatExt, UVec4, Vec3, Vec4, vec3};
 use spirv_std::num_traits::Float;
 
 #[cfg(target_arch = "spirv")]
-use crate::scene::surface::Hit;
-use crate::scene::surface::Ray;
+use crate::scene::life::surface::Hit;
+use crate::scene::life::surface::Ray;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::surface::TraceResult;
+use crate::scene::life::surface::TraceResult;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -145,8 +145,10 @@ pub mod behaviour;
 pub mod biology;
 pub mod development;
 pub mod physiology;
-pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 pub mod plantae;
+pub mod surface;
+
+pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 
 taxon!(
     Root,
@@ -188,9 +190,9 @@ macro_rules! species {
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::render(ray, c),)* _ => TraceResult::MISS }
         }
         #[cfg(not(target_arch = "spirv"))]
-        pub fn body_surface(point: Vec3, c: &CreatureInstance) -> crate::scene::surface::Surface {
+        pub fn body_surface(point: Vec3, c: &CreatureInstance) -> crate::scene::life::surface::Surface {
             if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
-            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => crate::scene::surface::Surface::new(1e6, 0) }
+            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => crate::scene::life::surface::Surface::new(1e6, 0) }
         }
         #[cfg(not(target_arch = "spirv"))]
         fn prepare_instance(c: &mut CreatureInstance) {
@@ -375,6 +377,19 @@ pub fn ribbons(p: Vec3, c: &CreatureInstance, count: usize) -> f32 {
     d
 }
 
+#[cfg(target_arch = "spirv")]
+pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
+    if c.kind.x == Kind::Nae as u32 {
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::visit_thin(
+            ray, c, emit,
+        );
+    } else {
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::visit_thin(
+            ray, c, emit,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use spirv_std::glam::Quat;
@@ -551,19 +566,6 @@ mod tests {
                 .distance(ray.origin + ray.direction * hit.distance())
                 < 0.001,
             "stationary specimen produced motion"
-        );
-    }
-}
-
-#[cfg(target_arch = "spirv")]
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
-    if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::visit_thin(
-            ray, c, emit,
-        );
-    } else {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::visit_thin(
-            ray, c, emit,
         );
     }
 }

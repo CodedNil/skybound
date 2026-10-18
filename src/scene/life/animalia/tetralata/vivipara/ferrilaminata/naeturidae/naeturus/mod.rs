@@ -1,13 +1,13 @@
-pub use super::{BIOLOGY, render_wings};
-use crate::scene::geometry::intersect_sphere;
-use crate::scene::life::CreatureInstance;
-use crate::scene::life::{ellipsoid, tapered_tail};
-use crate::scene::surface::{Hit, Material, Ray, Surface, local_ray, make_hit};
 use core::f32::consts::PI;
+
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+pub use super::{BIOLOGY, render_wings};
+use crate::scene::life::surface::{Hit, Material, Ray, Surface, local_ray, make_hit};
+use crate::scene::life::{CreatureInstance, ellipsoid, tapered_tail};
+use crate::scene::math::intersect_sphere;
 pub mod nae;
 pub mod naetu;
 
@@ -23,6 +23,12 @@ taxon!(
         "Shared recognition and dependence on safely stored aur sustain the association through journeys that either form would struggle to make alone.",
     ],
 );
+
+pub struct TailFeathers {
+    pub scale: Vec3,
+    pub length: f32,
+    pub width: f32,
+}
 
 pub fn feather(point: Vec3, root: Vec3, length: f32, width: f32, sweep: f32) -> f32 {
     let center = root + vec3(length * 0.5 * sweep, 0.0, length * 0.5);
@@ -65,12 +71,6 @@ pub fn tail_shaft(
         );
     }
     hit
-}
-
-pub struct TailFeathers {
-    pub scale: Vec3,
-    pub length: f32,
-    pub width: f32,
 }
 
 fn feather_intersection(
@@ -277,8 +277,9 @@ fn wing_roots(origin: Vec2, direction: Vec2, lift: f32, curvature: f32) -> Vec2 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use spirv_std::glam::Vec4;
+
+    use super::*;
 
     #[test]
     fn direct_feather_roots_match_the_sheared_surface() {

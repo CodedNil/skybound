@@ -1,5 +1,15 @@
-use crate::scene::life::biology::Organs;
-use crate::scene::life::biology::{Anatomy, Biology, Energy, Feeding, Reproduction};
+use core::f32::consts::{PI, TAU};
+
+use spirv_std::glam::{FloatExt, Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+use crate::scene::life::CreatureInstance;
+use crate::scene::life::biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction};
+use crate::scene::life::surface::{Material, Ray, Surface, TraceResult, trace_material};
+pub mod chlorophyta;
+pub mod pneumatophyta;
+pub mod vasculophyta;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs::PLANT,
@@ -11,19 +21,6 @@ pub const BIOLOGY: Biology = Biology {
     reproduction: Reproduction::Spores,
     ..super::BIOLOGY
 };
-
-use core::f32::consts::{PI, TAU};
-
-use spirv_std::glam::{FloatExt, Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::CreatureInstance;
-use crate::scene::surface::{Material, Ray, Surface, TraceResult, trace_material};
-
-pub mod chlorophyta;
-pub mod pneumatophyta;
-pub mod vasculophyta;
 
 taxon!(
     Kingdom,

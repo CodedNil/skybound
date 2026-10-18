@@ -1,4 +1,3 @@
-use crate::math::{ToEngine, ToScene};
 use bevy::ecs::system::SystemParam;
 use bevy::input::InputSystems;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
@@ -7,28 +6,33 @@ use bevy::prelude::*;
 use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::transform::TransformSystems;
+use skybound::scene::aur;
 use skybound::scene::life::animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{
     nae, naetu,
 };
 use skybound::scene::life::behaviour::{Motion, Senses};
+use skybound::scene::life::surface::{Ray, estimate_normal};
 use skybound::scene::life::{CreatureInstance, Kind, development};
-use skybound::scene::surface::{Ray, estimate_normal};
-use skybound::scene::terrain::spike_distance;
 
 use crate::game::camera::CameraController;
 use crate::game::ecosystem::{Individual, Physiology};
 use crate::game::world::{WorldAnchor, WorldData};
+use crate::math::{ToEngine, ToScene};
 
 pub const SPAWN: Vec3 = vec3(0.0, 4.0, 2400.0);
+
 const ROSETTE: Vec3 = vec3(0.0, 5.8, 2.0);
 
 #[derive(Resource, Clone, Default, ExtractResource)]
 #[extract_app(RenderApp)]
 pub struct PlayerModel(pub [CreatureInstance; 2]);
+
 #[derive(Component)]
 pub struct Player;
+
 #[derive(Component)]
 pub struct Mount;
+
 #[derive(Component, Default)]
 pub struct Velocity(pub Vec3);
 
@@ -38,6 +42,7 @@ pub struct PerchAnchor {
     normal: Vec3,
     on_mount: bool,
 }
+
 #[derive(Clone, Copy, Default)]
 pub enum ControlMode {
     Flying,
@@ -45,6 +50,7 @@ pub enum ControlMode {
     #[default]
     Mounted,
 }
+
 #[derive(Resource)]
 pub struct Flight {
     pub mode: ControlMode,
@@ -53,6 +59,7 @@ pub struct Flight {
     steering: Vec2,
     zoom: f32,
 }
+
 impl Default for Flight {
     fn default() -> Self {
         Self {
@@ -66,6 +73,7 @@ impl Default for Flight {
 }
 
 pub struct PlayerPlugin;
+
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerModel>()
@@ -86,6 +94,61 @@ impl Plugin for PlayerPlugin {
     }
 }
 
+type NaeQuery = (With<Player>, Without<Mount>, Without<Camera3d>);
+
+type NaetuQuery = (With<Mount>, Without<Player>, Without<Camera3d>);
+
+type BodyView<'a> = (
+    &'a Transform,
+    &'a Velocity,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
+
+type BodyMotion<'a> = (
+    &'a mut Transform,
+    &'a mut Velocity,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
+
+type CompanionMotion<'a> = (
+    &'a mut Transform,
+    &'a mut Velocity,
+    Option<&'a super::ecosystem::Relations>,
+    Option<&'a Physiology>,
+    Option<&'a Individual>,
+);
+
+type FollowCameraQuery = (
+    With<Camera3d>,
+    Without<Player>,
+    Without<Mount>,
+    Without<CameraController>,
+);
+
+type CameraQuery = (With<Camera3d>, Without<Player>, Without<Mount>);
+
+#[derive(SystemParam)]
+struct FlightInput<'w, 's> {
+    time: Res<'w, Time>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
+    mouse: Res<'w, ButtonInput<MouseButton>>,
+    motion: Res<'w, AccumulatedMouseMotion>,
+    wheel: MessageReader<'w, 's, MouseWheel>,
+    world: Res<'w, WorldData>,
+}
+
+struct Steering<'a> {
+    mount_velocity: Vec3,
+    forward: Vec3,
+    horizontal: Vec3,
+    dt: f32,
+    time: f32,
+    physiology: Option<&'a Physiology>,
+    individual: Option<&'a Individual>,
+}
+
 fn spawn_player(mut commands: Commands) {
     let body = Transform::from_translation(SPAWN).looking_to(Vec3::Y, Vec3::Z);
     commands.spawn((Mount, Velocity::default(), WorldAnchor, body));
@@ -96,6 +159,7 @@ fn spawn_player(mut commands: Commands) {
         Transform::from_translation(body.transform_point(ROSETTE)).with_rotation(body.rotation),
     ));
 }
+
 fn instance(
     transform: &Transform,
     kind: Kind,
@@ -125,6 +189,7 @@ fn instance(
         individual.map_or(kind as u32 + 1, |identity| identity.0),
     )
 }
+
 fn extract_player(
     world: Res<WorldData>,
     mut model: ResMut<PlayerModel>,
@@ -186,6 +251,7 @@ fn advance(velocity: &mut Vec3, target: Vec3, response: f32, dt: f32) -> Vec3 {
     *velocity = target + (*velocity - target) * decay;
     displacement
 }
+
 fn pilot(
     body: &mut Transform,
     velocity: &mut Vec3,
@@ -251,13 +317,10 @@ fn contact(
         }
     }
     let terrain_point = world.surface_position(position);
-    let distance = spike_distance(terrain_point.to_scene(), Vec2::ZERO.to_scene());
+    let distance = aur::spire_field(terrain_point.to_scene());
     if distance.abs() < nearest {
         let normal = estimate_normal(position.to_scene(), |p| {
-            spike_distance(
-                world.surface_position(p.to_engine()).to_scene(),
-                Vec2::ZERO.to_scene(),
-            )
+            aur::spire_field(world.surface_position(p.to_engine()).to_scene())
         })
         .to_engine();
         found = Some(PerchAnchor {
@@ -267,45 +330,6 @@ fn contact(
         });
     }
     found
-}
-
-type NaeQuery = (With<Player>, Without<Mount>, Without<Camera3d>);
-type NaetuQuery = (With<Mount>, Without<Player>, Without<Camera3d>);
-type BodyView<'a> = (
-    &'a Transform,
-    &'a Velocity,
-    Option<&'a Physiology>,
-    Option<&'a Individual>,
-);
-type BodyMotion<'a> = (
-    &'a mut Transform,
-    &'a mut Velocity,
-    Option<&'a Physiology>,
-    Option<&'a Individual>,
-);
-type CompanionMotion<'a> = (
-    &'a mut Transform,
-    &'a mut Velocity,
-    Option<&'a super::ecosystem::Relations>,
-    Option<&'a Physiology>,
-    Option<&'a Individual>,
-);
-type FollowCameraQuery = (
-    With<Camera3d>,
-    Without<Player>,
-    Without<Mount>,
-    Without<CameraController>,
-);
-type CameraQuery = (With<Camera3d>, Without<Player>, Without<Mount>);
-
-#[derive(SystemParam)]
-struct FlightInput<'w, 's> {
-    time: Res<'w, Time>,
-    keys: Res<'w, ButtonInput<KeyCode>>,
-    mouse: Res<'w, ButtonInput<MouseButton>>,
-    motion: Res<'w, AccumulatedMouseMotion>,
-    wheel: MessageReader<'w, 's, MouseWheel>,
-    world: Res<'w, WorldData>,
 }
 
 fn fly(
@@ -510,16 +534,6 @@ fn separate_from_mount(
         let inward = (*velocity - mount_velocity).dot(normal).min(0.0);
         *velocity -= normal * inward;
     }
-}
-
-struct Steering<'a> {
-    mount_velocity: Vec3,
-    forward: Vec3,
-    horizontal: Vec3,
-    dt: f32,
-    time: f32,
-    physiology: Option<&'a Physiology>,
-    individual: Option<&'a Individual>,
 }
 
 fn crawl(

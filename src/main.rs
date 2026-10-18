@@ -1,12 +1,12 @@
-mod benchmark;
-mod game;
-mod graphics;
-mod math;
-
 use std::env;
 
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowPlugin};
+
+mod benchmark;
+mod game;
+mod graphics;
+mod math;
 
 fn main() {
     let mut app = App::new();

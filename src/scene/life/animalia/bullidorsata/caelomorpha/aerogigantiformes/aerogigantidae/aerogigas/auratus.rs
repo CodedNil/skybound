@@ -1,4 +1,13 @@
+use spirv_std::glam::{Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+use crate::scene::life::animalia::bullidorsata::caelomorpha::{
+    GasChamber, drift_body, gel, skin, tissue_distance,
+};
 use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{Ray, Surface, TraceResult, local_ray, make_hit};
+use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 3650.0,
@@ -7,16 +16,6 @@ pub const BIOLOGY: Biology = Biology {
     altitude: (50.0, 2500.0),
     ..super::BIOLOGY
 };
-
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::animalia::bullidorsata::caelomorpha::{
-    GasChamber, drift_body, gel, skin, tissue_distance,
-};
-use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
-use crate::scene::surface::{Ray, Surface, TraceResult, local_ray, make_hit};
 
 pub const RENDER_RADIUS: f32 = 46.0;
 
@@ -32,6 +31,33 @@ taxon!(
         "During the dim phase of the aur cycle, the canopy settles lower and its moist underside becomes a refuge for smaller drifters.",
     ],
 );
+
+const CHAMBERS: [GasChamber; 6] = [
+    GasChamber {
+        center: vec3(-8.5, 0.5, -3.0),
+        radii: vec3(3.8, 3.5, 2.6),
+    },
+    GasChamber {
+        center: vec3(0.0, 2.6, -3.0),
+        radii: vec3(4.0, 3.7, 2.7),
+    },
+    GasChamber {
+        center: vec3(8.5, 0.3, -3.0),
+        radii: vec3(3.8, 3.3, 2.6),
+    },
+    GasChamber {
+        center: vec3(-8.0, 0.6, 2.8),
+        radii: vec3(3.7, 3.3, 2.6),
+    },
+    GasChamber {
+        center: vec3(0.5, 2.7, 2.8),
+        radii: vec3(4.0, 3.6, 2.7),
+    },
+    GasChamber {
+        center: vec3(8.9, 0.1, 2.8),
+        radii: vec3(3.6, 3.0, 2.5),
+    },
+];
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(20.0, 13.0, 14.0).extend(0.0);
@@ -100,33 +126,6 @@ fn canopy(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, tint: Vec3) 
         result.add(hit);
     }
 }
-
-const CHAMBERS: [GasChamber; 6] = [
-    GasChamber {
-        center: vec3(-8.5, 0.5, -3.0),
-        radii: vec3(3.8, 3.5, 2.6),
-    },
-    GasChamber {
-        center: vec3(0.0, 2.6, -3.0),
-        radii: vec3(4.0, 3.7, 2.7),
-    },
-    GasChamber {
-        center: vec3(8.5, 0.3, -3.0),
-        radii: vec3(3.8, 3.3, 2.6),
-    },
-    GasChamber {
-        center: vec3(-8.0, 0.6, 2.8),
-        radii: vec3(3.7, 3.3, 2.6),
-    },
-    GasChamber {
-        center: vec3(0.5, 2.7, 2.8),
-        radii: vec3(4.0, 3.6, 2.7),
-    },
-    GasChamber {
-        center: vec3(8.9, 0.1, 2.8),
-        radii: vec3(3.6, 3.0, 2.5),
-    },
-];
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     let tint = vec3(0.78, 0.65, 0.30);

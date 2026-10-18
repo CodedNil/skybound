@@ -1,5 +1,11 @@
-use crate::scene::life::biology::{Biology, Energy, Reproduction};
-use crate::scene::life::biology::{Lift, Organs};
+use spirv_std::glam::{Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+use crate::scene::life::CreatureInstance;
+use crate::scene::life::biology::{Biology, Energy, Lift, Organs, Reproduction};
+use crate::scene::life::plantae::{frond, rotate};
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 30.0,
@@ -13,14 +19,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.3,
     ..super::BIOLOGY
 };
-
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::CreatureInstance;
-use crate::scene::life::plantae::{frond, rotate};
-use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 12.0;
 

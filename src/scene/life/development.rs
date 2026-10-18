@@ -1,15 +1,18 @@
 use core::f32::consts::{PI, TAU};
+
+#[cfg(not(target_arch = "spirv"))]
+use spirv_std::glam::vec4;
 use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+#[cfg(not(target_arch = "spirv"))]
+use super::biology::Anatomy;
 use super::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
-use super::biology::{Anatomy, Reproduction};
+use super::biology::Reproduction;
 use super::{CreatureInstance, ellipsoid, smooth_min};
-use crate::scene::surface::{Material, Ray, Surface, TraceResult, trace_material};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec4;
+use crate::scene::life::surface::{Material, Ray, Surface, TraceResult, trace_material};
 
 pub const DAY: f32 = 86_400.0;
 
@@ -225,9 +228,10 @@ pub fn render_juvenile(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(test)]
 mod tests {
+    use spirv_std::glam::Vec4;
+
     use super::*;
     use crate::scene::life::{KINDS, Kind};
-    use spirv_std::glam::Vec4;
 
     #[test]
     fn lifecycle_grid_includes_birth_maturity_and_end_of_life() {

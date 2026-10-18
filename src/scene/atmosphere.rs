@@ -1,46 +1,60 @@
 use core::f32::consts::PI;
 
-pub mod air;
-
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 use crate::scene::PLANET_RADIUS;
-use crate::scene::geometry::intersect_sphere;
-use crate::scene::lighting::henyey_greenstein;
-use crate::scene::math::square;
+use crate::scene::math::{henyey_greenstein, intersect_sphere, square};
+use crate::scene::planet::REACTION_HEIGHT;
 
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 
 const POLE_INTENSITY: f32 = 12.0;
+
 const EXPOSURE: f32 = 3.0;
+
 pub const POLE_RADIANCE: Vec3 = vec3(
     POLE_INTENSITY * EXPOSURE,
     0.97 * POLE_INTENSITY * EXPOSURE,
     0.90 * POLE_INTENSITY * EXPOSURE,
 );
-const ATMOSPHERE_HEIGHT: f32 = super::polar::REACTION_HEIGHT;
+
+const ATMOSPHERE_HEIGHT: f32 = REACTION_HEIGHT;
+
 const ATMOSPHERE_RADIUS: f32 = PLANET_RADIUS + ATMOSPHERE_HEIGHT;
+
 const RAYLEIGH_SCALE_HEIGHT: f32 = 8000.0;
+
 const MIE_SCALE_HEIGHT: f32 = 1200.0;
 
 const C_RAYLEIGH: Vec3 = vec3(5.802e-6, 13.558e-6, 33.100e-6);
+
 const C_MIE: Vec3 = vec3(3.996e-6, 3.996e-6, 3.996e-6);
+
 const C_OZONE: Vec3 = vec3(0.650e-6, 1.881e-6, 0.085e-6);
 
 const RAYLEIGH_STRENGTH: f32 = 1.0;
+
 const MIE_STRENGTH: f32 = 0.2;
+
 const OZONE_STRENGTH: f32 = 1.0;
+
 const MIE_G: f32 = 0.85;
 
 const PRIMARY_STEPS: i32 = 16;
+
 const LIGHT_STEPS: i32 = 8;
 
 const AUR_RADIANCE: Vec3 = vec3(0.08, 0.012, 0.16);
 
 pub const SKY_SIZE: u32 = 128;
+
 pub const TRANSMITTANCE_SIZE: u32 = 512;
+
+const AIR_SCALE_HEIGHT: f32 = 11_000.0;
+
+const AIR_EXTINCTION: f32 = 0.000_008;
 
 pub fn transmittance_coordinates(position: Vec3, direction: Vec3) -> Vec2 {
     let radius = position.length().max(PLANET_RADIUS);
@@ -74,7 +88,7 @@ pub fn transmittance_texel(uv: Vec2) -> Vec3 {
 
 pub fn air_texel(uv: Vec2) -> f32 {
     let (position, direction) = transmittance_ray(uv);
-    air::optical_depth(position, direction, 10_000_000.0)
+    air_optical_depth(position, direction, 10_000_000.0)
 }
 
 pub fn sky_direction(uv: Vec2, horizon: f32) -> Vec3 {
@@ -251,9 +265,94 @@ pub fn get_pole_light_color(ro_relative: Vec3, source: Vec3) -> Vec3 {
     POLE_RADIANCE * light_transmittance
 }
 
+pub fn air_density(altitude: f32) -> f32 {
+    AIR_EXTINCTION * (-altitude.max(0.0) / AIR_SCALE_HEIGHT).exp()
+}
+
+// Integrate an exponential height profile along a linear approximation to altitude.
+// Unlike a midpoint sample this also resolves thin air near the end of a very long ray.
+fn air_panel(origin: Vec3, direction: Vec3, start: f32, end: f32) -> f32 {
+    let a = ((origin + direction * start).length() - PLANET_RADIUS).max(0.0);
+    let b = ((origin + direction * end).length() - PLANET_RADIUS).max(0.0);
+    let delta = (a - b).abs() / AIR_SCALE_HEIGHT;
+    let mean = if delta < 0.01 {
+        1.0 - delta * 0.5 + delta * delta / 6.0
+    } else {
+        (1.0 - (-delta).exp()) / delta
+    };
+    air_density(a.min(b)) * mean * (end - start)
+}
+
+pub fn air_optical_depth(origin: Vec3, direction: Vec3, length: f32) -> f32 {
+    if length < 2000.0 {
+        let altitude = (origin + direction * (length * 0.5)).length() - PLANET_RADIUS;
+        return air_density(altitude) * length.max(0.0);
+    }
+    // Above twelve scale heights the remaining air_density is negligible. Clip first so
+    // orbital rays spend the same fixed work on the air as rays close to the planet.
+    let shell = intersect_sphere(origin, direction, PLANET_RADIUS + AIR_SCALE_HEIGHT * 12.0);
+    let start = shell.x.max(0.0);
+    let end = shell.y.min(length);
+    if end <= start {
+        return 0.0;
+    }
+    let closest = (-origin.dot(direction)).clamp(start, end);
+    let mut depth = 0.0;
+    for side in 0..2 {
+        let (a, b) = if side == 0 {
+            (start, closest)
+        } else {
+            (closest, end)
+        };
+        if b <= a {
+            continue;
+        }
+        let step = (b - a) * 0.125;
+        for index in 0..8 {
+            let from = a + index as f32 * step;
+            depth += air_panel(origin, direction, from, from + step);
+        }
+    }
+    depth
+}
+
+pub fn air_transmittance(origin: Vec3, direction: Vec3, length: f32) -> f32 {
+    (-air_optical_depth(origin, direction, length)).exp()
+}
+
+pub fn cached_air_transmittance(
+    origin: Vec3,
+    direction: Vec3,
+    length: f32,
+    lookup: impl Fn(Vec3, Vec3) -> f32,
+) -> f32 {
+    if length < 2000.0 {
+        return air_transmittance(origin, direction, length);
+    }
+    let shell = intersect_sphere(origin, direction, PLANET_RADIUS + ATMOSPHERE_HEIGHT);
+    let start = shell.x.max(0.0);
+    let end = shell.y.min(length);
+    if end <= start {
+        return 1.0;
+    }
+    let a = origin + direction * start;
+    let b = origin + direction * end;
+    // Use the outward orientation to avoid subtracting large, nearly equal
+    // columns through the planet when the visible segment is descending.
+    let depth = if (a + b).dot(direction) >= 0.0 {
+        lookup(a, direction) - lookup(b, direction)
+    } else {
+        lookup(b, -direction) - lookup(a, -direction)
+    };
+    (-depth.max(0.0)).exp()
+}
+
 #[cfg(test)]
 mod tests {
+    use spirv_std::glam::{Vec2, vec2};
+
     use super::*;
+    use crate::scene::atmosphere::{TRANSMITTANCE_SIZE, air_texel, transmittance_coordinates};
 
     #[test]
     fn cached_transmittance_matches_light_integration_across_cloud_altitudes() {
@@ -285,5 +384,80 @@ mod tests {
             }
         }
         assert!(error < 0.005, "maximum transmittance error: {error}");
+    }
+
+    #[test]
+    fn vertical_air_matches_the_exponential_integral() {
+        for height in [0.0, 5000.0, 40_000.0] {
+            for length in [10.0, 1000.0, 100_000.0, 1_000_000.0] {
+                let origin = Vec3::Z * (PLANET_RADIUS + height);
+                let expected = (-air_density(height)
+                    * AIR_SCALE_HEIGHT
+                    * (1.0 - (-length / AIR_SCALE_HEIGHT).exp()))
+                .exp();
+                assert!((air_transmittance(origin, Vec3::Z, length) - expected).abs() < 0.00001);
+            }
+        }
+    }
+
+    #[test]
+    fn grazing_air_is_reciprocal_and_close_to_numerical_integration() {
+        let origin = Vec3::Z * (PLANET_RADIUS + 2000.0) - Vec3::X * 600_000.0;
+        let length = 1_200_000.0;
+        let value = air_transmittance(origin, Vec3::X, length);
+        assert!(
+            (value - air_transmittance(origin + Vec3::X * length, -Vec3::X, length)).abs() < 1e-5
+        );
+        let mut depth = 0.0;
+        for index in 0..4096 {
+            let point = origin + Vec3::X * ((index as f32 + 0.5) * length / 4096.0);
+            depth += air_density(point.length() - PLANET_RADIUS) * length / 4096.0;
+        }
+        assert!((value - (-depth).exp()).abs() < 0.015);
+        assert!(
+            (air_transmittance(Vec3::Z * (PLANET_RADIUS + 200_000.0), Vec3::X, length) - 1.0).abs()
+                < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn cached_air_columns_match_direct_integration_on_visible_segments() {
+        let size = TRANSMITTANCE_SIZE as usize;
+        let table: Vec<_> = (0..size * size)
+            .map(|index| {
+                air_texel(vec2((index % size) as f32, (index / size) as f32) / (size - 1) as f32)
+            })
+            .collect();
+        let lookup = |point, direction| {
+            let uv = transmittance_coordinates(point, direction) * size as f32 - 0.5;
+            let uv = uv.clamp(Vec2::ZERO, Vec2::splat((size - 1) as f32));
+            let column = uv.x.floor() as usize;
+            let row = uv.y.floor() as usize;
+            let horizontal = uv.x.fract();
+            let vertical = uv.y.fract();
+            let fetch = |x: usize, y: usize| table[y.min(size - 1) * size + x.min(size - 1)];
+            let top = fetch(column, row) * (1.0 - horizontal) + fetch(column + 1, row) * horizontal;
+            let bottom = fetch(column, row + 1) * (1.0 - horizontal)
+                + fetch(column + 1, row + 1) * horizontal;
+            top * (1.0 - vertical) + bottom * vertical
+        };
+        for height in [0.0, 2500.0, 20_000.0, 100_000.0, 350_000.0] {
+            let origin = Vec3::Z * (PLANET_RADIUS + height);
+            for cosine in [-1.0f32, -0.3, -0.05, 0.0, 0.1, 0.7, 1.0] {
+                let direction = Vec3::new((1.0 - cosine * cosine).sqrt(), 0.0, cosine);
+                for length in [500.0, 5000.0, 100_000.0, 1_000_000.0] {
+                    let closest = (-origin.dot(direction)).clamp(0.0, length);
+                    if (origin + direction * closest).length() < PLANET_RADIUS {
+                        continue;
+                    }
+                    let expected = air_transmittance(origin, direction, length);
+                    let cached = cached_air_transmittance(origin, direction, length, lookup);
+                    assert!(
+                        (cached - expected).abs() < 0.02,
+                        "height={height} cosine={cosine} length={length}: {cached} vs {expected}"
+                    );
+                }
+            }
+        }
     }
 }

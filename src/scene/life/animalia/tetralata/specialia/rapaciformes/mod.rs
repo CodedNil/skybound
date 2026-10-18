@@ -1,14 +1,12 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding, Social};
+pub mod sericificidae;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Predator,
     social: Social::Weaver,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod sericificidae;
 
 taxon!(
     Order,

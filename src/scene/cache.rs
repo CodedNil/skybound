@@ -3,15 +3,20 @@ use spirv_std::glam::{Vec2, Vec3, Vec4Swizzles, vec2};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use super::{PLANET_RADIUS, ViewUniform, planet::surface_frame};
+use crate::scene::planet::surface_frame;
+use crate::scene::{PLANET_RADIUS, ViewUniform};
 
 pub const SIZE: u32 = 512;
-pub const CASCADES: u32 = 4;
-pub const ROWS: u32 = 1;
-pub const STORM_SIZE: u32 = 9;
+/// Each level doubles the spacing. A factor of four left the texel up to
+/// eight times the pixel footprint just past every level boundary.
+pub const CASCADES: u32 = 8;
+const FINEST: f32 = 32.0;
+/// Levels from here on also cache the column material, which only lights
+/// clouds from below; the ocean evaluates its material per pixel.
+pub const MATERIAL_LEVEL: u32 = 6;
 
 pub const fn spacing(cascade: u32) -> f32 {
-    (64u32 << (cascade * 2)) as f32
+    (32u32 << cascade) as f32
 }
 
 impl ViewUniform {
@@ -59,13 +64,19 @@ pub fn cascade(coordinates: Vec2) -> u32 {
 /// Screen footprints must also choose the filter scale. Otherwise an orbital
 /// camera sees an unfiltered high-detail disc directly below itself.
 pub fn filter_level(footprint: f32) -> f32 {
-    (footprint.max(64.0) / 64.0).log2() * 0.5
+    (footprint.max(FINEST) / FINEST).log2()
+}
+
+/// Levels finer than the nearest visible ocean footprint are never sampled.
+pub fn first_level(altitude: f32, angle: f32) -> u32 {
+    filter_level((altitude - 4000.0).max(0.0) * angle * 0.7) as u32
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use spirv_std::glam::{Vec4, vec3};
+
+    use super::*;
 
     #[test]
     fn pixel_filter_scale_is_continuous_and_independent_of_camera_centre() {
@@ -73,7 +84,9 @@ mod tests {
         for level in 0..CASCADES {
             assert!((filter_level(spacing(level)) - level as f32).abs() < 0.0001);
         }
-        assert!((filter_level(512.0) - 1.5).abs() < 0.0001);
+        assert!((filter_level(512.0) - 4.0).abs() < 0.0001);
+        assert_eq!(first_level(0.0, 0.002), 0);
+        assert_eq!(first_level(80_000.0, 0.002), 1);
     }
 
     fn view(up: Vec3) -> ViewUniform {
@@ -113,6 +126,7 @@ mod tests {
     fn cascade_coverage_and_reference_switch() {
         assert_eq!(cascade(Vec2::ZERO), 0);
         assert_eq!(cascade(Vec2::splat(2_000_000.0)), CASCADES);
+        assert!(spacing(CASCADES - 1) * SIZE as f32 * 0.46 > 900_000.0);
         let mut view = view(Vec3::X);
         view.camera_position = Vec4::new(0.0, 0.0, 0.0, 8.0);
         view.prepare_cache();

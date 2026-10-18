@@ -1,4 +1,13 @@
+use core::f32::consts::TAU;
+
+use spirv_std::glam::{Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
 use crate::scene::life::biology::{Biology, Reproduction};
+use crate::scene::life::plantae::rotate;
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 180.0,
@@ -8,16 +17,6 @@ pub const BIOLOGY: Biology = Biology {
     altitude: (50.0, 800.0),
     ..super::BIOLOGY
 };
-
-use core::f32::consts::TAU;
-
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::plantae::rotate;
-use crate::scene::life::{CreatureInstance, ellipsoid};
-use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 16.0;
 

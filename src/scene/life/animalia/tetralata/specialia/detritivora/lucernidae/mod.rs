@@ -1,4 +1,6 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding, Social};
+pub mod lucerna;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Filter,
@@ -6,10 +8,6 @@ pub const BIOLOGY: Biology = Biology {
     social: Social::Swarm,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod lucerna;
 
 taxon!(
     Family,

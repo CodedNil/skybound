@@ -1,17 +1,16 @@
+use spirv_std::glam::{Vec3, vec3, vec4};
+
+pub use super::render_wings;
+use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
+use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 90.0,
     lifespan_days: 2000.0,
     ..super::BIOLOGY
 };
-use crate::scene::life::animalia::tetralata::oral_tentacles;
-
-use spirv_std::glam::{Vec3, vec3, vec4};
-
-pub use super::render_wings;
-use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
-use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 36.7;
 

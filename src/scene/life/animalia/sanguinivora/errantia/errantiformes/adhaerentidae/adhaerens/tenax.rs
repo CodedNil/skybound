@@ -1,4 +1,8 @@
+use spirv_std::glam::{Vec3, vec3, vec4};
+
 use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 15.0,
@@ -6,11 +10,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.03,
     ..super::BIOLOGY
 };
-
-use spirv_std::glam::{Vec3, vec3, vec4};
-
-use crate::scene::life::{CreatureInstance, ellipsoid};
-use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 20.0;
 

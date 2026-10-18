@@ -1,22 +1,51 @@
-pub mod cache;
-pub mod froxel;
-pub(crate) mod solids;
-mod utils;
-mod volumetrics;
-
 use spirv_std::glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
-use self::solids::aur_spikes::raymarch_aur_spikes;
-use self::utils::{AtmosphereData, Textures, intersect_sphere};
-use self::volumetrics::short_volume;
 use crate::scene::atmosphere::{render_sky, sky_direction, sky_uv};
-use crate::scene::surface::{Hit, Ray};
-use crate::scene::{FrameUniform, life};
+use crate::scene::aur::{CURRENT, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection, energy_color};
+use crate::scene::climate::{CLOUD_TOP, Cloud};
+use crate::scene::life::surface::{Hit, Ray};
+use crate::scene::math::intersect_sphere;
+use crate::scene::planet::surface_frame;
+use crate::scene::render::clouds::short_volume;
+use crate::scene::render::textures::{AtmosphereData, Textures};
+use crate::scene::{FrameUniform, PLANET_RADIUS, ViewUniform, life};
+pub mod clouds;
+mod march;
+pub mod ocean;
+mod poles;
+mod spikes;
+mod textures;
 
 pub(crate) const T_MAX: f32 = 1_000_000.0;
+
 type Depth = Image!(2D, type=f32, depth=true, sampled=true, components=1);
+
+struct ThinLayers {
+    color: [Vec4; 8],
+    transmission: [Vec4; 8],
+    count: u32,
+}
+
+impl ThinLayers {
+    fn add(&mut self, hit: Hit) {
+        if !hit.is_hit() {
+            return;
+        }
+        let mut color = hit.color_depth;
+        let mut transmission =
+            hit.transmittance
+                .extend(if hit.part == u32::MAX { 1.0 } else { 0.0 });
+        for index in 0..8 {
+            if color.w < self.color[index].w {
+                core::mem::swap(&mut color, &mut self.color[index]);
+                core::mem::swap(&mut transmission, &mut self.transmission[index]);
+            }
+        }
+        self.count = (self.count + 1).min(8);
+    }
+}
 
 #[spirv(fragment(entry_point_name = "ejection_lookup"))]
 pub fn ejection_lookup(
@@ -24,7 +53,6 @@ pub fn ejection_lookup(
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(location = 0)] out: &mut Vec4,
 ) {
-    use crate::scene::aur::{EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection};
     let x = pixel.x as u32;
     let cell = vec2(
         (x % EJECTION_GRID_WIDTH) as f32 - EJECTION_GRID_HALF as f32,
@@ -46,30 +74,6 @@ pub fn ejection_lookup(
     };
 }
 
-struct ThinLayers {
-    color: [Vec4; 8],
-    transmission: [Vec4; 8],
-    count: u32,
-}
-impl ThinLayers {
-    fn add(&mut self, hit: Hit) {
-        if !hit.is_hit() {
-            return;
-        }
-        let mut color = hit.color_depth;
-        let mut transmission =
-            hit.transmittance
-                .extend(if hit.part == u32::MAX { 1.0 } else { 0.0 });
-        for index in 0..8 {
-            if color.w < self.color[index].w {
-                core::mem::swap(&mut color, &mut self.color[index]);
-                core::mem::swap(&mut transmission, &mut self.transmission[index]);
-            }
-        }
-        self.count = (self.count + 1).min(8);
-    }
-}
-
 fn world_point(uv: Vec2, depth: f32, matrix: Mat4) -> Vec3 {
     let p = matrix
         * (uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0))
@@ -77,6 +81,7 @@ fn world_point(uv: Vec2, depth: f32, matrix: Mat4) -> Vec3 {
             .extend(1.0);
     p.xyz() / p.w
 }
+
 fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     let view = &frame.view;
     let origin = view.world_position.xyz();
@@ -90,11 +95,13 @@ fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
         footprint: 2.0 / frame.viewport.w,
     }
 }
+
 fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
     let mut closest = Hit::MISS;
     for i in 0..2 {
         let c = &frame.players[i];
-        if c.position.w > 0.0 {
+        let bounds = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
+        if c.position.w > 0.0 && bounds.x <= bounds.y && bounds.y > 0.0 {
             let hit = life::render_opaque(
                 Ray {
                     max_distance: closest.distance(),
@@ -107,18 +114,23 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
             }
         }
     }
-    // The pure aur ocean hides terrain from observers above the veil.
-    if frame.view.surface_position(ray.origin).z > 0.0 {
+    if frame.view.camera_position.w as u32 & 1024 != 0 {
         return closest;
     }
-    let terrain = raymarch_aur_spikes(ray.origin, ray.direction, &frame.view, closest.distance());
-    if terrain.distance() < closest.distance() {
-        closest = terrain;
+    let spire = spikes::trace(
+        ray.origin,
+        ray.direction,
+        &frame.view,
+        closest.distance(),
+        ray.footprint,
+    );
+    if spire.distance() < closest.distance() {
+        closest = spire;
     }
     closest
 }
 
-fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLayers) {
+fn energy_layers(ray: Ray, view: &ViewUniform, layers: &mut ThinLayers) {
     for index in 0..32 {
         let bolt = view.aur_bolts[index];
         if bolt[0].w <= 0.0 {
@@ -130,7 +142,7 @@ fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLa
         let length = axis.length_squared().max(0.001);
         let center = (start + end) * 0.5;
         let radius = (bolt[0].w * 12.0).max(ray.footprint * center.distance(ray.origin));
-        let bound = axis.length() * 0.5 + radius * 3.0;
+        let bound = axis.length() * 0.5 + radius * 6.0;
         let bounds = intersect_sphere(ray.origin - center, ray.direction, bound);
         if bounds.y < 0.0 || bounds.x > ray.max_distance {
             continue;
@@ -150,13 +162,11 @@ fn energy_layers(ray: Ray, view: &crate::scene::ViewUniform, layers: &mut ThinLa
         let separation = point.distance_squared(point_on_bolt);
         let core_width = bolt[0].w.max(ray.footprint * distance * 0.5);
         let core = (-separation / (core_width * core_width)).exp();
-        let glow = (-separation / (radius * radius)).exp();
+        // A Lorentzian halo keeps the long, soft tails of light in haze.
+        let glow = 1.0 / (1.0 + separation / (radius * radius) * 4.0);
         let energy = bolt[1].w * bolt[0].w / core_width;
         let phase = view.time() * 3.0 - along * 18.0 + start.x * 0.0002;
-        let tint = crate::scene::aur::energy_color(
-            0.5 + phase.sin() * 0.2,
-            0.55 + (phase * 0.7).cos() * 0.2,
-        );
+        let tint = energy_color(0.5 + phase.sin() * 0.2, 0.55 + (phase * 0.7).cos() * 0.2);
         let color = (tint.lerp(Vec3::ONE, 0.5) * core + tint * glow * 0.3) * energy;
         if color.max_element() < 0.001 {
             continue;
@@ -182,6 +192,7 @@ fn depth_limit(uv: Vec2, frame: &FrameUniform, depth: &Depth, ray: Ray) -> f32 {
         T_MAX
     }
 }
+
 fn atmosphere(
     uv: Vec2,
     frame: &FrameUniform,
@@ -189,21 +200,29 @@ fn atmosphere(
     sky_texture: &Image!(2D, type=f32, sampled=true),
 ) -> AtmosphereData {
     let ray = scene_ray(uv, frame, false);
-    let sky = sky_texture
-        .sample_by_lod(
-            *sampler,
-            sky_uv(
-                crate::scene::planet::surface_frame(frame.view.up(ray.origin)).transpose()
-                    * ray.direction,
-                crate::scene::planet::surface_frame(frame.view.up(ray.origin)).transpose()
-                    * ray.light,
-                frame.view.sky_horizon.x,
-            ),
-            0.0,
-        )
-        .xyz();
-    AtmosphereData { sky }
+    let local = surface_frame(frame.view.up(ray.origin)).transpose();
+    let direction = local * ray.direction;
+    let light = local * ray.light;
+    let horizon = frame.view.sky_horizon.x;
+    let lookup = |direction: Vec3| {
+        sky_texture
+            .sample_by_lod(*sampler, sky_uv(direction, light, horizon), 0.0)
+            .xyz()
+    };
+    // Air in front of the ocean scatters horizon light and the aur glow
+    // rising beneath it, never the sky behind the planet.
+    let level = direction
+        .with_z(direction.z.max(horizon + 0.03))
+        .normalize();
+    let glow = vec3(0.30, 0.24, 0.42)
+        * frame.view.sky_horizon.y
+        * (-frame.view.altitude().max(0.0) / 30_000.0).exp();
+    AtmosphereData {
+        sky: lookup(direction),
+        haze: lookup(level) + glow * (0.5 - direction.z * 0.5).clamp(0.0, 1.0) * 0.35,
+    }
 }
+
 fn motion(uv: Vec2, position: Vec3, frame: &FrameUniform) -> Vec2 {
     let clip = frame.view.prev_clip_from_world * position.extend(1.0);
     if clip.w > 0.0 {
@@ -212,39 +231,13 @@ fn motion(uv: Vec2, position: Vec3, frame: &FrameUniform) -> Vec2 {
         Vec2::ZERO
     }
 }
-#[spirv(fragment(depth_replacing, entry_point_name = "background"))]
-pub fn background(
-    #[spirv(location = 0)] uv: Vec2,
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
-    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
-    #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(location = 0)] out_color: &mut Vec4,
-    #[spirv(location = 1)] out_motion: &mut Vec4,
-    #[spirv(location = 2)] out_normal: &mut Vec4,
-    #[spirv(frag_depth)] out_depth: &mut f32,
-) {
-    let ray = scene_ray(uv, frame, true);
-    let mv = motion(uv, ray.origin + ray.direction * T_MAX, frame);
-    let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
-    *out_color = match frame.view.times.z as u32 {
-        1 => Vec3::ZERO,
-        2 => Vec3::splat(0.5),
-        3 => (mv.abs() / frame.view.times.w.max(0.0001)).extend(0.0),
-        _ => sky,
-    }
-    .extend(1.0);
-    *out_motion = mv.extend(0.0).extend(0.0);
-    *out_normal = Vec4::splat(0.5);
-    *out_depth = 0.0;
-}
+
+/// Solids, with the sky behind them; every pixel writes depth and motion.
 #[spirv(fragment(depth_replacing, entry_point_name = "opaque"))]
 pub fn opaque(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
-    #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
@@ -253,27 +246,17 @@ pub fn opaque(
 ) {
     let ray = scene_ray(uv, frame, true);
     let hit = opaque_hit(ray, frame);
-    if !hit.is_hit() {
-        spirv_std::arch::kill();
-    }
-    let environment = atmosphere(uv, frame, sampler, sky_texture);
-    let _ = (base_texture, details_texture, weather_texture);
     let point = ray.origin + ray.direction * hit.distance();
-    let clip = frame.view.clip_from_world * point.extend(1.0);
-    let depth = if hit.is_hit() { clip.z / clip.w } else { 0.0 };
-    let mv = motion(
-        uv,
-        if hit.is_hit() {
-            hit.previous_position
-        } else {
-            point
-        },
-        frame,
-    );
-    let color = if hit.is_hit() {
-        hit.color()
+    let (depth, mv, color) = if hit.is_hit() {
+        let clip = frame.view.clip_from_world * point.extend(1.0);
+        (
+            clip.z / clip.w,
+            motion(uv, hit.previous_position, frame),
+            hit.color(),
+        )
     } else {
-        environment.sky
+        let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
+        (0.0, motion(uv, point, frame), sky)
     };
     *out_color = match frame.view.times.z as u32 {
         1 => Vec3::splat(depth.max(0.0).sqrt()),
@@ -283,9 +266,10 @@ pub fn opaque(
     }
     .extend(1.0);
     *out_motion = mv.extend(0.0).extend(0.0);
-    *out_normal = (hit.normal * 0.5 + 0.5).extend(1.0);
+    *out_normal = (hit.normal * 0.5 + 0.5).extend(if hit.is_hit() { 1.0 } else { 0.5 });
     *out_depth = depth;
 }
+
 #[spirv(fragment(depth_replacing, entry_point_name = "volume"))]
 pub fn volume(
     #[spirv(location = 0)] uv: Vec2,
@@ -300,8 +284,7 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)]
-    cloud_records: &[crate::scene::cloud::Cloud],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_records: &[Cloud],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
     #[spirv(descriptor_set = 0, binding = 11)] medium: &Image!(3D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
@@ -328,7 +311,7 @@ pub fn volume(
         cached: true,
         sampler,
     };
-    let volume = volumetrics::native::integrate(
+    let volume = march::integrate(
         uv,
         ray.origin,
         ray.direction,
@@ -342,10 +325,10 @@ pub fn volume(
         cloud_grid,
     );
     let position = ray.origin + ray.direction * volume.depth;
-    let altitude = position.distance(frame.view.planet_center()) - crate::scene::PLANET_RADIUS;
+    let altitude = position.distance(frame.view.planet_center()) - PLANET_RADIUS;
     let current = if altitude <= 3700.0 {
-        frame.view.planet_rotation * crate::scene::aur::CURRENT
-    } else if altitude > crate::scene::climate::CLOUD_TOP {
+        frame.view.planet_rotation * CURRENT
+    } else if altitude > CLOUD_TOP {
         Vec3::ZERO
     } else {
         let weather = if frame.view.weather.x >= 0.0 {
@@ -387,8 +370,7 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)]
-    cloud_records: &[crate::scene::cloud::Cloud],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_records: &[Cloud],
     #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
@@ -412,11 +394,7 @@ pub fn transparent(
         if c.position.w <= 0.0 {
             continue;
         }
-        let interval = crate::scene::geometry::intersect_sphere(
-            ray.origin - c.position.xyz(),
-            ray.direction,
-            c.position.w,
-        );
+        let interval = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
         if interval.x > interval.y || interval.y < 0.0 || interval.x > ray.max_distance {
             continue;
         }
@@ -489,6 +467,7 @@ pub fn transparent(
     *out_transmittance = transmission.extend(if hits.count > 0 { hits.color[0].w } else { 0.0 });
     *out_prefix = prefix.extend(prefix_t);
 }
+
 #[spirv(fragment(entry_point_name = "sky"))]
 pub fn sky(
     #[spirv(location = 0)] uv: Vec2,
@@ -496,11 +475,11 @@ pub fn sky(
     #[spirv(location = 0)] out_color: &mut Vec4,
 ) {
     let view = &frame.view;
-    let light = crate::scene::planet::surface_frame(view.up(view.world_position.xyz())).transpose()
-        * view.pole_direction();
+    let light =
+        surface_frame(view.up(view.world_position.xyz())).transpose() * view.pole_direction();
     let direction = sky_direction(uv, view.sky_horizon.x);
     let light = vec3((1.0 - light.z * light.z).max(0.0).sqrt(), 0.0, light.z);
-    let origin = vec3(0.0, 0.0, crate::scene::PLANET_RADIUS + view.altitude());
+    let origin = vec3(0.0, 0.0, PLANET_RADIUS + view.altitude());
     let source = origin + light * view.pole_position.xyz().distance(view.world_position.xyz());
     *out_color = (render_sky(direction, origin, source) * view.sky_horizon.y).extend(1.0);
 }

@@ -1,5 +1,7 @@
-use crate::scene::life::biology::{Anatomy, Biology, Feeding};
-use crate::scene::life::biology::{Lift, Organs};
+pub use super::render_wings;
+use crate::scene::life::biology::{Anatomy, Biology, Feeding, Lift, Organs};
+pub mod errantia;
+pub mod volantia;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
@@ -12,11 +14,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.05,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod errantia;
-pub mod volantia;
 
 taxon!(
     Phylum,

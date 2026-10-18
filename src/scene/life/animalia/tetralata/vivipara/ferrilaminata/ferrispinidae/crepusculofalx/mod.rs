@@ -1,5 +1,4 @@
-pub use super::BIOLOGY;
-pub use super::render_wings;
+pub use super::{BIOLOGY, render_wings};
 
 pub mod venatrix;
 

@@ -26,6 +26,7 @@ pub struct Hit {
     pub transmittance: Vec3,
     pub part: u32,
 }
+
 impl Hit {
     pub const MISS: Self = Self {
         color_depth: Vec4::new(0.0, 0.0, 0.0, 1e6),
@@ -51,6 +52,7 @@ pub struct TraceResult {
     pub layers: [Hit; 16],
     pub count: u32,
 }
+
 impl TraceResult {
     pub const MISS: Self = Self {
         opaque: Hit::MISS,
@@ -107,6 +109,7 @@ pub struct Surface {
     pub distance: f32,
     pub material: u32,
 }
+
 impl Surface {
     pub const fn new(distance: f32, material: u32) -> Self {
         Self { distance, material }
@@ -128,6 +131,7 @@ pub struct Material {
     pub ior: f32,
     pub translucency: f32,
 }
+
 impl Material {
     pub fn transmittance(self, cosine: f32) -> Vec3 {
         let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).powi(2);
@@ -178,6 +182,34 @@ impl Material {
             + environment * environment_fresnel
             + self.color * self.emission
     }
+}
+
+#[derive(Clone, Copy)]
+pub struct Sheet {
+    pub center: Vec3,
+    pub previous_center: Vec3,
+    pub radii: Vec2,
+    pub bend: Vec2,
+    pub side: f32,
+}
+
+impl Sheet {
+    fn coordinates(self, point: Vec3) -> Vec2 {
+        let span = point.x / self.radii.x;
+        let fraction = span.mul_add(self.side * 0.5, 0.5);
+        Vec2::new(
+            span,
+            (point.z - (fraction * fraction - 0.25) * self.radii.x * 0.55)
+                / (self.radii.y * (1.0 - fraction * 0.55)),
+        )
+    }
+}
+
+pub struct Shell {
+    pub center: Vec3,
+    pub radii: Vec3,
+    pub bottom: f32,
+    pub scallop: f32,
 }
 
 pub fn coat(p: Vec3, id: u32, pigment: Vec4, accent: Vec3) -> Material {
@@ -249,6 +281,7 @@ fn normalize(vector: Vec3) -> Vec3 {
 pub fn estimate_normal<F: FnMut(Vec3) -> f32>(point: Vec3, sdf: F) -> Vec3 {
     normal_at(point, 0.03, sdf)
 }
+
 fn normal_at<F: FnMut(Vec3) -> f32>(point: Vec3, epsilon: f32, mut sdf: F) -> Vec3 {
     let a = vec3(1.0, -1.0, -1.0);
     let b = vec3(-1.0, -1.0, 1.0);
@@ -399,27 +432,6 @@ pub fn tonemap(color: Vec3) -> Vec3 {
     let a = color * (color * 2.51 + Vec3::splat(0.03));
     let b = color * (color * 2.43 + Vec3::splat(0.59)) + Vec3::splat(0.14);
     (a / b).clamp(Vec3::ZERO, Vec3::ONE).powf(1.0 / 2.2)
-}
-
-#[derive(Clone, Copy)]
-pub struct Sheet {
-    pub center: Vec3,
-    pub previous_center: Vec3,
-    pub radii: Vec2,
-    pub bend: Vec2,
-    pub side: f32,
-}
-
-impl Sheet {
-    fn coordinates(self, point: Vec3) -> Vec2 {
-        let span = point.x / self.radii.x;
-        let fraction = span.mul_add(self.side * 0.5, 0.5);
-        Vec2::new(
-            span,
-            (point.z - (fraction * fraction - 0.25) * self.radii.x * 0.55)
-                / (self.radii.y * (1.0 - fraction * 0.55)),
-        )
-    }
 }
 
 pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit {
@@ -626,13 +638,6 @@ pub fn visit_shell<F: FnMut(Hit)>(
         },
         emit,
     );
-}
-
-pub struct Shell {
-    pub center: Vec3,
-    pub radii: Vec3,
-    pub bottom: f32,
-    pub scallop: f32,
 }
 
 pub fn visit_shell_material<M: Fn(Vec3, f32) -> Material, F: FnMut(Hit)>(

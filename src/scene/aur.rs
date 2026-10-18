@@ -1,11 +1,57 @@
+//! The aur ocean: its current and arcs, crystal spires, and lightning.
 use core::f32::consts::{PI, TAU};
-#[cfg(not(target_arch = "spirv"))]
-pub mod lightning;
+
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3,
 };
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
+
+use crate::scene::PLANET_RADIUS;
+use crate::scene::math::square;
+use crate::scene::planet::surface_point;
+
+pub const CURRENT: Vec3 = vec3(35.0, -20.0, 0.0);
+
+pub const EJECTION_CELL: f32 = 40_000.0;
+
+pub const EJECTION_WIDTH: f32 = 1050.0;
+
+pub const EJECTION_REACH: f32 = 36_000.0;
+
+pub const EJECTION_HEIGHT: f32 = 12_150.0;
+
+pub const EJECTION_GRID_HALF: i32 = (PI * PLANET_RADIUS / EJECTION_CELL) as i32 + 2;
+
+pub const EJECTION_GRID_WIDTH: u32 = EJECTION_GRID_HALF as u32 * 2;
+
+pub const EJECTION_GRID_HEIGHT: u32 = EJECTION_GRID_HALF as u32 + 1;
+
+// Crystal spires that pierce the aur ocean, in sparse archipelagos.
+//
+// Positions are surface coordinates: longitude and colatitude scaled by the
+// planet radius, and altitude. Every spire stays `SPIRE_MARGIN` inside its cell,
+// so a cell's own spires and the distance to its border bound the field.
+pub const SPIRE_CELL: f32 = 26_000.0;
+
+/// Spires are buried well below the deepest wave trough.
+pub const SPIRE_BOTTOM: f32 = -5000.0;
+
+pub const SPIRE_TOP: f32 = 9600.0;
+
+const SPIRE_REACH: f32 = 10_500.0;
+
+const SPIRE_MARGIN: f32 = SPIRE_CELL * 0.5 - SPIRE_REACH;
+
+#[derive(Clone, Copy, Default)]
+pub struct Spire {
+    pub base: Vec2,
+    pub lean: Vec2,
+    pub tip: f32,
+    pub radius: f32,
+    pub flutes: f32,
+    pub twist: f32,
+}
 
 pub fn energy_color(warm: f32, charged: f32) -> Vec3 {
     let violet = vec3(0.12, 0.09, 0.23);
@@ -14,8 +60,6 @@ pub fn energy_color(warm: f32, charged: f32) -> Vec3 {
         .lerp(rose, warm.smoothstep(0.35, 0.65))
         .lerp(vec3(0.40, 0.61, 0.57), charged.smoothstep(0.4, 0.65))
 }
-
-pub const CURRENT: Vec3 = vec3(35.0, -20.0, 0.0);
 
 pub fn curl(mut pos: Vec2, time: f32) -> Vec2 {
     let mut direction = vec2(0.6, 0.8);
@@ -35,6 +79,35 @@ pub fn curl(mut pos: Vec2, time: f32) -> Vec2 {
     pos
 }
 
+/// The planet-scale character of the aur at a surface direction: a calm,
+/// warm equatorial belt, storm tracks through the mid latitudes broken into
+/// slowly drifting regions, and charged polar seas. Analytic so the host's
+/// lightning catalogue agrees with the shaders.
+/// x: storminess, y: warmth, z: charge, w: brightness.
+pub fn aur_climate(up: Vec3, time: f32) -> Vec4 {
+    let latitude = up.z.clamp(-1.0, 1.0).asin().abs();
+    let tropics = 1.0 - latitude.smoothstep(0.12, 0.42);
+    let tracks = (-square((latitude - 0.78) / 0.28)).exp();
+    let polar = latitude.smoothstep(0.95, 1.35);
+    let drift = time * 0.0004;
+    let p = up * 3.1;
+    let regions = ((p.x * 1.7 + drift).sin() * (p.y * 2.3 - drift * 0.7).sin()
+        + (p.z * 2.9 + p.x * 1.3 + drift * 1.3).sin() * 0.6)
+        * 0.3
+        + 0.5;
+    let cells = (p.x * 5.3 + p.z * 3.1 - drift * 2.0).sin() * (p.y * 4.7 + drift).sin() * 0.5 + 0.5;
+    let storm =
+        (tracks * 0.75 + regions * 0.7 + cells * 0.25 - tropics * 0.35 - 0.38).clamp(0.0, 1.0);
+    let warmth = (tropics * 0.75 + (1.0 - regions) * 0.35).clamp(0.0, 1.0);
+    let charge = (polar * 0.7 + storm * 0.4 + cells * 0.15).clamp(0.0, 1.0);
+    Vec4::new(
+        storm,
+        warmth,
+        charge,
+        0.82 + storm * 0.35 + charge * 0.2 - tropics * 0.12,
+    )
+}
+
 pub fn ambient(pos: Vec3, time: f32) -> Vec3 {
     let fade = (1.0 - pos.z.max(0.0) / 6000.0).clamp(0.0, 1.0);
     let flow = curl((pos - CURRENT * time).xy() * 0.001, time);
@@ -42,48 +115,53 @@ pub fn ambient(pos: Vec3, time: f32) -> Vec3 {
     vec3(0.035, 0.008, 0.065) * fade * pulse
 }
 
-pub const EJECTION_CELL: f32 = 40_000.0;
-pub const EJECTION_WIDTH: f32 = 1050.0;
-pub const EJECTION_REACH: f32 = 36_000.0;
-pub const EJECTION_HEIGHT: f32 = 12_150.0;
-pub const EJECTION_GRID_HALF: i32 = (PI * super::PLANET_RADIUS / EJECTION_CELL) as i32 + 2;
-pub const EJECTION_GRID_WIDTH: u32 = EJECTION_GRID_HALF as u32 * 2;
-pub const EJECTION_GRID_HEIGHT: u32 = EJECTION_GRID_HALF as u32 + 1;
-
 fn eruption_hash(cell: Vec2) -> Vec3 {
     let mut hash = (cell.xyx() * vec3(0.1031, 0.1030, 0.0973)).fract_gl();
     hash += hash.dot(hash.yzx() + 33.33);
     ((hash.xxy() + hash.yzz()) * hash.zyx()).fract_gl()
 }
 
+/// One eruption per cell and cycle, far more often in stormy seas. The
+/// loop rises out of the veil, holds while plasma drains down its legs, then
+/// parts at the apex and fades. Size, height and orientation vary per cycle.
 pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
     let seed = eruption_hash(cell + vec2(19.7, 63.1));
-    let period = 55.0 + seed.x * 45.0;
+    let period = 45.0 + seed.x * 60.0;
     let cycle = time / period + seed.y;
-    let phase = (cycle.fract_gl() * period / (5.0 + seed.z * 3.0)).min(1.0);
+    let phase = (cycle.fract_gl() * period / (6.0 + seed.z * 6.0)).min(1.0);
     if phase >= 1.0 {
         return [Vec4::ZERO; 2];
     }
     let random = eruption_hash(cell + vec2(37.1, 91.7) * (cycle.floor() + 1.0));
-    let center = (cell + random.xy()) * EJECTION_CELL;
-    let angle = random.z * TAU;
-    let radius = 10_800.0 + seed.x * 5400.0;
+    let centre = (cell + random.xy()) * EJECTION_CELL;
+    let up = surface_point(centre.extend(0.0)).normalize();
+    if random.z > 0.25 + aur_climate(up, time).x * 0.9 {
+        return [Vec4::ZERO; 2];
+    }
+    let angle = random.z * TAU * 7.0;
+    let radius = 7000.0 + seed.x * 9000.0;
     [
-        center.extend(phase).extend(1.0),
+        centre.extend(phase).extend(1.0),
         Vec4::new(
             angle.cos(),
             angle.sin(),
             radius,
-            (5850.0 + seed.z * 6300.0).min(radius - 2700.0),
+            (4000.0 + seed.z * 8000.0).min(radius - 2200.0),
         ),
     ]
 }
 
+/// How much plasma a loop holds at a point along it.
 pub fn ejection_fill(progress: f32, phase: f32) -> f32 {
-    let head = phase / 0.35;
-    let tail = (phase - 0.60) / 0.40;
-    progress.smoothstep(tail - 0.025, tail + 0.025)
-        * (1.0 - progress.smoothstep(head - 0.025, head + 0.025))
+    let alive = phase.smoothstep(0.0, 0.08) * (1.0 - phase.smoothstep(0.78, 1.0));
+    let apex = (-square((progress - 0.5) / 0.16)).exp();
+    alive * (1.0 - phase.smoothstep(0.55, 0.85) * apex)
+}
+
+/// The loop's circle sinks below the veil while it is still rising.
+fn ejection_centre(event: [Vec4; 2]) -> f32 {
+    let rise = 0.3 + 0.7 * event[0].z.smoothstep(0.0, 0.3);
+    event[1].w * rise - event[1].z
 }
 
 fn ejection_coordinates(position: Vec3, event: [Vec4; 2]) -> Vec3 {
@@ -91,33 +169,25 @@ fn ejection_coordinates(position: Vec3, event: [Vec4; 2]) -> Vec3 {
     let axis = event[1].truncate().truncate();
     let along = delta.dot(axis);
     let across = delta.dot(vec2(-axis.y, axis.x));
-    let vertical = position.z - (event[1].w - event[1].z);
-    vec3(along, vertical, across)
+    vec3(along, position.z - ejection_centre(event), across)
 }
 
-pub fn ejection_distance(position: Vec3, event: [Vec4; 2]) -> Vec2 {
-    let local = ejection_coordinates(position, event);
-    let radial = local.xy().length() - event[1].z;
-    let distance = vec2(radial, local.z).length();
-    let progress = local.y.atan2(local.x) / PI;
-    vec2(distance, progress.clamp(0.0, 1.0))
+pub fn ejection_field(position: Vec3, time: f32) -> Vec4 {
+    ejection_field_with(position, 511, |cell| ejection(cell, time))
 }
 
-pub fn ejection_field(position: Vec3, time: f32) -> Vec3 {
-    ejection_field_with(position, 511, f32::MAX, |cell| ejection(cell, time))
-}
-
+/// Distance to the nearest loop's axis, progress along it from one foot to
+/// the other, its fill, and the angle around the axis for braided strands.
 pub(crate) fn ejection_field_with(
     position: Vec3,
     mut active: u32,
-    limit: f32,
     event: impl Fn(Vec2) -> [Vec4; 2],
-) -> Vec3 {
-    if active == 0 {
-        return vec3(1.0e10, 0.0, 0.0);
-    }
+) -> Vec4 {
+    let mut nearest = 1.0e20;
+    let mut local = Vec3::ZERO;
+    let mut radial = 0.0;
+    let mut phase = 1.0;
     let cell = (position.xy() / EJECTION_CELL).floor();
-    let mut nearest = Vec4::new(1.0e20, 0.0, 0.0, 1.0);
     while active != 0 {
         let index = active.trailing_zeros();
         active &= active - 1;
@@ -131,77 +201,235 @@ pub(crate) fn ejection_field_with(
         if event[0].w < 0.01 {
             continue;
         }
-        if limit < 1.0e9 {
-            let delta = position - event[0].xy().extend(event[1].w - event[1].z);
-            let extent = (event[1].xy().abs() * event[1].z).extend(event[1].z) + Vec3::splat(limit);
-            if delta.abs().cmpgt(extent).any() {
-                continue;
-            }
-        }
-        let local = ejection_coordinates(position, event);
-        let radial = local.xy().length() - event[1].z;
-        let distance_squared = radial * radial + local.z * local.z;
-        if distance_squared < nearest.x {
-            nearest = Vec4::new(distance_squared, local.x, local.y, event[0].z);
+        let candidate = ejection_coordinates(position, event);
+        let offset = candidate.xy().length() - event[1].z;
+        let distance_squared = offset * offset + candidate.z * candidate.z;
+        if distance_squared < nearest {
+            nearest = distance_squared;
+            local = candidate;
+            radial = offset;
+            phase = event[0].z;
         }
     }
-    let progress = (nearest.z.atan2(nearest.y) / PI).clamp(0.0, 1.0);
-    vec3(
-        nearest.x.sqrt(),
+    if nearest > 1.0e19 {
+        return Vec4::new(1.0e10, 0.0, 0.0, 0.0);
+    }
+    let progress = (local.y.atan2(local.x) / PI).clamp(0.0, 1.0);
+    Vec4::new(
+        nearest.sqrt(),
         progress,
-        ejection_fill(progress, nearest.w),
+        ejection_fill(progress, phase),
+        local.z.atan2(radial),
     )
+}
+
+fn spire_hash(p: Vec2) -> Vec4 {
+    let mut q =
+        (Vec4::new(p.x, p.y, p.x, p.y) * Vec4::new(0.1031, 0.1030, 0.0973, 0.1099)).fract_gl();
+    q += q.dot(q.wzxy() + 33.33);
+    ((q.xxyz() + q.yzzw()) * q.zywx()).fract_gl()
+}
+
+/// Up to four spires around one jittered centre; regions of cells share an
+/// occupancy so spires gather into archipelagos with open ocean between.
+pub fn spire_count(cell: Vec2) -> usize {
+    let region = spire_hash((cell / 4.0).floor() + 71.3);
+    let seed = spire_hash(cell);
+    if seed.x > region.x * region.x * region.x * region.x * 0.9 {
+        0
+    } else {
+        1 + (seed.y * 3.99) as usize
+    }
+}
+
+pub fn spire(cell: Vec2, index: usize) -> Spire {
+    // Clusters wander far inside their cells so no lattice shows through.
+    let centre = (spire_hash(cell).zw() - 0.5) * 8000.0;
+    let main = spire_hash(cell + 3.1);
+    let tallest = 5000.0 + main.x * 4500.0;
+    if index == 0 {
+        return Spire {
+            base: centre,
+            lean: (main.zw() - 0.5) * 0.08,
+            tip: tallest,
+            radius: 1500.0 + main.y * 1100.0,
+            flutes: 5.0 + (main.w * 3.0).floor(),
+            twist: (main.z - 0.5) * 9.0,
+        };
+    }
+    // Lesser horns crowd the main spire and curl away from it.
+    let random = spire_hash(cell + index as f32 * 17.17 + 9.4);
+    let angle = random.x * TAU;
+    let outward = vec2(angle.cos(), angle.sin());
+    Spire {
+        base: centre + outward * (1300.0 + random.y * 1500.0),
+        lean: outward * (0.05 + random.z * 0.11),
+        tip: 1500.0 + random.z * (tallest - 1500.0) * 0.75,
+        radius: 600.0 + random.w * 600.0,
+        flutes: 4.0 + (random.y * 4.0).floor(),
+        twist: (random.w - 0.5) * 12.0,
+    }
+}
+
+/// The axis bows like a horn and sways once along its height.
+pub fn spire_axis(spire: &Spire, z: f32) -> (Vec2, f32) {
+    let height = spire.tip - SPIRE_BOTTOM;
+    let u = ((z - SPIRE_BOTTOM) / height).clamp(0.0, 1.0);
+    let sway = vec2(-spire.lean.y, spire.lean.x) * ((u * core::f32::consts::PI).sin() * 0.25);
+    (spire.base + (spire.lean * (u * u) + sway) * height, u)
+}
+
+/// Unfluted radius; the fog reads this smooth silhouette.
+fn spire_radius(spire: &Spire, u: f32) -> f32 {
+    spire.radius * (1.0 - u).max(0.0).powf(1.15)
+}
+
+/// Twisted flutes and stacked growth strata on the smooth silhouette.
+pub fn spire_relief(spire: &Spire, angle: f32, u: f32) -> f32 {
+    let flute = (spire.flutes * angle + spire.twist * u).cos();
+    // Irregular growth bands rather than evenly stacked tiers.
+    let layer = u * 7.0 + (u * 23.0 + spire.twist).sin() * 0.45;
+    let strata = (layer - layer.floor()).smoothstep(0.8, 1.0);
+    1.0 - 0.08 * flute - 0.035 * strata
+}
+
+pub fn spire_distance(spire: &Spire, local: Vec2, z: f32) -> f32 {
+    let (centre, u) = spire_axis(spire, z);
+    let q = local - centre;
+    let length = q.length();
+    let smooth = spire_radius(spire, u);
+    // Taper, lean and relief all steepen the field; scale it back to a bound.
+    // Relief never grows the silhouette by more than 8%, so far away the
+    // smooth bound is enough and the angular terms can be skipped.
+    let side = if length > smooth * 1.3 {
+        (length - smooth * 1.08) * 0.55
+    } else {
+        (length - smooth * spire_relief(spire, q.y.atan2(q.x), u)) * 0.55
+    };
+    side.max(z - spire.tip).max(SPIRE_BOTTOM - z)
+}
+
+fn spire_cell(p: Vec3) -> (Vec2, Vec2) {
+    let cell = (p.truncate() / SPIRE_CELL).floor();
+    (cell, p.truncate() - (cell + 0.5) * SPIRE_CELL)
+}
+
+/// A lower bound on the distance to any spire, in surface units.
+pub fn spire_field(p: Vec3) -> f32 {
+    let (cell, local) = spire_cell(p);
+    let mut distance = SPIRE_CELL * 0.5 - local.abs().max_element() + SPIRE_MARGIN;
+    for index in 0..spire_count(cell) {
+        distance = distance.min(spire_distance(&spire(cell, index), local, p.z));
+    }
+    distance
+}
+
+/// The nearest spire silhouette at this altitude: the gap to its surface and
+/// the horizontal direction away from its axis.
+pub fn nearest_spire(p: Vec3) -> Vec3 {
+    let (cell, local) = spire_cell(p);
+    let mut nearest = vec3(1.0e10, 0.0, 0.0);
+    for index in 0..spire_count(cell) {
+        let spire = spire(cell, index);
+        let (centre, u) = spire_axis(&spire, p.z);
+        let q = local - centre;
+        let length = q.length().max(1.0);
+        let gap = length - spire_radius(&spire, u);
+        if gap < nearest.x {
+            nearest = vec3(gap, q.x / length, q.y / length);
+        }
+    }
+    nearest
+}
+
+/// Entry and exit along a ray through the band holding the spires. Altitude
+/// is measured from the planet centre without squaring large radii.
+pub fn spire_band(altitude: f32, upward: f32, max_distance: f32) -> Vec2 {
+    let radius = PLANET_RADIUS + altitude;
+    let b = radius * upward;
+    let crossing = |height: f32| {
+        let c = (altitude - height) * (radius + PLANET_RADIUS + height);
+        let discriminant = b * b - c;
+        if discriminant < 0.0 {
+            return vec2(1.0, -1.0);
+        }
+        let root = discriminant.sqrt();
+        let q = -b - root.copysign(b);
+        let (near, far) = (q, c / q);
+        vec2(near.min(far), near.max(far))
+    };
+    let top = crossing(SPIRE_TOP);
+    if top.y < 0.0 || top.x > top.y {
+        return vec2(1.0, -1.0);
+    }
+    let bottom = crossing(SPIRE_BOTTOM);
+    let exit = if bottom.x <= bottom.y && bottom.x > 0.0 {
+        bottom.x
+    } else {
+        top.y
+    };
+    vec2(top.x.max(0.0), exit.min(max_distance))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use spirv_std::glam::ivec2;
-    #[test]
-    fn eruptions_fill_then_drain_from_the_same_end() {
-        assert!(ejection_fill(0.25, 0.15) > 0.99);
-        assert!(ejection_fill(0.85, 0.15) < 0.01);
-        assert!(ejection_fill(0.25, 0.5) > 0.99 && ejection_fill(0.85, 0.5) > 0.99);
-        assert!(ejection_fill(0.25, 0.85) < 0.01);
-        assert!(ejection_fill(0.85, 0.85) > 0.99);
-        assert!(ejection_fill(0.85, 1.0) < 0.01);
-    }
+
+    use super::*;
 
     #[test]
-    fn eruption_distance_is_continuous_and_tracks_position_along_curve() {
-        let event = [Vec4::ZERO, Vec4::new(1.0, 0.0, 2000.0, 1000.0)];
-        let top = ejection_distance(vec3(0.0, 0.0, 1000.0), event);
-        assert!(top.x < 0.001 && (top.y - 0.5).abs() < 0.001);
-        let side = ejection_distance(vec3(2000.0, 0.0, -1000.0), event);
-        assert!(side.x < 0.001 && side.y < 0.001);
-        assert!((ejection_distance(vec3(0.0, 100.0, 1000.0), event).x - 100.0).abs() < 0.001);
-    }
-    #[test]
-    fn neighbouring_cells_preserve_every_visible_eruption_across_boundaries() {
-        for x in -8..8 {
-            for y in -8..8 {
-                for time in [2.0, 10.0, 20.0] {
-                    let point = vec3(
-                        x as f32 * EJECTION_CELL * 0.37,
-                        y as f32 * EJECTION_CELL * 0.53,
-                        650.0,
-                    );
-                    let cell = (point.xy() / EJECTION_CELL).floor();
-                    let mut distance: f32 = 1.0e10;
-                    for dx in -1..=1 {
-                        for dy in -1..=1 {
-                            let event = ejection(cell + vec2(dx as f32, dy as f32), time);
-                            if event[0].w >= 0.01 {
-                                distance = distance.min(ejection_distance(point, event).x);
-                            }
-                        }
-                    }
-                    if distance < EJECTION_WIDTH * 3.0 {
-                        assert!((ejection_field(point, time).x - distance).abs() < 0.01);
+    fn every_spire_stays_inside_the_margin_of_its_cell() {
+        for x in -40..40 {
+            for y in -40..40 {
+                let cell = vec2(x as f32, y as f32);
+                for index in 0..spire_count(cell) {
+                    let spire = spire(cell, index);
+                    for z in [SPIRE_BOTTOM, 0.0, spire.tip] {
+                        let (centre, u) = spire_axis(&spire, z);
+                        let extent = centre.abs().max_element() + spire_radius(&spire, u) * 1.08;
+                        assert!(extent < SPIRE_REACH, "spire leaves its cell: {extent}");
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn spires_pierce_the_ocean_and_the_field_is_signed() {
+        let mut found = 0;
+        for x in -20..20 {
+            for y in -20..20 {
+                let cell = vec2(x as f32, y as f32);
+                for index in 0..spire_count(cell) {
+                    let (centre, _) = spire_axis(&spire(cell, index), 0.0);
+                    let point = ((cell + 0.5) * SPIRE_CELL + centre).extend(0.0);
+                    assert!(spire_field(point) < 0.0, "axis must be inside");
+                    assert!(spire_field(point.with_z(SPIRE_TOP + 10.0)) > 0.0);
+                    assert!(nearest_spire(point).x < 0.0);
+                    found += 1;
+                }
+            }
+        }
+        assert!(found > 100, "too few spires: {found}");
+    }
+
+    #[test]
+    fn band_matches_the_altitudes_it_crosses() {
+        let down = spire_band(2400.0, -1.0, 1.0e7);
+        assert!(down.x.abs() < 0.01 && (down.y - 7400.0).abs() < 1.0);
+        let from_above = spire_band(80_000.0, -1.0, 1.0e7);
+        assert!((from_above.x - (80_000.0 - SPIRE_TOP)).abs() < 1.0);
+        assert!(spire_band(80_000.0, 1.0, 1.0e7).x > spire_band(80_000.0, 1.0, 1.0e7).y);
+        let grazing = spire_band(2400.0, 0.0, 1.0e7);
+        assert!(grazing.x.abs() < 0.01 && grazing.y > 100_000.0);
+    }
+
+    #[test]
+    fn eruptions_rise_hold_then_part_at_the_apex() {
+        assert!(ejection_fill(0.5, 0.0) < 0.01);
+        assert!(ejection_fill(0.5, 0.3) > 0.99 && ejection_fill(0.1, 0.3) > 0.99);
+        assert!(ejection_fill(0.5, 0.85) < 0.05 && ejection_fill(0.1, 0.85) > 0.4);
+        assert!(ejection_fill(0.1, 1.0) < 0.01);
     }
 
     #[test]
@@ -223,13 +451,8 @@ mod tests {
                     }
                     assert_eq!(
                         ejection_field(point, time),
-                        ejection_field_with(point, active, f32::MAX, |cell| ejection(cell, time))
+                        ejection_field_with(point, active, |cell| ejection(cell, time))
                     );
-                    let limit = EJECTION_WIDTH + 4000.0;
-                    let bounded =
-                        ejection_field_with(point, active, limit, |cell| ejection(cell, time));
-                    let expected = ejection_field(point, time);
-                    assert!((bounded.x.min(limit) - expected.x.min(limit)).abs() < 0.01);
                 }
             }
         }

@@ -1,5 +1,3 @@
-use crate::math::{ToEngine, ToScene};
-use bevy::render::render_resource::MipmapFilterMode;
 use std::array::from_fn;
 use std::env;
 use std::mem::size_of;
@@ -23,8 +21,8 @@ use bevy::render::render_resource::{
     AddressMode, BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntries, BindGroupLayoutEntry, BindingResource, BufferUsages,
     CachedRenderPipelineId, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState,
-    DepthStencilState, FilterMode, FragmentState, LoadOp, MultisampleState, Operations,
-    PipelineCache, PrimitiveState, RawBufferVec, RenderPassColorAttachment,
+    DepthStencilState, FilterMode, FragmentState, LoadOp, MipmapFilterMode, MultisampleState,
+    Operations, PipelineCache, PrimitiveState, RawBufferVec, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, RenderPipeline,
     RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
     StencilState, StoreOp, TextureFormat, TextureSampleType, TextureView, TextureViewId,
@@ -34,20 +32,17 @@ use bevy::render::texture::GpuImage;
 use bevy::render::view::{ExtractedView, ViewTarget};
 use skybound::scene::atmosphere::SKY_SIZE;
 use skybound::scene::aur::{EJECTION_GRID_HEIGHT, EJECTION_GRID_WIDTH};
-use skybound::scene::{
-    FrameUniform, ViewUniform, cache as volume_cache,
-    life::{CreatureInstance, development},
-};
+use skybound::scene::climate::Cloud;
+use skybound::scene::{FrameUniform, ViewUniform, cache as volume_cache};
 
 use super::froxel::{FroxelInputs, FroxelVolume};
 use crate::game::camera::DebugView;
 use crate::game::flight::PlayerModel;
-use crate::game::weather::CloudSnapshot;
+use crate::game::weather::{CloudSnapshot, prepare_flashes};
 use crate::game::world::WorldData;
-use crate::graphics::prepare::sky::SkyLookup;
-use crate::graphics::prepare::textures::VolumeTextures;
 use crate::graphics::targets::{ColumnTargets, SceneTargets, Targets, VolumeScale, texture};
-use skybound::scene::cloud::Cloud;
+use crate::graphics::textures::{SkyLookup, VolumeTextures};
+use crate::math::ToScene;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -57,6 +52,7 @@ pub struct ResolveUniform {
     size: Vec4,
     native: Vec4,
 }
+
 #[derive(Resource)]
 pub struct SceneBuffer {
     uniform: RawBufferVec<FrameUniform>,
@@ -69,11 +65,11 @@ pub struct SceneBuffer {
     previous_weather: Vec4,
     frame: u32,
     profile: u32,
-    opaque_rect: UVec4,
     clouds: RawBufferVec<Cloud>,
     cloud_grid: RawBufferVec<u32>,
     cloud_revision: u64,
 }
+
 impl Default for SceneBuffer {
     fn default() -> Self {
         Self {
@@ -89,7 +85,6 @@ impl Default for SceneBuffer {
             clouds: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_grid: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_revision: u64::MAX,
-            opaque_rect: UVec4::ZERO,
             profile: env::var("SKYBOUND_PROFILE_VOLUME")
                 .ok()
                 .and_then(|value| value.parse().ok())
@@ -97,87 +92,8 @@ impl Default for SceneBuffer {
         }
     }
 }
+
 type ViewQuery = (&'static ExtractedView, Option<&'static TemporalJitter>);
-
-fn opaque_rectangle(players: &[CreatureInstance; 2], clip: Mat4, viewport: UVec4) -> UVec4 {
-    let mut lower = Vec2::ONE;
-    let mut upper = Vec2::ZERO;
-    for player in players {
-        if player.position.w <= 0.0 {
-            continue;
-        }
-        let rotation = Quat::from_array(player.rotation.to_array());
-        let scale = development::scale(player).to_engine();
-        let mut projected_corners = [Vec4::ZERO; 8];
-        let mut behind = 0;
-        for (corner, projected) in projected_corners.iter_mut().enumerate() {
-            let signs = vec3(
-                if corner & 1 == 0 { -1.0 } else { 1.0 },
-                if corner & 2 == 0 { -1.0 } else { 1.0 },
-                if corner & 4 == 0 { -1.0 } else { 1.0 },
-            );
-            let point = player.position.truncate().to_engine()
-                + rotation * (player.opaque_bounds.truncate().to_engine() * scale * signs);
-            *projected = clip * point.extend(1.0);
-            behind += usize::from(projected.w <= 0.0);
-        }
-        if behind == 8 {
-            continue;
-        }
-        if behind > 0 {
-            return viewport;
-        }
-        for projected in projected_corners {
-            let uv = projected.truncate().truncate() / projected.w * vec2(0.5, -0.5) + 0.5;
-            lower = lower.min(uv);
-            upper = upper.max(uv);
-        }
-    }
-    let size = viewport.zw().as_vec2();
-    let start = (lower * size - 2.0)
-        .floor()
-        .clamp(Vec2::ZERO, size)
-        .as_uvec2();
-    let end = (upper * size + 2.0)
-        .ceil()
-        .clamp(Vec2::ZERO, size)
-        .as_uvec2()
-        .max(start);
-    UVec4::new(
-        viewport.x + start.x,
-        viewport.y + start.y,
-        end.x - start.x,
-        end.y - start.y,
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use spirv_std::glam::camera::rh::proj::directx::perspective_infinite_reverse;
-
-    #[test]
-    fn creature_bounds_behind_the_camera_do_not_expand_visible_work() {
-        let viewport = UVec4::new(0, 0, 3840, 2160);
-        let clip = perspective_infinite_reverse(1.2, 16.0 / 9.0, 0.1).to_engine();
-        let mut creature = CreatureInstance {
-            position: vec4(0.0, 0.0, 10.0, 2.0).to_scene(),
-            opaque_bounds: Vec4::ONE.to_scene(),
-            rotation: Vec4::W.to_scene(),
-            ..default()
-        };
-        let hidden = opaque_rectangle(&[creature, CreatureInstance::default()], clip, viewport);
-        assert_eq!(hidden.zw(), UVec2::ZERO);
-        creature.position.z = -10.0;
-        let visible = opaque_rectangle(&[creature, CreatureInstance::default()], clip, viewport);
-        assert!(visible.z > 0 && visible.w > 0 && visible.z < viewport.z);
-        creature.position.z = 0.0;
-        assert_eq!(
-            opaque_rectangle(&[creature, CreatureInstance::default()], clip, viewport),
-            viewport
-        );
-    }
-}
 
 #[derive(SystemParam)]
 pub(super) struct PrepareSceneView<'w, 's> {
@@ -196,6 +112,285 @@ pub(super) struct PrepareSceneView<'w, 's> {
     sky: ResMut<'w, SkyLookup>,
     targets: ResMut<'w, SceneTargets>,
 }
+
+struct BindGroups {
+    cloud_revision: u64,
+    depth: TextureViewId,
+    volume: TextureViewId,
+    native: [TextureViewId; 2],
+    opaque: BindGroup,
+    volume_group: BindGroup,
+    sky: BindGroup,
+    columns: BindGroup,
+    filter: [BindGroup; 2],
+    composite: [[BindGroup; 2]; 2],
+}
+
+#[derive(Resource)]
+pub struct ScenePipeline {
+    opaque_layout: BindGroupLayout,
+    volume_layout: BindGroupLayout,
+    sky_layout: BindGroupLayout,
+    column_layout: BindGroupLayout,
+    filter_layout: BindGroupLayout,
+    composite_layout: BindGroupLayout,
+    opaque: CachedRenderPipelineId,
+    volume: CachedRenderPipelineId,
+    thin: CachedRenderPipelineId,
+    sky: CachedRenderPipelineId,
+    ejection_lookup: CachedRenderPipelineId,
+    ejections: TextureView,
+    columns: CachedRenderPipelineId,
+    column_targets: ColumnTargets,
+    froxel: FroxelVolume,
+    filter: CachedRenderPipelineId,
+    composite: CachedRenderPipelineId,
+    repeat_sampler: Sampler,
+    linear_sampler: Sampler,
+    groups: Option<BindGroups>,
+}
+
+#[derive(SystemParam)]
+pub(super) struct PrepareBindings<'w, 's> {
+    pipeline: ResMut<'w, ScenePipeline>,
+    device: Res<'w, RenderDevice>,
+    buffer: Res<'w, SceneBuffer>,
+    images: Res<'w, RenderAssets<GpuImage>>,
+    textures: Res<'w, VolumeTextures>,
+    sky: Res<'w, SkyLookup>,
+    targets: Res<'w, SceneTargets>,
+    views: Single<'w, 's, (&'static ViewPrepassTextures, &'static ViewTarget), With<Camera3d>>,
+}
+
+struct Interfaces {
+    opaque: Vec<BindGroupLayoutEntry>,
+    volume: Vec<BindGroupLayoutEntry>,
+    sky: Vec<BindGroupLayoutEntry>,
+    columns: Vec<BindGroupLayoutEntry>,
+    filter: Vec<BindGroupLayoutEntry>,
+    composite: Vec<BindGroupLayoutEntry>,
+}
+
+impl Interfaces {
+    fn new() -> Self {
+        let frame_entry =
+            || uniform_buffer_sized(false, NonZeroU64::new(size_of::<FrameUniform>() as u64));
+        let resolve_entry =
+            || uniform_buffer_sized(false, NonZeroU64::new(size_of::<ResolveUniform>() as u64));
+        let float = || texture_2d(TextureSampleType::Float { filterable: true });
+        let data = || texture_2d(TextureSampleType::Float { filterable: false });
+        let opaque = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                frame_entry(),
+                sampler(SamplerBindingType::Filtering),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                float(),
+            ),
+        );
+        let mut volume = opaque.to_vec();
+        let extra = BindGroupLayoutEntries::with_indices(
+            ShaderStages::FRAGMENT,
+            (
+                (6, texture_depth_2d()),
+                (7, float()),
+                (8, data()),
+                (9, float()),
+                (10, float()),
+                (
+                    11,
+                    texture_3d(TextureSampleType::Float { filterable: true }),
+                ),
+                (12, storage_buffer_read_only_sized(false, None)),
+                (13, storage_buffer_read_only_sized(false, None)),
+            ),
+        );
+        volume.extend_from_slice(&extra);
+        let sky = BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, frame_entry());
+        let mut columns = opaque.to_vec();
+        columns.extend_from_slice(&BindGroupLayoutEntries::with_indices(
+            ShaderStages::FRAGMENT,
+            ((6, float()), (7, data())),
+        ));
+        let filter = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                resolve_entry(),
+                float(),
+                data(),
+                data(),
+                float(),
+                data(),
+                sampler(SamplerBindingType::Filtering),
+            ),
+        );
+        let composite = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                resolve_entry(),
+                float(),
+                float(),
+                data(),
+                texture_depth_2d(),
+                float(),
+                float(),
+                float(),
+            ),
+        );
+        Self {
+            opaque: opaque.to_vec(),
+            volume,
+            sky: sky.to_vec(),
+            columns,
+            filter: filter.to_vec(),
+            composite: composite.to_vec(),
+        }
+    }
+}
+
+struct PipelineCompiler<'a> {
+    cache: &'a PipelineCache,
+    fullscreen: &'a FullscreenShader,
+}
+
+impl PipelineCompiler<'_> {
+    fn queue(
+        &self,
+        name: &'static str,
+        shader: Handle<Shader>,
+        entry: &'static str,
+        entries: &[BindGroupLayoutEntry],
+        formats: &[TextureFormat],
+        depth: bool,
+    ) -> CachedRenderPipelineId {
+        self.cache.queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some(name.into()),
+            layout: vec![BindGroupLayoutDescriptor::new(name, entries)],
+            immediate_size: 0,
+            vertex: self.fullscreen.to_vertex_state(),
+            primitive: PrimitiveState::default(),
+            depth_stencil: depth.then_some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Always),
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                shader,
+                entry_point: Some(entry.into()),
+                constants: Vec::new(),
+                targets: formats
+                    .iter()
+                    .map(|&format| {
+                        Some(ColorTargetState {
+                            format,
+                            blend: None,
+                            write_mask: ColorWrites::ALL,
+                        })
+                    })
+                    .collect(),
+                shader_defs: Vec::new(),
+            }),
+            zero_initialize_workgroup_memory: false,
+        })
+    }
+}
+
+impl FromWorld for ScenePipeline {
+    fn from_world(world: &mut World) -> Self {
+        let device = world.resource::<RenderDevice>();
+        let cache = world.resource::<PipelineCache>();
+        let fullscreen = world.resource::<FullscreenShader>();
+        let scene_shader = world.resource::<super::SceneShader>().0.clone();
+        let shaders = world.resource::<super::VolumeShaders>();
+        let Interfaces {
+            opaque: entries,
+            volume: volume_entries,
+            sky: sky_entries,
+            columns: column_entries,
+            filter: filter_entries,
+            composite: composite_entries,
+        } = Interfaces::new();
+        let layout =
+            |name, entries: &[BindGroupLayoutEntry]| device.create_bind_group_layout(name, entries);
+        let compiler = PipelineCompiler { cache, fullscreen };
+        let scene_pipeline =
+            |entry, entries: &[BindGroupLayoutEntry], formats: &[TextureFormat], depth| {
+                compiler.queue(entry, scene_shader.clone(), entry, entries, formats, depth)
+            };
+        let opaque_formats = [
+            TextureFormat::Rgba16Float,
+            TextureFormat::Rg16Float,
+            TextureFormat::Rgb10a2Unorm,
+        ];
+        let volume_formats = [
+            TextureFormat::Rgba16Float,
+            TextureFormat::Rg16Float,
+            TextureFormat::Rgba32Float,
+        ];
+        Self {
+            opaque_layout: layout("opaque", &entries),
+            volume_layout: layout("volume", &volume_entries),
+            sky_layout: layout("sky", &sky_entries),
+            column_layout: layout("column_cache", &column_entries),
+            filter_layout: layout("volume_temporal", &filter_entries),
+            composite_layout: layout("volume_composite", &composite_entries),
+            opaque: scene_pipeline("opaque", &entries, &opaque_formats, true),
+            volume: scene_pipeline("volume", &volume_entries, &volume_formats, true),
+            thin: scene_pipeline(
+                "transparent",
+                &volume_entries,
+                &[TextureFormat::Rgba16Float; 3],
+                false,
+            ),
+            sky: scene_pipeline("sky", &sky_entries, &[TextureFormat::Rgba16Float], false),
+            ejection_lookup: scene_pipeline(
+                "ejection_lookup",
+                &sky_entries,
+                &[TextureFormat::Rgba32Float],
+                false,
+            ),
+            ejections: texture(
+                device,
+                UVec2::new(EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
+                TextureFormat::Rgba32Float,
+                "ejection_lookup",
+            ),
+            columns: scene_pipeline(
+                "column_cache",
+                &column_entries,
+                &[TextureFormat::Rgba16Float; 2],
+                false,
+            ),
+            column_targets: ColumnTargets::new(device),
+            froxel: FroxelVolume::new(world),
+            filter: compiler.queue(
+                "volume_temporal",
+                shaders.filter.clone(),
+                "reconstruct",
+                &filter_entries,
+                &[TextureFormat::Rgba16Float, TextureFormat::Rgba32Float],
+                false,
+            ),
+            composite: compiler.queue(
+                "volume_composite",
+                shaders.composite.clone(),
+                "composite",
+                &composite_entries,
+                &[TextureFormat::Rgba16Float],
+                false,
+            ),
+            repeat_sampler: scene_sampler(device, true),
+            linear_sampler: scene_sampler(device, false),
+            groups: None,
+        }
+    }
+}
+
 pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     let PrepareSceneView {
         device,
@@ -248,15 +443,6 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     )
     .to_scene();
     prepare_lighting(&mut uniform, &mut sky);
-    buffer.opaque_rect = if uniform.altitude() <= 0.0 {
-        view.viewport
-    } else {
-        opaque_rectangle(
-            &player.0,
-            uniform.clip_from_world.to_engine(),
-            view.viewport,
-        )
-    };
     let valid = history_valid(&buffer, targets, view, &world, debug.0, atmosphere.0);
     buffer.uniform.clear();
     buffer.uniform.push(FrameUniform {
@@ -369,58 +555,11 @@ fn history_valid(
 
 fn prepare_lighting(uniform: &mut ViewUniform, sky: &mut SkyLookup) {
     uniform.prepare_atmosphere();
-    uniform.prepare_flashes();
+    prepare_flashes(uniform);
     uniform.prepare_cache();
     sky.update(uniform);
 }
 
-struct BindGroups {
-    cloud_revision: u64,
-    depth: TextureViewId,
-    volume: TextureViewId,
-    native: [TextureViewId; 2],
-    opaque: BindGroup,
-    volume_group: BindGroup,
-    sky: BindGroup,
-    columns: BindGroup,
-    filter: [BindGroup; 2],
-    composite: [[BindGroup; 2]; 2],
-}
-#[derive(Resource)]
-pub struct ScenePipeline {
-    opaque_layout: BindGroupLayout,
-    volume_layout: BindGroupLayout,
-    sky_layout: BindGroupLayout,
-    column_layout: BindGroupLayout,
-    filter_layout: BindGroupLayout,
-    composite_layout: BindGroupLayout,
-    opaque: CachedRenderPipelineId,
-    background: CachedRenderPipelineId,
-    volume: CachedRenderPipelineId,
-    thin: CachedRenderPipelineId,
-    sky: CachedRenderPipelineId,
-    ejection_lookup: CachedRenderPipelineId,
-    ejections: TextureView,
-    columns: CachedRenderPipelineId,
-    column_targets: ColumnTargets,
-    froxel: FroxelVolume,
-    filter: CachedRenderPipelineId,
-    composite: CachedRenderPipelineId,
-    repeat_sampler: Sampler,
-    linear_sampler: Sampler,
-    groups: Option<BindGroups>,
-}
-#[derive(SystemParam)]
-pub(super) struct PrepareBindings<'w, 's> {
-    pipeline: ResMut<'w, ScenePipeline>,
-    device: Res<'w, RenderDevice>,
-    buffer: Res<'w, SceneBuffer>,
-    images: Res<'w, RenderAssets<GpuImage>>,
-    textures: Res<'w, VolumeTextures>,
-    sky: Res<'w, SkyLookup>,
-    targets: Res<'w, SceneTargets>,
-    views: Single<'w, 's, (&'static ViewPrepassTextures, &'static ViewTarget), With<Camera3d>>,
-}
 #[expect(
     clippy::too_many_lines,
     reason = "one descriptor preparation step for the scene passes"
@@ -654,6 +793,7 @@ fn attachment(view: &TextureView, clear: bool) -> RenderPassColorAttachment<'_> 
         },
     }
 }
+
 fn draw(
     context: &mut RenderContext,
     pipeline: &RenderPipeline,
@@ -662,25 +802,6 @@ fn draw(
     depth: Option<&TextureView>,
     viewport: UVec4,
     label: &'static str,
-) {
-    draw_region(
-        context, pipeline, group, colors, depth, viewport, label, None,
-    );
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "render pass parameters plus an optional scissor"
-)]
-fn draw_region(
-    context: &mut RenderContext,
-    pipeline: &RenderPipeline,
-    group: &BindGroup,
-    colors: &[Option<RenderPassColorAttachment<'_>>],
-    depth: Option<&TextureView>,
-    viewport: UVec4,
-    label: &'static str,
-    scissor: Option<UVec4>,
 ) {
     let recorder = context.diagnostic_recorder();
     let span = recorder
@@ -692,11 +813,7 @@ fn draw_region(
         depth_stencil_attachment: depth.map(|view| RenderPassDepthStencilAttachment {
             view,
             depth_ops: Some(Operations {
-                load: if scissor.is_some() {
-                    LoadOp::Load
-                } else {
-                    LoadOp::Clear(0.0)
-                },
+                load: LoadOp::Clear(0.0),
                 store: StoreOp::Store,
             }),
             stencil_ops: None,
@@ -714,9 +831,6 @@ fn draw_region(
         1.0,
     );
     pass.set_render_pipeline(pipeline);
-    if let Some(rect) = scissor {
-        pass.set_scissor_rect(rect.x, rect.y, rect.z, rect.w);
-    }
     pass.set_bind_group(0, group, &[]);
     pass.push_debug_group(label);
     pass.draw(0..3, 0..1);
@@ -735,22 +849,13 @@ pub fn raymarch_pass(
     let pipeline = world.resource::<ScenePipeline>();
     let cache = world.resource::<PipelineCache>();
     let sky = world.resource::<SkyLookup>();
-    let (
-        Some(groups),
-        Some(targets),
-        Some(opaque),
-        Some(background),
-        Some(volume),
-        Some(sky_pipeline),
-    ) = (
+    let (Some(groups), Some(targets), Some(opaque), Some(volume), Some(sky_pipeline)) = (
         pipeline.groups.as_ref(),
         world.resource::<SceneTargets>().0.as_ref(),
         cache.get_render_pipeline(pipeline.opaque),
-        cache.get_render_pipeline(pipeline.background),
         cache.get_render_pipeline(pipeline.volume),
         cache.get_render_pipeline(pipeline.sky),
-    )
-    else {
+    ) else {
         return;
     };
     if !draw_lookup_passes(&mut context, pipeline, groups, cache) {
@@ -780,7 +885,7 @@ pub fn raymarch_pass(
         }
         draw(
             &mut context,
-            background,
+            opaque,
             &groups.opaque,
             &[
                 Some(target.get_color_attachment()),
@@ -789,25 +894,8 @@ pub fn raymarch_pass(
             ],
             Some(depth),
             view.viewport,
-            "background",
+            "opaque",
         );
-        let rect = world.resource::<SceneBuffer>().opaque_rect;
-        if rect.z > 0 && rect.w > 0 {
-            draw_region(
-                &mut context,
-                opaque,
-                &groups.opaque,
-                &[
-                    Some(attachment(target.main_texture_view(), false)),
-                    Some(attachment(motion, false)),
-                    Some(attachment(normal, false)),
-                ],
-                Some(depth),
-                view.viewport,
-                "opaque_creatures",
-                Some(rect),
-            );
-        }
         draw(
             &mut context,
             volume,
@@ -847,7 +935,7 @@ fn draw_lookup_passes(
     );
     let grid = volume_cache::SIZE;
     let width = grid * volume_cache::CASCADES;
-    let height = grid * volume_cache::ROWS;
+    let height = grid;
     draw(
         context,
         column_pipeline,
@@ -881,7 +969,6 @@ pub fn composite_pass(
     };
     if [
         pipeline.opaque,
-        pipeline.background,
         pipeline.volume,
         pipeline.sky,
         pipeline.ejection_lookup,
@@ -932,234 +1019,6 @@ pub fn composite_pass(
             "volume_composite",
         );
         targets.valid.store(true, Ordering::Relaxed);
-    }
-}
-
-struct Interfaces {
-    opaque: Vec<BindGroupLayoutEntry>,
-    volume: Vec<BindGroupLayoutEntry>,
-    sky: Vec<BindGroupLayoutEntry>,
-    columns: Vec<BindGroupLayoutEntry>,
-    filter: Vec<BindGroupLayoutEntry>,
-    composite: Vec<BindGroupLayoutEntry>,
-}
-impl Interfaces {
-    fn new() -> Self {
-        let frame_entry =
-            || uniform_buffer_sized(false, NonZeroU64::new(size_of::<FrameUniform>() as u64));
-        let resolve_entry =
-            || uniform_buffer_sized(false, NonZeroU64::new(size_of::<ResolveUniform>() as u64));
-        let float = || texture_2d(TextureSampleType::Float { filterable: true });
-        let data = || texture_2d(TextureSampleType::Float { filterable: false });
-        let opaque = BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                frame_entry(),
-                sampler(SamplerBindingType::Filtering),
-                texture_3d(TextureSampleType::Float { filterable: true }),
-                texture_3d(TextureSampleType::Float { filterable: true }),
-                texture_3d(TextureSampleType::Float { filterable: true }),
-                float(),
-            ),
-        );
-        let mut volume = opaque.to_vec();
-        let extra = BindGroupLayoutEntries::with_indices(
-            ShaderStages::FRAGMENT,
-            (
-                (6, texture_depth_2d()),
-                (7, float()),
-                (8, data()),
-                (9, float()),
-                (10, float()),
-                (
-                    11,
-                    texture_3d(TextureSampleType::Float { filterable: true }),
-                ),
-                (12, storage_buffer_read_only_sized(false, None)),
-                (13, storage_buffer_read_only_sized(false, None)),
-            ),
-        );
-        volume.extend_from_slice(&extra);
-        let sky = BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, frame_entry());
-        let mut columns = opaque.to_vec();
-        columns.extend_from_slice(&BindGroupLayoutEntries::with_indices(
-            ShaderStages::FRAGMENT,
-            ((6, float()), (7, data())),
-        ));
-        let filter = BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                resolve_entry(),
-                float(),
-                data(),
-                data(),
-                float(),
-                data(),
-                sampler(SamplerBindingType::Filtering),
-            ),
-        );
-        let composite = BindGroupLayoutEntries::sequential(
-            ShaderStages::FRAGMENT,
-            (
-                resolve_entry(),
-                float(),
-                float(),
-                data(),
-                texture_depth_2d(),
-                float(),
-                float(),
-                float(),
-            ),
-        );
-        Self {
-            opaque: opaque.to_vec(),
-            volume,
-            sky: sky.to_vec(),
-            columns,
-            filter: filter.to_vec(),
-            composite: composite.to_vec(),
-        }
-    }
-}
-
-struct PipelineCompiler<'a> {
-    cache: &'a PipelineCache,
-    fullscreen: &'a FullscreenShader,
-}
-impl PipelineCompiler<'_> {
-    fn queue(
-        &self,
-        name: &'static str,
-        shader: Handle<Shader>,
-        entry: &'static str,
-        entries: &[BindGroupLayoutEntry],
-        formats: &[TextureFormat],
-        depth: bool,
-    ) -> CachedRenderPipelineId {
-        self.cache.queue_render_pipeline(RenderPipelineDescriptor {
-            label: Some(name.into()),
-            layout: vec![BindGroupLayoutDescriptor::new(name, entries)],
-            immediate_size: 0,
-            vertex: self.fullscreen.to_vertex_state(),
-            primitive: PrimitiveState::default(),
-            depth_stencil: depth.then_some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(CompareFunction::Always),
-                stencil: StencilState::default(),
-                bias: DepthBiasState::default(),
-            }),
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                shader,
-                entry_point: Some(entry.into()),
-                constants: Vec::new(),
-                targets: formats
-                    .iter()
-                    .map(|&format| {
-                        Some(ColorTargetState {
-                            format,
-                            blend: None,
-                            write_mask: ColorWrites::ALL,
-                        })
-                    })
-                    .collect(),
-                shader_defs: Vec::new(),
-            }),
-            zero_initialize_workgroup_memory: false,
-        })
-    }
-}
-
-impl FromWorld for ScenePipeline {
-    fn from_world(world: &mut World) -> Self {
-        let device = world.resource::<RenderDevice>();
-        let cache = world.resource::<PipelineCache>();
-        let fullscreen = world.resource::<FullscreenShader>();
-        let scene_shader = world.resource::<super::SceneShader>().0.clone();
-        let shaders = world.resource::<super::VolumeShaders>();
-        let Interfaces {
-            opaque: entries,
-            volume: volume_entries,
-            sky: sky_entries,
-            columns: column_entries,
-            filter: filter_entries,
-            composite: composite_entries,
-        } = Interfaces::new();
-        let layout =
-            |name, entries: &[BindGroupLayoutEntry]| device.create_bind_group_layout(name, entries);
-        let compiler = PipelineCompiler { cache, fullscreen };
-        let scene_pipeline =
-            |entry, entries: &[BindGroupLayoutEntry], formats: &[TextureFormat], depth| {
-                compiler.queue(entry, scene_shader.clone(), entry, entries, formats, depth)
-            };
-        let opaque_formats = [
-            TextureFormat::Rgba16Float,
-            TextureFormat::Rg16Float,
-            TextureFormat::Rgb10a2Unorm,
-        ];
-        let volume_formats = [
-            TextureFormat::Rgba16Float,
-            TextureFormat::Rg16Float,
-            TextureFormat::Rgba32Float,
-        ];
-        Self {
-            opaque_layout: layout("opaque", &entries),
-            volume_layout: layout("volume", &volume_entries),
-            sky_layout: layout("sky", &sky_entries),
-            column_layout: layout("column_cache", &column_entries),
-            filter_layout: layout("volume_temporal", &filter_entries),
-            composite_layout: layout("volume_composite", &composite_entries),
-            opaque: scene_pipeline("opaque", &entries, &opaque_formats, true),
-            background: scene_pipeline("background", &entries, &opaque_formats, true),
-            volume: scene_pipeline("volume", &volume_entries, &volume_formats, true),
-            thin: scene_pipeline(
-                "transparent",
-                &volume_entries,
-                &[TextureFormat::Rgba16Float; 3],
-                false,
-            ),
-            sky: scene_pipeline("sky", &sky_entries, &[TextureFormat::Rgba16Float], false),
-            ejection_lookup: scene_pipeline(
-                "ejection_lookup",
-                &sky_entries,
-                &[TextureFormat::Rgba32Float],
-                false,
-            ),
-            ejections: texture(
-                device,
-                UVec2::new(EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
-                TextureFormat::Rgba32Float,
-                "ejection_lookup",
-            ),
-            columns: scene_pipeline(
-                "column_cache",
-                &column_entries,
-                &[TextureFormat::Rgba16Float; 2],
-                false,
-            ),
-            column_targets: ColumnTargets::new(device),
-            froxel: FroxelVolume::new(world),
-            filter: compiler.queue(
-                "volume_temporal",
-                shaders.filter.clone(),
-                "reconstruct",
-                &filter_entries,
-                &[TextureFormat::Rgba16Float, TextureFormat::Rgba32Float],
-                false,
-            ),
-            composite: compiler.queue(
-                "volume_composite",
-                shaders.composite.clone(),
-                "composite",
-                &composite_entries,
-                &[TextureFormat::Rgba16Float],
-                false,
-            ),
-            repeat_sampler: scene_sampler(device, true),
-            linear_sampler: scene_sampler(device, false),
-            groups: None,
-        }
     }
 }
 

@@ -19,7 +19,7 @@ pub struct ColumnTargets {
 
 impl ColumnTargets {
     pub fn new(device: &RenderDevice) -> Self {
-        let size = UVec2::new(cache::SIZE * cache::CASCADES, cache::SIZE * cache::ROWS);
+        let size = UVec2::new(cache::SIZE * cache::CASCADES, cache::SIZE);
         Self {
             shape: texture(device, size, TextureFormat::Rgba16Float, "column_shape"),
             columns: texture(
@@ -35,6 +35,7 @@ impl ColumnTargets {
 #[derive(Resource, Clone, ExtractResource)]
 #[extract_app(RenderApp)]
 pub struct VolumeScale(pub f32);
+
 impl Default for VolumeScale {
     fn default() -> Self {
         Self(
@@ -48,31 +49,9 @@ impl Default for VolumeScale {
     }
 }
 
-pub fn texture(
-    device: &RenderDevice,
-    size: UVec2,
-    format: TextureFormat,
-    label: &'static str,
-) -> TextureView {
-    device
-        .create_texture(&TextureDescriptor {
-            label: Some(label),
-            size: Extent3d {
-                width: size.x,
-                height: size.y,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        })
-        .create_view(&TextureViewDescriptor::default())
-}
 #[derive(Resource, Default)]
 pub struct SceneTargets(pub Option<Targets>);
+
 pub struct Targets {
     pub size: UVec2,
     pub trace_size: UVec2,
@@ -88,6 +67,7 @@ pub struct Targets {
     pub thin_prefix: TextureView,
     pub valid: AtomicBool,
 }
+
 impl SceneTargets {
     pub fn resize(&mut self, device: &RenderDevice, native: UVec2, scale: f32) {
         let size = (native.as_vec2() * scale).floor().max(Vec2::ONE).as_uvec2();
@@ -122,4 +102,28 @@ impl SceneTargets {
             valid: AtomicBool::new(false),
         });
     }
+}
+
+pub fn texture(
+    device: &RenderDevice,
+    size: UVec2,
+    format: TextureFormat,
+    label: &'static str,
+) -> TextureView {
+    device
+        .create_texture(&TextureDescriptor {
+            label: Some(label),
+            size: Extent3d {
+                width: size.x,
+                height: size.y,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&TextureViewDescriptor::default())
 }

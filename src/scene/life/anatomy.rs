@@ -2,13 +2,19 @@ use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+#[cfg(not(target_arch = "spirv"))]
+use super::CreatureInstance;
+#[cfg(not(target_arch = "spirv"))]
+use super::Kind;
 use super::biology::{Biology, Digestion, Exchange, Lift, Transport};
-#[cfg(not(target_arch = "spirv"))]
-use super::{CreatureInstance, Kind};
 use super::{ellipsoid, smooth_min};
-use crate::scene::surface::Surface;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::surface::{Ray, TraceResult};
+use crate::scene::life::surface::Ray;
+use crate::scene::life::surface::Surface;
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::surface::TraceResult;
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::surface::{Material, trace_material};
 
 pub fn organs(point: Vec3, biology: Biology) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
@@ -69,7 +75,6 @@ pub fn organs(point: Vec3, biology: Biology) -> Surface {
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
-    use crate::scene::surface::{Material, trace_material};
     let biology = super::KINDS[creature.kind.x as usize].biology();
     let (center, scale) = match super::KINDS[creature.kind.x as usize] {
         Kind::Nae => (vec3(0.0, 0.03, 0.0), vec3(0.22, 0.33, 0.16)),

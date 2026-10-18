@@ -1,15 +1,13 @@
+pub use super::render_wings;
 use crate::scene::life::biology::Biology;
+pub mod sericifex;
+pub mod sputator;
 
 pub const BIOLOGY: Biology = Biology {
     speed: 6.0,
     adult_mass: 0.15,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod sericifex;
-pub mod sputator;
 
 taxon!(
     Family,

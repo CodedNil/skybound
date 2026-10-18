@@ -1,8 +1,4 @@
-use crate::math::{ToEngine, ToScene};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
-
-use bevy::math::{DQuat, DVec3};
-use bevy::transform::TransformSystems;
 
 use bevy::anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening;
 use bevy::anti_alias::taa::TemporalAntiAliasing;
@@ -10,21 +6,25 @@ use bevy::camera::Hdr;
 use bevy::core_pipeline::prepass::{
     DepthPrepass, MotionVectorPrepass, NoBackgroundMotionVectors, NormalPrepass,
 };
+use bevy::math::{DQuat, DVec3};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::RenderApp;
 use bevy::render::extract_resource::ExtractResource;
 use bevy::render::view::DebandDither;
-use skybound::scene::{PLANET_RADIUS, planet::surface_coordinates};
+use bevy::transform::TransformSystems;
+use skybound::scene::PLANET_RADIUS;
+use skybound::scene::planet::surface_coordinates;
 
 use crate::game::ecosystem::{EcologicalMotion, Relations};
 use crate::game::flight::{SPAWN, Velocity, follow_camera};
+use crate::math::{ToEngine, ToScene};
+
+const CAMERA_RESET_THRESHOLD: f32 = 2048.0;
 
 /// Every world-space entity moves together when the floating origin changes.
 #[derive(Component)]
 pub struct WorldAnchor;
-
-const CAMERA_RESET_THRESHOLD: f32 = 2048.0;
 
 #[derive(Component)]
 pub struct PlanetPosition {
@@ -46,11 +46,13 @@ pub struct WorldData {
     pub origin: DVec3,
     pub basis: DQuat,
 }
+
 impl Default for WorldData {
     fn default() -> Self {
         Self::at(FRAC_PI_4, -FRAC_PI_2)
     }
 }
+
 impl WorldData {
     pub fn at(latitude: f64, longitude: f64) -> Self {
         let up = DVec3::new(
@@ -95,10 +97,12 @@ impl WorldData {
 }
 
 pub struct WorldPlugin;
+
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WorldSystems {
     Rebase,
 }
+
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldData>()
@@ -113,6 +117,14 @@ impl Plugin for WorldPlugin {
             );
     }
 }
+
+type RebaseAnchor<'a> = (
+    &'a mut Transform,
+    &'a mut PlanetPosition,
+    Option<&'a mut Velocity>,
+    Option<&'a mut EcologicalMotion>,
+    Option<&'a mut Relations>,
+);
 
 fn setup(mut commands: Commands) {
     commands.spawn((
@@ -156,13 +168,6 @@ fn sync_positions(
     }
 }
 
-type RebaseAnchor<'a> = (
-    &'a mut Transform,
-    &'a mut PlanetPosition,
-    Option<&'a mut Velocity>,
-    Option<&'a mut EcologicalMotion>,
-    Option<&'a mut Relations>,
-);
 fn update(
     mut world: ResMut<WorldData>,
     camera: Single<Entity, With<Camera3d>>,

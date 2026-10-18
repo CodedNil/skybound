@@ -1,5 +1,15 @@
-use crate::scene::life::biology::Organs;
-use crate::scene::life::biology::{Anatomy, Biology, Feeding};
+use core::f32::consts::PI;
+
+use spirv_std::glam::{FloatExt, Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
+pub use super::render_wings;
+use crate::scene::life::biology::{Anatomy, Biology, Feeding, Organs};
+use crate::scene::life::{CreatureInstance, tapered_tail};
+pub mod specialia;
+pub mod vivipara;
+pub mod volitantia;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs::ANIMAL,
@@ -10,18 +20,6 @@ pub const BIOLOGY: Biology = Biology {
     speed: 12.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-use crate::scene::life::{CreatureInstance, tapered_tail};
-
-use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-pub mod specialia;
-pub mod vivipara;
-pub mod volitantia;
 
 taxon!(
     Phylum,

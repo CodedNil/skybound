@@ -1,18 +1,16 @@
+use spirv_std::glam::{Vec3, Vec4, vec3};
+
+use crate::scene::life::CreatureInstance;
 use crate::scene::life::biology::{Anatomy, Biology};
+use crate::scene::life::surface::{Ray, Surface, TraceResult, paired_sheets, trace};
+pub mod bullidorsata;
+pub mod sanguinivora;
+pub mod tetralata;
 
 pub const BIOLOGY: Biology = Biology {
     anatomy: Anatomy::Porous,
     ..super::BIOLOGY
 };
-
-use spirv_std::glam::{Vec3, Vec4, vec3};
-
-use crate::scene::life::CreatureInstance;
-use crate::scene::surface::{Ray, Surface, TraceResult, paired_sheets, trace};
-
-pub mod bullidorsata;
-pub mod sanguinivora;
-pub mod tetralata;
 
 taxon!(
     Kingdom,

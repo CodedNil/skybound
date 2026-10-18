@@ -1,18 +1,21 @@
-use crate::math::{ToEngine, ToScene};
 use std::collections::HashMap;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use skybound::scene::climate::Climate;
 use skybound::scene::life::behaviour::{Activity, Motion, Senses};
 use skybound::scene::life::biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible};
-use skybound::scene::life::physiology::{Climate, Vitals};
+use skybound::scene::life::physiology::Vitals;
 use skybound::scene::life::{KINDS, Kind};
 
 use super::flight::{Mount, Player, SPAWN};
 use super::world::{PlanetPosition, WorldAnchor, WorldData};
+use crate::math::{ToEngine, ToScene};
 
 const CELL: f32 = 300.0;
+
 const STEP: f32 = 0.25;
+
 const POPULATION_LIMIT: usize = 512;
 
 #[derive(Component, Clone, Copy)]
@@ -99,6 +102,7 @@ pub struct Ecosystem {
 }
 
 pub struct EcosystemPlugin;
+
 impl Plugin for EcosystemPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Ecosystem>()
@@ -106,6 +110,25 @@ impl Plugin for EcosystemPlugin {
             .add_systems(Update, (attach_players, identify))
             .add_systems(FixedUpdate, simulate);
     }
+}
+
+type UnregisteredActors = (Or<(With<Player>, With<Mount>)>, Without<Species>);
+
+type Organisms<'a> = (
+    Entity,
+    &'a Species,
+    &'a mut Physiology,
+    &'a mut Relations,
+    &'a mut Transform,
+    &'a mut EcologicalMotion,
+    Has<Player>,
+    Has<Mount>,
+);
+
+struct Meal {
+    eater: Entity,
+    food: Entity,
+    amount: f32,
 }
 
 fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle {
@@ -145,7 +168,6 @@ fn seed(mut commands: Commands) {
     }
 }
 
-type UnregisteredActors = (Or<(With<Player>, With<Mount>)>, Without<Species>);
 fn identify(
     mut commands: Commands,
     organisms: Query<Entity, (With<Species>, Without<Individual>)>,
@@ -171,17 +193,6 @@ fn attach_players(
         ));
     }
 }
-
-type Organisms<'a> = (
-    Entity,
-    &'a Species,
-    &'a mut Physiology,
-    &'a mut Relations,
-    &'a mut Transform,
-    &'a mut EcologicalMotion,
-    Has<Player>,
-    Has<Mount>,
-);
 
 fn climate_at(world: &WorldData, local: Vec3, now: f32) -> Climate {
     let weather = Climate::weather_on_planet(world.position(local).as_vec3().to_scene(), now);
@@ -452,12 +463,6 @@ fn perceive(
         relations.host = None;
     }
     senses
-}
-
-struct Meal {
-    eater: Entity,
-    food: Entity,
-    amount: f32,
 }
 
 fn forage(

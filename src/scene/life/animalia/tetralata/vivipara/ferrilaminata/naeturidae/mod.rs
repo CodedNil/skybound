@@ -1,5 +1,6 @@
-use crate::scene::life::biology::Organs;
-use crate::scene::life::biology::{Biology, Feeding, Social};
+pub use super::render_wings;
+use crate::scene::life::biology::{Biology, Feeding, Organs, Social};
+pub mod naeturus;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
@@ -10,10 +11,6 @@ pub const BIOLOGY: Biology = Biology {
     social: Social::Mutualist,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod naeturus;
 
 taxon!(
     Family,

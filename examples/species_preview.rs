@@ -5,22 +5,14 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use image::codecs::gif::{GifEncoder, Repeat};
-use image::imageops;
-use image::{Delay, Frame, RgbImage, RgbaImage};
+use image::{Delay, Frame, RgbImage, RgbaImage, imageops};
 use rayon::prelude::*;
-use skybound::scene::life::{self, CreatureInstance, SPECIES, SPECIES_MODULES, Taxon};
-use skybound::scene::surface::{Ray, tonemap};
+use skybound::scene::life;
+use skybound::scene::life::surface::{Ray, tonemap};
+use skybound::scene::life::{CreatureInstance, SPECIES, SPECIES_MODULES, Taxon};
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
 
-fn adjacent_preview(kind: usize) -> PathBuf {
-    let module = SPECIES_MODULES[kind]
-        .split_whitespace()
-        .collect::<String>()
-        .replace("::", "/");
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/scene/life")
-        .join(module)
-}
+const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
 
 struct View {
     origin: Vec3,
@@ -30,6 +22,7 @@ struct View {
     center: Vec2,
     field: f32,
 }
+
 impl View {
     fn ray(&self, uv: Vec2) -> Ray {
         let p = self.center + (uv - 0.5) * self.field;
@@ -81,6 +74,43 @@ impl View {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Sample {
+    color: Vec3,
+    distance: f32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Output {
+    Render,
+    Anatomy,
+    Lifecycle,
+    Variation,
+    Idle,
+}
+
+impl Output {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Render => "render",
+            Self::Anatomy => "anatomy",
+            Self::Lifecycle => "lifecycle",
+            Self::Variation => "variation",
+            Self::Idle => "idle",
+        }
+    }
+}
+
+fn adjacent_preview(kind: usize) -> PathBuf {
+    let module = SPECIES_MODULES[kind]
+        .split_whitespace()
+        .collect::<String>()
+        .replace("::", "/");
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/scene/life")
+        .join(module)
+}
+
 fn slug(name: &str) -> String {
     name.to_lowercase()
         .replace('æ', "ae")
@@ -88,6 +118,7 @@ fn slug(name: &str) -> String {
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect()
 }
+
 fn filename(mut taxon: &Taxon) -> String {
     let mut branches = Vec::new();
     while let Some(parent) = taxon.parent {
@@ -102,15 +133,11 @@ fn option(name: &str) -> Option<String> {
     let mut args = env::args();
     args.find(|arg| arg == name).and_then(|_| args.next())
 }
+
 fn background(uv: Vec2) -> Vec3 {
     vec3(0.025, 0.12, 0.32).lerp(vec3(0.10, 0.22, 0.34), uv.y)
 }
 
-#[derive(Clone, Copy)]
-struct Sample {
-    color: Vec3,
-    distance: f32,
-}
 fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: bool) -> Sample {
     let mut ray = view.ray(vec2(uv.x, 1.0 - uv.y));
     ray.footprint = view.field / tile as f32;
@@ -185,28 +212,6 @@ fn render_tile(c: &CreatureInstance, view: &View, tile: usize, anatomy: bool) ->
         })
         .collect();
     refined.into_iter().flatten().collect()
-}
-
-const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Output {
-    Render,
-    Anatomy,
-    Lifecycle,
-    Variation,
-    Idle,
-}
-impl Output {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Render => "render",
-            Self::Anatomy => "anatomy",
-            Self::Lifecycle => "lifecycle",
-            Self::Variation => "variation",
-            Self::Idle => "idle",
-        }
-    }
 }
 
 fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> CreatureInstance {

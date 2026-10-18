@@ -1,20 +1,16 @@
+use spirv_std::glam::{Vec3, vec3};
+
+pub use super::render_wings;
 use crate::scene::life::biology::Biology;
+use crate::scene::life::tapered_tail;
+pub mod custos;
+pub mod falcata;
 
 pub const BIOLOGY: Biology = Biology {
     speed: 65.0,
     adult_mass: 25.0,
     ..super::BIOLOGY
 };
-pub use super::render_wings;
-use crate::scene::life::tapered_tail;
-use spirv_std::glam::{Vec3, vec3};
-
-pub mod custos;
-pub mod falcata;
-
-fn blade(p: Vec3, root: Vec3, tip: Vec3, width: f32) -> f32 {
-    tapered_tail(vec3(p.x * 8.0, p.y, p.z), root, tip, width, 0.008) / 8.0
-}
 
 taxon!(
     Genus,
@@ -28,3 +24,7 @@ taxon!(
         "Their shared flexible spine and cutting pass distinguish these roles from the straight piercing attack of the snout-armed family.",
     ],
 );
+
+fn blade(p: Vec3, root: Vec3, tip: Vec3, width: f32) -> f32 {
+    tapered_tail(vec3(p.x * 8.0, p.y, p.z), root, tip, width, 0.008) / 8.0
+}

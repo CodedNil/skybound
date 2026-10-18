@@ -1,4 +1,7 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding, Social};
+pub mod manduca;
+pub mod purgator;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Scavenger,
@@ -7,11 +10,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.02,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod manduca;
-pub mod purgator;
 
 taxon!(
     Family,

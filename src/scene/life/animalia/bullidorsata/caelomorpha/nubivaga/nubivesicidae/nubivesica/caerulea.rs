@@ -1,13 +1,3 @@
-use crate::scene::life::biology::Biology;
-
-pub const BIOLOGY: Biology = Biology {
-    maturity_days: 120.0,
-    lifespan_days: 9000.0,
-    adult_mass: 3.0,
-    altitude: (2500.0, 9000.0),
-    ..super::BIOLOGY
-};
-
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -17,8 +7,17 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::animalia::bullidorsata::caelomorpha::{
     GasChamber, drift_body, ribbons, tissue_distance,
 };
+use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
 use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
-use crate::scene::surface::{Ray, Surface, TraceResult};
+
+pub const BIOLOGY: Biology = Biology {
+    maturity_days: 120.0,
+    lifespan_days: 9000.0,
+    adult_mass: 3.0,
+    altitude: (2500.0, 9000.0),
+    ..super::BIOLOGY
+};
 
 pub const RENDER_RADIUS: f32 = 15.0;
 
@@ -34,6 +33,21 @@ taxon!(
         "As the aur cycle dims they settle into denser air, avoiding the freezing equatorial Shard Peaks where ice can lock their moist folds.",
     ],
 );
+
+const CHAMBERS: [GasChamber; 3] = [
+    GasChamber {
+        center: vec3(-1.7, 1.5, -0.6),
+        radii: vec3(1.65, 2.6, 1.9),
+    },
+    GasChamber {
+        center: vec3(1.7, 1.3, -0.6),
+        radii: vec3(1.6, 2.3, 1.8),
+    },
+    GasChamber {
+        center: vec3(0.0, 1.2, 2.2),
+        radii: vec3(1.85, 2.1, 1.15),
+    },
+];
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn animate(c: &mut CreatureInstance) {
@@ -73,20 +87,6 @@ pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
     Surface::new(ellipsoid(q, vec3(3.65, 3.8, 3.35)) + fold, 0)
 }
 
-const CHAMBERS: [GasChamber; 3] = [
-    GasChamber {
-        center: vec3(-1.7, 1.5, -0.6),
-        radii: vec3(1.65, 2.6, 1.9),
-    },
-    GasChamber {
-        center: vec3(1.7, 1.3, -0.6),
-        radii: vec3(1.6, 2.3, 1.8),
-    },
-    GasChamber {
-        center: vec3(0.0, 1.2, 2.2),
-        radii: vec3(1.85, 2.1, 1.15),
-    },
-];
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     let mut result = drift_body(
         ray,

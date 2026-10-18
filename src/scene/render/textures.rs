@@ -1,14 +1,24 @@
-use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec4};
+use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
 use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler};
 
-use crate::scene::PLANET_RADIUS;
-use crate::scene::atmosphere::TRANSMITTANCE_SIZE;
-pub use crate::scene::geometry::intersect_sphere;
-use crate::scene::noise::rotated;
+use crate::scene::atmosphere::{
+    POLE_RADIANCE, TRANSMITTANCE_SIZE, cached_air_transmittance, get_pole_light_color,
+    transmittance_coordinates,
+};
+use crate::scene::aur::{
+    EJECTION_CELL, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection_field_with,
+};
+use crate::scene::climate::WEATHER_SIZE;
+use crate::scene::math::rotated;
+use crate::scene::planet::REACTION_RADIUS;
 
 pub struct AtmosphereData {
+    /// Sky radiance along the pixel ray.
     pub sky: Vec3,
+    /// Light scattered into the air along the ray. Looking down, the sky
+    /// texture holds below-horizon radiance that must never show through.
+    pub haze: Vec3,
 }
 
 pub struct Textures<'a> {
@@ -52,29 +62,21 @@ impl FilteredNoise<'_, '_> {
 
 impl Textures<'_> {
     pub fn air_transmittance(&self, origin: Vec3, direction: Vec3, length: f32) -> f32 {
-        crate::scene::atmosphere::air::cached_transmittance(
-            origin,
-            direction,
-            length,
-            |point, ray| {
-                let margin = 0.5 / TRANSMITTANCE_SIZE as f32;
-                let uv = crate::scene::atmosphere::transmittance_coordinates(point, ray)
-                    .clamp(Vec2::splat(margin), Vec2::splat(1.0 - margin));
-                self.transmittance.sample_by_lod(*self.sampler, uv, 0.0).w
-            },
-        )
+        cached_air_transmittance(origin, direction, length, |point, ray| {
+            let margin = 0.5 / TRANSMITTANCE_SIZE as f32;
+            let uv = transmittance_coordinates(point, ray)
+                .clamp(Vec2::splat(margin), Vec2::splat(1.0 - margin));
+            self.transmittance.sample_by_lod(*self.sampler, uv, 0.0).w
+        })
     }
-    pub fn ejection_field(&self, position: Vec3, limit: f32) -> Vec3 {
-        use crate::scene::aur::{
-            EJECTION_CELL, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection_field_with,
-        };
+    pub fn ejection_field(&self, position: Vec3) -> Vec4 {
         let cell = (position.xy() / EJECTION_CELL).floor().as_ivec2();
         let mask = self
             .ejections
             .fetch(cell + spirv_std::glam::ivec2(EJECTION_GRID_HALF, 1))
             .w as u32
             >> 1;
-        ejection_field_with(position, mask, limit, |cell| {
+        ejection_field_with(position, mask, |cell| {
             let pixel = cell.as_ivec2() + spirv_std::glam::ivec2(EJECTION_GRID_HALF, 1);
             let mut event = self.ejections.fetch(pixel);
             event.w = (event.w as u32 & 1) as f32;
@@ -92,17 +94,17 @@ impl Textures<'_> {
         }
     }
     pub fn pole_light(&self, point: Vec3, source: Vec3) -> Vec3 {
-        if point.length() > crate::scene::polar::REACTION_RADIUS {
-            return crate::scene::atmosphere::get_pole_light_color(point, source);
+        if point.length() > REACTION_RADIUS {
+            return get_pole_light_color(point, source);
         }
         let direction = (source - point).normalize();
         let margin = 0.5 / TRANSMITTANCE_SIZE as f32;
-        let uv = crate::scene::atmosphere::transmittance_coordinates(point, direction)
+        let uv = transmittance_coordinates(point, direction)
             .clamp(Vec2::splat(margin), Vec2::splat(1.0 - margin));
         self.transmittance
             .sample_by_lod(*self.sampler, uv, 0.0)
             .xyz()
-            * crate::scene::atmosphere::POLE_RADIANCE
+            * POLE_RADIANCE
     }
     pub fn billows(&self, p: Vec3, footprint: f32) -> Vec4 {
         self.noise(footprint).billows(p, 1.0)
@@ -119,41 +121,12 @@ impl Textures<'_> {
     }
 
     pub fn weather(&self, p: Vec3) -> Vec4 {
-        self.weather.sample_by_lod(
-            *self.sampler,
-            (p + 0.5) / crate::scene::climate::WEATHER_SIZE as f32,
-            0.0,
-        )
+        self.weather
+            .sample_by_lod(*self.sampler, (p + 0.5) / WEATHER_SIZE as f32, 0.0)
     }
 
     pub fn weather_on_planet(&self, point: Vec3, time: f32) -> Vec4 {
         let p = crate::scene::climate::Climate::weather_coordinates(point, time);
         self.weather(p)
     }
-}
-
-pub fn ray_shell_intersect(
-    ro: Vec3,
-    rd: Vec3,
-    planet_center: Vec3,
-    bottom_altitude: f32,
-    top_altitude: f32,
-) -> Vec4 {
-    let local_ro = ro - planet_center;
-    let top_radius = PLANET_RADIUS + top_altitude;
-    let top_interval = intersect_sphere(local_ro, rd, top_radius);
-    if top_interval.x > top_interval.y {
-        return vec4(1.0, 0.0, 1.0, 0.0);
-    }
-    let bottom_radius = PLANET_RADIUS + bottom_altitude;
-    let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
-    if bottom_interval.x > bottom_interval.y {
-        return vec4(top_interval.x, top_interval.y, 1.0, 0.0);
-    }
-    vec4(
-        top_interval.x,
-        bottom_interval.x,
-        bottom_interval.y,
-        top_interval.y,
-    )
 }

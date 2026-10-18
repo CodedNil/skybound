@@ -1,5 +1,3 @@
-use crate::math::{ToEngine, ToScene};
-use bevy::math::{DQuat, DVec3};
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::time::Duration;
@@ -8,6 +6,7 @@ use std::{env, fs, io};
 use bevy::camera::RenderTarget;
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::ecs::system::SystemParam;
+use bevy::math::{DQuat, DVec3};
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use bevy::render::diagnostic::RenderDiagnosticsPlugin;
@@ -15,20 +14,21 @@ use bevy::render::render_resource::TextureFormat;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
-use skybound::scene::aur::lightning::events as lightning_events;
-use skybound::scene::aur::{EJECTION_CELL, ejection, ejection_fill};
-use skybound::scene::polar::{REACTION_RADIUS, light_position};
-use skybound::scene::{
-    PLANET_RADIUS,
-    planet::{surface_frame, surface_point},
+use skybound::scene::PLANET_RADIUS;
+use skybound::scene::aur::{
+    EJECTION_CELL, SPIRE_CELL, ejection, ejection_fill, spire, spire_count,
+};
+use skybound::scene::planet::{
+    REACTION_RADIUS, light_position, surface_coordinates, surface_frame, surface_point,
 };
 use spirv_std::glam::Vec4 as SceneVec4;
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
-use crate::game::weather::WeatherSimulation;
+use crate::game::weather::{WeatherSimulation, lightning_events};
 use crate::game::world::{WorldData, WorldSystems};
 use crate::graphics::AtmosphereSettings;
+use crate::math::{ToEngine, ToScene};
 
 #[derive(Resource)]
 struct BenchmarkTarget(Option<Handle<Image>>);
@@ -37,6 +37,7 @@ struct BenchmarkTarget(Option<Handle<Image>>);
 struct BenchmarkCaptures(u32);
 
 pub struct BenchmarkPlugin;
+
 impl Plugin for BenchmarkPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(RenderDiagnosticsPlugin)
@@ -49,7 +50,9 @@ impl Plugin for BenchmarkPlugin {
 }
 
 type BenchmarkCamera = (With<Camera3d>, Without<Mount>, Without<Player>);
+
 type BenchmarkMount = (With<Mount>, Without<Player>, Without<Camera3d>);
+
 type BenchmarkPlayer = (With<Player>, Without<Mount>, Without<Camera3d>);
 
 #[derive(SystemParam)]
@@ -67,6 +70,56 @@ struct BenchmarkSetup<'w, 's> {
     world: ResMut<'w, WorldData>,
     run: ResMut<'w, BenchmarkRun>,
     weather: Res<'w, WeatherSimulation>,
+}
+
+#[derive(Default)]
+struct GpuSamples {
+    values: Vec<f64>,
+    last: Option<Instant>,
+}
+
+struct Route {
+    origin: DVec3,
+    rotation: DQuat,
+}
+
+#[derive(Resource)]
+struct BenchmarkRun {
+    samples: Vec<f64>,
+    captured: u32,
+    started: Option<f64>,
+    warmup: f64,
+    duration: f64,
+    capture: bool,
+    sequence: bool,
+    gpu: BTreeMap<String, GpuSamples>,
+    route: Option<Route>,
+}
+
+impl Default for BenchmarkRun {
+    fn default() -> Self {
+        let seconds = |name, default| {
+            option(name).map_or(default, |s| {
+                let value = s.parse::<f64>().expect("benchmark seconds");
+                assert!(
+                    value.is_finite() && value > 0.0,
+                    "benchmark seconds must be positive and finite"
+                );
+                value
+            })
+        };
+        Self {
+            samples: Vec::new(),
+            captured: 0,
+            started: None,
+            warmup: seconds("--warmup", 10.0),
+            duration: seconds("--duration", 20.0),
+            capture: !env::args().any(|arg| arg == "--no-capture"),
+            sequence: env::args().any(|arg| arg == "--animate" || arg == "--capture-sequence"),
+            gpu: BTreeMap::new(),
+            route: None,
+        }
+    }
 }
 
 #[expect(
@@ -152,6 +205,9 @@ fn setup(params: BenchmarkSetup) {
     if let Some(cloud_view) = cloud_camera(&scene, &world, &weather) {
         **transform = cloud_view;
     }
+    if scene == "aur-spires" {
+        **transform = spire_camera(&world, mount.translation);
+    }
     if env::args().any(|arg| arg == "--route") {
         run.route = Some(Route {
             origin: world.position(transform.translation),
@@ -179,6 +235,29 @@ fn setup(params: BenchmarkSetup) {
             sensitivity: 0.0,
         });
     }
+}
+
+/// Frame the main spire of the nearest archipelago from low over the veil.
+fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
+    let here = surface_coordinates(world.position(mount).as_vec3().to_scene()).to_engine();
+    let origin = (here.truncate() / SPIRE_CELL).floor();
+    let cell = (0..40i32)
+        .flat_map(|ring| (-ring..=ring).flat_map(move |x| [(x, -ring), (x, ring)]))
+        .map(|(x, y)| origin + vec2(x as f32, y as f32))
+        .find(|cell| spire_count(cell.to_scene()) > 0)
+        .expect("an archipelago near the start");
+    let centre = (cell + 0.5) * SPIRE_CELL + spire(cell.to_scene(), 0).base.to_engine();
+    let point = |offset: Vec2, altitude: f32| {
+        surface_point((centre + offset).extend(altitude).to_scene())
+            .to_engine()
+            .as_dvec3()
+    };
+    let eye = point(vec2(-13_000.0, -5000.0), 1600.0);
+    let target = point(Vec2::ZERO, 2600.0);
+    Transform::from_translation(world.local(eye)).looking_at(
+        world.local(target),
+        world.rotate_to_local(eye.normalize().as_vec3()),
+    )
 }
 
 fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> Option<Transform> {
@@ -269,6 +348,9 @@ fn scene_camera(
             .looking_at(mount + direction * 12_000.0 - Vec3::Z * 20_000.0, Vec3::Z)
     } else if scene == "nae-close" {
         Transform::from_translation(player + vec3(1.5, -4.0, 0.8)).looking_at(player, Vec3::Z)
+    } else if scene == "aur-high" {
+        Transform::from_translation(mount - direction * 3000.0 + Vec3::Z * 1000.0)
+            .looking_at(mount + direction * 100_000.0 - Vec3::Z * 60_000.0, Vec3::Z)
     } else if scene == "aur-overhead" {
         Transform::from_translation(mount + Vec3::Z * 200.0)
             .looking_at(mount.with_z(0.0) + direction * 2000.0, Vec3::Z)
@@ -307,6 +389,8 @@ fn scene_altitude(scene: &str) -> f32 {
         "cloud-interior" => 7500.0,
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
+        "aur-high" => 80_000.0,
+        "aur-spires" => 2400.0,
         "aur-overhead" => 4000.0,
         "polar-orbit" => 77_559.0,
         "planet-orbit" | "pole-distant" => 350_000.0,
@@ -392,56 +476,6 @@ fn focus_aur(
     player.translation = position + up * 5.8;
     player.rotation = mount.rotation;
     direction
-}
-
-#[derive(Default)]
-struct GpuSamples {
-    values: Vec<f64>,
-    last: Option<Instant>,
-}
-
-struct Route {
-    origin: DVec3,
-    rotation: DQuat,
-}
-
-#[derive(Resource)]
-struct BenchmarkRun {
-    samples: Vec<f64>,
-    captured: u32,
-    started: Option<f64>,
-    warmup: f64,
-    duration: f64,
-    capture: bool,
-    sequence: bool,
-    gpu: BTreeMap<String, GpuSamples>,
-    route: Option<Route>,
-}
-
-impl Default for BenchmarkRun {
-    fn default() -> Self {
-        let seconds = |name, default| {
-            option(name).map_or(default, |s| {
-                let value = s.parse::<f64>().expect("benchmark seconds");
-                assert!(
-                    value.is_finite() && value > 0.0,
-                    "benchmark seconds must be positive and finite"
-                );
-                value
-            })
-        };
-        Self {
-            samples: Vec::new(),
-            captured: 0,
-            started: None,
-            warmup: seconds("--warmup", 10.0),
-            duration: seconds("--duration", 20.0),
-            capture: !env::args().any(|arg| arg == "--no-capture"),
-            sequence: env::args().any(|arg| arg == "--animate" || arg == "--capture-sequence"),
-            gpu: BTreeMap::new(),
-            route: None,
-        }
-    }
 }
 
 fn measure(

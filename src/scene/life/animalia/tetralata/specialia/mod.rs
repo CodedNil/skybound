@@ -1,15 +1,13 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding};
+pub mod detritivora;
+pub mod rapaciformes;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Scavenger,
     adult_mass: 0.2,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod detritivora;
-pub mod rapaciformes;
 
 taxon!(
     Class,

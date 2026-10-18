@@ -1,16 +1,14 @@
+pub use super::render_wings;
 use crate::scene::life::biology::{Biology, Feeding};
+pub mod aculeorhynchidae;
+pub mod ferrispinidae;
+pub mod naeturidae;
 
 pub const BIOLOGY: Biology = Biology {
     feeding: Feeding::Predator,
     speed: 45.0,
     ..super::BIOLOGY
 };
-
-pub use super::render_wings;
-
-pub mod aculeorhynchidae;
-pub mod ferrispinidae;
-pub mod naeturidae;
 
 taxon!(
     Order,

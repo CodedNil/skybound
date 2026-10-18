@@ -1,14 +1,12 @@
+pub use super::render;
 use crate::scene::life::biology::{Biology, Reproduction};
+pub mod polliniflorales;
+pub mod pomales;
 
 pub const BIOLOGY: Biology = Biology {
     reproduction: Reproduction::Pollination,
     ..super::BIOLOGY
 };
-
-pub use super::render;
-
-pub mod polliniflorales;
-pub mod pomales;
 
 taxon!(
     Class,

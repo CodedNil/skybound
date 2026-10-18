@@ -1,7 +1,4 @@
-on the cpu, use f64 for positions, then when passing through to shaders simply center everything around the ship
 
-
-make the aur_ocean wrap/curve around the spikes
 have basic GI reflections diffuse on solids, and lighting from emissives of the volumetrics trace (include sky as emissive
 
 
@@ -9,13 +6,7 @@ have basic GI reflections diffuse on solids, and lighting from emissives of the 
 atmosphere:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
-sky goes far too red at night, and it snaps between the two suns sharply
-sunsets look meh
 
-
-froxels:
-pass lights emission, raymarched so it passes through volumes nicely
-do trails from fast animal motion as spheres that get placed on it's path with velocity on them, they fade after a while, include this as an position offset var in the froxels
 
 
 clouds:
@@ -36,18 +27,11 @@ https://www.ea.com/seed/news/egsr-2022-blue-noise
 https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_with_GPU-based_Decoupled_Ray_Marching/blob/main/Ms%20Thesis%20Presentation%20_%20Decoupled%20Ray%20Marching%20in%20Video%20Games.pdf
 
 rainbows on clouds with the proper equation
-cumulonimbus clouds, huge with anvils, use worley noise to position them as separate objects
-try to blend between cirrus, cirrocumulus, altocumulus etc
+cumulonimbus clouds, huge with anvils
 
 
 world rendering:
-better pole rendering, huge beams of twisting light, where they exit the atmosphere its like a big burst outwards, but it keeps going past that as an infinite beam
 auroras and stars https://www.shadertoy.com/view/XtGGRt
 patterns of stars, basically a tapestry of the universes history created by the gods
 atmosphere simulation with the world as icosphere nodes, where the wind flows between based on temperature gradients, humidity etc, the nodes could place things like water geysers etc
 aur particles in air going up, wind speed based on height going to poles, maybe clouds at lower levels move upwards then across, changing shapes as they go
-
-
-aur fog:
-make it wildly more turbulent around the lightning flashes, make actual bolts of lightning flash out of them
-water like caustics on the light that gets emitted up to make it look special

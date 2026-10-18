@@ -1,9 +1,4 @@
 use bevy::anti_alias::taa::temporal_anti_alias;
-mod froxel;
-pub mod pipeline;
-mod prepare;
-mod targets;
-
 use bevy::core_pipeline::core_3d::main_opaque_pass_3d;
 use bevy::core_pipeline::{Core3d, Core3dSystems};
 use bevy::prelude::*;
@@ -18,7 +13,12 @@ use crate::game::world::WorldData;
 use crate::graphics::pipeline::{
     SceneBuffer, ScenePipeline, composite_pass, prepare_bindings, prepare_scene_view, raymarch_pass,
 };
-use crate::graphics::prepare::textures::{VolumeTextures, prepare_volume_textures};
+use crate::graphics::textures::{VolumeTextures, prepare_volume_textures};
+
+mod froxel;
+pub mod pipeline;
+mod targets;
+mod textures;
 
 #[derive(Resource, Clone, bevy::render::extract_resource::ExtractResource)]
 #[extract_app(RenderApp)]
@@ -103,6 +103,6 @@ impl Plugin for GraphicsPlugin {
 fn init_resources(world: &mut World) {
     world.init_resource::<SceneBuffer>();
     world.init_resource::<ScenePipeline>();
-    world.init_resource::<prepare::sky::SkyLookup>();
+    world.init_resource::<textures::SkyLookup>();
     world.init_resource::<targets::SceneTargets>();
 }

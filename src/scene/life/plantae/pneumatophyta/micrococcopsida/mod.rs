@@ -1,5 +1,7 @@
-use crate::scene::life::biology::{Biology, Reproduction};
-use crate::scene::life::biology::{Lift, Organs};
+pub use super::render;
+use crate::scene::life::biology::{Biology, Lift, Organs, Reproduction};
+pub mod auracoccales;
+pub mod luminiflorales;
 
 pub const BIOLOGY: Biology = Biology {
     organs: Organs {
@@ -10,11 +12,6 @@ pub const BIOLOGY: Biology = Biology {
     reproduction: Reproduction::Division,
     ..super::BIOLOGY
 };
-
-pub use super::render;
-
-pub mod auracoccales;
-pub mod luminiflorales;
 
 taxon!(
     Class,

@@ -1,19 +1,18 @@
+use spirv_std::glam::{Vec3, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
+
 use crate::scene::life::biology::Biology;
+use crate::scene::life::surface::{
+    Material, Ray, Shell, Surface, TraceResult, trace_material, visit_shell_material,
+};
+use crate::scene::life::{CreatureInstance, ellipsoid};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 0.25,
     lifespan_days: 2.0,
     adult_mass: 0.001,
     ..super::BIOLOGY
-};
-
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
-use crate::scene::life::{CreatureInstance, ellipsoid};
-use crate::scene::surface::{
-    Material, Ray, Shell, Surface, TraceResult, trace_material, visit_shell_material,
 };
 
 pub const RENDER_RADIUS: f32 = 0.00035;

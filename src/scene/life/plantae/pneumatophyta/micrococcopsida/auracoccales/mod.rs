@@ -1,5 +1,4 @@
-pub use super::BIOLOGY;
-pub use super::render;
+pub use super::{BIOLOGY, render};
 
 pub mod auracoccaceae;
 

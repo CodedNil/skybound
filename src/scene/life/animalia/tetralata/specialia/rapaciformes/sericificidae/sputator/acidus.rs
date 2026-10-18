@@ -1,5 +1,9 @@
+use spirv_std::glam::{Vec3, vec3, vec4};
+
 use crate::scene::life::animalia::tetralata::oral_tentacles;
 use crate::scene::life::biology::{Biology, Social};
+use crate::scene::life::surface::{Ray, Surface, TraceResult};
+use crate::scene::life::{CreatureInstance, capsule, ellipsoid, eyes};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 75.0,
@@ -9,11 +13,6 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.12,
     ..super::BIOLOGY
 };
-
-use spirv_std::glam::{Vec3, vec3, vec4};
-
-use crate::scene::life::{CreatureInstance, capsule, ellipsoid, eyes};
-use crate::scene::surface::{Ray, Surface, TraceResult};
 
 pub const RENDER_RADIUS: f32 = 24.7;
 
