@@ -184,6 +184,25 @@ pub fn fbm(position: Vec3, period: i32, seed: u32) -> f32 {
     ((value / 1.875 - 0.5) * 2.0 + 0.5).clamp(0.0, 1.0)
 }
 
+/// Pack a non-negative value as half-precision bits, for compute passes
+/// that write textures through buffers.
+pub fn half(value: f32) -> u32 {
+    if value <= 0.0 {
+        return 0;
+    }
+    let bits = value.min(65_504.0).to_bits();
+    let exponent = (bits >> 23) & 255;
+    if exponent < 103 {
+        return 0;
+    }
+    if exponent < 113 {
+        let shift = 126 - exponent;
+        return (((bits & 0x7f_ffff) | 0x80_0000) + (1 << (shift - 1))) >> shift;
+    }
+    let rounded = bits + 0x1000;
+    (((rounded >> 23) - 112) << 10) | ((rounded >> 13) & 0x3ff)
+}
+
 pub fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
     let g2 = g * g;
     let denom = (1.0 + g2 - 2.0 * g * cos_theta).powf(1.5);
@@ -193,6 +212,14 @@ pub fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn half_encoding_matches_ieee_bits() {
+        assert_eq!(half(0.0), 0);
+        assert_eq!(half(0.5), 0x3800);
+        assert_eq!(half(1.0), 0x3c00);
+        assert_eq!(half(32.0), 0x5000);
+    }
 
     #[test]
     fn opaque_emission_has_no_partition_dependent_cutoff_tail() {

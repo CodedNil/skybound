@@ -9,7 +9,6 @@ pub mod atmosphere;
 pub mod aur;
 pub mod cache;
 pub mod climate;
-pub mod froxel;
 pub mod life;
 pub mod math;
 pub mod planet;
@@ -39,7 +38,6 @@ pub struct ViewUniform {
     pub cache_origin: Vec4,
     pub cache_east: Vec4,
     pub cache_north: Vec4,
-    pub cloud_time: Vec4,
     pub aur_flashes: [[Vec4; 2]; 32],
     pub aur_bolts: [[Vec4; 2]; 32],
 }
@@ -50,6 +48,9 @@ pub struct FrameUniform {
     pub view: ViewUniform,
     pub players: [CreatureInstance; 2],
     pub viewport: Vec4,
+    /// Whether last frame's history is usable, which pixel of each 2x2
+    /// block the clouds trace this frame, and the traced resolution.
+    pub history: Vec4,
 }
 
 impl ViewUniform {

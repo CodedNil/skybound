@@ -1,5 +1,5 @@
 //! The aur ocean: its current and arcs, crystal spires, and lightning.
-use core::f32::consts::{PI, TAU};
+use core::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3,
@@ -8,6 +8,7 @@ use spirv_std::glam::{
 use spirv_std::num_traits::Float;
 
 use crate::scene::PLANET_RADIUS;
+use crate::scene::climate::{cube_direction, cube_face};
 use crate::scene::math::square;
 use crate::scene::planet::surface_point;
 
@@ -19,6 +20,13 @@ pub const EJECTION_WIDTH: f32 = 1050.0;
 
 pub const EJECTION_REACH: f32 = 36_000.0;
 
+/// How far any part of a loop can lie from its centre across the surface:
+/// the largest loop radius and the reach of its glow.
+pub const EJECTION_EXTENT: f32 = 16_000.0 + EJECTION_WIDTH * 3.0;
+
+/// Rings of cells searched around each cell for its arc clearance.
+const EJECTION_SEARCH: i32 = 4;
+
 pub const EJECTION_HEIGHT: f32 = 12_150.0;
 
 pub const EJECTION_GRID_HALF: i32 = (PI * PLANET_RADIUS / EJECTION_CELL) as i32 + 2;
@@ -29,10 +37,21 @@ pub const EJECTION_GRID_HEIGHT: u32 = EJECTION_GRID_HALF as u32 + 1;
 
 // Crystal spires that pierce the aur ocean, in sparse archipelagos.
 //
-// Positions are surface coordinates: longitude and colatitude scaled by the
-// planet radius, and altitude. Every spire stays `SPIRE_MARGIN` inside its cell,
-// so a cell's own spires and the distance to its border bound the field.
-pub const SPIRE_CELL: f32 = 26_000.0;
+// Positions are spire coordinates: metres across the cube faces of the
+// planet, side by side, and altitude. Cells are the same size everywhere, so
+// spires never crowd towards the poles. Every spire stays `SPIRE_MARGIN`
+// inside its cell, so a cell's own spires and the distance to its border
+// bound the field.
+pub const SPIRE_CELLS: f32 = 90.0;
+
+pub const SPIRE_CELL: f32 = PLANET_RADIUS * FRAC_PI_2 / SPIRE_CELLS;
+
+/// Distances in spire coordinates overstate world distances by at most
+/// this factor, where the cube faces stretch towards their edges.
+pub const SPIRE_METRIC: f32 = 0.65;
+
+/// Faces sit this far apart in spire coordinates so no cell spans two.
+const SPIRE_FACE: f32 = SPIRE_CELL * (SPIRE_CELLS + 4.0);
 
 /// Spires are buried well below the deepest wave trough.
 pub const SPIRE_BOTTOM: f32 = -5000.0;
@@ -149,6 +168,28 @@ pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
             (4000.0 + seed.z * 8000.0).min(radius - 2200.0),
         ),
     ]
+}
+
+/// A lower bound on the surface distance from anywhere in a cell to the
+/// glow of any loop, so rays cross empty stretches of the arc layer at once.
+pub fn ejection_clearance(cell: Vec2, time: f32) -> f32 {
+    let side = EJECTION_SEARCH * 2 + 1;
+    let lower = cell * EJECTION_CELL;
+    let mut clearance = EJECTION_SEARCH as f32 * EJECTION_CELL - EJECTION_EXTENT;
+    for index in 0..side * side {
+        let offset = vec2(
+            (index % side - EJECTION_SEARCH) as f32,
+            (index / side - EJECTION_SEARCH) as f32,
+        );
+        let event = ejection(cell + offset, time);
+        if event[0].w <= 0.0 {
+            continue;
+        }
+        let centre = event[0].xy();
+        let nearest = centre.clamp(lower, lower + EJECTION_CELL);
+        clearance = clearance.min(centre.distance(nearest) - event[1].z - EJECTION_WIDTH * 3.0);
+    }
+    clearance.max(0.0)
 }
 
 /// How much plasma a loop holds at a point along it.
@@ -275,7 +316,7 @@ pub fn spire(cell: Vec2, index: usize) -> Spire {
 pub fn spire_axis(spire: &Spire, z: f32) -> (Vec2, f32) {
     let height = spire.tip - SPIRE_BOTTOM;
     let u = ((z - SPIRE_BOTTOM) / height).clamp(0.0, 1.0);
-    let sway = vec2(-spire.lean.y, spire.lean.x) * ((u * core::f32::consts::PI).sin() * 0.25);
+    let sway = vec2(-spire.lean.y, spire.lean.x) * ((u * PI).sin() * 0.25);
     (spire.base + (spire.lean * (u * u) + sway) * height, u)
 }
 
@@ -309,12 +350,45 @@ pub fn spire_distance(spire: &Spire, local: Vec2, z: f32) -> f32 {
     side.max(z - spire.tip).max(SPIRE_BOTTOM - z)
 }
 
+/// Spire coordinates of a point in planet space.
+pub fn spire_coordinates(point: Vec3) -> Vec3 {
+    let radius = point.length();
+    let (face, position) = cube_face(point / radius);
+    let across = (position * 0.5 + 0.5) * (SPIRE_CELL * SPIRE_CELLS);
+    vec3(
+        across.x + face as f32 * SPIRE_FACE,
+        across.y,
+        radius - PLANET_RADIUS,
+    )
+}
+
+/// The planet-space point at spire coordinates.
+pub fn spire_point(coordinates: Vec3) -> Vec3 {
+    let face = (coordinates.x / SPIRE_FACE).floor().clamp(0.0, 5.0);
+    let across =
+        vec2(coordinates.x - face * SPIRE_FACE, coordinates.y) / (SPIRE_CELL * SPIRE_CELLS);
+    cube_direction(face as u32, across * 2.0 - 1.0) * (PLANET_RADIUS + coordinates.z)
+}
+
+/// World directions in which the two horizontal spire coordinates grow.
+pub fn spire_axes(point: Vec3) -> (Vec3, Vec3) {
+    let up = point.normalize();
+    let (face, _) = cube_face(up);
+    let (first, second) = match face / 2 {
+        0 => (Vec3::Y, Vec3::Z),
+        1 => (Vec3::X, Vec3::Z),
+        _ => (Vec3::X, Vec3::Y),
+    };
+    let tangent = |axis: Vec3| (axis - up * axis.dot(up)).normalize();
+    (tangent(first), tangent(second))
+}
+
 fn spire_cell(p: Vec3) -> (Vec2, Vec2) {
     let cell = (p.truncate() / SPIRE_CELL).floor();
     (cell, p.truncate() - (cell + 0.5) * SPIRE_CELL)
 }
 
-/// A lower bound on the distance to any spire, in surface units.
+/// A lower bound on the distance to any spire, in spire coordinates.
 pub fn spire_field(p: Vec3) -> f32 {
     let (cell, local) = spire_cell(p);
     let mut distance = SPIRE_CELL * 0.5 - local.abs().max_element() + SPIRE_MARGIN;
@@ -376,6 +450,58 @@ mod tests {
     use spirv_std::glam::ivec2;
 
     use super::*;
+
+    #[test]
+    fn spire_coordinates_round_trip_and_never_overstate_distance_by_more_than_the_metric() {
+        for index in 0..2000 {
+            let z = (index as f32 + 0.5) / 2000.0 * 2.0 - 1.0;
+            let longitude = index as f32 * 2.399_963;
+            let up = vec3(
+                (1.0 - z * z).sqrt() * longitude.cos(),
+                (1.0 - z * z).sqrt() * longitude.sin(),
+                z,
+            );
+            let point = up * (PLANET_RADIUS + 1200.0);
+            let coordinates = spire_coordinates(point);
+            assert!(spire_point(coordinates).distance(point) < 2.0);
+            // Nudge within the face in every direction: the world moves at
+            // least SPIRE_METRIC as far as the coordinates.
+            for angle in 0..8 {
+                let offset = vec2((angle as f32).cos(), (angle as f32).sin()) * 400.0;
+                let moved = coordinates + offset.extend(0.0);
+                let span = SPIRE_CELL * SPIRE_CELLS;
+                let inside = moved.y > 0.0
+                    && moved.y < span
+                    && moved.x - (moved.x / SPIRE_FACE).floor() * SPIRE_FACE < span;
+                if !inside || (moved.x / SPIRE_FACE).floor() != (coordinates.x / SPIRE_FACE).floor()
+                {
+                    continue;
+                }
+                let world = spire_point(moved).distance(point);
+                assert!(world >= 400.0 * SPIRE_METRIC, "{world}");
+            }
+        }
+    }
+
+    #[test]
+    fn arc_clearance_never_overstates_the_distance_to_a_loop() {
+        for time in [0.0, 40.0, 130.0] {
+            for x in 0..12 {
+                for y in 10..22 {
+                    let cell = vec2(x as f32, y as f32);
+                    let clearance = ejection_clearance(cell, time);
+                    for index in 0..25 {
+                        let within = vec2((index % 5) as f32, (index / 5) as f32) / 4.0;
+                        for z in [0.0, 6000.0, 14_000.0] {
+                            let position = ((cell + within) * EJECTION_CELL).extend(z);
+                            let curve = ejection_field(position, time);
+                            assert!((curve.x - EJECTION_WIDTH * 3.0).max(0.0) >= clearance - 1.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_spire_stays_inside_the_margin_of_its_cell() {

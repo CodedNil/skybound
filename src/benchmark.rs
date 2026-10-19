@@ -16,16 +16,16 @@ use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
 use skybound::scene::PLANET_RADIUS;
 use skybound::scene::aur::{
-    EJECTION_CELL, SPIRE_CELL, ejection, ejection_fill, spire, spire_count,
+    EJECTION_CELL, SPIRE_CELL, ejection, ejection_fill, spire, spire_coordinates, spire_count,
+    spire_point,
 };
-use skybound::scene::planet::{
-    REACTION_RADIUS, light_position, surface_coordinates, surface_frame, surface_point,
-};
+use skybound::scene::climate::{CIRRUS, CUMULUS, CYCLONE, DECK, TOWER};
+use skybound::scene::planet::{REACTION_RADIUS, surface_frame, surface_point};
 use spirv_std::glam::Vec4 as SceneVec4;
 
 use crate::game::camera::CameraController;
 use crate::game::flight::{ControlMode, Flight, Mount, Player};
-use crate::game::weather::{WeatherSimulation, lightning_events};
+use crate::game::weather::{CloudField, lightning_events};
 use crate::game::world::{WorldData, WorldSystems};
 use crate::graphics::AtmosphereSettings;
 use crate::math::{ToEngine, ToScene};
@@ -69,7 +69,6 @@ struct BenchmarkSetup<'w, 's> {
     images: ResMut<'w, Assets<Image>>,
     world: ResMut<'w, WorldData>,
     run: ResMut<'w, BenchmarkRun>,
-    weather: Res<'w, WeatherSimulation>,
 }
 
 #[derive(Default)]
@@ -140,7 +139,6 @@ fn setup(params: BenchmarkSetup) {
         mut images,
         mut world,
         mut run,
-        weather,
     } = params;
     commands.insert_resource(WinitSettings::continuous());
     let resolution = resolution();
@@ -202,7 +200,7 @@ fn setup(params: BenchmarkSetup) {
         player.translation,
         direction,
     );
-    if let Some(cloud_view) = cloud_camera(&scene, &world, &weather) {
+    if let Some(cloud_view) = cloud_camera(&scene, &world, phase) {
         **transform = cloud_view;
     }
     if scene == "aur-spires" {
@@ -239,7 +237,7 @@ fn setup(params: BenchmarkSetup) {
 
 /// Frame the main spire of the nearest archipelago from low over the veil.
 fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
-    let here = surface_coordinates(world.position(mount).as_vec3().to_scene()).to_engine();
+    let here = spire_coordinates(world.position(mount).as_vec3().to_scene()).to_engine();
     let origin = (here.truncate() / SPIRE_CELL).floor();
     let cell = (0..40i32)
         .flat_map(|ring| (-ring..=ring).flat_map(move |x| [(x, -ring), (x, ring)]))
@@ -248,7 +246,7 @@ fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
         .expect("an archipelago near the start");
     let centre = (cell + 0.5) * SPIRE_CELL + spire(cell.to_scene(), 0).base.to_engine();
     let point = |offset: Vec2, altitude: f32| {
-        surface_point((centre + offset).extend(altitude).to_scene())
+        spire_point((centre + offset).extend(altitude).to_scene())
             .to_engine()
             .as_dvec3()
     };
@@ -260,79 +258,82 @@ fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
     )
 }
 
-fn cloud_camera(scene: &str, world: &WorldData, weather: &WeatherSimulation) -> Option<Transform> {
-    if !scene.starts_with("cloud-") {
-        return None;
-    }
-    if scene == "cloud-storm" {
-        let storm = weather
-            .0
-            .cyclones
-            .iter()
-            .max_by(|a, b| a.intensity.total_cmp(&b.intensity))?;
-        let center = storm.center * (PLANET_RADIUS + 12_000.0);
-        let frame = surface_frame(center);
-        return Some(
-            Transform::from_translation(
-                world.local(
-                    (center + storm.center * 160_000.0 - frame.y_axis * 120_000.0)
-                        .as_dvec3()
-                        .to_engine(),
-                ),
-            )
-            .looking_at(
-                world.local(center.as_dvec3().to_engine()),
-                world.rotate_to_local(frame.y_axis.to_engine()),
-            ),
-        );
-    }
-    let origin = world.position(Vec3::ZERO).as_vec3();
-    let cloud = weather
-        .0
-        .clouds
-        .iter()
-        .filter(|cloud| scene == "cloud-high" || cloud.appearance.x > 0.0003)
-        .filter(|cloud| {
-            if scene == "cloud-high" {
-                cloud.up.w < 1200.0
-            } else if scene == "cloud-tower" {
-                cloud.up.w > 6000.0
-            } else {
-                cloud.up.w > 2000.0 && cloud.up.w < 6000.0
-            }
-        })
-        .min_by(|a, b| {
-            a.center
-                .truncate()
-                .distance_squared(origin.to_scene())
-                .total_cmp(&b.center.truncate().distance_squared(origin.to_scene()))
-        })?;
-    let center = cloud.center.truncate().to_engine();
-    let up = cloud.up.truncate().to_engine();
-    let east = cloud.east.truncate().to_engine();
-    let position = match scene {
-        "cloud-interior" => center + east * cloud.center.w * 0.15,
-        "cloud-top" | "cloud-high" => {
-            center + up * (cloud.up.w + cloud.center.w * 1.2) - east * cloud.center.w
-        }
-        "cloud-edge" => center - up * cloud.up.w * 0.5 - east * cloud.center.w * 1.1,
-        "cloud-tower" => center + up * (cloud.up.w + 30_000.0) - east * cloud.center.w * 3.0,
-        _ => {
-            center
-                + (light_position(center.to_scene()).to_engine() - center).normalize()
-                    * cloud.center.w
-                    * 2.8
-                + up * cloud.up.w * 0.2
-        }
+/// Frame the nearest strong weather system of the kind a scene shows.
+fn cloud_camera(scene: &str, world: &WorldData, time: f32) -> Option<Transform> {
+    let kind = match scene {
+        "cloud-storm" => CYCLONE,
+        "cloud-tower" | "cloud-rain" | "cloud-above" => TOWER,
+        "cloud-bank" => DECK,
+        "cloud-high" => CIRRUS,
+        "cloud-edge" | "cloud-interior" | "cloud-top" => CUMULUS,
+        _ => return None,
     };
-    let target = if scene == "cloud-interior" {
-        position + east * cloud.center.w
-    } else {
-        center
+    let field = CloudField::at(time);
+    let start = world.position(Vec3::ZERO).as_vec3().to_scene().normalize();
+    let parcel = field
+        .parcels
+        .iter()
+        // Systems nearer the poles, where their light shows their shape.
+        .filter(|parcel| {
+            // Rain is staged where the pole light is low, so the storm's
+            // rain is lit and its bow stands above the horizon.
+            let latitude = parcel.centre.z.abs();
+            let placed = if scene == "cloud-rain" {
+                // Just inside the terminator, where the pole light skims in.
+                let dawn = (PLANET_RADIUS / REACTION_RADIUS).asin();
+                (dawn + 0.03..dawn + 0.25).contains(&latitude.asin())
+                    && parcel.shape.w - parcel.shape.z > 12_000.0
+            } else {
+                latitude > 0.75
+            };
+            parcel.kind() == kind && parcel.shape.y > 0.5 && placed
+        })
+        .max_by(|a, b| {
+            a.centre
+                .truncate()
+                .dot(start)
+                .total_cmp(&b.centre.truncate().dot(start))
+        })?;
+    let up = parcel.centre.truncate();
+    let frame = surface_frame(up);
+    let (reach, base, top) = (parcel.centre.w, parcel.shape.z, parcel.shape.w);
+    let at = |altitude: f32, north: f32| {
+        world.local(
+            (up * (PLANET_RADIUS + altitude) + frame.y_axis * north)
+                .as_dvec3()
+                .to_engine(),
+        )
+    };
+    let middle = base + (top - base) * 0.5;
+    let (position, target) = match scene {
+        "cloud-storm" => (at(260_000.0, -reach * 0.9), at(10_000.0, 0.0)),
+        "cloud-tower" => (at(middle, -parcel.detail.x * 5.0), at(middle, 0.0)),
+        // From the sunward side, looking into the rain beneath the storm,
+        // where its bow stands opposite the light.
+        "cloud-rain" => {
+            let sunward = parcel.detail.x * 3.0 * up.z.signum();
+            (
+                at(base - 1500.0, sunward * 2.0),
+                at(base - 2500.0, -sunward),
+            )
+        }
+        "cloud-bank" => (
+            at(base - parcel.detail.z - 1500.0, -reach * 0.3),
+            at(base, reach * 0.3),
+        ),
+        "cloud-high" => (at(base - 6000.0, -reach * 0.2), at(base, reach * 0.4)),
+        "cloud-interior" => (at(middle, 0.0), at(middle, 20_000.0)),
+        "cloud-top" => (at(top + 6000.0, -reach * 0.8), at(top * 0.8, 0.0)),
+        // High above a storm field, looking almost straight down.
+        "cloud-above" => (at(top + 30_000.0, -reach * 0.3), at(base, reach * 0.1)),
+        _ => (
+            at(base + 500.0, -reach * 1.05),
+            at(base + (top - base) * 0.4, 0.0),
+        ),
     };
     Some(
-        Transform::from_translation(world.local(position.as_dvec3()))
-            .looking_at(world.local(target.as_dvec3()), world.rotate_to_local(up)),
+        Transform::from_translation(position)
+            .looking_at(target, world.rotate_to_local(up.to_engine())),
     )
 }
 
@@ -343,10 +344,7 @@ fn scene_camera(
     player: Vec3,
     direction: Vec3,
 ) -> Transform {
-    if scene == "cloud-top" {
-        Transform::from_translation(mount - direction * 5000.0 + Vec3::Z * 2500.0)
-            .looking_at(mount + direction * 12_000.0 - Vec3::Z * 20_000.0, Vec3::Z)
-    } else if scene == "nae-close" {
+    if scene == "nae-close" {
         Transform::from_translation(player + vec3(1.5, -4.0, 0.8)).looking_at(player, Vec3::Z)
     } else if scene == "aur-high" {
         Transform::from_translation(mount - direction * 3000.0 + Vec3::Z * 1000.0)
@@ -370,9 +368,6 @@ fn scene_camera(
         };
         Transform::from_translation(mount + vec3(0.0, -1000.0, 100.0))
             .looking_at(world.local(DVec3::Z * f64::from(radius)), Vec3::Z)
-    } else if scene == "cloud-tower" {
-        Transform::from_translation(mount - direction * 30_000.0 + Vec3::Z * 8000.0)
-            .looking_at(mount - Vec3::Z * 12_000.0, Vec3::Z)
     } else {
         Transform::from_translation(mount - direction * 85.0 + Vec3::Z * 18.0)
             .looking_at(mount + Vec3::Z * 5.0, Vec3::Z)
@@ -385,13 +380,14 @@ fn scene_altitude(scene: &str) -> f32 {
         "cloud-top" => 25_000.0,
         "cloud-edge" => 6350.0,
         "cloud-high" => 48_000.0,
-        "cloud-tower" | "cloud-storm" => 78_000.0,
-        "cloud-interior" => 7500.0,
+        "cloud-tower" | "cloud-storm" | "cloud-above" => 78_000.0,
+        "cloud-interior" | "cloud-rain" => 7500.0,
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
         "aur-high" => 80_000.0,
         "aur-spires" => 2400.0,
         "aur-overhead" => 4000.0,
+        "aur-skim" => 3820.0,
         "polar-orbit" => 77_559.0,
         "planet-orbit" | "pole-distant" => 350_000.0,
         "climate-orbit" => 476_000.0,
@@ -405,11 +401,6 @@ fn scene_altitude(scene: &str) -> f32 {
 
 fn scene_weather(scene: &str) -> Option<Vec4> {
     match scene {
-        "cloud-bank" => Some(vec4(0.95, 0.65, 0.8, 0.9)),
-        "cloud-storm" => Some(Vec4::splat(0.95)),
-        "cloud-high" => Some(vec4(0.1, 0.1, 0.95, 0.3)),
-        "cloud-tower" => Some(vec4(0.95, 0.95, 0.7, 0.95)),
-        "cloud-edge" | "cloud-interior" => Some(vec4(0.95, 0.85, 0.3, 0.8)),
         "aur-horizon" | "aur-overhead" | "aur-ejection" | "clear" | "equator" | "sunrise"
         | "polar" | "polar-reaction" | "pole-distant" => Some(Vec4::ZERO),
         _ => None,

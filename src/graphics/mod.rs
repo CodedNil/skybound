@@ -8,14 +8,14 @@ use bevy::shader::Shader;
 
 use crate::game::camera::DebugView;
 use crate::game::flight::PlayerModel;
-use crate::game::weather::CloudSnapshot;
+use crate::game::weather::CloudField;
 use crate::game::world::WorldData;
 use crate::graphics::pipeline::{
     SceneBuffer, ScenePipeline, composite_pass, prepare_bindings, prepare_scene_view, raymarch_pass,
 };
 use crate::graphics::textures::{VolumeTextures, prepare_volume_textures};
 
-mod froxel;
+mod light;
 pub mod pipeline;
 mod targets;
 mod textures;
@@ -50,7 +50,7 @@ impl Plugin for GraphicsPlugin {
                 ExtractResourcePlugin::<AtmosphereSettings>::default(),
                 ExtractResourcePlugin::<PlayerModel>::default(),
                 ExtractResourcePlugin::<WorldData>::default(),
-                ExtractResourcePlugin::<CloudSnapshot>::default(),
+                ExtractResourcePlugin::<CloudField>::default(),
                 ExtractResourcePlugin::<DebugView>::default(),
                 ExtractResourcePlugin::<targets::VolumeScale>::default(),
             ))

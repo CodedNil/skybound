@@ -6,10 +6,11 @@ use spirv_std::{Image, Sampler, spirv};
 
 use crate::scene::atmosphere::POLE_RADIANCE;
 use crate::scene::aur::{
-    CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH, aur_climate, energy_color, nearest_spire,
+    CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH, aur_climate, energy_color, nearest_spire, spire_axes,
+    spire_coordinates,
 };
 use crate::scene::math::{cube, fourth, rotated, smoothstep_mean, square};
-use crate::scene::planet::{light_position, surface_coordinates, surface_frame};
+use crate::scene::planet::{light_position, surface_frame};
 use crate::scene::render::march::VolumeSample;
 use crate::scene::render::textures::Textures;
 use crate::scene::{FrameUniform, PLANET_RADIUS, ViewUniform, cache as grid};
@@ -148,25 +149,6 @@ pub(crate) fn column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Co
     }
 }
 
-pub(crate) fn column_material(
-    point: Vec3,
-    view: &ViewUniform,
-    footprint: f32,
-    normal: Vec3,
-    textures: &Textures,
-) -> Vec4 {
-    let detail = ocean_detail(point, view.time(), footprint, textures);
-    material(
-        point,
-        view,
-        footprint,
-        normal,
-        detail,
-        column(point, view, textures),
-        textures,
-    )
-}
-
 /// The depth-lit column colour and base density, 100 m inside the veil.
 fn material(
     point: Vec3,
@@ -271,14 +253,14 @@ pub(crate) fn ejections(
 }
 
 pub(crate) fn wrap(point: Vec3, time: f32, footprint: f32) -> Wrap {
-    let nearest = nearest_spire(surface_coordinates(point));
+    let nearest = nearest_spire(spire_coordinates(point));
     let gap = nearest.x.max(0.0);
     if gap > 5000.0 {
         return Wrap::NONE;
     }
     let frame = surface_frame(point);
-    // Surface y runs south, against the frame's north axis.
-    let away = frame.x_axis * nearest.y - frame.y_axis * nearest.z;
+    let (first, second) = spire_axes(point);
+    let away = (first * nearest.y + second * nearest.z).normalize();
     let around = frame.z_axis.cross(away);
     let current = (CURRENT - frame.z_axis * CURRENT.dot(frame.z_axis)).normalize();
     let wake = away.dot(current).smoothstep(0.0, 0.9) * (-gap / 2600.0).exp();
@@ -364,55 +346,39 @@ fn atlas_uv(c: Vec2, cascade: u32) -> Vec2 {
         / vec2((grid::SIZE * grid::CASCADES) as f32, grid::SIZE as f32)
 }
 
-pub fn sample(
-    point: Vec3,
-    view: &ViewUniform,
-    footprint: f32,
-    textures: &Textures,
-) -> (Vec4, Vec4) {
-    // A zero column density marks a miss. Avoid an Option discriminant on the
-    // vector pair, which newer rustc lowers to an unsupported u128 constant.
+/// The cached wave height and normal; a zero normal marks a miss.
+pub fn sample(point: Vec3, view: &ViewUniform, footprint: f32, textures: &Textures) -> Vec4 {
     if view.cache_origin.w < 0.5 || !textures.cached {
-        return (Vec4::ZERO, Vec4::ZERO);
+        return Vec4::ZERO;
     }
     let Some(c) = grid::coordinates(point, view) else {
-        return (Vec4::ZERO, Vec4::ZERO);
+        return Vec4::ZERO;
     };
     let spatial = grid::cascade(c);
     let filter = grid::filter_level(footprint).min((grid::CASCADES - 1) as f32);
     let cascade = spatial.max(filter as u32);
     if cascade >= grid::CASCADES {
-        return (Vec4::ZERO, Vec4::ZERO);
+        return Vec4::ZERO;
     }
-    let uv = atlas_uv(c, cascade);
-    let mut shape = textures
+    let shape = textures
         .cache_shape
-        .sample_by_lod(*textures.sampler, uv, 0.0);
-    let mut column = textures
-        .cache_columns
-        .sample_by_lod(*textures.sampler, uv, 0.0);
-    if cascade + 1 < grid::CASCADES {
-        let edge = c.abs().max_element() / (grid::spacing(cascade) * grid::SIZE as f32 * 0.5);
-        let blend = edge
-            .smoothstep(0.72, 0.90)
-            .max((filter - cascade as f32).clamp(0.0, 1.0));
-        if blend > 0.0 {
-            let uv = atlas_uv(c, cascade + 1);
-            shape = shape.lerp(
-                textures
-                    .cache_shape
-                    .sample_by_lod(*textures.sampler, uv, 0.0),
-                blend,
-            );
-            column = column.lerp(
-                textures
-                    .cache_columns
-                    .sample_by_lod(*textures.sampler, uv, 0.0),
-                blend,
-            );
-        }
+        .sample_by_lod(*textures.sampler, atlas_uv(c, cascade), 0.0);
+    if cascade + 1 >= grid::CASCADES {
+        return shape;
     }
-    (shape, column)
+    let edge = c.abs().max_element() / (grid::spacing(cascade) * grid::SIZE as f32 * 0.5);
+    let blend = edge
+        .smoothstep(0.72, 0.90)
+        .max((filter - cascade as f32).clamp(0.0, 1.0));
+    if blend <= 0.0 {
+        return shape;
+    }
+    shape.lerp(
+        textures
+            .cache_shape
+            .sample_by_lod(*textures.sampler, atlas_uv(c, cascade + 1), 0.0),
+        blend,
+    )
 }
 
 #[spirv(fragment(entry_point_name = "column_cache"))]
@@ -422,12 +388,10 @@ pub fn column_cache(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 5)] _sky: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] transmittance: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 7)] ejections: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] _sky: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] transmittance: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 6)] ejections: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] shape: &mut Vec4,
-    #[spirv(location = 1)] column: &mut Vec4,
 ) {
     let cascade = pixel.x as u32 / grid::SIZE;
     let spacing = grid::spacing(cascade);
@@ -436,19 +400,21 @@ pub fn column_cache(
     let view = &frame.view;
     if cascade < grid::first_level(view.altitude(), 2.0 / frame.viewport.w) {
         *shape = Vec4::ZERO;
-        *column = Vec4::ZERO;
         return;
     }
     let point = grid::point(c, view);
     let textures = Textures {
         base,
         details,
-        weather,
         transmittance,
         ejections,
         sampler,
         cache_shape: _sky,
-        cache_columns: _sky,
+        cloud_cover: _sky,
+        cloud_layers: _sky,
+        cloud_light: base,
+        cloud_bounds: _sky,
+        cloud_towers: _sky,
         cached: false,
     };
     let base_wave = wave_base(point, view.time(), spacing * 0.5, &textures);
@@ -470,10 +436,4 @@ pub fn column_cache(
     let normal = (basis.z_axis - (basis.x_axis * east + basis.y_axis * north) * (10.0 / epsilon))
         .normalize();
     *shape = vec4(wave / 4096.0, normal.x, normal.y, normal.z);
-    *column = if cascade >= grid::MATERIAL_LEVEL {
-        let material_point = point.normalize() * (crate::scene::PLANET_RADIUS + wave - 100.0);
-        column_material(material_point, view, spacing * 0.5, normal, &textures)
-    } else {
-        Vec4::ZERO
-    };
 }

@@ -32,13 +32,13 @@ use bevy::render::texture::GpuImage;
 use bevy::render::view::{ExtractedView, ViewTarget};
 use skybound::scene::atmosphere::SKY_SIZE;
 use skybound::scene::aur::{EJECTION_GRID_HEIGHT, EJECTION_GRID_WIDTH};
-use skybound::scene::climate::Cloud;
+use skybound::scene::climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel};
 use skybound::scene::{FrameUniform, ViewUniform, cache as volume_cache};
 
-use super::froxel::{FroxelInputs, FroxelVolume};
+use super::light::LightVolume;
 use crate::game::camera::DebugView;
 use crate::game::flight::PlayerModel;
-use crate::game::weather::{CloudSnapshot, prepare_flashes};
+use crate::game::weather::{CloudField, prepare_flashes};
 use crate::game::world::WorldData;
 use crate::graphics::targets::{ColumnTargets, SceneTargets, Targets, VolumeScale, texture};
 use crate::graphics::textures::{SkyLookup, VolumeTextures};
@@ -65,9 +65,11 @@ pub struct SceneBuffer {
     previous_weather: Vec4,
     frame: u32,
     profile: u32,
-    clouds: RawBufferVec<Cloud>,
-    cloud_grid: RawBufferVec<u32>,
-    cloud_revision: u64,
+    parcels: RawBufferVec<CloudParcel>,
+    cloud_index: RawBufferVec<u32>,
+    cloud_cells: RawBufferVec<Vec4>,
+    /// When the uploaded cloud index was built.
+    cloud_built: f32,
 }
 
 impl Default for SceneBuffer {
@@ -82,9 +84,10 @@ impl Default for SceneBuffer {
             previous_debug: 0,
             previous_weather: Vec4::ZERO,
             frame: 0,
-            clouds: RawBufferVec::new(BufferUsages::STORAGE),
-            cloud_grid: RawBufferVec::new(BufferUsages::STORAGE),
-            cloud_revision: u64::MAX,
+            parcels: RawBufferVec::new(BufferUsages::STORAGE),
+            cloud_index: RawBufferVec::new(BufferUsages::STORAGE),
+            cloud_cells: RawBufferVec::new(BufferUsages::STORAGE),
+            cloud_built: f32::NAN,
             profile: env::var("SKYBOUND_PROFILE_VOLUME")
                 .ok()
                 .and_then(|value| value.parse().ok())
@@ -108,20 +111,24 @@ pub(super) struct PrepareSceneView<'w, 's> {
     debug: Res<'w, DebugView>,
     atmosphere: Res<'w, super::AtmosphereSettings>,
     scale: Res<'w, VolumeScale>,
-    clouds: Res<'w, CloudSnapshot>,
+    clouds: Res<'w, CloudField>,
     sky: ResMut<'w, SkyLookup>,
     targets: ResMut<'w, SceneTargets>,
 }
 
 struct BindGroups {
-    cloud_revision: u64,
+    cloud_built: f32,
     depth: TextureViewId,
     volume: TextureViewId,
     native: [TextureViewId; 2],
     opaque: BindGroup,
     volume_group: BindGroup,
+    march_group: [BindGroup; 2],
+    cloud_resolve_group: [BindGroup; 2],
     sky: BindGroup,
     columns: BindGroup,
+    cloud_map: BindGroup,
+    cloud_bounds: BindGroup,
     filter: [BindGroup; 2],
     composite: [[BindGroup; 2]; 2],
 }
@@ -130,19 +137,31 @@ struct BindGroups {
 pub struct ScenePipeline {
     opaque_layout: BindGroupLayout,
     volume_layout: BindGroupLayout,
+    march_layout: BindGroupLayout,
+    cloud_resolve_layout: BindGroupLayout,
     sky_layout: BindGroupLayout,
     column_layout: BindGroupLayout,
+    cloud_map_layout: BindGroupLayout,
     filter_layout: BindGroupLayout,
     composite_layout: BindGroupLayout,
     opaque: CachedRenderPipelineId,
     volume: CachedRenderPipelineId,
+    clouds: CachedRenderPipelineId,
+    cloud_resolve: CachedRenderPipelineId,
     thin: CachedRenderPipelineId,
     sky: CachedRenderPipelineId,
     ejection_lookup: CachedRenderPipelineId,
     ejections: TextureView,
     columns: CachedRenderPipelineId,
     column_targets: ColumnTargets,
-    froxel: FroxelVolume,
+    cloud_map: CachedRenderPipelineId,
+    cloud_cover: TextureView,
+    cloud_layers: TextureView,
+    cloud_towers: TextureView,
+    cloud_bounds: TextureView,
+    cloud_bounds_pipeline: CachedRenderPipelineId,
+    cloud_bounds_layout: BindGroupLayout,
+    light: LightVolume,
     filter: CachedRenderPipelineId,
     composite: CachedRenderPipelineId,
     repeat_sampler: Sampler,
@@ -165,13 +184,18 @@ pub(super) struct PrepareBindings<'w, 's> {
 struct Interfaces {
     opaque: Vec<BindGroupLayoutEntry>,
     volume: Vec<BindGroupLayoutEntry>,
+    march: Vec<BindGroupLayoutEntry>,
+    cloud_resolve: Vec<BindGroupLayoutEntry>,
     sky: Vec<BindGroupLayoutEntry>,
     columns: Vec<BindGroupLayoutEntry>,
+    cloud_map: Vec<BindGroupLayoutEntry>,
+    cloud_bounds: Vec<BindGroupLayoutEntry>,
     filter: Vec<BindGroupLayoutEntry>,
     composite: Vec<BindGroupLayoutEntry>,
 }
 
 impl Interfaces {
+    #[expect(clippy::too_many_lines, reason = "one layout per scene pass")]
     fn new() -> Self {
         let frame_entry =
             || uniform_buffer_sized(false, NonZeroU64::new(size_of::<FrameUniform>() as u64));
@@ -186,7 +210,6 @@ impl Interfaces {
                 sampler(SamplerBindingType::Filtering),
                 texture_3d(TextureSampleType::Float { filterable: true }),
                 texture_3d(TextureSampleType::Float { filterable: true }),
-                texture_3d(TextureSampleType::Float { filterable: true }),
                 float(),
             ),
         );
@@ -194,26 +217,57 @@ impl Interfaces {
         let extra = BindGroupLayoutEntries::with_indices(
             ShaderStages::FRAGMENT,
             (
-                (6, texture_depth_2d()),
-                (7, float()),
-                (8, data()),
+                (5, texture_depth_2d()),
+                (6, float()),
+                (7, data()),
+                (8, float()),
                 (9, float()),
-                (10, float()),
                 (
-                    11,
+                    10,
                     texture_3d(TextureSampleType::Float { filterable: true }),
                 ),
+                (11, float()),
                 (12, storage_buffer_read_only_sized(false, None)),
-                (13, storage_buffer_read_only_sized(false, None)),
+                (13, float()),
+                (14, data()),
             ),
         );
         volume.extend_from_slice(&extra);
+        // The volume pass also reads the clouds marched before it.
+        let mut march = volume.clone();
+        march.extend_from_slice(&BindGroupLayoutEntries::with_indices(
+            ShaderStages::FRAGMENT,
+            ((15, data()), (16, data())),
+        ));
+        let cloud_resolve = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                frame_entry(),
+                sampler(SamplerBindingType::Filtering),
+                float(),
+                data(),
+                float(),
+                data(),
+            ),
+        );
         let sky = BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, frame_entry());
         let mut columns = opaque.to_vec();
         columns.extend_from_slice(&BindGroupLayoutEntries::with_indices(
             ShaderStages::FRAGMENT,
-            ((6, float()), (7, data())),
+            ((5, float()), (6, data())),
         ));
+        let cloud_map = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                frame_entry(),
+                sampler(SamplerBindingType::Filtering),
+                texture_3d(TextureSampleType::Float { filterable: true }),
+                storage_buffer_read_only_sized(false, None),
+                storage_buffer_read_only_sized(false, None),
+            ),
+        );
+        let cloud_bounds =
+            BindGroupLayoutEntries::sequential(ShaderStages::FRAGMENT, (float(), float(), data()));
         let filter = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
@@ -242,8 +296,12 @@ impl Interfaces {
         Self {
             opaque: opaque.to_vec(),
             volume,
+            march,
+            cloud_resolve: cloud_resolve.to_vec(),
             sky: sky.to_vec(),
             columns,
+            cloud_map: cloud_map.to_vec(),
+            cloud_bounds: cloud_bounds.to_vec(),
             filter: filter.to_vec(),
             composite: composite.to_vec(),
         }
@@ -301,6 +359,7 @@ impl PipelineCompiler<'_> {
 }
 
 impl FromWorld for ScenePipeline {
+    #[expect(clippy::too_many_lines, reason = "every scene pipeline and its layout")]
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
         let cache = world.resource::<PipelineCache>();
@@ -310,8 +369,12 @@ impl FromWorld for ScenePipeline {
         let Interfaces {
             opaque: entries,
             volume: volume_entries,
+            march: march_entries,
+            cloud_resolve: cloud_resolve_entries,
             sky: sky_entries,
             columns: column_entries,
+            cloud_map: cloud_map_entries,
+            cloud_bounds: cloud_bounds_entries,
             filter: filter_entries,
             composite: composite_entries,
         } = Interfaces::new();
@@ -335,12 +398,27 @@ impl FromWorld for ScenePipeline {
         Self {
             opaque_layout: layout("opaque", &entries),
             volume_layout: layout("volume", &volume_entries),
+            march_layout: layout("volume_march", &march_entries),
+            cloud_resolve_layout: layout("cloud_resolve", &cloud_resolve_entries),
             sky_layout: layout("sky", &sky_entries),
             column_layout: layout("column_cache", &column_entries),
+            cloud_map_layout: layout("cloud_map", &cloud_map_entries),
             filter_layout: layout("volume_temporal", &filter_entries),
             composite_layout: layout("volume_composite", &composite_entries),
             opaque: scene_pipeline("opaque", &entries, &opaque_formats, true),
-            volume: scene_pipeline("volume", &volume_entries, &volume_formats, true),
+            volume: scene_pipeline("volume", &march_entries, &volume_formats, false),
+            cloud_resolve: scene_pipeline(
+                "cloud_resolve",
+                &cloud_resolve_entries,
+                &[TextureFormat::Rgba16Float, TextureFormat::R32Float],
+                false,
+            ),
+            clouds: scene_pipeline(
+                "clouds",
+                &volume_entries,
+                &[TextureFormat::Rgba16Float, TextureFormat::R32Float],
+                false,
+            ),
             thin: scene_pipeline(
                 "transparent",
                 &volume_entries,
@@ -356,18 +434,44 @@ impl FromWorld for ScenePipeline {
             ),
             ejections: texture(
                 device,
-                UVec2::new(EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
+                UVec2::new(EJECTION_GRID_WIDTH * 3, EJECTION_GRID_HEIGHT),
                 TextureFormat::Rgba32Float,
                 "ejection_lookup",
             ),
             columns: scene_pipeline(
                 "column_cache",
                 &column_entries,
-                &[TextureFormat::Rgba16Float; 2],
+                &[TextureFormat::Rgba16Float],
                 false,
             ),
             column_targets: ColumnTargets::new(device),
-            froxel: FroxelVolume::new(world),
+            cloud_map: scene_pipeline(
+                "cloud_map",
+                &cloud_map_entries,
+                &[
+                    TextureFormat::Rgba16Float,
+                    TextureFormat::Rgba16Float,
+                    TextureFormat::Rgba32Float,
+                ],
+                false,
+            ),
+            cloud_cover: cloud_texture(device, "cloud_cover"),
+            cloud_layers: cloud_texture(device, "cloud_layers"),
+            cloud_towers: texture(
+                device,
+                UVec2::new(CLOUD_MAP_WIDTH, CLOUD_MAP_HEIGHT),
+                TextureFormat::Rgba32Float,
+                "cloud_towers",
+            ),
+            cloud_bounds: cloud_texture(device, "cloud_bounds"),
+            cloud_bounds_pipeline: scene_pipeline(
+                "cloud_bounds",
+                &cloud_bounds_entries,
+                &[TextureFormat::Rgba16Float],
+                false,
+            ),
+            cloud_bounds_layout: layout("cloud_bounds", &cloud_bounds_entries),
+            light: LightVolume::new(world),
             filter: compiler.queue(
                 "volume_temporal",
                 shaders.filter.clone(),
@@ -428,13 +532,6 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         buffer.profile,
     );
     uniform.weather = atmosphere.0.to_scene();
-    uniform.cloud_time = vec4(
-        (time.elapsed_secs() - clouds.time).max(0.0),
-        clouds.time,
-        clouds.clouds.len() as f32,
-        0.0,
-    )
-    .to_scene();
     uniform.times = vec4(
         time.elapsed_secs_wrapped(),
         frame_count.0 as f32,
@@ -449,13 +546,24 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         view: uniform,
         players: player.0,
         viewport: viewport.to_scene(),
+        history: vec4(
+            f32::from(valid),
+            (frame_count.0 % 4) as f32,
+            targets.trace_size.x as f32,
+            targets.trace_size.y as f32,
+        )
+        .to_scene(),
     });
     buffer.resolve.clear();
     let profile = buffer.profile;
     buffer.resolve.push(ResolveUniform {
         world_from_clip,
         origin: position.extend(0.0),
-        size: targets.size.as_vec2().extend(f32::from(valid)).extend(0.0),
+        size: targets
+            .size
+            .as_vec2()
+            .extend(f32::from(valid))
+            .extend((frame_count.0 % 4) as f32),
         native: viewport.zw().extend(debug.0 as f32).extend(profile as f32),
     });
     buffer.uniform.write_buffer(&device, &queue);
@@ -508,26 +616,25 @@ fn camera_uniform(
 
 fn prepare_cloud_buffers(
     buffer: &mut SceneBuffer,
-    clouds: &CloudSnapshot,
+    clouds: &CloudField,
     device: &RenderDevice,
     queue: &RenderQueue,
 ) {
-    if buffer.cloud_revision == clouds.revision {
+    buffer.parcels.clear();
+    buffer.parcels.extend(clouds.parcels.iter().copied());
+    buffer.parcels.write_buffer(device, queue);
+    if buffer.cloud_built.to_bits() == clouds.built.to_bits() {
         return;
     }
-    buffer.clouds.reserve(clouds.clouds.len(), device);
-    buffer.cloud_grid.reserve(clouds.grid.len(), device);
-    buffer.clouds.clear();
-    buffer.cloud_grid.clear();
-    for &cloud in clouds.clouds.iter() {
-        buffer.clouds.push(cloud);
-    }
-    for &index in clouds.grid.iter() {
-        buffer.cloud_grid.push(index);
-    }
-    buffer.clouds.write_buffer(device, queue);
-    buffer.cloud_grid.write_buffer(device, queue);
-    buffer.cloud_revision = clouds.revision;
+    buffer.cloud_index.clear();
+    buffer.cloud_index.extend(clouds.index.iter().copied());
+    buffer.cloud_cells.clear();
+    buffer
+        .cloud_cells
+        .extend(clouds.cells.iter().map(|cell| cell.to_array().into()));
+    buffer.cloud_index.write_buffer(device, queue);
+    buffer.cloud_cells.write_buffer(device, queue);
+    buffer.cloud_built = clouds.built;
 }
 
 fn history_valid(
@@ -583,7 +690,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         Some(resolve),
         Some(base),
         Some(detail),
-        Some(weather),
         Some(transmittance),
     ) = (
         prepass.depth_only_view(),
@@ -592,7 +698,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         buffer.resolve.binding(),
         images.get(&textures.base),
         images.get(&textures.detail),
-        images.get(&textures.weather),
         images.get(&textures.transmittance),
     )
     else {
@@ -600,7 +705,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     };
     let native = [view.main_texture_view(), view.main_texture_other_view()];
     if pipeline.groups.as_ref().is_some_and(|groups| {
-        groups.cloud_revision == buffer.cloud_revision
+        groups.cloud_built.to_bits() == buffer.cloud_built.to_bits()
             && groups.depth == depth.id()
             && groups.volume == targets.color.id()
             && groups.native.contains(&native[0].id())
@@ -612,33 +717,62 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         &pipeline,
         &device,
         frame.clone(),
-        [
-            &base.texture_view,
-            &detail.texture_view,
-            &weather.texture_view,
-            &sky.view,
-        ],
+        [&base.texture_view, &detail.texture_view, &sky.view],
     );
-    let volume_group = device.create_bind_group(
-        "volume",
-        &pipeline.volume_layout,
-        &BindGroupEntries::sequential((
+    // The volume pass reads everything the cloud pass does, and the clouds
+    // that pass rebuilt.
+    let volume_group = |layout: &BindGroupLayout, slab: Option<usize>| {
+        let shared = (
             frame.clone(),
             &pipeline.repeat_sampler,
             &base.texture_view,
             &detail.texture_view,
-            &weather.texture_view,
             &sky.view,
             depth,
             &transmittance.texture_view,
             &pipeline.ejections,
             &pipeline.column_targets.shape,
-            &pipeline.column_targets.columns,
-            &pipeline.froxel.view,
-            buffer.clouds.binding().expect("prepared cloud records"),
-            buffer.cloud_grid.binding().expect("prepared cloud index"),
-        )),
-    );
+            &pipeline.cloud_cover,
+            &pipeline.light.view,
+            &pipeline.cloud_layers,
+            buffer.cloud_cells.binding().expect("prepared cloud cells"),
+            &pipeline.cloud_bounds,
+            &pipeline.cloud_towers,
+        );
+        match slab {
+            None => {
+                device.create_bind_group("volume", layout, &BindGroupEntries::sequential(shared))
+            }
+            Some(index) => {
+                let mut entries = BindGroupEntries::sequential(shared).to_vec();
+                entries.extend(
+                    BindGroupEntries::with_indices((
+                        (15, &targets.cloud_slab[index]),
+                        (16, &targets.cloud_front[index]),
+                    ))
+                    .to_vec(),
+                );
+                device.create_bind_group("volume_march", layout, &entries)
+            }
+        }
+    };
+    let march_group = from_fn(|index| volume_group(&pipeline.march_layout, Some(index)));
+    let volume_group = volume_group(&pipeline.volume_layout, None);
+    let cloud_resolve_group = from_fn(|index: usize| {
+        device.create_bind_group(
+            "cloud_resolve",
+            &pipeline.cloud_resolve_layout,
+            &BindGroupEntries::sequential((
+                frame.clone(),
+                &pipeline.linear_sampler,
+                &targets.cloud_fresh,
+                &targets.cloud_fresh_front,
+                &targets.cloud_slab[1 - index],
+                &targets.cloud_front[1 - index],
+            )),
+        )
+    });
+
     let column_group = column_group(
         &pipeline,
         &device,
@@ -646,47 +780,56 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         [
             &base.texture_view,
             &detail.texture_view,
-            &weather.texture_view,
             &sky.view,
             &transmittance.texture_view,
         ],
     );
     let (filter, composite) =
         reconstruction_groups(&pipeline, &device, resolve, targets, depth, native);
-    let medium_images = [
-        &base.texture_view,
-        &detail.texture_view,
-        &weather.texture_view,
-        &transmittance.texture_view,
-        &pipeline.ejections,
-        &pipeline.column_targets.shape,
-        &pipeline.column_targets.columns,
-    ]
-    .map(Clone::clone);
-    let medium_sampler = pipeline.repeat_sampler.clone();
-    pipeline.froxel.prepare(
+    let light_sampler = pipeline.repeat_sampler.clone();
+    let maps = [pipeline.cloud_cover.clone(), pipeline.cloud_layers.clone()];
+    pipeline.light.prepare(
         &device,
-        FroxelInputs {
-            frame: buffer.uniform.binding().expect("prepared frame"),
-            sampler: &medium_sampler,
-            images: medium_images.each_ref(),
-            clouds: buffer.clouds.binding().expect("prepared cloud records"),
-            grid: buffer.cloud_grid.binding().expect("prepared cloud index"),
-        },
+        buffer.uniform.binding().expect("prepared frame"),
+        &light_sampler,
+        maps.each_ref(),
+    );
+    let cloud_map = device.create_bind_group(
+        "cloud_map",
+        &pipeline.cloud_map_layout,
+        &BindGroupEntries::sequential((
+            frame.clone(),
+            &pipeline.repeat_sampler,
+            &base.texture_view,
+            buffer.parcels.binding().expect("prepared cloud parcels"),
+            buffer.cloud_index.binding().expect("prepared cloud index"),
+        )),
     );
     pipeline.groups = Some(BindGroups {
-        cloud_revision: buffer.cloud_revision,
+        cloud_built: buffer.cloud_built,
         depth: depth.id(),
         volume: targets.color.id(),
         native: native.map(TextureView::id),
         opaque,
         volume_group,
+        march_group,
+        cloud_resolve_group,
         sky: device.create_bind_group(
             "sky",
             &pipeline.sky_layout,
             &BindGroupEntries::single(frame),
         ),
         columns: column_group,
+        cloud_map,
+        cloud_bounds: device.create_bind_group(
+            "cloud_bounds",
+            &pipeline.cloud_bounds_layout,
+            &BindGroupEntries::sequential((
+                &pipeline.cloud_cover,
+                &pipeline.cloud_layers,
+                &pipeline.cloud_towers,
+            )),
+        ),
         filter,
         composite,
     });
@@ -696,7 +839,7 @@ fn opaque_group(
     pipeline: &ScenePipeline,
     device: &RenderDevice,
     frame: BindingResource<'_>,
-    images: [&TextureView; 4],
+    images: [&TextureView; 3],
 ) -> BindGroup {
     device.create_bind_group(
         "opaque",
@@ -707,7 +850,6 @@ fn opaque_group(
             images[0],
             images[1],
             images[2],
-            images[3],
         )),
     )
 }
@@ -716,7 +858,7 @@ fn column_group(
     pipeline: &ScenePipeline,
     device: &RenderDevice,
     frame: BindingResource<'_>,
-    images: [&TextureView; 5],
+    images: [&TextureView; 4],
 ) -> BindGroup {
     device.create_bind_group(
         "column_cache",
@@ -728,7 +870,6 @@ fn column_group(
             images[1],
             images[2],
             images[3],
-            images[4],
             &pipeline.ejections,
         )),
     )
@@ -849,19 +990,31 @@ pub fn raymarch_pass(
     let pipeline = world.resource::<ScenePipeline>();
     let cache = world.resource::<PipelineCache>();
     let sky = world.resource::<SkyLookup>();
-    let (Some(groups), Some(targets), Some(opaque), Some(volume), Some(sky_pipeline)) = (
+    let (
+        Some(groups),
+        Some(targets),
+        Some(opaque),
+        Some(volume),
+        Some(clouds),
+        Some(cloud_resolve),
+        Some(sky_pipeline),
+    ) = (
         pipeline.groups.as_ref(),
         world.resource::<SceneTargets>().0.as_ref(),
         cache.get_render_pipeline(pipeline.opaque),
         cache.get_render_pipeline(pipeline.volume),
+        cache.get_render_pipeline(pipeline.clouds),
+        cache.get_render_pipeline(pipeline.cloud_resolve),
         cache.get_render_pipeline(pipeline.sky),
-    ) else {
+    )
+    else {
         return;
     };
+    let index = world.resource::<SceneBuffer>().frame as usize % 2;
     if !draw_lookup_passes(&mut context, pipeline, groups, cache) {
         return;
     }
-    if !pipeline.froxel.draw(&mut context, cache) {
+    if !pipeline.light.draw(&mut context, cache) {
         return;
     }
     for (view, target, prepass) in &views {
@@ -898,15 +1051,39 @@ pub fn raymarch_pass(
         );
         draw(
             &mut context,
-            volume,
+            clouds,
             &groups.volume_group,
+            &[
+                Some(attachment(&targets.cloud_fresh, true)),
+                Some(attachment(&targets.cloud_fresh_front, true)),
+            ],
+            None,
+            UVec4::new(0, 0, targets.cloud_size.x, targets.cloud_size.y),
+            "clouds",
+        );
+        draw(
+            &mut context,
+            cloud_resolve,
+            &groups.cloud_resolve_group[index],
+            &[
+                Some(attachment(&targets.cloud_slab[index], true)),
+                Some(attachment(&targets.cloud_front[index], true)),
+            ],
+            None,
+            UVec4::new(0, 0, targets.trace_size.x, targets.trace_size.y),
+            "cloud_resolve",
+        );
+        draw(
+            &mut context,
+            volume,
+            &groups.march_group[index],
             &[
                 Some(attachment(&targets.color, true)),
                 Some(attachment(&targets.motion, true)),
                 Some(attachment(&targets.metadata, true)),
             ],
-            Some(&targets.depth),
-            UVec4::new(0, 0, targets.trace_size.x, targets.trace_size.y),
+            None,
+            UVec4::new(0, 0, targets.cloud_size.x, targets.cloud_size.y),
             "volumetrics",
         );
     }
@@ -918,19 +1095,49 @@ fn draw_lookup_passes(
     groups: &BindGroups,
     cache: &PipelineCache,
 ) -> bool {
-    let (Some(ejection_pipeline), Some(column_pipeline)) = (
+    let (
+        Some(ejection_pipeline),
+        Some(column_pipeline),
+        Some(cloud_pipeline),
+        Some(bounds_pipeline),
+    ) = (
         cache.get_render_pipeline(pipeline.ejection_lookup),
         cache.get_render_pipeline(pipeline.columns),
-    ) else {
+        cache.get_render_pipeline(pipeline.cloud_map),
+        cache.get_render_pipeline(pipeline.cloud_bounds_pipeline),
+    )
+    else {
         return false;
     };
+    draw(
+        context,
+        cloud_pipeline,
+        &groups.cloud_map,
+        &[
+            Some(attachment(&pipeline.cloud_cover, true)),
+            Some(attachment(&pipeline.cloud_layers, true)),
+            Some(attachment(&pipeline.cloud_towers, true)),
+        ],
+        None,
+        UVec4::new(0, 0, CLOUD_MAP_WIDTH, CLOUD_MAP_HEIGHT),
+        "cloud_map",
+    );
+    draw(
+        context,
+        bounds_pipeline,
+        &groups.cloud_bounds,
+        &[Some(attachment(&pipeline.cloud_bounds, true))],
+        None,
+        UVec4::new(0, 0, CLOUD_MAP_WIDTH, CLOUD_MAP_HEIGHT),
+        "cloud_bounds",
+    );
     draw(
         context,
         ejection_pipeline,
         &groups.sky,
         &[Some(attachment(&pipeline.ejections, true))],
         None,
-        UVec4::new(0, 0, EJECTION_GRID_WIDTH * 2, EJECTION_GRID_HEIGHT),
+        UVec4::new(0, 0, EJECTION_GRID_WIDTH * 3, EJECTION_GRID_HEIGHT),
         "ejection_lookup",
     );
     let grid = volume_cache::SIZE;
@@ -940,10 +1147,7 @@ fn draw_lookup_passes(
         context,
         column_pipeline,
         &groups.columns,
-        &[
-            Some(attachment(&pipeline.column_targets.shape, true)),
-            Some(attachment(&pipeline.column_targets.columns, true)),
-        ],
+        &[Some(attachment(&pipeline.column_targets.shape, true))],
         None,
         UVec4::new(0, 0, width, height),
         "column_cache",
@@ -970,9 +1174,13 @@ pub fn composite_pass(
     if [
         pipeline.opaque,
         pipeline.volume,
+        pipeline.clouds,
+        pipeline.cloud_resolve,
         pipeline.sky,
         pipeline.ejection_lookup,
         pipeline.columns,
+        pipeline.cloud_map,
+        pipeline.cloud_bounds_pipeline,
     ]
     .iter()
     .any(|id| cache.get_render_pipeline(*id).is_none())
@@ -1020,6 +1228,15 @@ pub fn composite_pass(
         );
         targets.valid.store(true, Ordering::Relaxed);
     }
+}
+
+fn cloud_texture(device: &RenderDevice, label: &'static str) -> TextureView {
+    texture(
+        device,
+        UVec2::new(CLOUD_MAP_WIDTH, CLOUD_MAP_HEIGHT),
+        TextureFormat::Rgba16Float,
+        label,
+    )
 }
 
 fn scene_sampler(device: &RenderDevice, repeat: bool) -> Sampler {

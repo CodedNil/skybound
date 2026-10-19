@@ -316,13 +316,14 @@ fn contact(
             });
         }
     }
-    let terrain_point = world.surface_position(position);
-    let distance = aur::spire_field(terrain_point.to_scene());
+    let spire_field = |local: Vec3| {
+        let point = world.position(local).as_vec3().to_scene();
+        aur::spire_field(aur::spire_coordinates(point)) * aur::SPIRE_METRIC
+    };
+    let distance = spire_field(position);
     if distance.abs() < nearest {
-        let normal = estimate_normal(position.to_scene(), |p| {
-            aur::spire_field(world.surface_position(p.to_engine()).to_scene())
-        })
-        .to_engine();
+        let normal =
+            estimate_normal(position.to_scene(), |p| spire_field(p.to_engine())).to_engine();
         found = Some(PerchAnchor {
             point: world.position(position + normal * (0.62 - distance)),
             normal: world.basis.as_quat() * normal,

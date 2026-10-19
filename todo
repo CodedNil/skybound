@@ -7,25 +7,6 @@ atmosphere:
 Clouds with sunsets and auroras/stars at night https://www.shadertoy.com/view/cdlyWr
 https://godotshaders.com/shader/rayleigh-mie-ozone-based-atmospheric-scatter/
 
-
-
-clouds:
-make clouds always moving in the wind towards the poles, getting faster as approaching the poles and also denser
-much less dense, mostly upper atmosphere clouds on the equator
-
-Good examples of god rays through clouds  https://www.shadertoy.com/view/ttcSD8 https://www.shadertoy.com/view/MstBWs
-60 fps clouds on igpu https://www.shadertoy.com/view/DtsXzB
-Bevy noise functions https://github.com/johanhelsing/noisy_bevy https://github.com/bevy-interstellar/wgsl_noise
-Volumetric clouds overview https://github.com/adrianpolimeni/RealTimeVolumetricClouds https://www.shadertoy.com/view/XtBXDw
-Perlin-Worley noise https://www.shadertoy.com/view/ft3fz4 https://www.shadertoy.com/view/4s2cR3 https://www.shadertoy.com/view/XftyRl https://www.shadertoy.com/view/4dSBDt https://www.shadertoy.com/view/3dVXDc
-https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/
-Horizon zero dawn https://drive.google.com/file/d/1G0Iy8QUybKMKU7Ax-ooxdfXJR-ysmDVv/view
-https://github.com/clayjohn/godot-volumetric-cloud-demo
-https://github.com/AmanSachan1/Meteoros
-https://github.com/adrianderstroff/realtime-clouds/blob/master/cmd/create-noise-textures/main.go
-https://www.ea.com/seed/news/egsr-2022-blue-noise
-https://github.com/DavidGiraldoCode/p-MS_Thesis_Faster_Volumetric_Cloudscapes_with_GPU-based_Decoupled_Ray_Marching/blob/main/Ms%20Thesis%20Presentation%20_%20Decoupled%20Ray%20Marching%20in%20Video%20Games.pdf
-
 rainbows on clouds with the proper equation
 cumulonimbus clouds, huge with anvils
 

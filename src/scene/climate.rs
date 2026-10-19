@@ -1,29 +1,84 @@
-//! Compact cloud records and the single planet-wide spatial index.
-use core::f32::consts::{FRAC_PI_2, TAU};
+//! The shared climate: regional weather, and the weather systems that carry
+//! clouds from the equator to the poles. All of it is analytic, so the game
+//! and the renderer always agree on where the clouds are.
+use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, TAU};
 
-use spirv_std::glam::{FloatExt, IVec3, Vec2, Vec3, Vec3Swizzles, Vec4, ivec3, vec2, vec3, vec4};
+use spirv_std::glam::{
+    FloatExt, IVec3, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, ivec3, vec2, vec3, vec4,
+};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 use crate::scene::PLANET_RADIUS;
-use crate::scene::math::{cube, intersect_sphere, lattice};
+use crate::scene::math::{cube, lattice, square};
+use crate::scene::planet::surface_frame;
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 
-pub const CLOUD_BOTTOM: f32 = 2700.0;
-
-pub const CLOUD_TOP: f32 = 78_000.0;
-
 pub const WEATHER_SIZE: i32 = 64;
 
-pub const CLOUD_CELL: f32 = 64_000.0;
+/// The cloud shell, from the rain beneath storms up to anvils and cirrus.
+pub const CLOUD_BOTTOM: f32 = 800.0;
 
-pub const CLOUD_GRID_WIDTH: u32 = 52;
+pub const CLOUD_TOP: f32 = 50_000.0;
 
-pub const CLOUD_GRID_CELLS: usize =
-    (CLOUD_GRID_WIDTH * CLOUD_GRID_WIDTH * CLOUD_GRID_WIDTH) as usize;
+/// Weather systems in flight at once.
+pub const CLOUD_SLOTS: u32 = 8192;
 
-pub const CLOUD_GRID_ORIGIN: f32 = -(CLOUD_GRID_WIDTH as f32 * CLOUD_CELL * 0.5);
+/// Cloud map texels across one cube face. Each face carries a one texel
+/// border so that filtering never reads across a face edge.
+pub const CLOUD_FACE: u32 = 512;
+
+pub const CLOUD_MAP_WIDTH: u32 = (CLOUD_FACE + 2) * 6;
+
+pub const CLOUD_MAP_HEIGHT: u32 = CLOUD_FACE + 2;
+
+/// Rain falls this far below the base of a deep storm.
+pub const RAIN_DEPTH: f32 = 6000.0;
+
+/// Texels across one cube face of the cloud light volume.
+///
+/// Over the same faces as the cloud map, it holds the cloud's shadow from the
+/// pole lights and from the aur below at every altitude; its atlas is padded
+/// in width for buffer copies.
+pub const LIGHT_FACE: u32 = 128;
+
+pub const LIGHT_WIDTH: u32 = 800;
+
+pub const LIGHT_HEIGHT: u32 = LIGHT_FACE + 2;
+
+pub const LIGHT_LAYERS: u32 = 16;
+
+/// Parcel index cells across one cube face.
+pub const CLOUD_GRID: u32 = 24;
+
+pub const CLOUD_CELLS: usize = (CLOUD_GRID * CLOUD_GRID * 6) as usize;
+
+pub const CUMULUS: u32 = 0;
+
+pub const TOWER: u32 = 1;
+
+pub const DECK: u32 = 2;
+
+pub const CIRRUS: u32 = 3;
+
+pub const CYCLONE: u32 = 4;
+
+const CYCLONE_OUTFLOW: f32 = 43_000.0;
+
+/// Seconds for a typical system to reach its pole.
+const JOURNEY: f32 = 64_000.0;
+
+/// Systems have dissolved by this latitude.
+const POLAR_LIMIT: f32 = 1.48;
+
+const POLEWARD_SPEED: f32 = (POLAR_LIMIT - 0.07) * PLANET_RADIUS / (JOURNEY * 1.05);
+
+const EASTWARD_SPEED: f32 = 1.05 * PLANET_RADIUS / (JOURNEY * 1.05);
+
+/// How strongly systems quicken polewards: latitude goes as progress to
+/// this power.
+const ACCELERATION: f32 = 1.5;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Climate {
@@ -40,6 +95,36 @@ pub struct Climate {
     pub low_cloud: f32,
     pub middle_cloud: f32,
     pub high_cloud: f32,
+}
+
+/// One weather system: a field of cumulus, a lone thunderhead and its anvil,
+/// a stratus deck, a cirrus sheet or a hurricane. Each is born near the
+/// equator, carried towards its pole and dissolved there.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CloudParcel {
+    /// Unit direction to the centre, and the radius of everything it holds.
+    pub centre: Vec4,
+    /// Kind, strength, base altitude, top altitude.
+    pub shape: Vec4,
+    /// Core radius, spin phase, layer thickness and a stable seed.
+    pub detail: Vec4,
+}
+
+/// Cloud cover over one column, accumulated from the parcels above it.
+#[derive(Clone, Copy, Default)]
+pub struct CloudCover {
+    convective: f32,
+    /// The share of the convective cover from thunderhead cores, the only
+    /// convection dense enough to close into overcast.
+    towers: f32,
+    base: f32,
+    top: f32,
+    deck: f32,
+    deck_altitude: f32,
+    thickness: f32,
+    cirrus: f32,
+    cirrus_altitude: f32,
 }
 
 impl Climate {
@@ -147,48 +232,367 @@ impl Climate {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Cloud {
-    pub center: Vec4,     // planet position, east radius
-    pub up: Vec4,         // radial axis, vertical radius
-    pub east: Vec4,       // horizontal axis, north radius
-    pub appearance: Vec4, // extinction, erosion, noise scale, convection
-    pub motion: Vec4,     // velocity, stable seed
-}
+impl CloudParcel {
+    pub fn kind(self) -> u32 {
+        self.shape.x as u32
+    }
 
-impl Cloud {
-    pub fn ray_interval(self, origin: Vec3, direction: Vec3, elapsed: f32) -> Vec2 {
-        let local = self.coordinates(origin, elapsed);
-        let north = self.up.truncate().cross(self.east.truncate());
-        let ray = Vec3::new(
-            direction.dot(self.east.truncate()) / self.center.w,
-            direction.dot(north) / self.east.w,
-            direction.dot(self.up.truncate()) / self.up.w,
-        );
-        intersect_sphere(local, ray, 1.0)
-    }
-    pub fn coordinates(self, point: Vec3, elapsed: f32) -> Vec3 {
-        let p = point - self.center.truncate() - self.motion.truncate() * elapsed;
-        Vec3::new(
-            p.dot(self.east.truncate()) / self.center.w,
-            p.dot(self.up.truncate().cross(self.east.truncate())) / self.east.w,
-            p.dot(self.up.truncate()) / self.up.w,
-        )
-    }
-    pub fn extent(self) -> Vec3 {
-        self.east.truncate().abs() * self.center.w
-            + self.up.truncate().cross(self.east.truncate()).abs() * self.east.w
-            + self.up.truncate().abs() * self.up.w
+    /// Altitudes its cloud can fill below the cirrus level, and in it.
+    pub fn extent(self) -> Vec4 {
+        let (base, top, thickness) = (self.shape.z, self.shape.w, self.detail.z);
+        match self.kind() {
+            CUMULUS => vec4(base, top, 1.0e9, -1.0e9),
+            TOWER => vec4(
+                (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
+                top + thickness * 0.3,
+                1.0e9,
+                -1.0e9,
+            ),
+            DECK => vec4(
+                base - thickness * 0.8,
+                base + thickness * 0.8,
+                1.0e9,
+                -1.0e9,
+            ),
+            CIRRUS => vec4(1.0e9, -1.0e9, base - 1800.0, base + 1800.0),
+            _ => vec4(
+                (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
+                top,
+                CYCLONE_OUTFLOW - 1800.0,
+                CYCLONE_OUTFLOW + 1800.0,
+            ),
+        }
     }
 }
 
-pub struct RayEvent {
-    pub ids: [u32; 8],
-    pub count: u32,
-    pub end: f32,
-    pub step: f32,
-    pub overflow: bool,
+impl CloudCover {
+    pub fn add(&mut self, parcel: CloudParcel, up: Vec3) {
+        let centre = parcel.centre.xyz();
+        let strength = parcel.shape.y;
+        let distance = ((up - centre).length() * 0.5).min(1.0).asin() * 2.0 * PLANET_RADIUS;
+        if strength <= 0.0 || distance >= parcel.centre.w {
+            return;
+        }
+        let q = distance / parcel.centre.w;
+        let fall = 1.0 - q.smoothstep(0.45, 1.0);
+        let (base, top, thickness) = (parcel.shape.z, parcel.shape.w, parcel.detail.z);
+        match parcel.kind() {
+            CUMULUS => {
+                self.convective(
+                    fall * strength * 0.6,
+                    base,
+                    base + (top - base) * (0.35 + 0.65 * fall),
+                    false,
+                );
+            }
+            TOWER => {
+                // Steep walls and a flat crown at the anvil, not a mound.
+                let core = 1.0 - distance.smoothstep(parcel.detail.x * 0.6, parcel.detail.x);
+                self.convective(
+                    core * strength * 1.5,
+                    base,
+                    base + (top - base) * core.smoothstep(0.0, 0.3),
+                    true,
+                );
+            }
+            DECK => self.deck(fall * strength * 0.75, base, thickness),
+            CIRRUS => self.cirrus(fall * strength * 0.7, base),
+            _ => {
+                // Two logarithmic rain bands spiral into an eyewall of towers
+                // around a clear eye, beneath a dense overcast and an outflow
+                // of cirrus that fans out far beyond the storm.
+                let frame = surface_frame(centre);
+                let offset = up - centre;
+                let spin = if centre.z < 0.0 { -1.0 } else { 1.0 };
+                let angle = offset.dot(frame.y_axis).atan2(offset.dot(frame.x_axis)) * spin;
+                let eye = q.smoothstep(0.03, 0.065);
+                let wall = (-square((q - 0.09) / 0.035)).exp();
+                let arms =
+                    cube(0.5 + 0.5 * (angle * 2.0 + (q + 0.02).ln() * 5.5 - parcel.detail.y).cos());
+                let bands = arms * q.smoothstep(0.1, 0.2) * (1.0 - q.smoothstep(0.35, 0.95));
+                let lift = (wall + bands * 0.55).min(1.0);
+                self.convective(
+                    (wall * 1.6 + bands * 1.1) * eye * strength,
+                    base,
+                    base + (top - base) * lift,
+                    true,
+                );
+                self.deck(
+                    (1.0 - q.smoothstep(0.1, 0.42)) * eye * strength,
+                    22_000.0,
+                    thickness,
+                );
+                self.cirrus(
+                    q.smoothstep(0.15, 0.4)
+                        * (1.0 - q.smoothstep(0.75, 1.0))
+                        * (0.6 + arms * 0.4)
+                        * strength,
+                    CYCLONE_OUTFLOW,
+                );
+            }
+        }
+    }
+
+    fn convective(&mut self, weight: f32, base: f32, top: f32, tower: bool) {
+        self.convective += weight;
+        if tower {
+            self.towers += weight;
+        }
+        self.base += weight * base;
+        if weight > 0.01 {
+            self.top = self.top.max(top);
+        }
+    }
+
+    fn deck(&mut self, weight: f32, altitude: f32, thickness: f32) {
+        self.deck += weight;
+        self.deck_altitude += weight * altitude;
+        self.thickness += weight * thickness;
+    }
+
+    fn cirrus(&mut self, weight: f32, altitude: f32) {
+        self.cirrus += weight;
+        self.cirrus_altitude += weight * altitude;
+    }
+
+    /// The two cloud map texels: coverage of the convective layer and its
+    /// top, of the deck and of the cirrus; then the convective base, the
+    /// deck's altitude and thickness, and the cirrus altitude. Overlapping
+    /// systems thicken the cover towards overcast without a hard ceiling.
+    pub fn texels(self) -> [Vec4; 2] {
+        let saturate = |weight: f32| 1.0 - (-weight * 1.3).exp();
+        [
+            vec4(
+                // Fields of cumulus stay broken however many overlap.
+                saturate(self.convective - self.towers).min(0.45) + saturate(self.towers) * 0.55,
+                self.top,
+                saturate(self.deck),
+                saturate(self.cirrus),
+            ),
+            vec4(
+                mean(self.base, self.convective, 6000.0),
+                mean(self.deck_altitude, self.deck, 20_000.0),
+                mean(self.thickness, self.deck, 2000.0),
+                mean(self.cirrus_altitude, self.cirrus, 40_000.0),
+            ),
+        ]
+    }
+}
+
+const fn mix(mut value: u32) -> u32 {
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x7feb_352d);
+    value ^= value >> 15;
+    value = value.wrapping_mul(0x846c_a68b);
+    value ^ (value >> 16)
+}
+
+fn slot_random(slot: u32, cycle: u32) -> Vec4 {
+    let a = mix(slot.wrapping_mul(0x9e37_79b9) ^ cycle.wrapping_mul(0x85eb_ca6b));
+    let b = mix(a);
+    let c = mix(b);
+    let d = mix(c);
+    vec4(
+        (a >> 8) as f32,
+        (b >> 8) as f32,
+        (c >> 8) as f32,
+        (d >> 8) as f32,
+    ) / 16_777_216.0
+}
+
+fn mean(sum: f32, weight: f32, empty: f32) -> f32 {
+    if weight > 0.0001 { sum / weight } else { empty }
+}
+
+/// How readily the equator raises weather at a longitude. Wet sectors feed
+/// streams of cloud towards the poles; dry ones leave clear corridors.
+pub fn equatorial_supply(longitude: f32, time: f32) -> f32 {
+    let drift = time * 0.000_02;
+    let wave = 0.5
+        + 0.3 * (longitude * 3.0 + drift).sin()
+        + 0.2 * (longitude * 7.0 - drift * 2.3 + 1.3).sin()
+        + 0.12 * (longitude * 13.0 + drift * 4.1 + 0.4).sin();
+    0.12 + 0.88 * wave.smoothstep(0.3, 0.75)
+}
+
+/// The weather system flying in a slot at a time. Its whole life is a pure
+/// function of the slot and time, so any moment can be shown at once.
+pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
+    let seed = slot_random(slot, 0);
+    let journey = JOURNEY * (0.8 + seed.y * 0.5);
+    let cycle_time = time / journey + seed.z;
+    let cycle = cycle_time.floor();
+    let progress = cycle_time - cycle;
+    let birth = slot_random(slot, cycle as u32 + 1);
+    let form = slot_random(slot ^ 0x5bd1_e995, cycle as u32 + 1);
+    let born = time - progress * journey;
+    let hemisphere = if birth.y < 0.5 { -1.0 } else { 1.0 };
+    // Systems drift slowly out of the tropics and quicken towards the pole.
+    let latitude = hemisphere * (birth.w * 0.14).lerp(POLAR_LIMIT, progress.powf(ACCELERATION));
+    let longitude = birth.x * TAU
+        + (0.6 + seed.w * 0.9) * progress
+        + 0.05 * (progress * 9.0 + seed.x * TAU).sin();
+    let centre = vec3(
+        latitude.cos() * longitude.cos(),
+        latitude.cos() * longitude.sin(),
+        latitude.sin(),
+    );
+    let active = birth.z < equatorial_supply(birth.x * TAU, born);
+    let life = progress.smoothstep(0.0, 0.05) * (1.0 - progress.smoothstep(0.93, 1.0));
+    // The converging flow gathers moisture: systems swell and deepen polewards.
+    let humid = latitude.abs().sin();
+    let strength = if active {
+        life * (0.7 + humid * 0.45)
+    } else {
+        0.0
+    };
+    // The young tropical air holds little low cloud; mostly high cirrus.
+    let tropical = latitude.abs().smoothstep(0.15, 0.6);
+    let low = strength * (0.2 + 0.8 * tropical);
+    let kind = if seed.x < 0.45 {
+        CUMULUS
+    } else if seed.x < 0.65 {
+        TOWER
+    } else if seed.x < 0.81 {
+        DECK
+    } else if seed.x < 0.992 {
+        CIRRUS
+    } else {
+        CYCLONE
+    };
+    let (reach, core, base, top, thickness, strength) = match kind {
+        CUMULUS => {
+            let development = (form.z * 0.75 + humid * 0.45).min(1.0);
+            let base = 4500.0 + form.y * form.y * 12_000.0;
+            (
+                (40_000.0 + form.x * 60_000.0) * (0.8 + humid * 0.4),
+                0.0,
+                base,
+                base + 1500.0 + development.powf(1.5) * 15_000.0,
+                0.0,
+                low,
+            )
+        }
+        TOWER => {
+            // Thunderheads build, mature and collapse again as they drift.
+            let maturity = 0.5 + 0.5 * (progress * TAU * 5.0 + seed.w * TAU).sin();
+            let core = 9000.0 + form.x * 14_000.0;
+            (
+                // At least as far as its anvil spreads, so every cell its
+                // anvil covers lists it.
+                core * (1.6 + form.w * 1.6 * maturity),
+                core,
+                5000.0 + form.y * 4000.0,
+                22_000.0 + form.z * 26_000.0 * (0.55 + 0.45 * maturity),
+                2500.0 + form.w * 3500.0,
+                low * (0.6 + 0.4 * humid),
+            )
+        }
+        DECK => (
+            60_000.0 + form.x * 90_000.0,
+            0.0,
+            9000.0 + form.y * 24_000.0,
+            0.0,
+            700.0 + form.z * 3500.0,
+            low * 0.85,
+        ),
+        CIRRUS => (
+            60_000.0 + form.x * 100_000.0,
+            0.0,
+            34_000.0 + form.y * 13_000.0,
+            0.0,
+            1200.0 + form.z * 2400.0,
+            strength * 0.8,
+        ),
+        _ => {
+            // Hurricanes spin up over the warm polar seas and die at the pole.
+            let growth = progress.smoothstep(0.3, 0.6);
+            (
+                (260_000.0 + form.x * 320_000.0) * (0.25 + 0.75 * growth),
+                0.0,
+                5500.0,
+                34_000.0 + form.y * 12_000.0,
+                5000.0,
+                low * growth,
+            )
+        }
+    };
+    CloudParcel {
+        centre: centre.extend(reach),
+        shape: vec4(kind as f32, strength, base, top),
+        detail: vec4(core, time * (0.0005 + form.w * 0.0004), thickness, seed.x),
+    }
+}
+
+/// The large-scale flow carrying every weather system: polewards in each
+/// hemisphere, deflected east. Metres per second, in planet coordinates.
+pub fn cloud_wind(up: Vec3) -> Vec3 {
+    let frame = surface_frame(up);
+    let latitude = up.z.clamp(-1.0, 1.0).asin();
+    // The speed of a system at this latitude, under its quickening journey.
+    let quicken = ACCELERATION
+        * (latitude.abs() / POLAR_LIMIT)
+            .min(1.0)
+            .powf(1.0 - 1.0 / ACCELERATION);
+    let poleward = (latitude / 0.05).clamp(-1.0, 1.0) * POLEWARD_SPEED * quicken.max(0.3);
+    frame.y_axis * poleward + frame.x_axis * (EASTWARD_SPEED * latitude.cos())
+}
+
+/// The cube face holding a direction, and its position across that face in
+/// [-1, 1]², warped so that equal steps subtend nearly equal angles.
+pub fn cube_face(up: Vec3) -> (u32, Vec2) {
+    let a = up.abs();
+    let (face, plane, depth) = if a.x >= a.y && a.x >= a.z {
+        (u32::from(up.x < 0.0), vec2(up.y, up.z), a.x)
+    } else if a.y >= a.z {
+        (2 + u32::from(up.y < 0.0), vec2(up.x, up.z), a.y)
+    } else {
+        (4 + u32::from(up.z < 0.0), vec2(up.x, up.y), a.z)
+    };
+    let p = plane / depth;
+    (face, vec2(p.x.atan(), p.y.atan()) / FRAC_PI_4)
+}
+
+pub fn cube_direction(face: u32, position: Vec2) -> Vec3 {
+    let p = vec2(
+        (position.x * FRAC_PI_4).tan(),
+        (position.y * FRAC_PI_4).tan(),
+    );
+    let sign = if face & 1 == 0 { 1.0 } else { -1.0 };
+    match face / 2 {
+        0 => vec3(sign, p.x, p.y),
+        1 => vec3(p.x, sign, p.y),
+        _ => vec3(p.x, p.y, sign),
+    }
+    .normalize()
+}
+
+/// The parcel index cell holding a direction.
+pub fn cloud_cell(up: Vec3) -> usize {
+    let (face, position) = cube_face(up);
+    let cell = ((position * 0.5 + 0.5) * CLOUD_GRID as f32)
+        .floor()
+        .clamp(Vec2::ZERO, Vec2::splat((CLOUD_GRID - 1) as f32));
+    ((face * CLOUD_GRID + cell.y as u32) * CLOUD_GRID + cell.x as u32) as usize
+}
+
+/// Where a direction lies in an atlas of six bordered cube faces of `size`
+/// texels, in texels.
+pub fn atlas_texel(up: Vec3, size: u32) -> Vec2 {
+    let (face, position) = cube_face(up);
+    (position * 0.5 + 0.5) * size as f32 + vec2((face * (size + 2) + 1) as f32, 1.0)
+}
+
+/// The direction at the centre of an atlas texel, borders included.
+pub fn atlas_direction(pixel: Vec2, size: u32) -> Vec3 {
+    let face = ((pixel.x / (size + 2) as f32).floor() as u32).min(5);
+    let local = pixel - vec2((face * (size + 2) + 1) as f32, 1.0);
+    cube_direction(face, local / size as f32 * 2.0 - 1.0)
+}
+
+/// The altitude of a light volume layer.
+pub fn light_altitude(layer: f32) -> f32 {
+    layer / (LIGHT_LAYERS - 1) as f32 * CLOUD_TOP
 }
 
 pub fn weather_texel(cell: IVec3) -> Vec4 {
@@ -211,89 +615,6 @@ pub fn weather_at(point: Vec3) -> Vec4 {
         weather += weather_texel(cell + offset) * (weight.x * weight.y * weight.z);
     }
     weather
-}
-
-pub fn cloud_cell(point: Vec3) -> IVec3 {
-    ((point - Vec3::splat(CLOUD_GRID_ORIGIN)) / CLOUD_CELL)
-        .floor()
-        .as_ivec3()
-}
-
-pub fn cloud_cell_index(cell: IVec3) -> Option<usize> {
-    if cell.cmplt(IVec3::ZERO).any() || cell.cmpge(IVec3::splat(52)).any() {
-        return None;
-    }
-    Some(
-        ((cell.z as u32 * CLOUD_GRID_WIDTH + cell.y as u32) * CLOUD_GRID_WIDTH + cell.x as u32)
-            as usize,
-    )
-}
-
-/// Front-to-back ellipsoid events within one spatial cell. Overlaps contribute
-/// together; dense cells fall back to the complete list instead of dropping clouds.
-pub fn ray_event(
-    origin: Vec3,
-    direction: Vec3,
-    start: f32,
-    limit: f32,
-    elapsed: f32,
-    records: &[Cloud],
-    grid: &[u32],
-) -> RayEvent {
-    let position = origin + direction * (start + 0.5);
-    let coordinate = cloud_cell(position);
-    let lower = coordinate.as_vec3() * CLOUD_CELL + Vec3::splat(CLOUD_GRID_ORIGIN);
-    let face = Vec3::select(
-        direction.cmpgt(Vec3::ZERO),
-        lower + Vec3::splat(CLOUD_CELL),
-        lower,
-    );
-    let distances = Vec3::select(
-        direction.abs().cmpgt(Vec3::splat(0.000_000_1)),
-        (face - position) / direction,
-        Vec3::splat(f32::MAX),
-    );
-    let exit = distances.min_element().max(0.5) + start + 0.5;
-    let mut event = RayEvent {
-        ids: [0; 8],
-        count: 0,
-        end: exit.min(limit),
-        step: 4000.0,
-        overflow: false,
-    };
-    let Some(index) = cloud_cell_index(coordinate) else {
-        return event;
-    };
-    for offset in grid[index]..grid[index + 1] {
-        let id = grid[CLOUD_GRID_CELLS + 1 + offset as usize];
-        let cloud = records[id as usize];
-        if cloud.appearance.x <= 0.000_000_1 {
-            continue;
-        }
-        let interval = cloud.ray_interval(origin, direction, elapsed);
-        if interval.x >= interval.y || interval.y <= start + 0.25 {
-            continue;
-        }
-        if interval.x > start + 0.5 {
-            event.end = event.end.min(interval.x);
-        } else {
-            event.end = event.end.min(interval.y);
-            if event.count < 8 {
-                event.ids[event.count as usize] = id;
-                event.count += 1;
-            } else {
-                event.overflow = true;
-            }
-            let local_direction = Vec3::new(
-                direction.dot(cloud.east.truncate()) / cloud.center.w,
-                direction.dot(cloud.up.truncate().cross(cloud.east.truncate())) / cloud.east.w,
-                direction.dot(cloud.up.truncate()) / cloud.up.w,
-            );
-            event.step = event.step.min(0.08 / local_direction.length());
-        }
-    }
-    event.end = event.end.max(start + 0.5).min(limit);
-    event
 }
 
 #[cfg(test)]
@@ -350,61 +671,5 @@ mod tests {
         assert!(high.high_cloud > 0.0 && high.low_cloud == 0.0);
         let wet = at(vec4(0.95, 0.95, 0.7, 0.95));
         assert!(wet.storm > 0.9);
-    }
-
-    #[test]
-    fn ellipsoid_intervals_preserve_world_distance_and_motion() {
-        let cloud = Cloud {
-            center: Vec3::ZERO.extend(100.0),
-            up: Vec3::Z.extend(20.0),
-            east: Vec3::X.extend(60.0),
-            motion: Vec3::X.extend(0.0),
-            ..Default::default()
-        };
-        let bounds = cloud.ray_interval(Vec3::new(-200.0, 0.0, 0.0), Vec3::X, 10.0);
-        assert!((bounds.x - 110.0).abs() < 0.001);
-        assert!((bounds.y - 310.0).abs() < 0.001);
-        let inside = cloud.ray_interval(Vec3::ZERO, Vec3::Z, 0.0);
-        assert!((inside.x + 20.0).abs() < 0.001 && (inside.y - 20.0).abs() < 0.001);
-        let miss = cloud.ray_interval(Vec3::new(-200.0, 0.0, 21.0), Vec3::X, 0.0);
-        assert!(miss.x > miss.y);
-    }
-
-    #[test]
-    fn traversal_orders_entries_exits_and_keeps_overlapping_clouds() {
-        let origin = Vec3::new(100.0, 1000.0, 1000.0);
-        let cloud = |x| Cloud {
-            center: Vec3::new(x, 1000.0, 1000.0).extend(100.0),
-            up: Vec3::Z.extend(100.0),
-            east: Vec3::X.extend(100.0),
-            appearance: Vec4::splat(0.001),
-            ..Default::default()
-        };
-        let records = [cloud(1000.0), cloud(1150.0)];
-        let index = cloud_cell_index(cloud_cell(origin)).unwrap();
-        let mut grid = vec![0; CLOUD_GRID_CELLS + 1];
-        grid[index + 1..].fill(2);
-        grid.extend([0, 1]);
-        let first = ray_event(origin, Vec3::X, 0.0, 100_000.0, 0.0, &records, &grid);
-        assert_eq!(first.count, 0);
-        assert!((first.end - 800.0).abs() < 0.01);
-        let entry = ray_event(origin, Vec3::X, first.end, 100_000.0, 0.0, &records, &grid);
-        assert_eq!(entry.count, 1);
-        assert!((entry.end - 950.0).abs() < 0.01);
-        let overlap = ray_event(origin, Vec3::X, entry.end, 100_000.0, 0.0, &records, &grid);
-        assert_eq!(overlap.count, 2);
-        assert!((overlap.end - 1000.0).abs() < 0.01);
-        let empty = ray_event(origin, Vec3::X, 2000.0, 100_000.0, 0.0, &records, &grid);
-        assert!(
-            empty.end > 60_000.0,
-            "parallel cell axes must not restrict traversal"
-        );
-        let dense = [cloud(1000.0); 9];
-        grid[index + 1..=CLOUD_GRID_CELLS].fill(9);
-        grid.truncate(CLOUD_GRID_CELLS + 1);
-        grid.extend(0..9);
-        let overlap = ray_event(origin, Vec3::X, 900.0, 100_000.0, 0.0, &dense, &grid);
-        assert!(overlap.overflow);
-        assert_eq!(overlap.count, 8);
     }
 }

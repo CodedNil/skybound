@@ -3,52 +3,40 @@
 use spirv_std::glam::{FloatExt, Vec3, Vec4Swizzles, vec2, vec3};
 use spirv_std::num_traits::Float;
 
-use crate::scene::aur::{SPIRE_CELL, energy_color};
+use crate::scene::aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes, spire_coordinates};
 use crate::scene::life::surface::Hit;
-use crate::scene::planet::{light_position, surface_coordinates, surface_frame};
+use crate::scene::planet::{light_position, surface_coordinates};
 use crate::scene::render::ocean::caustics;
 use crate::scene::{PLANET_RADIUS, ViewUniform, aur};
 
-/// Beyond this a spire is narrower than a pixel and the fog hides it anyway.
-const RANGE: f32 = 400_000.0;
-
-/// Surface units stretch longitude towards the poles; scale them back to a
-/// world-space bound.
 fn field(point: Vec3) -> f32 {
-    let metric = point.truncate().length() / point.length().max(1.0);
-    aur::spire_field(surface_coordinates(point)) * metric.max(0.05)
+    aur::spire_field(spire_coordinates(point)) * SPIRE_METRIC
 }
 
 pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angle: f32) -> Hit {
     let ro = view.to_planet(origin);
     let rd = view.planet_rotation.conjugate() * direction;
     let height = ro.length();
-    let band = aur::spire_band(
-        height - PLANET_RADIUS,
-        rd.dot(ro / height),
-        limit.min(RANGE),
-    );
+    let band = aur::spire_band(height - PLANET_RADIUS, rd.dot(ro / height), limit);
     let mut t = band.x;
     let mut relaxed = 1.6;
     let mut stride = 0.0;
     let mut previous = 0.0;
-    for _ in 0..160 {
+    for _ in 0..192 {
         if t >= band.y {
             return Hit::MISS;
         }
         let point = ro + rd * t;
-        let surface = surface_coordinates(point);
+        let surface = spire_coordinates(point);
         let cell = (surface.truncate() / SPIRE_CELL).floor();
         let epsilon = (t * angle * 0.5).max(0.5);
         if aur::spire_count(cell) == 0 {
             // Cross open ocean one cell at a time: step straight to the
-            // cell's far edge using the ray's velocity in surface units.
-            let frame = surface_frame(point);
-            let metric = point.truncate().length() / point.length().max(1.0);
-            let velocity = vec2(
-                frame.x_axis.dot(rd) / metric.max(0.05),
-                -frame.y_axis.dot(rd),
-            ) * (PLANET_RADIUS / point.length());
+            // cell's far edge using the ray's velocity in spire coordinates.
+            // Coordinates jump across a face edge, where the step stays short.
+            let (first, second) = spire_axes(point);
+            let velocity = vec2(first.dot(rd), second.dot(rd))
+                * (PLANET_RADIUS / point.length() / SPIRE_METRIC);
             let local = surface.truncate() - cell * SPIRE_CELL;
             let exit = |position: f32, speed: f32| {
                 if speed > 1.0e-6 {
@@ -133,8 +121,9 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
     let rim = vec3(0.4, 0.62, 0.6) * view.sky_horizon.y * (-altitude.max(0.0) / 160.0).exp() * 1.5;
 
     // Veins of aur follow the twisted flutes and pulse upwards.
-    let cell = (surface.truncate() / SPIRE_CELL).floor();
-    let local = surface.truncate() - (cell + 0.5) * SPIRE_CELL;
+    let coordinates = spire_coordinates(point);
+    let cell = (coordinates.truncate() / SPIRE_CELL).floor();
+    let local = coordinates.truncate() - (cell + 0.5) * SPIRE_CELL;
     let mut vein = 0.0;
     let mut nearest = f32::MAX;
     for index in 0..aur::spire_count(cell) {
@@ -153,6 +142,10 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
     let emission = charge * vein * view.sky_horizon.y * 2.2 * (0.3 + waterline);
 
     let color = diffuse + sheen + sky + (sea + rim) * (albedo * 6.0 + fresnel) + emission;
+    // Far off, a spire dissolves into the glow of the aur it rises from
+    // rather than standing as a dark speck against it.
+    let glow = vec3(0.42, 0.38, 0.58) * view.sky_horizon.y + view.ambient_color.xyz() * 0.3;
+    let color = color.lerp(glow, 1.0 - (-t / 260_000.0).exp());
     Hit {
         color_depth: color.extend(t),
         normal: view.planet_rotation * normal,

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use skybound::scene::PLANET_RADIUS;
 use skybound::scene::climate::Climate;
 use skybound::scene::life::behaviour::{Activity, Motion, Senses};
 use skybound::scene::life::biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible};
@@ -9,6 +10,7 @@ use skybound::scene::life::physiology::Vitals;
 use skybound::scene::life::{KINDS, Kind};
 
 use super::flight::{Mount, Player, SPAWN};
+use super::weather::CloudField;
 use super::world::{PlanetPosition, WorldAnchor, WorldData};
 use crate::math::{ToEngine, ToScene};
 
@@ -194,18 +196,40 @@ fn attach_players(
     }
 }
 
-fn climate_at(world: &WorldData, local: Vec3, now: f32) -> Climate {
-    let weather = Climate::weather_on_planet(world.position(local).as_vec3().to_scene(), now);
-    let mut climate = Climate::on_planet(world.position(local).as_vec3().to_scene(), now, weather);
+fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> Climate {
+    let position = world.position(local).as_vec3().to_scene();
+    let weather = Climate::weather_on_planet(position, now);
+    let mut climate = Climate::on_planet(position, now, weather);
     climate.wind = world.rotate_to_local(climate.wind.to_engine()).to_scene();
+    // Creatures live among the clouds that are drawn: in them the air is
+    // saturated, and tall towers mean storms.
+    let [cover, layers] = clouds.cover(position.normalize());
+    let altitude = position.length() - PLANET_RADIUS;
+    let within = if altitude > layers.x && altitude < cover.y {
+        cover.x
+    } else {
+        0.0
+    };
+    climate.low_cloud = cover.x;
+    climate.middle_cloud = cover.z;
+    climate.high_cloud = cover.w;
+    climate.humidity = climate.humidity.max(within);
+    climate.storm = climate
+        .storm
+        .max(cover.x * ((cover.y - 20_000.0) / 20_000.0).clamp(0.0, 1.0));
     climate
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the ecosystem step reads the whole world"
+)]
 fn simulate(
     mut commands: Commands,
     clock: Res<Time<Fixed>>,
     time: Res<Time>,
     world: Res<WorldData>,
+    clouds: Res<CloudField>,
     mut ecosystem: ResMut<Ecosystem>,
     (mut organisms, mut coordinates): (Query<Organisms>, Query<&mut PlanetPosition>),
     mut accumulated: Local<f32>,
@@ -232,7 +256,7 @@ fn simulate(
         &mut organisms
     {
         let biology = species.0.biology();
-        let climate = climate_at(&world, transform.translation, now);
+        let climate = climate_at(&world, &clouds, transform.translation, now);
         let patch = ecosystem
             .patches
             .entry(cell(world.position(transform.translation).as_vec3()))

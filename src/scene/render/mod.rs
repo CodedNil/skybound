@@ -3,8 +3,10 @@ use spirv_std::num_traits::Float;
 use spirv_std::{Image, Sampler, spirv};
 
 use crate::scene::atmosphere::{render_sky, sky_direction, sky_uv};
-use crate::scene::aur::{CURRENT, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection, energy_color};
-use crate::scene::climate::{CLOUD_TOP, Cloud};
+use crate::scene::aur::{
+    CURRENT, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection, ejection_clearance, energy_color,
+};
+use crate::scene::climate::{CLOUD_TOP, cloud_wind};
 use crate::scene::life::surface::{Hit, Ray};
 use crate::scene::math::intersect_sphere;
 use crate::scene::planet::surface_frame;
@@ -58,6 +60,10 @@ pub fn ejection_lookup(
         (x % EJECTION_GRID_WIDTH) as f32 - EJECTION_GRID_HALF as f32,
         pixel.y.floor() - 1.0,
     );
+    if x >= EJECTION_GRID_WIDTH * 2 {
+        *out = Vec4::splat(ejection_clearance(cell, frame.view.time()));
+        return;
+    }
     let mut event = ejection(cell, frame.view.time());
     if x < EJECTION_GRID_WIDTH {
         let mut active = 0u32;
@@ -238,7 +244,7 @@ pub fn opaque(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
-    #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] sky_texture: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_normal: &mut Vec4,
@@ -270,28 +276,181 @@ pub fn opaque(
     *out_depth = depth;
 }
 
-#[spirv(fragment(depth_replacing, entry_point_name = "volume"))]
-pub fn volume(
-    #[spirv(location = 0)] uv: Vec2,
+/// The clouds along every pixel's ray, marched apart from the rest of the
+/// volume so that each shader stays small.
+#[spirv(fragment(entry_point_name = "clouds"))]
+pub fn clouds(
+    #[spirv(frag_coord)] fragment: Vec4,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
-    #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_records: &[Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
-    #[spirv(descriptor_set = 0, binding = 11)] medium: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] depth_texture: &Depth,
+    #[spirv(descriptor_set = 0, binding = 6)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 7)] ejection_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 8)] cache_shape: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 9)] cloud_cover: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 10)] cloud_light: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 13)] cloud_bounds: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 14)] cloud_towers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_cells: &[Vec4],
+    #[spirv(location = 0)] out_slab: &mut Vec4,
+    #[spirv(location = 1)] out_front: &mut Vec4,
+) {
+    // Each frame traces one pixel of every 2x2 block; the resolve pass
+    // rebuilds the others from history.
+    let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
+    let uv = (traced + 0.5) / frame.history.zw();
+    let ray = scene_ray(uv, frame, false);
+    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    let limit = if geometry_limit >= T_MAX - 1.0 {
+        10_000_000.0
+    } else {
+        geometry_limit
+    };
+    let textures = Textures {
+        base: base_texture,
+        details: details_texture,
+        transmittance: transmittance_texture,
+        ejections: ejection_texture,
+        cache_shape,
+        cloud_cover,
+        cloud_layers,
+        cloud_light,
+        cloud_bounds,
+        cloud_towers,
+        cached: true,
+        sampler,
+    };
+    // White noise per pixel and frame: a phase for the cloud steps that the
+    // cloud history averages away without leaving a pattern.
+    let pixel = traced.as_uvec2();
+    let seed = pixel.x.wrapping_mul(73_856_093)
+        ^ pixel.y.wrapping_mul(19_349_663)
+        ^ (frame.view.frame_count() as u32).wrapping_mul(83_492_791);
+    let slab = march::march_clouds(
+        f32::from_bits((seed >> 9) | 0x3f80_0000) - 1.0,
+        ray.origin,
+        ray.direction,
+        &frame.view,
+        limit,
+        ray.footprint,
+        &textures,
+        cloud_cells,
+    );
+    *out_slab = slab.radiance.extend(slab.transmittance);
+    *out_front = Vec4::splat(slab.front);
+}
+
+/// Which pixel of each 2x2 block the clouds trace this frame.
+fn block_offset(frame: &FrameUniform) -> Vec2 {
+    match frame.history.y as u32 & 3 {
+        0 => vec2(0.0, 0.0),
+        1 => vec2(1.0, 1.0),
+        2 => vec2(1.0, 0.0),
+        _ => vec2(0.0, 1.0),
+    }
+}
+
+/// Rebuild the clouds at full resolution: the pixel traced this frame is
+/// kept, the other three come from where history saw them, held within
+/// the range of the freshly traced clouds around them.
+#[spirv(fragment(entry_point_name = "cloud_resolve"))]
+pub fn cloud_resolve(
+    #[spirv(frag_coord)] fragment: Vec4,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(descriptor_set = 0, binding = 2)] fresh: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 3)] fresh_front: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] history: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] history_front: &Image!(2D, type=f32, sampled=true),
+    #[spirv(location = 0)] out_slab: &mut Vec4,
+    #[spirv(location = 1)] out_front: &mut Vec4,
+) {
+    let pixel = fragment.xy().floor();
+    let block = (pixel * 0.5).floor();
+    let own: Vec4 = fresh.fetch(block.as_ivec2());
+    let own_front: Vec4 = fresh_front.fetch(block.as_ivec2());
+    let traced = (pixel - (block * 2.0 + block_offset(frame)))
+        .abs()
+        .max_element()
+        < 0.5;
+    if frame.history.x < 0.5 {
+        *out_slab = own;
+        *out_front = own_front;
+        return;
+    }
+    // Where this pixel's clouds were last frame: they drift with the wind.
+    let size = frame.history.zw();
+    let uv = (pixel + 0.5) / size;
+    let ray = scene_ray(uv, frame, false);
+    let depth = own_front.x.min(400_000.0);
+    let position = ray.origin + ray.direction * depth;
+    let wind = frame.view.planet_rotation * cloud_wind(frame.view.to_planet(position).normalize());
+    let previous = uv - motion(uv, position - wind * frame.view.times.w, frame);
+    if previous.cmplt(Vec2::ZERO).any() || previous.cmpgt(Vec2::ONE).any() {
+        *out_slab = own;
+        *out_front = own_front;
+        return;
+    }
+    let past: Vec4 = history.sample_by_lod(*sampler, previous, 0.0);
+    let past_front: Vec4 = history_front.fetch((previous * size).as_ivec2());
+    // The range of the fresh clouds in the blocks around this pixel.
+    let mut low = own;
+    let mut high = own;
+    for index in 0..9 {
+        let offset = vec2((index % 3) as f32 - 1.0, (index / 3) as f32 - 1.0);
+        let neighbour = (block + offset)
+            .clamp(Vec2::ZERO, (size * 0.5).ceil() - 1.0)
+            .as_ivec2();
+        let value: Vec4 = fresh.fetch(neighbour);
+        low = low.min(value);
+        high = high.max(value);
+    }
+    // The pixel traced this frame also averages with its history, so the
+    // noise of each frame's step phases settles instead of shimmering.
+    let held = past.clamp(low, high);
+    if traced {
+        *out_slab = held.lerp(own, 0.35);
+        *out_front = own_front;
+        return;
+    }
+    *out_slab = held;
+    *out_front = if past_front.x < own_front.x * 4.0 {
+        past_front
+    } else {
+        own_front
+    };
+}
+
+/// The aur, its arcs and the pole lights, with the clouds slotted in; like
+/// the clouds, traced at one pixel of each 2x2 block per frame.
+#[spirv(fragment(entry_point_name = "volume"))]
+pub fn volume(
+    #[spirv(frag_coord)] fragment: Vec4,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] sky_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] depth_texture: &Depth,
+    #[spirv(descriptor_set = 0, binding = 6)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 7)] ejection_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 8)] cache_shape: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 9)] cloud_cover: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 10)] cloud_light: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 13)] cloud_bounds: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 14)] cloud_towers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 15)] cloud_slab: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 16)] cloud_front: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_metadata: &mut Vec4,
-    #[spirv(frag_depth)] out_depth: &mut f32,
 ) {
+    let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
+    let uv = (traced + 0.5) / frame.history.zw();
     let ray = scene_ray(uv, frame, false);
     let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
     let limit = if geometry_limit >= T_MAX - 1.0 {
@@ -303,16 +462,21 @@ pub fn volume(
     let textures = Textures {
         base: base_texture,
         details: details_texture,
-        weather: weather_texture,
         transmittance: transmittance_texture,
         ejections: ejection_texture,
         cache_shape,
-        cache_columns,
+        cloud_cover,
+        cloud_layers,
+        cloud_light,
+        cloud_bounds,
+        cloud_towers,
         cached: true,
         sampler,
     };
+    let texel = traced.as_ivec2();
+    let clouds: Vec4 = cloud_slab.fetch(texel);
+    let front: Vec4 = cloud_front.fetch(texel);
     let volume = march::integrate(
-        uv,
         ray.origin,
         ray.direction,
         &frame.view,
@@ -320,9 +484,11 @@ pub fn volume(
         ray.footprint,
         &atmosphere,
         &textures,
-        medium,
-        cloud_records,
-        cloud_grid,
+        march::CloudSlab {
+            radiance: clouds.xyz(),
+            transmittance: clouds.w,
+            front: front.x,
+        },
     );
     let position = ray.origin + ray.direction * volume.depth;
     let altitude = position.distance(frame.view.planet_center()) - PLANET_RADIUS;
@@ -331,29 +497,12 @@ pub fn volume(
     } else if altitude > CLOUD_TOP {
         Vec3::ZERO
     } else {
-        let weather = if frame.view.weather.x >= 0.0 {
-            frame.view.weather
-        } else {
-            textures.weather_on_planet(frame.view.to_planet(position), frame.view.time())
-        };
-        frame.view.planet_rotation
-            * crate::scene::climate::Climate::on_planet(
-                frame.view.to_planet(position),
-                frame.view.time(),
-                weather,
-            )
-            .wind
+        frame.view.planet_rotation * cloud_wind(frame.view.to_planet(position).normalize())
     };
     let previous = position - current * frame.view.times.w;
     *out_color = volume.color;
     *out_motion = motion(uv, previous, frame).extend(0.0).extend(0.0);
     *out_metadata = vec3(volume.depth, limit, volume.color.xyz().max_element()).extend(1.0);
-    let clip = frame.view.clip_from_world * position.extend(1.0);
-    *out_depth = if volume.depth < limit {
-        clip.z / clip.w
-    } else {
-        0.0
-    };
 }
 
 #[spirv(fragment(entry_point_name = "transparent"))]
@@ -363,15 +512,17 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 3)] details_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] weather_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 5)] sky_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] depth_texture: &Depth,
-    #[spirv(descriptor_set = 0, binding = 7)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 8)] ejection_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 9)] cache_shape: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 10)] cache_columns: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] cloud_records: &[Cloud],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 13)] cloud_grid: &[u32],
+    #[spirv(descriptor_set = 0, binding = 4)] sky_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] depth_texture: &Depth,
+    #[spirv(descriptor_set = 0, binding = 6)] transmittance_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 7)] ejection_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 8)] cache_shape: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 9)] cloud_cover: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 10)] cloud_light: &Image!(3D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 13)] cloud_bounds: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 14)] cloud_towers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] _cloud_cells: &[Vec4],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
@@ -410,11 +561,14 @@ pub fn transparent(
     let textures = Textures {
         base: base_texture,
         details: details_texture,
-        weather: weather_texture,
         transmittance: transmittance_texture,
         ejections: ejection_texture,
         cache_shape,
-        cache_columns,
+        cloud_cover,
+        cloud_layers,
+        cloud_light,
+        cloud_bounds,
+        cloud_towers,
         cached: true,
         sampler,
     };
@@ -433,8 +587,6 @@ pub fn transparent(
             &frame.view,
             length,
             &textures,
-            cloud_records,
-            cloud_grid,
         );
         if hits.transmission[i].w > 0.5 {
             color += transmission * fog.color.w * hit.xyz();
@@ -456,8 +608,6 @@ pub fn transparent(
             &frame.view,
             (ray.max_distance - cursor).max(0.0),
             &textures,
-            cloud_records,
-            cloud_grid,
         );
         color += transmission * fog.color.xyz();
         transmission *= fog.color.w;

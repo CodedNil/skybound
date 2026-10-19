@@ -14,7 +14,6 @@ use skybound::scene::cache;
 
 pub struct ColumnTargets {
     pub shape: TextureView,
-    pub columns: TextureView,
 }
 
 impl ColumnTargets {
@@ -22,12 +21,6 @@ impl ColumnTargets {
         let size = UVec2::new(cache::SIZE * cache::CASCADES, cache::SIZE);
         Self {
             shape: texture(device, size, TextureFormat::Rgba16Float, "column_shape"),
-            columns: texture(
-                device,
-                size,
-                TextureFormat::Rgba16Float,
-                "column_parameters",
-            ),
         }
     }
 }
@@ -59,9 +52,16 @@ pub struct Targets {
     pub color: TextureView,
     pub motion: TextureView,
     pub metadata: TextureView,
-    pub depth: TextureView,
     pub history: [TextureView; 2],
     pub history_metadata: [TextureView; 2],
+    /// The clouds' light and transmittance, and the depth of the first.
+    /// Traced this frame at a quarter of the pixels, then rebuilt in full
+    /// with history into one of the alternating pairs.
+    pub cloud_fresh: TextureView,
+    pub cloud_fresh_front: TextureView,
+    pub cloud_slab: [TextureView; 2],
+    pub cloud_front: [TextureView; 2],
+    pub cloud_size: UVec2,
     pub thin_color: TextureView,
     pub thin_transmission: TextureView,
     pub thin_prefix: TextureView,
@@ -83,6 +83,7 @@ impl SceneTargets {
             native.x, native.y, size.x, size.y
         );
         let trace_size = size;
+        let cloud_size = (trace_size + 1) / 2;
         let low = |format, label| texture(device, size, format, label);
         let traced = |format, label| texture(device, trace_size, format, label);
         let native_texture = |label| texture(device, native, TextureFormat::Rgba16Float, label);
@@ -90,12 +91,41 @@ impl SceneTargets {
             size,
             trace_size,
             native_size: native,
-            color: traced(TextureFormat::Rgba16Float, "volume_radiance"),
-            motion: traced(TextureFormat::Rg16Float, "volume_motion"),
-            metadata: traced(TextureFormat::Rgba32Float, "volume_depth"),
-            depth: traced(TextureFormat::Depth32Float, "volume_depth_attachment"),
+            color: texture(
+                device,
+                cloud_size,
+                TextureFormat::Rgba16Float,
+                "volume_radiance",
+            ),
+            motion: texture(
+                device,
+                cloud_size,
+                TextureFormat::Rg16Float,
+                "volume_motion",
+            ),
+            metadata: texture(
+                device,
+                cloud_size,
+                TextureFormat::Rgba32Float,
+                "volume_depth",
+            ),
             history: from_fn(|_| low(TextureFormat::Rgba16Float, "volume_history")),
             history_metadata: from_fn(|_| low(TextureFormat::Rgba32Float, "volume_history_depth")),
+            cloud_fresh: texture(
+                device,
+                cloud_size,
+                TextureFormat::Rgba16Float,
+                "cloud_fresh",
+            ),
+            cloud_fresh_front: texture(
+                device,
+                cloud_size,
+                TextureFormat::R32Float,
+                "cloud_fresh_front",
+            ),
+            cloud_slab: from_fn(|_| traced(TextureFormat::Rgba16Float, "cloud_slab")),
+            cloud_front: from_fn(|_| traced(TextureFormat::R32Float, "cloud_front")),
+            cloud_size,
             thin_color: native_texture("thin_radiance"),
             thin_transmission: native_texture("thin_transmission"),
             thin_prefix: native_texture("thin_foreground_volume"),

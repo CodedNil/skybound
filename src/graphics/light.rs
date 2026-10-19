@@ -1,11 +1,9 @@
-use std::mem::size_of;
 use std::num::NonZeroU64;
 
 use bevy::prelude::*;
 use bevy::render::diagnostic::RecordDiagnostics;
 use bevy::render::render_resource::binding_types::{
-    sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d, texture_3d,
-    uniform_buffer_sized,
+    sampler, storage_buffer_sized, texture_2d, uniform_buffer_sized,
 };
 use bevy::render::render_resource::{
     BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -16,9 +14,12 @@ use bevy::render::render_resource::{
     TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
 };
 use bevy::render::renderer::{RenderContext, RenderDevice};
-use skybound::scene::{FrameUniform, froxel as grid};
+use skybound::scene::FrameUniform;
+use skybound::scene::climate::{LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH};
 
-pub struct FroxelVolume {
+/// The cloud's shadow from the pole lights and the aur at every altitude,
+/// traced by a compute pass into a buffer and copied into a 3D texture.
+pub struct LightVolume {
     pub view: TextureView,
     texture: Texture,
     buffer: Buffer,
@@ -26,48 +27,33 @@ pub struct FroxelVolume {
     pipeline: CachedComputePipelineId,
     group: Option<BindGroup>,
 }
-pub struct FroxelInputs<'a> {
-    pub frame: BindingResource<'a>,
-    pub sampler: &'a Sampler,
-    pub images: [&'a TextureView; 7],
-    pub clouds: BindingResource<'a>,
-    pub grid: BindingResource<'a>,
-}
-impl FroxelVolume {
+
+impl LightVolume {
     pub fn new(world: &World) -> Self {
         let device = world.resource::<RenderDevice>();
-        let float2 = || texture_2d(TextureSampleType::Float { filterable: true });
-        let data2 = || texture_2d(TextureSampleType::Float { filterable: false });
-        let float3 = || texture_3d(TextureSampleType::Float { filterable: true });
+        let map = || texture_2d(TextureSampleType::Float { filterable: true });
         let entries = BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
                 uniform_buffer_sized(false, NonZeroU64::new(size_of::<FrameUniform>() as u64)),
                 sampler(SamplerBindingType::Filtering),
-                float3(),
-                float3(),
-                float3(),
-                float2(),
-                data2(),
-                float2(),
-                float2(),
+                map(),
+                map(),
                 storage_buffer_sized(false, None),
-                storage_buffer_read_only_sized(false, None),
-                storage_buffer_read_only_sized(false, None),
             ),
         );
         let pipeline =
             world
                 .resource::<PipelineCache>()
                 .queue_compute_pipeline(ComputePipelineDescriptor {
-                    label: Some("froxel_medium".into()),
-                    layout: vec![BindGroupLayoutDescriptor::new("froxel_medium", &entries)],
+                    label: Some("cloud_light".into()),
+                    layout: vec![BindGroupLayoutDescriptor::new("cloud_light", &entries)],
                     shader: world.resource::<super::SceneShader>().0.clone(),
-                    entry_point: Some("froxel_medium".into()),
+                    entry_point: Some("cloud_light".into()),
                     ..default()
                 });
         let texture = device.create_texture(&TextureDescriptor {
-            label: Some("froxel_medium"),
+            label: Some("cloud_light"),
             size: Self::extent(),
             mip_level_count: 1,
             sample_count: 1,
@@ -80,36 +66,37 @@ impl FroxelVolume {
             view: texture.create_view(&TextureViewDescriptor::default()),
             texture,
             buffer: device.create_buffer(&BufferDescriptor {
-                label: Some("froxel_medium_staging"),
-                size: (grid::COUNT * 8) as u64,
+                label: Some("cloud_light_staging"),
+                size: u64::from(LIGHT_WIDTH * LIGHT_HEIGHT * LIGHT_LAYERS) * 8,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             }),
-            layout: device.create_bind_group_layout("froxel_medium", &entries),
+            layout: device.create_bind_group_layout("cloud_light", &entries),
             pipeline,
             group: None,
         }
     }
-    pub fn prepare(&mut self, device: &RenderDevice, inputs: FroxelInputs) {
+
+    pub fn prepare(
+        &mut self,
+        device: &RenderDevice,
+        frame: BindingResource,
+        sampler: &Sampler,
+        maps: [&TextureView; 2],
+    ) {
         self.group = Some(device.create_bind_group(
-            "froxel_medium",
+            "cloud_light",
             &self.layout,
             &BindGroupEntries::sequential((
-                inputs.frame,
-                inputs.sampler,
-                inputs.images[0],
-                inputs.images[1],
-                inputs.images[2],
-                inputs.images[3],
-                inputs.images[4],
-                inputs.images[5],
-                inputs.images[6],
+                frame,
+                sampler,
+                maps[0],
+                maps[1],
                 self.buffer.as_entire_binding(),
-                inputs.clouds,
-                inputs.grid,
             )),
         ));
     }
+
     pub fn draw(&self, context: &mut RenderContext, cache: &PipelineCache) -> bool {
         let (Some(pipeline), Some(group)) =
             (cache.get_compute_pipeline(self.pipeline), &self.group)
@@ -119,20 +106,20 @@ impl FroxelVolume {
         let recorder = context.diagnostic_recorder();
         let span = recorder
             .as_ref()
-            .map(|r| r.time_span(context.command_encoder(), "froxel_medium"));
+            .map(|r| r.time_span(context.command_encoder(), "cloud_light"));
         {
             let mut pass = context
                 .command_encoder()
                 .begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("froxel_medium"),
+                    label: Some("cloud_light"),
                     ..default()
                 });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, group, &[]);
             pass.dispatch_workgroups(
-                grid::WIDTH.div_ceil(4),
-                grid::HEIGHT.div_ceil(4),
-                grid::DEPTH.div_ceil(4),
+                LIGHT_WIDTH.div_ceil(8),
+                LIGHT_HEIGHT.div_ceil(8),
+                LIGHT_LAYERS.div_ceil(2),
             );
         }
         context.command_encoder().copy_buffer_to_texture(
@@ -140,8 +127,8 @@ impl FroxelVolume {
                 buffer: &self.buffer,
                 layout: TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(grid::WIDTH * 8),
-                    rows_per_image: Some(grid::HEIGHT),
+                    bytes_per_row: Some(LIGHT_WIDTH * 8),
+                    rows_per_image: Some(LIGHT_HEIGHT),
                 },
             },
             self.texture.as_image_copy(),
@@ -152,11 +139,12 @@ impl FroxelVolume {
         }
         true
     }
+
     const fn extent() -> Extent3d {
         Extent3d {
-            width: grid::WIDTH,
-            height: grid::HEIGHT,
-            depth_or_array_layers: grid::DEPTH,
+            width: LIGHT_WIDTH,
+            height: LIGHT_HEIGHT,
+            depth_or_array_layers: LIGHT_LAYERS,
         }
     }
 }

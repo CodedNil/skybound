@@ -12,7 +12,6 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, T
 use bevy::render::renderer::RenderDevice;
 use rayon::prelude::*;
 use skybound::scene::atmosphere::{SKY_SIZE, TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
-use skybound::scene::climate::{WEATHER_SIZE, weather_texel};
 use skybound::scene::math::{cellular, fbm};
 use skybound::scene::{PLANET_RADIUS, ViewUniform};
 use spirv_std::glam::{Vec3, vec2, vec3};
@@ -25,7 +24,6 @@ use crate::math::ToScene;
 pub struct VolumeTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
-    pub weather: Handle<Image>,
     pub transmittance: Handle<Image>,
 }
 
@@ -211,7 +209,7 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
                 .parse::<u32>()
                 .expect("seed must be an unsigned integer")
         });
-    let (base, (detail, weather)) = rayon::join(
+    let (base, detail) = rayon::join(
         || {
             noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
                 let billow = 1.0 - (1.0 - fbm(p, 4, seed ^ 0x11)) * cellular(p, 4, seed ^ 0xd3);
@@ -224,26 +222,14 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
             })
         },
         || {
-            rayon::join(
-                || {
-                    noise_texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
-                        [
-                            cellular(p, 3, seed ^ 0x17),
-                            cellular(p, 6, seed ^ 0x2b),
-                            cellular(p, 12, seed ^ 0x47),
-                            fbm(p, 4, seed ^ 0x71),
-                        ]
-                    })
-                },
-                || {
-                    noise_texture(
-                        WEATHER_SIZE as u32,
-                        WEATHER_SIZE as u32,
-                        TextureFormat::Rgba8Unorm,
-                        |p| weather_texel((p * WEATHER_SIZE as f32).as_ivec3()).to_array(),
-                    )
-                },
-            )
+            noise_texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
+                [
+                    cellular(p, 3, seed ^ 0x17),
+                    cellular(p, 6, seed ^ 0x2b),
+                    cellular(p, 12, seed ^ 0x47),
+                    fbm(p, 4, seed ^ 0x71),
+                ]
+            })
         },
     );
     info!(
@@ -253,7 +239,6 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
     commands.insert_resource(VolumeTextures {
         base: images.add(base),
         detail: images.add(detail),
-        weather: images.add(weather),
         transmittance: images.add(atmosphere_transmittance()),
     });
 }

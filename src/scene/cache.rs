@@ -3,6 +3,7 @@ use spirv_std::glam::{Vec2, Vec3, Vec4Swizzles, vec2};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+use crate::scene::aur::{spire_coordinates, spire_point};
 use crate::scene::planet::surface_frame;
 use crate::scene::{PLANET_RADIUS, ViewUniform};
 
@@ -11,9 +12,9 @@ pub const SIZE: u32 = 512;
 /// eight times the pixel footprint just past every level boundary.
 pub const CASCADES: u32 = 8;
 const FINEST: f32 = 32.0;
-/// Levels from here on also cache the column material, which only lights
-/// clouds from below; the ocean evaluates its material per pixel.
-pub const MATERIAL_LEVEL: u32 = 6;
+
+/// The cache origin moves in steps of this many metres.
+const SNAP: f32 = 2048.0;
 
 pub const fn spacing(cascade: u32) -> f32 {
     (32u32 << cascade) as f32
@@ -21,7 +22,11 @@ pub const fn spacing(cascade: u32) -> f32 {
 
 impl ViewUniform {
     pub fn prepare_cache(&mut self) {
-        let up = self.to_planet(self.world_position.xyz()).normalize();
+        // Fixed to a planet grid, so a moving camera does not resample the
+        // waves at shifting texel positions and set distant fog shimmering.
+        let camera = spire_coordinates(self.to_planet(self.world_position.xyz()));
+        let snapped = (camera.truncate() / SNAP).round() * SNAP;
+        let up = spire_point(snapped.extend(0.0)).normalize();
         let frame = surface_frame(up);
         self.cache_origin =
             (up * PLANET_RADIUS).extend(f32::from(self.camera_position.w as u32 & 8 == 0));
