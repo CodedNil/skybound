@@ -167,11 +167,21 @@ fn setup(params: BenchmarkSetup) {
         "pole-distant" => Some(0.9),
         _ => None,
     };
+    let latitude = option("--latitude")
+        .map(|s| s.parse::<f64>().expect("latitude in radians"))
+        .or(latitude);
     if let Some(latitude) = latitude {
         *world = WorldData::at(latitude, -FRAC_PI_2);
     }
     if let Some(weather) = scene_weather(&scene) {
         settings.0 = weather;
+    }
+    if let Some(weather) = option("--weather") {
+        let values: Vec<f32> = weather
+            .split(',')
+            .map(|v| v.parse().expect("weather values"))
+            .collect();
+        settings.0 = Vec4::from_slice(&values);
     }
     let phase = option("--time").map_or(0.0, |s| s.parse::<f32>().expect("simulation time"));
     *time = Time::default();
@@ -217,6 +227,9 @@ fn setup(params: BenchmarkSetup) {
     if scene == "aur-spires" {
         **transform = spire_camera(&world, mount.translation);
     }
+    if let Some(view) = free_camera(&world) {
+        **transform = view;
+    }
     if env::args().any(|arg| arg == "--route") {
         run.route = Some(Route {
             origin: world.position(transform.translation),
@@ -244,6 +257,22 @@ fn setup(params: BenchmarkSetup) {
             sensitivity: 0.0,
         });
     }
+}
+
+/// A camera placed by `--altitude` in world metres, looking `--yaw` degrees
+/// from the nearer pole and `--pitch` degrees above the horizon.
+fn free_camera(world: &WorldData) -> Option<Transform> {
+    let altitude = option("--altitude")?.parse::<f32>().expect("altitude");
+    let angle = |name| option(name).map_or(0.0, |s| s.parse::<f32>().expect(name).to_radians());
+    let up = world.position(Vec3::ZERO).normalize().as_vec3();
+    let pole = Vec3::Z * up.z.signum();
+    let north = world.rotate_to_local((pole - up * up.dot(pole)).normalize());
+    let east = north.cross(Vec3::Z);
+    let (yaw, pitch) = (angle("--yaw"), angle("--pitch"));
+    let heading = north * yaw.cos() + east * yaw.sin();
+    let look = heading * pitch.cos() + Vec3::Z * pitch.sin();
+    let eye = Vec3::Z * altitude;
+    Some(Transform::from_translation(eye).looking_to(look, Vec3::Z))
 }
 
 /// Frame the main spire of the nearest archipelago from low over the veil.
@@ -395,12 +424,12 @@ fn scene_camera(
 /// the pole light, and scaled from feature space for all the rest.
 fn scene_altitude(scene: &str) -> f32 {
     let feature = match scene {
-        "cloud-bank" => 11_000.0,
-        "cloud-top" => 25_000.0,
-        "cloud-edge" => 6350.0,
-        "cloud-high" => 48_000.0,
-        "cloud-tower" | "cloud-storm" | "cloud-above" => 78_000.0,
-        "cloud-interior" | "cloud-rain" => 7500.0,
+        "cloud-bank" => 26_000.0,
+        "cloud-top" => 40_000.0,
+        "cloud-edge" => 17_000.0,
+        "cloud-high" => 90_000.0,
+        "cloud-tower" | "cloud-storm" | "cloud-above" => 110_000.0,
+        "cloud-interior" | "cloud-rain" => 20_000.0,
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
         "aur-high" => 80_000.0,

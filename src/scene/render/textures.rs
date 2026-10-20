@@ -6,11 +6,11 @@ use crate::scene::{
     },
     aur::{EJECTION_CELL, EJECTION_WINDOW, ejection_field_with},
     climate::{
-        CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, LIGHT_FACE, LIGHT_HEIGHT,
-        LIGHT_LAYERS, LIGHT_WIDTH, atlas_texel,
+        CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, LIGHT_BOTTOM, LIGHT_FACE,
+        LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH, atlas_texel,
     },
-    math::rotated,
-    planet::REACTION_RADIUS,
+    math::{intersect_sphere, rotated},
+    planet::{REACTION_RADIUS, light_towards},
 };
 use spirv_std::{
     Image, Sampler,
@@ -36,6 +36,7 @@ pub struct Textures<'a> {
     pub cached: bool,
     pub base: &'a Image!(3D, type=f32, sampled=true),
     pub details: &'a Image!(3D, type=f32, sampled=true),
+    pub shapes: &'a Image!(3D, type=f32, sampled=true),
     pub transmittance: &'a Image!(2D, type=f32, sampled=true),
     pub ejections: &'a Image!(2D, type=f32, sampled=true),
     pub sampler: &'a Sampler,
@@ -117,9 +118,23 @@ impl Textures<'_> {
     /// Cloud optical depth from a point towards its pole light, beyond the
     /// near shadow each sample traces itself and in full; and down to the aur.
     pub fn light_depth(&self, point: Vec3) -> Vec3 {
-        let radius = point.length();
+        let mut point = point;
+        let mut radius = point.length();
+        if radius < FEATURE_RADIUS + LIGHT_BOTTOM {
+            // Beneath every cloud the shadows only run on along the light:
+            // read them where this point's ray towards the light rises
+            // through the volume's floor, with nothing below to shade.
+            let light = light_towards(point);
+            let rise = intersect_sphere(point, light, FEATURE_RADIUS + LIGHT_BOTTOM).y;
+            if rise <= 0.0 {
+                return Vec3::ZERO;
+            }
+            point += light * rise;
+            radius = FEATURE_RADIUS + LIGHT_BOTTOM;
+        }
         let texel = atlas_texel(point / radius, LIGHT_FACE);
-        let layer = ((radius - FEATURE_RADIUS) / CLOUD_TOP * (LIGHT_LAYERS - 1) as f32)
+        let layer = ((radius - FEATURE_RADIUS - LIGHT_BOTTOM) / (CLOUD_TOP - LIGHT_BOTTOM)
+            * (LIGHT_LAYERS - 1) as f32)
             .clamp(0.0, (LIGHT_LAYERS - 1) as f32);
         let uvw = Vec3::new(
             texel.x / LIGHT_WIDTH as f32,
@@ -155,6 +170,12 @@ impl Textures<'_> {
 
     pub fn base_filtered(&self, p: Vec3, footprint: f32) -> Vec4 {
         self.base
+            .sample_by_lod(*self.sampler, p, (footprint * 128.0).max(1.0).log2())
+    }
+
+    /// The clouds' own noise: cells, puffs, billows and a warp.
+    pub fn shapes_filtered(&self, p: Vec3, footprint: f32) -> Vec4 {
+        self.shapes
             .sample_by_lod(*self.sampler, p, (footprint * 128.0).max(1.0).log2())
     }
 

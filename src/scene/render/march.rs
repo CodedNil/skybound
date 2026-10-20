@@ -33,6 +33,10 @@ const CLOUD_CELL_REACH: f32 = 30_000.0 * FEATURE_SCALE;
 /// well under a cloud map texel, so the layers cannot change much across it.
 const LAYER_STRIDE: f32 = 3000.0 * FEATURE_SCALE;
 
+/// The shallowest a ray may cross an upper layer whole: about eight and a
+/// half degrees.
+const SLAB_SLOPE: f32 = 0.15;
+
 #[derive(Default)]
 pub(super) struct VolumeSample {
     pub density: f32,
@@ -82,6 +86,8 @@ struct CloudMarch {
     free: f32,
     /// Whether this stretch of cloud has been entered at the pixel's phase.
     phased: bool,
+    /// Whether this step crosses the upper layers whole.
+    slab: bool,
 }
 
 /// The clouds along a pixel's ray, marched by their own pass: their light,
@@ -105,12 +111,14 @@ impl CloudMarch {
     fn advance(
         &mut self,
         point: Vec3,
+        t: f32,
         footprint: f32,
         view: &ViewUniform,
         textures: &Textures,
         cells: &[Vec4],
     ) -> (f32, bool, clouds::CloudColumn) {
         let rd = self.direction;
+        self.slab = false;
         let gap = if self.forced {
             0.0
         } else {
@@ -124,7 +132,7 @@ impl CloudMarch {
         // strides short enough that neighbouring columns cannot hide a cloud
         // the stride would skip.
         let overhead = clouds::cloud_column(point, view, textures);
-        let (room, thin) = overhead.room(point, rd);
+        let (room, rise) = overhead.room(point, rd);
         let up = point.normalize();
         if room > 0.0 {
             self.phased = false;
@@ -136,18 +144,31 @@ impl CloudMarch {
                 overhead,
             );
         }
+        // Far off, the upper layers are crossed whole, where the ray is steep
+        // enough to pass through their clouds rather than skim above or
+        // below them.
+        if t > clouds::SLAB_DISTANCE && rd.dot(up).abs() > SLAB_SLOPE {
+            let crossing = overhead.crossing(point, rd);
+            if crossing > 0.0 {
+                self.slab = true;
+                self.phased = false;
+                self.misses = self.misses.max(1.0);
+                return (crossing.max(footprint), true, overhead);
+            }
+        }
         // Gaps between clouds are crossed in lengthening strides, but never
         // so steep that a thin deck slips between two samples.
         let climb = rd.dot(up).abs().max(0.02);
         // Within cloud, never climb more than a fraction of a small heap in
         // one step, or steep rays alias the heaps into hatching.
-        let rise = if thin { 300.0 } else { 400.0 };
         // Steps enter cloud short and lengthen only through its solid body,
         // so its surface is found finely without crawling through it.
+        // Far away, clouds are small on screen and strides lengthen with
+        // distance: the history averages their jittered phases.
         let stride = if self.depth > 0.0 {
             (footprint * 1.2).max(80.0) * (1.0 + self.depth * 0.6)
         } else {
-            (footprint * 1.5).max(200.0) * (1.0 + self.misses)
+            (footprint * 2.5).max(300.0) * (1.0 + self.misses)
         };
         let mut step = stride.min(rise / climb);
         // Clear of every cloud by a known distance, leap across the gap.
@@ -171,6 +192,7 @@ impl CloudMarch {
         &mut self,
         overhead: &clouds::CloudColumn,
         point: Vec3,
+        step: f32,
         footprint: f32,
         view: &ViewUniform,
         textures: &Textures,
@@ -180,15 +202,35 @@ impl CloudMarch {
             scattering: Vec3::ZERO,
             retry: false,
         };
+        if self.slab {
+            // The upper layers' whole depth over the column, slanted along
+            // the ray.
+            let slab = overhead.sample(point, footprint, textures, clouds::Detail::Slab);
+            if slab.density <= 0.0 {
+                return result;
+            }
+            let slant = self.direction.dot(point.normalize()).abs();
+            let (droplets, _) = clouds::cloud_light(
+                point,
+                view,
+                textures,
+                &clouds::cloud_optics(point, self.direction, view, false),
+                0.0,
+                0.6,
+            );
+            result.sigma = slab.density / slant.max(0.0001) / step;
+            result.scattering = droplets * result.sigma;
+            return result;
+        }
         // Crossing a gap, a cheap probe that can only overstate the cloud
         // decides whether the step needs the detailed density at all. On
         // finding cloud after a long stride, step back and enter it finely,
         // or its crown would be sliced into terraces.
         if self.misses > 0.0 {
-            let probe = overhead.sample(point, footprint, textures, false);
+            let probe = overhead.sample(point, footprint, textures, clouds::Detail::Probe);
             if probe.density + probe.rain <= 0.0 {
                 self.free = probe.free;
-                self.misses = (self.misses + 1.0).min(11.0);
+                self.misses = (self.misses + 1.0).min(20.0);
                 self.depth = 0.0;
                 return result;
             }
@@ -199,10 +241,10 @@ impl CloudMarch {
                 return result;
             }
         }
-        let cloud = overhead.sample(point, footprint, textures, true);
+        let cloud = overhead.sample(point, footprint, textures, clouds::Detail::Full);
         let sigma = cloud.density + cloud.rain;
         if sigma <= 0.000_000_1 {
-            self.misses = (self.misses + 1.0).min(11.0);
+            self.misses = (self.misses + 1.0).min(20.0);
             self.depth = 0.0;
             self.free = cloud.free;
             return result;
@@ -216,7 +258,7 @@ impl CloudMarch {
             point + light * (clouds::NEAR_SHADOW * 0.5),
             footprint.max(clouds::NEAR_SHADOW * 0.15),
             textures,
-            false,
+            clouds::Detail::Shadow,
         );
         let shadow = (nearby.density + nearby.rain) * clouds::NEAR_SHADOW;
         let (droplets, rain) = clouds::cloud_light(
@@ -302,13 +344,19 @@ pub fn march_clouds(
         depth: 0.0,
         free: 0.0,
         phased: false,
+        slab: false,
     };
     let mut result = RaymarchResult::empty(limit);
     let mut front = limit;
-    // A handful of mist samples spans the ray's crossing of the shell.
+    // A handful of mist samples spans the ray's crossing of the shell, each
+    // pixel gathering at its own phase so their seams never line up.
     let crossing = (shell.y - shell.x).max(0.0) + (shell.w - shell.z).max(0.0);
-    let mist_stride = (crossing.min(limit) / MIST_SAMPLES).max(MIST_STRIDE);
-    let mut mist_path = 0.0;
+    let mist_stride =
+        (crossing.min(limit) / MIST_SAMPLES).max(MIST_STRIDE) * (0.6 + 0.8 * hash(jitter + 0.31));
+    let mut mist = Mist {
+        start: 0.0,
+        path: 0.0,
+    };
     let mut t = if shell.x < shell.y {
         shell.x.max(0.0)
     } else {
@@ -322,6 +370,7 @@ pub fn march_clouds(
         if !inside {
             // Between the near and far crossings of the shell, beneath it.
             if t < shell.z && shell.z < limit {
+                mist.gather(&mut result, ro, rd, view, textures);
                 t = shell.z;
                 continue;
             }
@@ -330,12 +379,12 @@ pub fn march_clouds(
         let end = boundary(shell.xy(), t, boundary(shell.zw(), t, limit));
         let point = ro + rd * t;
         let footprint = (t * angle).max(2.0);
-        let (stride, cloudy, overhead) = sky.advance(point, footprint, view, textures, cells);
+        let (stride, cloudy, overhead) = sky.advance(point, t, footprint, view, textures, cells);
         let step = stride.min(end - t).max(0.5);
         let distance = t + step * 0.5;
         let sample_point = ro + rd * distance;
         if cloudy {
-            let cloud = sky.sample(&overhead, sample_point, footprint, view, textures);
+            let cloud = sky.sample(&overhead, sample_point, step, footprint, view, textures);
             if cloud.retry {
                 continue;
             }
@@ -344,34 +393,72 @@ pub fn march_clouds(
                 result.absorb(cloud.scattering / cloud.sigma, cloud.sigma * step, distance);
             }
         }
-        mist_path += step;
-        if mist_path >= mist_stride {
-            // A faint mist through the cloud shell carries their shadows as
-            // shafts: of the pole light, and of the aur's glow rising. Shafts
-            // are broad, so it is gathered over strides of several steps.
-            let altitude = sample_point.length() - FEATURE_RADIUS;
-            let mist = MIST * (-altitude / 7000.0).exp();
-            let depth = textures.light_depth(sample_point);
-            let world = sample_point / FEATURE_SCALE;
-            let light = light_towards(sample_point);
-            let up = sample_point / (altitude + FEATURE_RADIUS);
-            let sun = textures.pole_light(world, light_position(world))
-                * henyey_greenstein(rd.dot(light), 0.7)
-                * (-depth.y).exp();
-            let aur = vec3(0.5, 0.42, 0.7)
-                * henyey_greenstein(-rd.dot(up), 0.5)
-                * (-depth.z).exp()
-                * (-altitude / 14_000.0).exp()
-                * 0.6;
-            result.absorb((sun + aur) * view.sky_horizon.y, mist * mist_path, distance);
-            mist_path = 0.0;
+        if mist.path <= 0.0 {
+            mist.start = t;
+        }
+        mist.path += step;
+        if mist.path >= mist_stride {
+            mist.gather(&mut result, ro, rd, view, textures);
         }
         t += step;
     }
+    // Whatever path is left since the last gather counts too, or the mist
+    // would step wherever rays leave the shell after a different number of
+    // strides.
+    mist.gather(&mut result, ro, rd, view, textures);
     slab.radiance = result.color.xyz();
     slab.transmittance = result.color.w;
     slab.front = front / FEATURE_SCALE;
     slab
+}
+
+/// Path through the cloud shell's mist not yet gathered into the march.
+struct Mist {
+    start: f32,
+    path: f32,
+}
+
+impl Mist {
+    /// A faint mist through the cloud shell carries their shadows as shafts:
+    /// of the pole light, and of the aur's glow rising. Shafts are broad, so
+    /// the light is found once, mid-way along each stretch of path.
+    fn gather(
+        &mut self,
+        result: &mut RaymarchResult,
+        ro: Vec3,
+        rd: Vec3,
+        view: &ViewUniform,
+        textures: &Textures,
+    ) {
+        if self.path <= 0.0 {
+            return;
+        }
+        let distance = self.start + self.path * 0.5;
+        let point = ro + rd * distance;
+        let altitude = point.length() - FEATURE_RADIUS;
+        let density = MIST * (-altitude / 7000.0).exp();
+        let depth = textures.light_depth(point);
+        let world = point / FEATURE_SCALE;
+        let light = light_towards(point);
+        let up = point / (altitude + FEATURE_RADIUS);
+        // Light scattered on through the cloud softens the edges of shadows
+        // that the coarse light volume would otherwise draw hard.
+        let lit = |depth: f32| (-depth).exp() * 0.8 + (-depth * 0.2).exp() * 0.2;
+        let sun = textures.pole_light(world, light_position(world))
+            * henyey_greenstein(rd.dot(light), 0.7)
+            * lit(depth.y);
+        let aur = vec3(0.5, 0.42, 0.7)
+            * henyey_greenstein(-rd.dot(up), 0.5)
+            * lit(depth.z)
+            * (-altitude / 14_000.0).exp()
+            * 0.6;
+        result.absorb(
+            (sun + aur) * view.sky_horizon.y,
+            density * self.path,
+            distance,
+        );
+        self.path = 0.0;
+    }
 }
 
 /// How far a ray may run through the cloud shell before it could meet any

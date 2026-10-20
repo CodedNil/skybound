@@ -89,7 +89,7 @@ impl LightVolume {
             pass.dispatch_workgroups(
                 LIGHT_WIDTH.div_ceil(8),
                 LIGHT_HEIGHT.div_ceil(8),
-                LIGHT_LAYERS.div_ceil(2),
+                LIGHT_LAYERS.div_ceil(4),
             );
         }
         context.command_encoder().copy_buffer_to_texture(

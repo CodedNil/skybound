@@ -41,6 +41,7 @@ bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "855
     "bevy_ui_render",
     "default_font",
     "multi_threaded",
+    "png",
     "tonemapping_luts",
     "zstd_rust",
 ] }

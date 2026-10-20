@@ -29,6 +29,9 @@ use std::{
 pub struct VolumeTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
+    /// Noise for the clouds alone, at periods long enough that no field of
+    /// them repeats in view.
+    pub shapes: Handle<Image>,
     pub transmittance: Handle<Image>,
 }
 
@@ -214,25 +217,49 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
                 .parse::<u32>()
                 .expect("seed must be an unsigned integer")
         });
-    let (base, detail) = rayon::join(
+    let ((base, detail), shapes) = rayon::join(
         || {
-            noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
-                let billow = 1.0 - (1.0 - fbm(p, 4, seed ^ 0x11)) * cellular(p, 4, seed ^ 0xd3);
-                [
-                    billow,
-                    fbm(p, 4, seed ^ 0x1d),
-                    fbm(p, 4, seed ^ 0x35),
-                    fbm(p, 4, seed ^ 0x61),
-                ]
-            })
+            rayon::join(
+                || {
+                    noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
+                        let billow =
+                            1.0 - (1.0 - fbm(p, 4, seed ^ 0x11)) * cellular(p, 4, seed ^ 0xd3);
+                        [
+                            billow,
+                            fbm(p, 4, seed ^ 0x1d),
+                            fbm(p, 4, seed ^ 0x35),
+                            fbm(p, 4, seed ^ 0x61),
+                        ]
+                    })
+                },
+                || {
+                    noise_texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
+                        [
+                            cellular(p, 3, seed ^ 0x17),
+                            cellular(p, 6, seed ^ 0x2b),
+                            cellular(p, 12, seed ^ 0x47),
+                            fbm(p, 4, seed ^ 0x71),
+                        ]
+                    })
+                },
+            )
         },
         || {
-            noise_texture(64, 64, TextureFormat::Rgba8Unorm, |p| {
+            // Cells for cloud footprints, cauliflower puffs from three
+            // octaves of Worley noise, Perlin-Worley billows, and Perlin
+            // noise to warp and vary them.
+            noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
+                let cells = cellular(p, 8, seed ^ 0x93);
+                let puffs = 1.0
+                    - (cells * 0.55
+                        + cellular(p, 16, seed ^ 0xa5) * 0.3
+                        + cellular(p, 32, seed ^ 0xb7) * 0.15);
+                let perlin = fbm(p, 8, seed ^ 0xc9);
                 [
-                    cellular(p, 3, seed ^ 0x17),
-                    cellular(p, 6, seed ^ 0x2b),
-                    cellular(p, 12, seed ^ 0x47),
-                    fbm(p, 4, seed ^ 0x71),
+                    1.0 - cells,
+                    puffs,
+                    puffs + perlin * (1.0 - puffs),
+                    fbm(p, 8, seed ^ 0xdb),
                 ]
             })
         },
@@ -244,6 +271,7 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
     commands.insert_resource(VolumeTextures {
         base: images.add(base),
         detail: images.add(detail),
+        shapes: images.add(shapes),
         transmittance: images.add(atmosphere_transmittance()),
     });
 }

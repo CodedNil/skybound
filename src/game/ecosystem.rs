@@ -9,7 +9,7 @@ use crate::{
 use bevy::{math::DVec3, prelude::*};
 use skybound::scene::{
     FEATURE_SCALE, PLANET_RADIUS,
-    climate::Climate,
+    climate::{Climate, layer_altitude},
     life::{
         KINDS, Kind,
         behaviour::{Activity, Motion, Senses},
@@ -208,21 +208,22 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     climate.wind = world.rotate_to_local(climate.wind.to_engine()).to_scene();
     // Creatures live among the clouds that are drawn: in them the air is
     // saturated, and tall towers mean storms.
-    let [cover, layers] = clouds.cover(position.normalize());
+    let [lower, upper] = clouds.cover(position.normalize());
     // Cloud heights are in feature space.
     let altitude = (position.length() - PLANET_RADIUS) * FEATURE_SCALE;
-    let within = if altitude > layers.x && altitude < cover.y {
-        cover.x
+    let cumulus = layer_altitude(0);
+    let within = if altitude > cumulus && altitude < upper.w {
+        lower.x
     } else {
         0.0
     };
-    climate.low_cloud = cover.x;
-    climate.middle_cloud = cover.z;
-    climate.high_cloud = cover.w;
+    climate.low_cloud = lower.x.max(lower.y);
+    climate.middle_cloud = lower.z.max(lower.w).max(upper.x);
+    climate.high_cloud = upper.y.max(upper.z);
     climate.humidity = climate.humidity.max(within);
     climate.storm = climate
         .storm
-        .max(cover.x * ((cover.y - 20_000.0) / 20_000.0).clamp(0.0, 1.0));
+        .max(lower.x * ((upper.w - cumulus - 32_000.0) / 24_000.0).clamp(0.0, 1.0));
     climate
 }
 

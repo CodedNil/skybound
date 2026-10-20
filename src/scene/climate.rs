@@ -18,9 +18,55 @@ pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 pub const WEATHER_SIZE: i32 = 64;
 
 /// The cloud shell, from the rain beneath storms up to anvils and cirrus.
-pub const CLOUD_BOTTOM: f32 = 800.0;
+pub const CLOUD_BOTTOM: f32 = 1500.0;
 
-pub const CLOUD_TOP: f32 = 50_000.0;
+pub const CLOUD_TOP: f32 = 110_000.0;
+
+/// The cloud layers, one genus to each: from 2 km up in the world to 12 km,
+/// at even spacing. Altitudes in feature metres.
+///
+/// 0. cumulus, heaping up into congestus where it is unstable;
+/// 1. stratocumulus, lumpy sheets broken into rolls and cells;
+/// 2. altocumulus, fields of small rounded puffs;
+/// 3. altostratus and lenticular lenses, smooth and broad;
+/// 4. altocumulus castellanus, small turrets on a common base;
+/// 5. cirrocumulus, fine rippled grains;
+/// 6. cirrus, combed into fibres and hooks by the wind aloft.
+///
+/// Cumulonimbus towers rise through all of them.
+pub const LAYERS: u32 = 7;
+
+pub const LAYER_BASE: f32 = 16_000.0;
+
+pub const LAYER_SPACING: f32 = 80_000.0 / 6.0;
+
+/// How far a cloud's base strays above or below its layer's, regionally
+/// and from one cloud to the next, so the layers never read as flat sheets.
+pub const LAYER_DRIFT: f32 = 4200.0;
+
+pub fn layer_altitude(layer: u32) -> f32 {
+    LAYER_BASE + layer as f32 * LAYER_SPACING
+}
+
+/// The deepest a layer's cloud grows above its base. Cumulus grows as deep
+/// as its column's convection allows, up to this.
+pub const fn layer_depth(layer: u32) -> f32 {
+    match layer {
+        0 => 30_000.0,
+        1 | 3 => 5000.0,
+        2 => 3600.0,
+        4 => 6000.0,
+        5 => 2400.0,
+        _ => 4000.0,
+    }
+}
+
+/// The layer nearest an altitude.
+pub fn nearest_layer(altitude: f32) -> u32 {
+    ((altitude - LAYER_BASE) / LAYER_SPACING)
+        .round()
+        .clamp(0.0, (LAYERS - 1) as f32) as u32
+}
 
 /// Weather systems in flight at once.
 pub const CLOUD_SLOTS: u32 = 8192;
@@ -33,8 +79,8 @@ pub const CLOUD_MAP_WIDTH: u32 = (CLOUD_FACE + 2) * 6;
 
 pub const CLOUD_MAP_HEIGHT: u32 = CLOUD_FACE + 2;
 
-/// Rain falls this far below the base of a deep storm.
-pub const RAIN_DEPTH: f32 = 6000.0;
+/// Rain falls this far below the base of a deep storm, nearly to the aur.
+pub const RAIN_DEPTH: f32 = 13_000.0;
 
 /// Texels across one cube face of the cloud light volume.
 ///
@@ -47,7 +93,14 @@ pub const LIGHT_WIDTH: u32 = 800;
 
 pub const LIGHT_HEIGHT: u32 = LIGHT_FACE + 2;
 
-pub const LIGHT_LAYERS: u32 = 16;
+pub const LIGHT_LAYERS: u32 = 32;
+
+/// The light volume's lowest layer, below every cloud base.
+///
+/// Beneath it the clouds' shadows only travel along the light, so points
+/// there look up the shadow where their ray towards the light crosses this
+/// altitude.
+pub const LIGHT_BOTTOM: f32 = LAYER_BASE - LAYER_DRIFT;
 
 /// Parcel index cells across one cube face.
 pub const CLOUD_GRID: u32 = 24;
@@ -64,7 +117,9 @@ pub const CIRRUS: u32 = 3;
 
 pub const CYCLONE: u32 = 4;
 
-const CYCLONE_OUTFLOW: f32 = 43_000.0;
+/// A front: a stack of layers sloping up ahead of it, from stratocumulus
+/// through altostratus to the cirrus that heralds it.
+pub const FRONT: u32 = 5;
 
 /// Seconds for a typical system to reach its pole.
 const JOURNEY: f32 = 64_000.0;
@@ -97,16 +152,19 @@ pub struct Climate {
     pub high_cloud: f32,
 }
 
-/// One weather system: a field of cumulus, a lone thunderhead and its anvil,
-/// a stratus deck, a cirrus sheet or a hurricane. Each is born near the
-/// equator, carried towards its pole and dissolved there.
+/// One weather system, born near the equator, carried towards its pole and
+/// dissolved there.
+///
+/// It is a field of cumulus, a lone thunderhead and its anvil, a deck in one
+/// of the middle layers, a cirrus sheet, a front or a hurricane.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CloudParcel {
     /// Unit direction to the centre, and the radius of everything it holds,
     /// in the world.
     pub centre: Vec4,
-    /// Kind, strength, base altitude, top altitude, in feature metres.
+    /// Kind, strength, base altitude and top altitude in feature metres; a
+    /// deck or cirrus sheet holds its layer in place of a top.
     pub shape: Vec4,
     /// Core radius, spin phase, layer thickness and a stable seed; sizes in
     /// feature metres.
@@ -120,13 +178,10 @@ pub struct CloudCover {
     /// The share of the convective cover from thunderhead cores, the only
     /// convection dense enough to close into overcast.
     towers: f32,
-    base: f32,
     top: f32,
-    deck: f32,
-    deck_altitude: f32,
-    thickness: f32,
-    cirrus: f32,
-    cirrus_altitude: f32,
+    /// The weight of the layers above the cumulus: 1 to 4, then 5 and 6.
+    middle: Vec4,
+    upper: Vec2,
 }
 
 impl Climate {
@@ -234,29 +289,32 @@ impl CloudParcel {
 
     /// Altitudes its cloud can fill below the cirrus level, and in it.
     pub fn extent(self) -> Vec4 {
-        let (base, top, thickness) = (self.shape.z, self.shape.w, self.detail.z);
-        match self.kind() {
-            CUMULUS => vec4(base, top, 1.0e9, -1.0e9),
-            TOWER => vec4(
-                (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
-                top + thickness * 0.3,
-                1.0e9,
-                -1.0e9,
+        let (base, top) = (self.shape.z, self.shape.w);
+        let band = |layer: u32| {
+            vec2(
+                layer_altitude(layer) - LAYER_DRIFT,
+                layer_altitude(layer) + layer_depth(layer) + LAYER_DRIFT,
+            )
+        };
+        let none = vec2(1.0e9, -1.0e9);
+        let (low, high) = match self.kind() {
+            CUMULUS => (vec2(base - LAYER_DRIFT, top + LAYER_DRIFT), none),
+            TOWER => (
+                vec2(
+                    (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
+                    top + self.detail.z + LAYER_DRIFT,
+                ),
+                none,
             ),
-            DECK => vec4(
-                base - thickness * 0.8,
-                base + thickness * 0.8,
-                1.0e9,
-                -1.0e9,
+            DECK => (band(top as u32), none),
+            CIRRUS => (none, band(top as u32)),
+            FRONT => (vec2(band(1).x, band(4).y), vec2(band(5).x, band(6).y)),
+            _ => (
+                vec2((base - RAIN_DEPTH).max(CLOUD_BOTTOM), top + LAYER_DRIFT),
+                band(6),
             ),
-            CIRRUS => vec4(1.0e9, -1.0e9, base - 1800.0, base + 1800.0),
-            _ => vec4(
-                (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
-                top,
-                CYCLONE_OUTFLOW - 1800.0,
-                CYCLONE_OUTFLOW + 1800.0,
-            ),
-        }
+        };
+        low.extend(high.x).extend(high.y)
     }
 }
 
@@ -270,12 +328,11 @@ impl CloudCover {
         }
         let q = distance / parcel.centre.w;
         let fall = 1.0 - q.smoothstep(0.45, 1.0);
-        let (base, top, thickness) = (parcel.shape.z, parcel.shape.w, parcel.detail.z);
+        let (base, top) = (parcel.shape.z, parcel.shape.w);
         match parcel.kind() {
             CUMULUS => {
                 self.convective(
                     fall * strength * 0.6,
-                    base,
                     base + (top - base) * (0.35 + 0.65 * fall),
                     false,
                 );
@@ -286,13 +343,33 @@ impl CloudCover {
                 let core = 1.0 - distance.smoothstep(core * 0.6, core);
                 self.convective(
                     core * strength * 1.5,
-                    base,
                     base + (top - base) * core.smoothstep(0.0, 0.3),
                     true,
                 );
             }
-            DECK => self.deck(fall * strength * 0.75, base, thickness),
-            CIRRUS => self.cirrus(fall * strength * 0.7, base),
+            DECK | CIRRUS => self.layer(top as u32, fall * strength * 0.4),
+            FRONT => {
+                // Cirrus runs far ahead of the front, altostratus thickens
+                // towards it and stratocumulus trails behind.
+                let frame = surface_frame(centre);
+                let forward = if centre.z < 0.0 {
+                    -frame.y_axis
+                } else {
+                    frame.y_axis
+                };
+                let ahead = (up - centre).dot(forward) * PLANET_RADIUS / parcel.centre.w;
+                let across = 1.0 - q.smoothstep(0.6, 1.0);
+                let band = |from: f32, to: f32| {
+                    ahead.smoothstep(from - 0.25, from) * (1.0 - ahead.smoothstep(to, to + 0.25))
+                };
+                let weight = strength * across * 0.5;
+                self.layer(6, band(-0.1, 0.95) * weight * 0.8);
+                self.layer(5, band(-0.2, 0.55) * weight * 0.45);
+                self.layer(4, band(-0.45, 0.25) * weight * 0.4);
+                self.layer(3, band(-0.6, 0.35) * weight);
+                self.layer(2, band(-0.85, -0.1) * weight * 0.6);
+                self.layer(1, band(-1.0, -0.3) * weight * 0.9);
+            }
             _ => {
                 // Two logarithmic rain bands spiral into an eyewall of towers
                 // around a clear eye, beneath a dense overcast and an outflow
@@ -309,67 +386,63 @@ impl CloudCover {
                 let lift = (wall + bands * 0.55).min(1.0);
                 self.convective(
                     (wall * 1.6 + bands * 1.1) * eye * strength,
-                    base,
                     base + (top - base) * lift,
                     true,
                 );
-                self.deck(
-                    (1.0 - q.smoothstep(0.1, 0.42)) * eye * strength,
-                    22_000.0,
-                    thickness,
-                );
-                self.cirrus(
+                self.layer(3, (1.0 - q.smoothstep(0.1, 0.42)) * eye * strength * 0.6);
+                self.layer(
+                    6,
                     q.smoothstep(0.15, 0.4)
                         * (1.0 - q.smoothstep(0.75, 1.0))
                         * (0.6 + arms * 0.4)
                         * strength,
-                    CYCLONE_OUTFLOW,
                 );
             }
         }
     }
 
-    fn convective(&mut self, weight: f32, base: f32, top: f32, tower: bool) {
+    fn convective(&mut self, weight: f32, top: f32, tower: bool) {
         self.convective += weight;
         if tower {
             self.towers += weight;
         }
-        self.base += weight * base;
         if weight > 0.01 {
             self.top = self.top.max(top);
         }
     }
 
-    fn deck(&mut self, weight: f32, altitude: f32, thickness: f32) {
-        self.deck += weight;
-        self.deck_altitude += weight * altitude;
-        self.thickness += weight * thickness;
+    fn layer(&mut self, layer: u32, weight: f32) {
+        // Added through a mask rather than a chosen field: shaders cannot
+        // pick between pointers.
+        let at = |index: u32| if layer == index { weight } else { 0.0 };
+        self.middle += vec4(at(1), at(2), at(3), at(4));
+        self.upper += vec2(at(5), at(6));
     }
 
-    fn cirrus(&mut self, weight: f32, altitude: f32) {
-        self.cirrus += weight;
-        self.cirrus_altitude += weight * altitude;
-    }
-
-    /// The two cloud map texels: coverage of the convective layer and its
-    /// top, of the deck and of the cirrus; then the convective base, the
-    /// deck's altitude and thickness, and the cirrus altitude. Overlapping
-    /// systems thicken the cover towards overcast without a hard ceiling.
+    /// The two cloud map texels: the cover of each layer, then the top of
+    /// the convection. Overlapping systems thicken the cover towards
+    /// overcast without a hard ceiling.
     pub fn texels(self) -> [Vec4; 2] {
         let saturate = |weight: f32| 1.0 - (-weight * 1.3).exp();
+        // The layers above the cumulus close into overcast only where
+        // several systems pile up.
+        let layered = |weight: f32| 1.0 - (-weight).exp();
+        // Fields of cumulus stay broken however many overlap.
+        let convective =
+            saturate(self.convective - self.towers).min(0.45) + saturate(self.towers) * 0.55;
+        let (middle, upper) = (self.middle, self.upper);
         [
             vec4(
-                // Fields of cumulus stay broken however many overlap.
-                saturate(self.convective - self.towers).min(0.45) + saturate(self.towers) * 0.55,
-                self.top,
-                saturate(self.deck),
-                saturate(self.cirrus),
+                convective,
+                layered(middle.x),
+                layered(middle.y),
+                layered(middle.z),
             ),
             vec4(
-                mean(self.base, self.convective, 6000.0),
-                mean(self.deck_altitude, self.deck, 20_000.0),
-                mean(self.thickness, self.deck, 2000.0),
-                mean(self.cirrus_altitude, self.cirrus, 40_000.0),
+                layered(middle.w),
+                layered(upper.x),
+                layered(upper.y),
+                self.top,
             ),
         ]
     }
@@ -396,10 +469,6 @@ fn slot_random(slot: u32, cycle: u32) -> Vec4 {
     ) / 16_777_216.0
 }
 
-fn mean(sum: f32, weight: f32, empty: f32) -> f32 {
-    if weight > 0.0001 { sum / weight } else { empty }
-}
-
 /// How readily the equator raises weather at a longitude. Wet sectors feed
 /// streams of cloud towards the poles; dry ones leave clear corridors.
 pub fn equatorial_supply(longitude: f32, time: f32) -> f32 {
@@ -413,6 +482,10 @@ pub fn equatorial_supply(longitude: f32, time: f32) -> f32 {
 
 /// The weather system flying in a slot at a time. Its whole life is a pure
 /// function of the slot and time, so any moment can be shown at once.
+#[expect(
+    clippy::too_many_lines,
+    reason = "every kind of weather system is formed here"
+)]
 pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
     let seed = slot_random(slot, 0);
     let journey = JOURNEY * (0.8 + seed.y * 0.5);
@@ -445,26 +518,28 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
     // The young tropical air holds little low cloud; mostly high cirrus.
     let tropical = latitude.abs().smoothstep(0.15, 0.6);
     let low = strength * (0.2 + 0.8 * tropical);
-    let kind = if seed.x < 0.45 {
+    let kind = if seed.x < 0.36 {
         CUMULUS
-    } else if seed.x < 0.65 {
+    } else if seed.x < 0.52 {
         TOWER
-    } else if seed.x < 0.81 {
+    } else if seed.x < 0.72 {
         DECK
-    } else if seed.x < 0.992 {
+    } else if seed.x < 0.88 {
         CIRRUS
+    } else if seed.x < 0.992 {
+        FRONT
     } else {
         CYCLONE
     };
     let (reach, core, base, top, thickness, strength) = match kind {
         CUMULUS => {
             let development = (form.z * 0.75 + humid * 0.45).min(1.0);
-            let base = 4500.0 + form.y * form.y * 12_000.0;
+            let base = layer_altitude(0);
             (
                 (40_000.0 + form.x * 60_000.0) * (0.8 + humid * 0.4),
                 0.0,
                 base,
-                base + 1500.0 + development.powf(1.5) * 15_000.0,
+                base + 3000.0 + development.powf(1.5) * 26_000.0,
                 0.0,
                 low,
             )
@@ -472,33 +547,47 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
         TOWER => {
             // Thunderheads build, mature and collapse again as they drift.
             let maturity = 0.5 + 0.5 * (progress * TAU * 5.0 + seed.w * TAU).sin();
-            let core = 9000.0 + form.x * 14_000.0;
+            let core = 14_000.0 + form.x * 16_000.0;
             (
                 // At least as far as its anvil spreads, so every cell its
                 // anvil covers lists it.
                 core * (1.6 + form.w * 1.6 * maturity) / FEATURE_SCALE,
                 core,
-                5000.0 + form.y * 4000.0,
-                22_000.0 + form.z * 26_000.0 * (0.55 + 0.45 * maturity),
-                2500.0 + form.w * 3500.0,
+                layer_altitude(0),
+                58_000.0 + form.z * 40_000.0 * (0.55 + 0.45 * maturity),
+                4000.0 + form.w * 5000.0,
                 low * (0.6 + 0.4 * humid),
             )
         }
-        DECK => (
-            60_000.0 + form.x * 90_000.0,
+        DECK => {
+            let layer = 1 + (form.y * 4.0).min(3.0) as u32;
+            (
+                60_000.0 + form.x * 90_000.0,
+                0.0,
+                layer_altitude(layer),
+                layer as f32,
+                layer_depth(layer),
+                low * 0.85,
+            )
+        }
+        CIRRUS => {
+            let layer = if form.y < 0.35 { 5 } else { 6 };
+            (
+                35_000.0 + form.x * 70_000.0,
+                0.0,
+                layer_altitude(layer),
+                layer as f32,
+                layer_depth(layer),
+                strength * 0.8,
+            )
+        }
+        FRONT => (
+            80_000.0 + form.x * 100_000.0,
             0.0,
-            9000.0 + form.y * 24_000.0,
+            layer_altitude(1),
+            layer_altitude(6),
             0.0,
-            700.0 + form.z * 3500.0,
-            low * 0.85,
-        ),
-        CIRRUS => (
-            60_000.0 + form.x * 100_000.0,
-            0.0,
-            34_000.0 + form.y * 13_000.0,
-            0.0,
-            1200.0 + form.z * 2400.0,
-            strength * 0.8,
+            strength * (0.5 + 0.5 * tropical),
         ),
         _ => {
             // Hurricanes spin up over the warm polar seas and die at the pole.
@@ -506,8 +595,8 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
             (
                 (260_000.0 + form.x * 320_000.0) * (0.25 + 0.75 * growth),
                 0.0,
-                5500.0,
-                34_000.0 + form.y * 12_000.0,
+                layer_altitude(0),
+                80_000.0 + form.y * 18_000.0,
                 5000.0,
                 low * growth,
             )
@@ -588,7 +677,7 @@ pub fn atlas_direction(pixel: Vec2, size: u32) -> Vec3 {
 
 /// The altitude of a light volume layer.
 pub fn light_altitude(layer: f32) -> f32 {
-    layer / (LIGHT_LAYERS - 1) as f32 * CLOUD_TOP
+    LIGHT_BOTTOM + layer / (LIGHT_LAYERS - 1) as f32 * (CLOUD_TOP - LIGHT_BOTTOM)
 }
 
 pub fn weather_texel(cell: IVec3) -> Vec4 {

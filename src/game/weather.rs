@@ -425,16 +425,18 @@ mod tests {
         let (mut clear, mut overcast) = (0, 0);
         for index in 0..4000 {
             let up = sphere(index, 4000);
-            let cover = field.cover(up)[0];
-            let total = cover.x.max(cover.z);
-            clear += u32::from(total < 0.02 && cover.w < 0.02);
+            let [lower, upper] = field.cover(up);
+            let total = lower.max_element().max(upper.x);
+            clear += u32::from(total < 0.02 && upper.y.max(upper.z) < 0.02);
             overcast += u32::from(total > 0.8);
             let band = ((up.z.abs().asin() / FRAC_PI_2) * 4.0).min(3.0) as usize;
             bands[band].0 += total;
             bands[band].1 += 1;
         }
         assert!(clear > 200, "too few clear skies: {clear}");
-        assert!(overcast > 200, "too few overcast skies: {overcast}");
+        // Overcast is the exception: most skies hold a few broken layers.
+        assert!(overcast > 40, "too few overcast skies: {overcast}");
+        assert!(overcast < 800, "too many overcast skies: {overcast}");
         let mean = |band: (f32, u32)| band.0 / band.1 as f32;
         assert!(
             mean(bands[2]) > mean(bands[0]),

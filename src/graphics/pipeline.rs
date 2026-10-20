@@ -408,6 +408,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         Some(frame),
         Some(base),
         Some(detail),
+        Some(shapes),
         Some(transmittance),
         Some(parcels),
         Some(index),
@@ -418,6 +419,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         buffer.uniform.binding(),
         images.get(&textures.base),
         images.get(&textures.detail),
+        images.get(&textures.shapes),
         images.get(&textures.transmittance),
         buffer.parcels.binding(),
         buffer.cloud_index.binding(),
@@ -443,9 +445,10 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         shader: shader.0.clone(),
     };
     let pipeline = &mut *pipeline;
-    let (base, detail, transmittance) = (
+    let (base, detail, shapes, transmittance) = (
         &base.texture_view,
         &detail.texture_view,
+        &shapes.texture_view,
         &transmittance.texture_view,
     );
     let common = || {
@@ -473,6 +476,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Storage(cells.clone()),
             Bind::Float(&pipeline.cloud_bounds),
             Bind::Data(&pipeline.cloud_towers),
+            Bind::Volume(shapes),
         ]);
         if let Some(index) = slab {
             binds.extend([
@@ -521,6 +525,8 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Float(&pipeline.cloud_cover),
             Bind::Float(&pipeline.cloud_layers),
             Bind::Data(&pipeline.cloud_towers),
+            Bind::Sampler(&pipeline.repeat_sampler),
+            Bind::Volume(shapes),
         ],
     );
     let resolve = from_fn(|index| {

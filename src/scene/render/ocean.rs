@@ -411,6 +411,7 @@ pub fn column_cache(
         cloud_cover: _sky,
         cloud_layers: _sky,
         cloud_light: base,
+        shapes: base,
         cloud_bounds: _sky,
         cloud_towers: _sky,
         cached: false,
