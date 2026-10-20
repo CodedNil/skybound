@@ -1,12 +1,11 @@
-use spirv_std::glam::{FloatExt, UVec4, Vec3, Vec4, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
 #[cfg(target_arch = "spirv")]
 use crate::scene::life::surface::Hit;
 use crate::scene::life::surface::Ray;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::surface::TraceResult;
+use spirv_std::glam::{FloatExt, UVec4, Vec3, Vec4, vec3};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -392,9 +391,8 @@ pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::Quat;
-
     use super::*;
+    use spirv_std::glam::Quat;
 
     #[test]
     fn anisotropic_distance_bounds_keep_surfaces_and_signed_interiors() {

@@ -1,16 +1,16 @@
 //! The aur ocean: its current and arcs, crystal spires, and lightning.
+use crate::scene::{
+    FEATURE_RADIUS, FEATURE_SCALE,
+    climate::{cube_direction, cube_face},
+    math::square,
+    planet::surface_point,
+};
 use core::f32::consts::{FRAC_PI_2, PI, TAU};
-
 use spirv_std::glam::{
     FloatExt, Vec2, Vec2Swizzles, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3,
 };
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::PLANET_RADIUS;
-use crate::scene::climate::{cube_direction, cube_face};
-use crate::scene::math::square;
-use crate::scene::planet::surface_point;
 
 pub const CURRENT: Vec3 = vec3(35.0, -20.0, 0.0);
 
@@ -29,22 +29,23 @@ const EJECTION_SEARCH: i32 = 4;
 
 pub const EJECTION_HEIGHT: f32 = 12_150.0;
 
-pub const EJECTION_GRID_HALF: i32 = (PI * PLANET_RADIUS / EJECTION_CELL) as i32 + 2;
-
-pub const EJECTION_GRID_WIDTH: u32 = EJECTION_GRID_HALF as u32 * 2;
-
-pub const EJECTION_GRID_HEIGHT: u32 = EJECTION_GRID_HALF as u32 + 1;
+/// Arc cells held in the lookup: a window this many cells across, centred
+/// on the camera.
+///
+/// It wraps, so a cell's texel is its coordinate modulo the window. Further cells alias to ones whose loops lie a window away,
+/// which read as empty.
+pub const EJECTION_WINDOW: u32 = 384;
 
 // Crystal spires that pierce the aur ocean, in sparse archipelagos.
 //
-// Positions are spire coordinates: metres across the cube faces of the
-// planet, side by side, and altitude. Cells are the same size everywhere, so
-// spires never crowd towards the poles. Every spire stays `SPIRE_MARGIN`
-// inside its cell, so a cell's own spires and the distance to its border
-// bound the field.
-pub const SPIRE_CELLS: f32 = 90.0;
+// Positions are spire coordinates: feature metres across the cube faces of
+// the planet, side by side, and altitude. Cells are the same size
+// everywhere, so spires never crowd towards the poles. Every spire stays
+// `SPIRE_MARGIN` inside its cell, so a cell's own spires and the distance to
+// its border bound the field.
+pub const SPIRE_CELLS: f32 = 720.0;
 
-pub const SPIRE_CELL: f32 = PLANET_RADIUS * FRAC_PI_2 / SPIRE_CELLS;
+pub const SPIRE_CELL: f32 = FEATURE_RADIUS * FRAC_PI_2 / SPIRE_CELLS;
 
 /// Distances in spire coordinates overstate world distances by at most
 /// this factor, where the cube faces stretch towards their edges.
@@ -98,9 +99,10 @@ pub fn curl(mut pos: Vec2, time: f32) -> Vec2 {
     pos
 }
 
-/// The planet-scale character of the aur at a surface direction: a calm,
-/// warm equatorial belt, storm tracks through the mid latitudes broken into
-/// slowly drifting regions, and charged polar seas. Analytic so the host's
+/// The planet-scale character of the aur at a surface direction.
+///
+/// A calm, warm equatorial belt, storm tracks through the mid latitudes
+/// broken into slowly drifting regions, and charged polar seas. Analytic so the host's
 /// lightning catalogue agrees with the shaders.
 /// x: storminess, y: warmth, z: charge, w: brightness.
 pub fn aur_climate(up: Vec3, time: f32) -> Vec4 {
@@ -140,8 +142,9 @@ fn eruption_hash(cell: Vec2) -> Vec3 {
     ((hash.xxy() + hash.yzz()) * hash.zyx()).fract_gl()
 }
 
-/// One eruption per cell and cycle, far more often in stormy seas. The
-/// loop rises out of the veil, holds while plasma drains down its legs, then
+/// One eruption per cell and cycle, far more often in stormy seas.
+///
+/// The loop rises out of the veil, holds while plasma drains down its legs, then
 /// parts at the apex and fades. Size, height and orientation vary per cycle.
 pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
     let seed = eruption_hash(cell + vec2(19.7, 63.1));
@@ -153,7 +156,7 @@ pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 2] {
     }
     let random = eruption_hash(cell + vec2(37.1, 91.7) * (cycle.floor() + 1.0));
     let centre = (cell + random.xy()) * EJECTION_CELL;
-    let up = surface_point(centre.extend(0.0)).normalize();
+    let up = surface_point((centre / FEATURE_SCALE).extend(0.0)).normalize();
     if random.z > 0.25 + aur_climate(up, time).x * 0.9 {
         return [Vec4::ZERO; 2];
     }
@@ -199,18 +202,14 @@ pub fn ejection_fill(progress: f32, phase: f32) -> f32 {
     alive * (1.0 - phase.smoothstep(0.55, 0.85) * apex)
 }
 
-/// The loop's circle sinks below the veil while it is still rising.
-fn ejection_centre(event: [Vec4; 2]) -> f32 {
-    let rise = 0.3 + 0.7 * event[0].z.smoothstep(0.0, 0.3);
-    event[1].w * rise - event[1].z
-}
-
 fn ejection_coordinates(position: Vec3, event: [Vec4; 2]) -> Vec3 {
     let delta = position.xy() - event[0].truncate().truncate();
     let axis = event[1].truncate().truncate();
     let along = delta.dot(axis);
     let across = delta.dot(vec2(-axis.y, axis.x));
-    vec3(along, position.z - ejection_centre(event), across)
+    // The loop's circle sinks below the veil while it is still rising.
+    let rise = 0.3 + 0.7 * event[0].z.smoothstep(0.0, 0.3);
+    vec3(along, position.z - (event[1].w * rise - event[1].z), across)
 }
 
 pub fn ejection_field(position: Vec3, time: f32) -> Vec4 {
@@ -350,7 +349,7 @@ pub fn spire_distance(spire: &Spire, local: Vec2, z: f32) -> f32 {
     side.max(z - spire.tip).max(SPIRE_BOTTOM - z)
 }
 
-/// Spire coordinates of a point in planet space.
+/// Spire coordinates of a point in feature space.
 pub fn spire_coordinates(point: Vec3) -> Vec3 {
     let radius = point.length();
     let (face, position) = cube_face(point / radius);
@@ -358,16 +357,16 @@ pub fn spire_coordinates(point: Vec3) -> Vec3 {
     vec3(
         across.x + face as f32 * SPIRE_FACE,
         across.y,
-        radius - PLANET_RADIUS,
+        radius - FEATURE_RADIUS,
     )
 }
 
-/// The planet-space point at spire coordinates.
+/// The feature-space point at spire coordinates.
 pub fn spire_point(coordinates: Vec3) -> Vec3 {
     let face = (coordinates.x / SPIRE_FACE).floor().clamp(0.0, 5.0);
     let across =
         vec2(coordinates.x - face * SPIRE_FACE, coordinates.y) / (SPIRE_CELL * SPIRE_CELLS);
-    cube_direction(face as u32, across * 2.0 - 1.0) * (PLANET_RADIUS + coordinates.z)
+    cube_direction(face as u32, across * 2.0 - 1.0) * (FEATURE_RADIUS + coordinates.z)
 }
 
 /// World directions in which the two horizontal spire coordinates grow.
@@ -386,6 +385,12 @@ pub fn spire_axes(point: Vec3) -> (Vec3, Vec3) {
 fn spire_cell(p: Vec3) -> (Vec2, Vec2) {
     let cell = (p.truncate() / SPIRE_CELL).floor();
     (cell, p.truncate() - (cell + 0.5) * SPIRE_CELL)
+}
+
+/// A lower bound on the distance from a planet-space point in the world to
+/// any spire, in world metres: for collisions.
+pub fn spire_clearance(point: Vec3) -> f32 {
+    spire_field(spire_coordinates(point * FEATURE_SCALE)) * SPIRE_METRIC / FEATURE_SCALE
 }
 
 /// A lower bound on the distance to any spire, in spire coordinates.
@@ -419,10 +424,10 @@ pub fn nearest_spire(p: Vec3) -> Vec3 {
 /// Entry and exit along a ray through the band holding the spires. Altitude
 /// is measured from the planet centre without squaring large radii.
 pub fn spire_band(altitude: f32, upward: f32, max_distance: f32) -> Vec2 {
-    let radius = PLANET_RADIUS + altitude;
+    let radius = FEATURE_RADIUS + altitude;
     let b = radius * upward;
     let crossing = |height: f32| {
-        let c = (altitude - height) * (radius + PLANET_RADIUS + height);
+        let c = (altitude - height) * (radius + FEATURE_RADIUS + height);
         let discriminant = b * b - c;
         if discriminant < 0.0 {
             return vec2(1.0, -1.0);
@@ -447,8 +452,6 @@ pub fn spire_band(altitude: f32, upward: f32, max_distance: f32) -> Vec2 {
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::ivec2;
-
     use super::*;
 
     #[test]
@@ -461,9 +464,9 @@ mod tests {
                 (1.0 - z * z).sqrt() * longitude.sin(),
                 z,
             );
-            let point = up * (PLANET_RADIUS + 1200.0);
+            let point = up * (FEATURE_RADIUS + 1200.0);
             let coordinates = spire_coordinates(point);
-            assert!(spire_point(coordinates).distance(point) < 2.0);
+            assert!(spire_point(coordinates).distance(point) < 2.0 * FEATURE_SCALE);
             // Nudge within the face in every direction: the world moves at
             // least SPIRE_METRIC as far as the coordinates.
             for angle in 0..8 {
@@ -473,7 +476,9 @@ mod tests {
                 let inside = moved.y > 0.0
                     && moved.y < span
                     && moved.x - (moved.x / SPIRE_FACE).floor() * SPIRE_FACE < span;
-                if !inside || (moved.x / SPIRE_FACE).floor() != (coordinates.x / SPIRE_FACE).floor()
+                if !inside
+                    || (moved.x / SPIRE_FACE).floor() as i32
+                        != (coordinates.x / SPIRE_FACE).floor() as i32
                 {
                     continue;
                 }
@@ -560,7 +565,7 @@ mod tests {
 
     #[test]
     fn cached_arc_candidates_cover_the_planet_and_preserve_the_full_field() {
-        let radius = super::super::PLANET_RADIUS;
+        let radius = FEATURE_RADIUS;
         for longitude in [-PI, -PI * 0.5, 0.0, PI * 0.5, PI] {
             for colatitude in [0.0, 0.01, PI * 0.5, PI - 0.01, PI] {
                 for time in [0.0, 10.0, 120.0, 50_000.0] {
@@ -570,9 +575,6 @@ mod tests {
                     for index in 0..9 {
                         let neighbour =
                             cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
-                        let pixel = neighbour.as_ivec2() + ivec2(EJECTION_GRID_HALF, 1);
-                        assert!(pixel.x >= 0 && pixel.x < EJECTION_GRID_WIDTH.cast_signed());
-                        assert!(pixel.y >= 0 && pixel.y < EJECTION_GRID_HEIGHT.cast_signed());
                         active |= u32::from(ejection(neighbour, time)[0].w > 0.0) << index;
                     }
                     assert_eq!(

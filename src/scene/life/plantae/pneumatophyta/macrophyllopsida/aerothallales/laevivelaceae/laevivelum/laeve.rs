@@ -1,12 +1,13 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::Biology,
+    ellipsoid,
+    surface::{Ray, Surface, TraceResult},
+};
 use core::f32::consts::TAU;
-
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::life::biology::Biology;
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, ellipsoid};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 730.0,

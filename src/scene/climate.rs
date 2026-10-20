@@ -1,17 +1,17 @@
 //! The shared climate: regional weather, and the weather systems that carry
 //! clouds from the equator to the poles. All of it is analytic, so the game
 //! and the renderer always agree on where the clouds are.
+use crate::scene::{
+    FEATURE_SCALE, PLANET_RADIUS,
+    math::{cube, lattice, square},
+    planet::surface_frame,
+};
 use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, TAU};
-
 use spirv_std::glam::{
     FloatExt, IVec3, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, ivec3, vec2, vec3, vec4,
 };
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::PLANET_RADIUS;
-use crate::scene::math::{cube, lattice, square};
-use crate::scene::planet::surface_frame;
 
 pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 
@@ -103,11 +103,13 @@ pub struct Climate {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CloudParcel {
-    /// Unit direction to the centre, and the radius of everything it holds.
+    /// Unit direction to the centre, and the radius of everything it holds,
+    /// in the world.
     pub centre: Vec4,
-    /// Kind, strength, base altitude, top altitude.
+    /// Kind, strength, base altitude, top altitude, in feature metres.
     pub shape: Vec4,
-    /// Core radius, spin phase, layer thickness and a stable seed.
+    /// Core radius, spin phase, layer thickness and a stable seed; sizes in
+    /// feature metres.
     pub detail: Vec4,
 }
 
@@ -154,17 +156,10 @@ impl Climate {
         climate
     }
 
-    pub fn weather_coordinates(point: Vec3, seconds: f32) -> Vec3 {
-        (point.normalize() * PLANET_RADIUS - vec3(1.2, -0.7, 0.9) * seconds) * WEATHER_SCALE
-    }
-
     pub fn weather_on_planet(point: Vec3, seconds: f32) -> Vec4 {
-        let p = Self::weather_coordinates(point, seconds);
-        weather_at(p)
-    }
-
-    pub fn weather_uv(position: Vec3, seconds: f32) -> Vec2 {
-        (position.xy() - vec2(1.2, -0.7) * seconds) * WEATHER_SCALE
+        weather_at(
+            (point.normalize() * PLANET_RADIUS - vec3(1.2, -0.7, 0.9) * seconds) * WEATHER_SCALE,
+        )
     }
 
     pub fn sample(position: Vec3, seconds: f32, latitude: f32) -> Self {
@@ -173,7 +168,7 @@ impl Climate {
             seconds,
             latitude,
             Vec3::Y,
-            weather_at(Self::weather_uv(position, seconds).extend(0.0)),
+            weather_at(((position.xy() - vec2(1.2, -0.7) * seconds) * WEATHER_SCALE).extend(0.0)),
         )
     }
 
@@ -287,7 +282,8 @@ impl CloudCover {
             }
             TOWER => {
                 // Steep walls and a flat crown at the anvil, not a mound.
-                let core = 1.0 - distance.smoothstep(parcel.detail.x * 0.6, parcel.detail.x);
+                let core = parcel.detail.x / FEATURE_SCALE;
+                let core = 1.0 - distance.smoothstep(core * 0.6, core);
                 self.convective(
                     core * strength * 1.5,
                     base,
@@ -480,7 +476,7 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
             (
                 // At least as far as its anvil spreads, so every cell its
                 // anvil covers lists it.
-                core * (1.6 + form.w * 1.6 * maturity),
+                core * (1.6 + form.w * 1.6 * maturity) / FEATURE_SCALE,
                 core,
                 5000.0 + form.y * 4000.0,
                 22_000.0 + form.z * 26_000.0 * (0.55 + 0.45 * maturity),

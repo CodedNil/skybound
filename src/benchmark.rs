@@ -1,34 +1,45 @@
-use std::collections::BTreeMap;
-use std::f64::consts::{FRAC_PI_2, TAU};
-use std::time::Duration;
-use std::{env, fs, io};
-
-use bevy::camera::RenderTarget;
-use bevy::diagnostic::DiagnosticsStore;
-use bevy::ecs::system::SystemParam;
-use bevy::math::{DQuat, DVec3};
-use bevy::platform::time::Instant;
-use bevy::prelude::*;
-use bevy::render::diagnostic::RenderDiagnosticsPlugin;
-use bevy::render::render_resource::TextureFormat;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
-use bevy::window::PresentMode;
-use bevy::winit::WinitSettings;
-use skybound::scene::PLANET_RADIUS;
-use skybound::scene::aur::{
-    EJECTION_CELL, SPIRE_CELL, ejection, ejection_fill, spire, spire_coordinates, spire_count,
-    spire_point,
+use crate::{
+    game::{
+        camera::CameraController,
+        flight::{ControlMode, Flight, Mount, Player},
+        weather::{CloudField, lightning_events},
+        world::{WorldData, WorldSystems},
+    },
+    graphics::AtmosphereSettings,
+    math::{ToEngine, ToScene},
 };
-use skybound::scene::climate::{CIRRUS, CUMULUS, CYCLONE, DECK, TOWER};
-use skybound::scene::planet::{REACTION_RADIUS, surface_frame, surface_point};
+use bevy::{
+    camera::RenderTarget,
+    diagnostic::DiagnosticsStore,
+    ecs::system::SystemParam,
+    math::{DQuat, DVec3},
+    platform::time::Instant,
+    prelude::*,
+    render::{
+        diagnostic::RenderDiagnosticsPlugin,
+        render_resource::TextureFormat,
+        view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk},
+    },
+    window::PresentMode,
+    winit::WinitSettings,
+};
+use skybound::scene::{
+    FEATURE_SCALE, PLANET_RADIUS,
+    aur::{
+        EJECTION_CELL, SPIRE_CELL, ejection, ejection_fill, spire, spire_coordinates, spire_count,
+        spire_point,
+    },
+    climate::{CIRRUS, CUMULUS, CYCLONE, DECK, TOWER},
+    planet::{REACTION_RADIUS, surface_frame, surface_point},
+};
 use spirv_std::glam::Vec4 as SceneVec4;
-
-use crate::game::camera::CameraController;
-use crate::game::flight::{ControlMode, Flight, Mount, Player};
-use crate::game::weather::{CloudField, lightning_events};
-use crate::game::world::{WorldData, WorldSystems};
-use crate::graphics::AtmosphereSettings;
-use crate::math::{ToEngine, ToScene};
+use std::{
+    collections::BTreeMap,
+    env,
+    f64::consts::{FRAC_PI_2, TAU},
+    fs, io,
+    time::Duration,
+};
 
 #[derive(Resource)]
 struct BenchmarkTarget(Option<Handle<Image>>);
@@ -237,7 +248,8 @@ fn setup(params: BenchmarkSetup) {
 
 /// Frame the main spire of the nearest archipelago from low over the veil.
 fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
-    let here = spire_coordinates(world.position(mount).as_vec3().to_scene()).to_engine();
+    let here =
+        spire_coordinates(world.position(mount).as_vec3().to_scene() * FEATURE_SCALE).to_engine();
     let origin = (here.truncate() / SPIRE_CELL).floor();
     let cell = (0..40i32)
         .flat_map(|ring| (-ring..=ring).flat_map(move |x| [(x, -ring), (x, ring)]))
@@ -246,7 +258,7 @@ fn spire_camera(world: &WorldData, mount: Vec3) -> Transform {
         .expect("an archipelago near the start");
     let centre = (cell + 0.5) * SPIRE_CELL + spire(cell.to_scene(), 0).base.to_engine();
     let point = |offset: Vec2, altitude: f32| {
-        spire_point((centre + offset).extend(altitude).to_scene())
+        (spire_point((centre + offset).extend(altitude).to_scene()) / FEATURE_SCALE)
             .to_engine()
             .as_dvec3()
     };
@@ -297,21 +309,26 @@ fn cloud_camera(scene: &str, world: &WorldData, time: f32) -> Option<Transform> 
     let up = parcel.centre.truncate();
     let frame = surface_frame(up);
     let (reach, base, top) = (parcel.centre.w, parcel.shape.z, parcel.shape.w);
+    // Cloud heights and sizes are in feature space; system reaches in the world.
+    let core = parcel.detail.x / FEATURE_SCALE;
     let at = |altitude: f32, north: f32| {
         world.local(
-            (up * (PLANET_RADIUS + altitude) + frame.y_axis * north)
+            (up * (PLANET_RADIUS + altitude / FEATURE_SCALE) + frame.y_axis * north)
                 .as_dvec3()
                 .to_engine(),
         )
     };
     let middle = base + (top - base) * 0.5;
     let (position, target) = match scene {
-        "cloud-storm" => (at(260_000.0, -reach * 0.9), at(10_000.0, 0.0)),
-        "cloud-tower" => (at(middle, -parcel.detail.x * 5.0), at(middle, 0.0)),
+        "cloud-storm" => (
+            at(260_000.0 * FEATURE_SCALE, -reach * 0.9),
+            at(10_000.0, 0.0),
+        ),
+        "cloud-tower" => (at(middle, -core * 5.0), at(middle, 0.0)),
         // From the sunward side, looking into the rain beneath the storm,
         // where its bow stands opposite the light.
         "cloud-rain" => {
-            let sunward = parcel.detail.x * 3.0 * up.z.signum();
+            let sunward = core * 3.0 * up.z.signum();
             (
                 at(base - 1500.0, sunward * 2.0),
                 at(base - 2500.0, -sunward),
@@ -322,7 +339,7 @@ fn cloud_camera(scene: &str, world: &WorldData, time: f32) -> Option<Transform> 
             at(base, reach * 0.3),
         ),
         "cloud-high" => (at(base - 6000.0, -reach * 0.2), at(base, reach * 0.4)),
-        "cloud-interior" => (at(middle, 0.0), at(middle, 20_000.0)),
+        "cloud-interior" => (at(middle, 0.0), at(middle, 20_000.0 / FEATURE_SCALE)),
         "cloud-top" => (at(top + 6000.0, -reach * 0.8), at(top * 0.8, 0.0)),
         // High above a storm field, looking almost straight down.
         "cloud-above" => (at(top + 30_000.0, -reach * 0.3), at(base, reach * 0.1)),
@@ -374,8 +391,10 @@ fn scene_camera(
     }
 }
 
+/// The camera's altitude: in the world for the polar scenes, which frame
+/// the pole light, and scaled from feature space for all the rest.
 fn scene_altitude(scene: &str) -> f32 {
-    match scene {
+    let feature = match scene {
         "cloud-bank" => 11_000.0,
         "cloud-top" => 25_000.0,
         "cloud-edge" => 6350.0,
@@ -385,18 +404,18 @@ fn scene_altitude(scene: &str) -> f32 {
         "veil" => 25.0,
         "aur-horizon" => 12_000.0,
         "aur-high" => 80_000.0,
-        "aur-spires" => 2400.0,
         "aur-overhead" => 4000.0,
         "aur-skim" => 3820.0,
-        "polar-orbit" => 77_559.0,
-        "planet-orbit" | "pole-distant" => 350_000.0,
-        "climate-orbit" => 476_000.0,
-        "polar-beam" => 450_000.0,
+        "polar-orbit" => return 77_559.0,
+        "planet-orbit" | "pole-distant" => return 350_000.0,
+        "climate-orbit" => return 476_000.0,
+        "polar-beam" => return 450_000.0,
         "aur-ejection" | "aur-lightning" => 650.0,
-        "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise" | "polar"
-        | "polar-reaction" => 2400.0,
+        "aur-spires" | "garden" | "clear" | "mounted" | "nae-close" | "equator" | "sunrise"
+        | "polar" | "polar-reaction" => 2400.0,
         _ => panic!("unknown benchmark scene"),
-    }
+    };
+    feature / FEATURE_SCALE
 }
 
 fn scene_weather(scene: &str) -> Option<Vec4> {
@@ -427,7 +446,7 @@ fn focus_aur(
         let direction = world.rotate_to_local(surface_frame(event.up).y_axis.to_engine());
         let point = event.up * (PLANET_RADIUS + event.reach * 0.4);
         (
-            world.local(point.as_dvec3().to_engine()) - direction * 24_000.0,
+            world.local(point.as_dvec3().to_engine()) - direction * (24_000.0 / FEATURE_SCALE),
             direction,
         )
     } else {
@@ -437,8 +456,9 @@ fn focus_aur(
             } else {
                 0.0
             };
-        let cell =
-            (world.surface_position(Vec3::ZERO).truncate().to_scene() / EJECTION_CELL).floor();
+        let cell = (world.surface_position(Vec3::ZERO).truncate().to_scene() * FEATURE_SCALE
+            / EJECTION_CELL)
+            .floor();
         let event = (0..49)
             .map(|index| {
                 ejection(
@@ -452,12 +472,12 @@ fn focus_aur(
             })
             .expect("ejection cells");
         let center = event[0].truncate().truncate();
-        let point = surface_point(center.extend(event[1].w * 0.25 + 1000.0));
+        let point = surface_point(center.extend(event[1].w * 0.25 + 1000.0) / FEATURE_SCALE);
         let direction = world.rotate_to_local(
             (surface_frame(point) * vec3(-event[1].y, -event[1].x, 0.0).to_scene()).to_engine(),
         );
         (
-            world.local(point.as_dvec3().to_engine()) - direction * 36_000.0,
+            world.local(point.as_dvec3().to_engine()) - direction * (36_000.0 / FEATURE_SCALE),
             direction,
         )
     };

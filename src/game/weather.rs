@@ -1,21 +1,23 @@
 //! The planet's weather systems, indexed for the renderer and for anything
 //! that needs to know how cloudy its sky is; and the lightning of its storms.
-use core::f32::consts::{PI, TAU};
-use std::sync::{Arc, OnceLock};
-
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use rayon::prelude::*;
-use skybound::scene::aur::{aur_climate, energy_color};
-use skybound::scene::climate::{
-    CLOUD_CELLS, CLOUD_GRID, CLOUD_SLOTS, CloudCover, CloudParcel, cloud_cell, cloud_parcel,
-    cube_direction,
+use bevy::{
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
 };
-use skybound::scene::math::fourth;
-use skybound::scene::planet::surface_frame;
-use skybound::scene::{PLANET_RADIUS, ViewUniform};
+use core::f32::consts::{PI, TAU};
+use rayon::prelude::*;
+use skybound::scene::{
+    FEATURE_SCALE, PLANET_RADIUS, ViewUniform,
+    aur::{aur_climate, energy_color},
+    climate::{
+        CLOUD_CELLS, CLOUD_GRID, CLOUD_SLOTS, CloudCover, CloudParcel, cloud_cell, cloud_parcel,
+        cube_direction,
+    },
+    math::fourth,
+    planet::surface_frame,
+};
 use spirv_std::glam::{FloatExt, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
+use std::sync::{Arc, OnceLock};
 
 /// Seconds between rebuilds of the parcel index. Systems are listed with
 /// enough margin to cover how far they move and grow in that time.
@@ -28,6 +30,9 @@ const LAYER_MARGIN: f32 = 600.0;
 
 /// Clear distances beyond this gain the march nothing.
 const CLEARANCE_LIMIT: f32 = 400_000.0;
+
+/// How deep inside the veil a discharge is rooted, in the world.
+const ROOT_DEPTH: f32 = 900.0 / FEATURE_SCALE;
 
 /// Every weather system in flight, and an index of the systems over each
 /// cube-face cell of the planet.
@@ -104,7 +109,7 @@ impl Lightning {
     /// little, so a strike crackles instead of hanging still.
     pub fn segments(self) -> [[Vec4; 2]; 8] {
         let basis = surface_frame(self.up);
-        let root = self.up * (PLANET_RADIUS - 900.0);
+        let root = self.up * (PLANET_RADIUS - ROOT_DEPTH);
         let seed = self.id ^ self.random.to_bits();
         let pulse = seed ^ self.pulse.wrapping_mul(0x2c1b_3c6d);
         let mut points = [root; 7];
@@ -119,7 +124,8 @@ impl Lightning {
                 + self.up * (self.reach * t)
                 + (basis.x_axis * east + basis.y_axis * north) * (self.reach * 0.045);
             segments[index - 1] = [
-                points[index - 1].extend((24.0 + self.random * 18.0) * (1.0 - t * 0.45)),
+                points[index - 1]
+                    .extend((24.0 + self.random * 18.0) * (1.0 - t * 0.45) / FEATURE_SCALE),
                 points[index].extend(self.strength * 12.0 * (1.0 - t * 0.25)),
             ];
         }
@@ -129,7 +135,7 @@ impl Lightning {
             let sideways = basis.x_axis * angle.cos() + basis.y_axis * angle.sin();
             let end = points[index] + (self.up * 0.13 + sideways * 0.10) * self.reach;
             segments[6 + branch] = [
-                points[index].extend(10.0 + self.random * 6.0),
+                points[index].extend((10.0 + self.random * 6.0) / FEATURE_SCALE),
                 end.extend(self.strength * 4.0),
             ];
         }
@@ -310,13 +316,13 @@ pub fn lightning_events(time: f32) -> impl Iterator<Item = Lightning> {
             // Each recurring storm produces a new channel on its next discharge.
             let cycle = ((time + seed.offset) / seed.period).floor() as u32;
             let strike = strike_random((id as u32) ^ cycle.wrapping_mul(0x9e37_79b9));
-            let reach = 8000.0 + strike * 20_000.0;
+            let reach = (8000.0 + strike * 20_000.0) / FEATURE_SCALE;
             Some(Lightning {
                 id: id as u32,
                 position: seed.up * (PLANET_RADIUS + reach * 0.5),
                 up: seed.up,
                 reach,
-                radius: 6000.0 + seed.random * 10_000.0,
+                radius: (6000.0 + seed.random * 10_000.0) / FEATURE_SCALE,
                 strength: envelope * (0.25 + flicker * 0.75),
                 random: strike,
                 pulse: (flicker_phase / TAU).floor() as u32,
@@ -355,9 +361,10 @@ pub fn prepare_flashes(view: &mut ViewUniform) {
     visible.sort_unstable_by(|a, b| b.0.total_cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
     let mut bolt_count = 0;
     for (index, (_, event)) in visible.iter().take(32).enumerate() {
-        let root = event.up * (PLANET_RADIUS - 900.0);
+        // The veil it lights is in feature space.
+        let root = event.up * (PLANET_RADIUS - ROOT_DEPTH) * FEATURE_SCALE;
         view.aur_flashes[index] = [
-            root.extend(event.radius.recip()),
+            root.extend((event.radius * FEATURE_SCALE).recip()),
             (energy_color(event.random, 0.45 + event.random * 0.2) * event.strength * 9.0)
                 .extend(event.strength),
         ];
@@ -376,13 +383,10 @@ pub fn prepare_flashes(view: &mut ViewUniform) {
 
 #[cfg(test)]
 mod tests {
-    use core::f32::consts::FRAC_PI_2;
-
-    use skybound::scene::ViewUniform;
-    use spirv_std::glam::Mat4;
-    use spirv_std::glam::camera::rh::proj::directx::perspective_infinite_reverse;
-
     use super::*;
+    use core::f32::consts::FRAC_PI_2;
+    use skybound::scene::ViewUniform;
+    use spirv_std::glam::{Mat4, camera::rh::proj::directx::perspective_infinite_reverse};
 
     fn sphere(index: u32, count: u32) -> Vec3 {
         let z = (index as f32 + 0.5) / count as f32 * 2.0 - 1.0;
@@ -497,7 +501,7 @@ mod tests {
             let segments = event.segments();
             assert_eq!(segments, event.segments());
             let root = segments[0][0].truncate();
-            assert!((root.length() - PLANET_RADIUS + 900.0).abs() < 0.5);
+            assert!((root.length() - PLANET_RADIUS + ROOT_DEPTH).abs() < 0.5);
             for (index, segment) in segments[..6].iter().enumerate() {
                 let direction = segment[1].truncate() - segment[0].truncate();
                 assert!(direction.normalize().dot(event.up) > 0.75);

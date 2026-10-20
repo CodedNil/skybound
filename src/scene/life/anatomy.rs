@@ -1,20 +1,16 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    self, CreatureInstance, KINDS, Kind,
+    surface::{Material, Ray, TraceResult, trace_material},
+};
+use crate::scene::life::{
+    biology::{Biology, Digestion, Exchange, Lift, Transport},
+    ellipsoid, smooth_min,
+    surface::Surface,
+};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-#[cfg(not(target_arch = "spirv"))]
-use super::CreatureInstance;
-#[cfg(not(target_arch = "spirv"))]
-use super::Kind;
-use super::biology::{Biology, Digestion, Exchange, Lift, Transport};
-use super::{ellipsoid, smooth_min};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::surface::Ray;
-use crate::scene::life::surface::Surface;
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::surface::TraceResult;
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::surface::{Material, trace_material};
 
 pub fn organs(point: Vec3, biology: Biology) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
@@ -75,8 +71,8 @@ pub fn organs(point: Vec3, biology: Biology) -> Surface {
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
-    let biology = super::KINDS[creature.kind.x as usize].biology();
-    let (center, scale) = match super::KINDS[creature.kind.x as usize] {
+    let biology = KINDS[creature.kind.x as usize].biology();
+    let (center, scale) = match KINDS[creature.kind.x as usize] {
         Kind::Nae => (vec3(0.0, 0.03, 0.0), vec3(0.22, 0.33, 0.16)),
         Kind::Naetu => (vec3(0.0, 0.0, -5.0), vec3(4.0, 4.0, 12.0)),
         _ => (
@@ -84,12 +80,12 @@ pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
             creature.opaque_bounds.truncate() * vec3(0.55, 0.55, 0.35),
         ),
     };
-    let mut result = super::render(ray, creature);
+    let mut result = life::render(ray, creature);
     result.opaque = trace_material(
         ray,
         creature,
         |point, c| {
-            let body = super::body_surface(point, c);
+            let body = life::body_surface(point, c);
             let mut cut = Surface::new(body.distance.max(-point.x), 0);
             let internal = organs((point - center) / scale, biology);
             cut.join(

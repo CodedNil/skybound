@@ -1,23 +1,31 @@
 //! Crystal spires: sphere traced through their altitude band and lit by the
 //! glowing ocean they rise from.
-use spirv_std::glam::{FloatExt, Vec3, Vec4Swizzles, vec2, vec3};
-use spirv_std::num_traits::Float;
-
-use crate::scene::aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes, spire_coordinates};
-use crate::scene::life::surface::Hit;
-use crate::scene::planet::{light_position, surface_coordinates};
-use crate::scene::render::ocean::caustics;
-use crate::scene::{PLANET_RADIUS, ViewUniform, aur};
+use crate::scene::{
+    FEATURE_RADIUS, FEATURE_SCALE, ViewUniform, aur,
+    aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes, spire_coordinates},
+    life::surface::Hit,
+    planet::{feature_surface, light_towards},
+    render::ocean::caustics,
+};
+use spirv_std::{
+    glam::{FloatExt, Vec3, Vec4Swizzles, vec2, vec3},
+    num_traits::Float,
+};
 
 fn field(point: Vec3) -> f32 {
     aur::spire_field(spire_coordinates(point)) * SPIRE_METRIC
 }
 
+/// Trace the spires along a world ray; they live in feature space.
 pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angle: f32) -> Hit {
-    let ro = view.to_planet(origin);
+    let ro = view.to_planet(origin) * FEATURE_SCALE;
     let rd = view.planet_rotation.conjugate() * direction;
     let height = ro.length();
-    let band = aur::spire_band(height - PLANET_RADIUS, rd.dot(ro / height), limit);
+    let band = aur::spire_band(
+        height - FEATURE_RADIUS,
+        rd.dot(ro / height),
+        limit * FEATURE_SCALE,
+    );
     let mut t = band.x;
     let mut relaxed = 1.6;
     let mut stride = 0.0;
@@ -36,7 +44,7 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
             // Coordinates jump across a face edge, where the step stays short.
             let (first, second) = spire_axes(point);
             let velocity = vec2(first.dot(rd), second.dot(rd))
-                * (PLANET_RADIUS / point.length() / SPIRE_METRIC);
+                * (FEATURE_RADIUS / point.length() / SPIRE_METRIC);
             let local = surface.truncate() - cell * SPIRE_CELL;
             let exit = |position: f32, speed: f32| {
                 if speed > 1.0e-6 {
@@ -64,7 +72,8 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
             continue;
         }
         if distance < epsilon {
-            return shade(point, origin + direction * t, rd, t, view, epsilon);
+            let world = t / FEATURE_SCALE;
+            return shade(point, origin + direction * world, rd, world, view, epsilon);
         }
         stride = distance.max(epsilon) * relaxed;
         previous = distance;
@@ -85,10 +94,10 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
         + d * field(point + d * e))
     .normalize();
     let up = point.normalize();
-    let surface = surface_coordinates(point);
+    let surface = feature_surface(point);
     let altitude = surface.z;
     let time = view.time();
-    let light = (light_position(point) - point).normalize();
+    let light = light_towards(point);
     let pole = view.pole_color.xyz().min(Vec3::splat(1.5));
     let ambient = view.ambient_color.xyz().min(Vec3::splat(0.8));
 
@@ -145,7 +154,7 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
     // Far off, a spire dissolves into the glow of the aur it rises from
     // rather than standing as a dark speck against it.
     let glow = vec3(0.42, 0.38, 0.58) * view.sky_horizon.y + view.ambient_color.xyz() * 0.3;
-    let color = color.lerp(glow, 1.0 - (-t / 260_000.0).exp());
+    let color = color.lerp(glow, 1.0 - (-t * FEATURE_SCALE / 260_000.0).exp());
     Hit {
         color_depth: color.extend(t),
         normal: view.planet_rotation * normal,

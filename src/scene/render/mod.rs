@@ -1,18 +1,26 @@
-use spirv_std::glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
-use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler, spirv};
-
-use crate::scene::atmosphere::{render_sky, sky_direction, sky_uv};
-use crate::scene::aur::{
-    CURRENT, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection, ejection_clearance, energy_color,
+use crate::scene::{
+    FEATURE_SCALE, FrameUniform, PLANET_RADIUS, ViewUniform,
+    atmosphere::{render_sky, sky_direction, sky_uv},
+    aur::{CURRENT, EJECTION_CELL, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
+    climate::{CLOUD_TOP, cloud_wind},
+    life::{
+        self,
+        surface::{Hit, Ray},
+    },
+    math::intersect_sphere,
+    planet::{surface_coordinates, surface_frame},
+    render::{
+        clouds::short_volume,
+        textures::{AtmosphereData, Textures},
+    },
 };
-use crate::scene::climate::{CLOUD_TOP, cloud_wind};
-use crate::scene::life::surface::{Hit, Ray};
-use crate::scene::math::intersect_sphere;
-use crate::scene::planet::surface_frame;
-use crate::scene::render::clouds::short_volume;
-use crate::scene::render::textures::{AtmosphereData, Textures};
-use crate::scene::{FrameUniform, PLANET_RADIUS, ViewUniform, life};
+use spirv_std::{
+    Image, Sampler,
+    glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4},
+    num_traits::Float,
+    spirv,
+};
+
 pub mod clouds;
 mod march;
 pub mod ocean;
@@ -56,16 +64,26 @@ pub fn ejection_lookup(
     #[spirv(location = 0)] out: &mut Vec4,
 ) {
     let x = pixel.x as u32;
-    let cell = vec2(
-        (x % EJECTION_GRID_WIDTH) as f32 - EJECTION_GRID_HALF as f32,
-        pixel.y.floor() - 1.0,
-    );
-    if x >= EJECTION_GRID_WIDTH * 2 {
+    // The cell nearest the camera among those sharing this texel.
+    let view = &frame.view;
+    let camera = surface_coordinates(view.to_planet(view.world_position.xyz())) * FEATURE_SCALE;
+    let centre = (camera.truncate() / EJECTION_CELL).floor();
+    let window = EJECTION_WINDOW as f32;
+    let texel = vec2((x % EJECTION_WINDOW) as f32, pixel.y.floor());
+    let offset = texel - centre;
+    let wrapped = offset - (offset / window).floor() * window;
+    let cell = centre + wrapped
+        - Vec2::select(
+            wrapped.cmpge(Vec2::splat(window * 0.5)),
+            Vec2::splat(window),
+            Vec2::ZERO,
+        );
+    if x >= EJECTION_WINDOW * 2 {
         *out = Vec4::splat(ejection_clearance(cell, frame.view.time()));
         return;
     }
     let mut event = ejection(cell, frame.view.time());
-    if x < EJECTION_GRID_WIDTH {
+    if x < EJECTION_WINDOW {
         let mut active = 0u32;
         for index in 0..9 {
             let neighbour = cell + vec2((index / 3) as f32 - 1.0, (index % 3) as f32 - 1.0);
@@ -73,19 +91,11 @@ pub fn ejection_lookup(
         }
         event[0].w += (active << 1) as f32;
     }
-    *out = if x < EJECTION_GRID_WIDTH {
+    *out = if x < EJECTION_WINDOW {
         event[0]
     } else {
         event[1]
     };
-}
-
-fn world_point(uv: Vec2, depth: f32, matrix: Mat4) -> Vec3 {
-    let p = matrix
-        * (uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0))
-            .extend(depth)
-            .extend(1.0);
-    p.xyz() / p.w
 }
 
 fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
@@ -187,12 +197,17 @@ fn energy_layers(ray: Ray, view: &ViewUniform, layers: &mut ThinLayers) {
     }
 }
 
-fn depth_limit(uv: Vec2, frame: &FrameUniform, depth: &Depth, ray: Ray) -> f32 {
+/// How far the opaque scene lies from the camera at a pixel.
+fn depth_limit(uv: Vec2, frame: &FrameUniform, depth: &Depth) -> f32 {
     let pixel = (uv * frame.viewport.zw()).as_ivec2();
     let d = depth.fetch(pixel);
     if d > 0.0 {
-        world_point(uv, d, frame.view.world_from_clip)
-            .distance(ray.origin)
+        let p = frame.view.world_from_clip
+            * (uv * vec2(2.0, -2.0) + vec2(-1.0, 1.0))
+                .extend(d)
+                .extend(1.0);
+        (p.xyz() / p.w)
+            .distance(frame.view.world_position.xyz())
             .min(T_MAX)
     } else {
         T_MAX
@@ -303,7 +318,7 @@ pub fn clouds(
     let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
     let uv = (traced + 0.5) / frame.history.zw();
     let ray = scene_ray(uv, frame, false);
-    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    let geometry_limit = depth_limit(uv, frame, depth_texture);
     let limit = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
     } else {
@@ -424,6 +439,146 @@ pub fn cloud_resolve(
     };
 }
 
+/// Rebuild the volume at full resolution: the pixel traced this frame keeps
+/// its fresh value, softened by history; the other three come from where
+/// history saw them, held within the range of the fresh blocks around them.
+#[spirv(fragment(entry_point_name = "volume_resolve"))]
+pub fn volume_resolve(
+    #[spirv(location = 0)] uv: Vec2,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] volume: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 2)] motion: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 3)] metadata: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] history: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] history_metadata: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 6)] sampler: &Sampler,
+    #[spirv(location = 0)] out_color: &mut Vec4,
+    #[spirv(location = 1)] out_metadata: &mut Vec4,
+) {
+    let size = frame.history.zw();
+    let pixel = (uv * size).floor().clamp(Vec2::ZERO, size - 1.0);
+    let block = (pixel * 0.5).floor();
+    let blocks = (size * 0.5).ceil() - 1.0;
+    let sample: Vec4 = metadata.fetch(block.as_ivec2());
+    let fresh: Vec4 = volume.fetch(block.as_ivec2());
+    let mut low = fresh;
+    let mut high = fresh;
+    let mut filtered = Vec4::ZERO;
+    let mut total = 0.0;
+    for index in 0..9 {
+        let offset = vec2((index % 3) as f32 - 1.0, (index / 3) as f32 - 1.0);
+        let neighbour = (block + offset).clamp(Vec2::ZERO, blocks).as_ivec2();
+        let geometry = metadata.fetch(neighbour).y;
+        if (geometry - sample.y).abs() <= (sample.y * 0.04).max(10.0) {
+            let weight = (2.0 - offset.x.abs()) * (2.0 - offset.y.abs());
+            let value: Vec4 = volume.fetch(neighbour);
+            filtered += value * weight;
+            total += weight;
+            low = low.min(value);
+            high = high.max(value);
+        }
+    }
+    filtered /= total.max(1.0);
+    let traced = (pixel - (block * 2.0 + block_offset(frame)))
+        .abs()
+        .max_element()
+        < 0.5;
+    let current = if traced {
+        fresh.lerp(filtered, 0.25)
+    } else {
+        filtered
+    };
+    *out_metadata = sample;
+    *out_color = current;
+    let previous = uv - motion.fetch(block.as_ivec2()).xy();
+    if frame.history.x < 0.5 || previous.cmplt(Vec2::ZERO).any() || previous.cmpgt(Vec2::ONE).any()
+    {
+        return;
+    }
+    let old: Vec4 = history.sample_by_lod(*sampler, previous, 0.0);
+    let old_sample: Vec4 = history_metadata.fetch(
+        (previous * size)
+            .floor()
+            .clamp(Vec2::ZERO, size - 1.0)
+            .as_ivec2(),
+    );
+    let difference = (sample.xy() - old_sample.xy()).abs();
+    let tolerance = (sample.xy() * vec2(0.35, 0.04)).max(vec2(1500.0, 10.0));
+    let thin_edge = current.w.max(old.w) > 0.8;
+    if difference.y < tolerance.y && (difference.x < tolerance.x || thin_edge) {
+        // A traced pixel takes most of its fresh value; the others rely on
+        // history, refreshed every fourth frame.
+        *out_color = current.lerp(old.clamp(low, high), if traced { 0.35 } else { 0.9 });
+    }
+}
+
+/// Lay the volume over the native scene, upsampled where its depth agrees
+/// with the scene's, and slot the thin layers in front of it.
+#[spirv(fragment(entry_point_name = "volume_composite"))]
+pub fn volume_composite(
+    #[spirv(location = 0)] uv: Vec2,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(descriptor_set = 0, binding = 1)] scene: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 2)] volume: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 3)] metadata: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] depth: &Depth,
+    #[spirv(descriptor_set = 0, binding = 5)] thin_color: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 6)] thin_transmission: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 7)] thin_prefix: &Image!(2D, type=f32, sampled=true),
+    #[spirv(location = 0)] out_color: &mut Vec4,
+) {
+    let native = frame.viewport.zw();
+    let pixel = (uv * native)
+        .floor()
+        .clamp(Vec2::ZERO, native - 1.0)
+        .as_ivec2();
+    let background = scene.fetch(pixel).xyz();
+    *out_color = background.extend(1.0);
+    if frame.view.times.z > 0.5 {
+        return;
+    }
+    let distance = depth_limit(uv, frame, depth);
+    let size = frame.history.zw();
+    let coordinates = uv * size - 0.5;
+    let base = coordinates.floor();
+    let fraction = coordinates - base;
+    let mut accumulated = Vec4::ZERO;
+    let mut total = 0.0;
+    for index in 0..4 {
+        let corner = vec2((index % 2) as f32, (index / 2) as f32);
+        let texel = (base + corner).clamp(Vec2::ZERO, size - 1.0).as_ivec2();
+        let spatial = corner * fraction + (Vec2::ONE - corner) * (Vec2::ONE - fraction);
+        let geometry = metadata.fetch(texel).y;
+        let weight = spatial.x * spatial.y
+            / (1.0 + (geometry - distance).abs() / (distance * 0.02).max(2.0));
+        accumulated += volume.fetch(texel) * weight;
+        total += weight;
+    }
+    let fog = accumulated / total.max(0.000_001);
+    let profile = frame.view.camera_position.w as u32;
+    if profile & 32 != 0 {
+        *out_color = (fog.xyz() + fog.w * background).extend(1.0);
+        return;
+    }
+    let thin: Vec4 = thin_color.fetch(pixel);
+    if profile & 64 != 0 {
+        *out_color = thin.xyz().extend(1.0);
+        return;
+    }
+    let transmission = thin_transmission.fetch(pixel).xyz();
+    if thin.w < 0.0 {
+        *out_color = (thin.xyz() + transmission * background).extend(1.0);
+        return;
+    }
+    // The thin layers lie in front of the volume's leading part, which is
+    // taken out of it so it is not counted twice.
+    let prefix: Vec4 = thin_prefix.fetch(pixel);
+    let opening = prefix.w.max(0.0001);
+    let remainder = (fog.xyz() - prefix.xyz()).max(Vec3::ZERO) / opening;
+    let through = (fog.w / opening).clamp(0.0, 1.0);
+    *out_color = (thin.xyz() + transmission * (remainder + through * background)).extend(1.0);
+}
+
 /// The aur, its arcs and the pole lights, with the clouds slotted in; like
 /// the clouds, traced at one pixel of each 2x2 block per frame.
 #[spirv(fragment(entry_point_name = "volume"))]
@@ -452,7 +607,7 @@ pub fn volume(
     let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
     let uv = (traced + 0.5) / frame.history.zw();
     let ray = scene_ray(uv, frame, false);
-    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    let geometry_limit = depth_limit(uv, frame, depth_texture);
     let limit = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
     } else {
@@ -491,10 +646,11 @@ pub fn volume(
         },
     );
     let position = ray.origin + ray.direction * volume.depth;
+    // Feature-space heights and the aur's feature-space flow, in the world.
     let altitude = position.distance(frame.view.planet_center()) - PLANET_RADIUS;
-    let current = if altitude <= 3700.0 {
-        frame.view.planet_rotation * CURRENT
-    } else if altitude > CLOUD_TOP {
+    let current = if altitude <= 3700.0 / FEATURE_SCALE {
+        frame.view.planet_rotation * (CURRENT / FEATURE_SCALE)
+    } else if altitude > CLOUD_TOP / FEATURE_SCALE {
         Vec3::ZERO
     } else {
         frame.view.planet_rotation * cloud_wind(frame.view.to_planet(position).normalize())
@@ -528,7 +684,7 @@ pub fn transparent(
     #[spirv(location = 2)] out_prefix: &mut Vec4,
 ) {
     let mut ray = scene_ray(uv, frame, false);
-    let geometry_limit = depth_limit(uv, frame, depth_texture, ray);
+    let geometry_limit = depth_limit(uv, frame, depth_texture);
     ray.max_distance = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
     } else {

@@ -1,11 +1,13 @@
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4Swizzles, vec2, vec3};
-use spirv_std::num_traits::Float;
-
-use crate::scene::math::{cube, fourth, square};
-use crate::scene::planet::{REACTION_RADIUS, REACTION_SPREAD, reaction_coordinates};
-use crate::scene::render::march::VolumeSample;
-use crate::scene::render::textures::Textures;
-use crate::scene::{PLANET_RADIUS, ViewUniform};
+use crate::scene::{
+    PLANET_RADIUS, ViewUniform,
+    math::{cube, fourth, square},
+    planet::{REACTION_RADIUS, REACTION_SPREAD, reaction_coordinates},
+    render::{march::VolumeSample, textures::Textures},
+};
+use spirv_std::{
+    glam::{FloatExt, Vec2, Vec3, Vec4Swizzles, vec2, vec3},
+    num_traits::Float,
+};
 
 /// The marched part of the poles: the shell where each beam strikes the
 /// reaction and spreads into a corona.

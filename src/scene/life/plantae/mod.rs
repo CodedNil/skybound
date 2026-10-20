@@ -1,12 +1,12 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction},
+    surface::{Material, Ray, Surface, TraceResult, trace_material},
+};
 use core::f32::consts::{PI, TAU};
-
 use spirv_std::glam::{FloatExt, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::life::CreatureInstance;
-use crate::scene::life::biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction};
-use crate::scene::life::surface::{Material, Ray, Surface, TraceResult, trace_material};
 pub mod chlorophyta;
 pub mod pneumatophyta;
 pub mod vasculophyta;

@@ -1,18 +1,17 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::biology::{Anatomy, Reproduction};
+use crate::scene::life::{
+    CreatureInstance,
+    biology::Biology,
+    ellipsoid, plantae, smooth_min,
+    surface::{Material, Ray, Surface, TraceResult, trace_material},
+};
 use core::f32::consts::{PI, TAU};
-
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec4;
 use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-#[cfg(not(target_arch = "spirv"))]
-use super::biology::Anatomy;
-use super::biology::Biology;
-#[cfg(not(target_arch = "spirv"))]
-use super::biology::Reproduction;
-use super::{CreatureInstance, ellipsoid, smooth_min};
-use crate::scene::life::surface::{Material, Ray, Surface, TraceResult, trace_material};
 
 pub const DAY: f32 = 86_400.0;
 
@@ -187,9 +186,8 @@ pub fn juvenile_surface(point: Vec3, c: &CreatureInstance) -> Surface {
             d = smooth_min(d, stalk, 0.06);
             for index in 0..4 {
                 let angle = index as f32 * TAU / 4.0;
-                let q =
-                    super::plantae::rotate(p - vec3(0.0, 0.1 + index as f32 * 0.12, 0.0), angle);
-                d = d.min(super::plantae::leaf(
+                let q = plantae::rotate(p - vec3(0.0, 0.1 + index as f32 * 0.12, 0.0), angle);
+                d = d.min(plantae::leaf(
                     q,
                     0.35 + age * 0.75,
                     0.14 + age * 0.22,
@@ -228,10 +226,9 @@ pub fn render_juvenile(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::Vec4;
-
     use super::*;
     use crate::scene::life::{KINDS, Kind};
+    use spirv_std::glam::Vec4;
 
     #[test]
     fn lifecycle_grid_includes_birth_maturity_and_end_of_life() {

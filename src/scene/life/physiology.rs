@@ -1,5 +1,10 @@
-use super::biology::{Anatomy, Biology, Digestion, Energy, Exchange, Transport};
-use crate::scene::climate::Climate;
+use crate::scene::{
+    climate::Climate,
+    life::{
+        biology::{Anatomy, Biology, Digestion, Energy, Exchange, Transport},
+        development::DAY,
+    },
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vitals {
@@ -50,7 +55,7 @@ impl Vitals {
         dt: f32,
     ) -> Waste {
         let mut waste = self.digest(biology, dt);
-        self.age_days += f64::from(dt.max(0.0)) / f64::from(super::development::DAY);
+        self.age_days += f64::from(dt.max(0.0)) / f64::from(DAY);
         let exchange = match biology.organs.exchange {
             Exchange::Surface => 0.15,
             Exchange::Pores => 0.3,
@@ -90,7 +95,7 @@ impl Vitals {
             waste.mass += catabolism;
         }
         let senescence = (self.age_days as f32 / biology.lifespan_days - 0.75).max(0.0);
-        self.health = (self.health - senescence * dt / super::development::DAY).max(0.0);
+        self.health = (self.health - senescence * dt / DAY).max(0.0);
         if self.age_days >= f64::from(biology.lifespan_days) {
             self.health = 0.0;
         }
@@ -151,16 +156,15 @@ impl Climate {
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::vec3;
-
     use super::*;
     use crate::scene::life::{KINDS, Kind};
+    use spirv_std::glam::vec3;
 
     #[test]
     fn ancient_organisms_age_by_one_fixed_tick_and_die_at_their_lifespan() {
         let biology = Kind::Antiquus.biology();
         let mut body = Vitals::new(biology);
-        let tick_days = 1.0 / 64.0 / f64::from(super::super::development::DAY);
+        let tick_days = 1.0 / 64.0 / f64::from(DAY);
         body.age_days = f64::from(biology.lifespan_days) - tick_days;
         let before = body.age_days;
         body.metabolize(

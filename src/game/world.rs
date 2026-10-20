@@ -1,24 +1,26 @@
-use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
-
-use bevy::anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening;
-use bevy::anti_alias::taa::TemporalAntiAliasing;
-use bevy::camera::Hdr;
-use bevy::core_pipeline::prepass::{
-    DepthPrepass, MotionVectorPrepass, NoBackgroundMotionVectors, NormalPrepass,
+use crate::{
+    game::{
+        ecosystem::{EcologicalMotion, Relations},
+        flight::{SPAWN, Velocity, follow_camera},
+    },
+    math::{ToEngine, ToScene},
 };
-use bevy::math::{DQuat, DVec3};
-use bevy::post_process::bloom::Bloom;
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use bevy::render::view::DebandDither;
-use bevy::transform::TransformSystems;
-use skybound::scene::PLANET_RADIUS;
-use skybound::scene::planet::surface_coordinates;
-
-use crate::game::ecosystem::{EcologicalMotion, Relations};
-use crate::game::flight::{SPAWN, Velocity, follow_camera};
-use crate::math::{ToEngine, ToScene};
+use bevy::{
+    anti_alias::{
+        contrast_adaptive_sharpening::ContrastAdaptiveSharpening, taa::TemporalAntiAliasing,
+    },
+    camera::Hdr,
+    core_pipeline::prepass::{
+        DepthPrepass, MotionVectorPrepass, NoBackgroundMotionVectors, NormalPrepass,
+    },
+    math::{DQuat, DVec3},
+    post_process::{auto_exposure::AutoExposure, bloom::Bloom},
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource, view::DebandDither},
+    transform::TransformSystems,
+};
+use skybound::scene::{PLANET_RADIUS, planet::surface_coordinates};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
 const CAMERA_RESET_THRESHOLD: f32 = 2048.0;
 
@@ -138,13 +140,23 @@ fn setup(mut commands: Commands) {
         NoBackgroundMotionVectors,
         Msaa::Off,
         Hdr,
-        DebandDither::Enabled,
-        Bloom::NATURAL,
-        TemporalAntiAliasing::default(),
-        ContrastAdaptiveSharpening {
-            sharpening_strength: 0.3,
-            ..default()
-        },
+        (
+            DebandDither::Enabled,
+            Bloom::NATURAL,
+            // The pole lights and the aur's glow span a huge range of brightness:
+            // the eye adapts within limits, so night stays night.
+            AutoExposure {
+                correction_range: -2.5..=0.5,
+                speed_brighten: 1.5,
+                speed_darken: 2.0,
+                ..default()
+            },
+            TemporalAntiAliasing::default(),
+            ContrastAdaptiveSharpening {
+                sharpening_strength: 0.3,
+                ..default()
+            },
+        ),
         Transform::from_translation(SPAWN + vec3(0.0, -56.0, 13.0)).looking_at(SPAWN, Vec3::Z),
     ));
 }
@@ -202,9 +214,8 @@ fn update(
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::system::RunSystemOnce;
-
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn down_points_to_planet_at_every_latitude_and_longitude() {

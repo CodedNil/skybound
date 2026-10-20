@@ -1,11 +1,12 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::{Biology, Energy},
+    capsule, ellipsoid, plantae,
+    plantae::{leaf, rotate},
+    surface::{Ray, Surface, TraceResult},
+};
 use core::f32::consts::FRAC_PI_2;
-
 use spirv_std::glam::{Vec3, vec3};
-
-use crate::scene::life::biology::{Biology, Energy};
-use crate::scene::life::plantae::{leaf, rotate};
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 1200.0,

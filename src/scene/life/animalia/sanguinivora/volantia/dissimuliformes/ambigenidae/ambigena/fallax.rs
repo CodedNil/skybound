@@ -1,9 +1,11 @@
+use crate::scene::life::{
+    CreatureInstance,
+    animalia::tetralata::oral_tentacles,
+    biology::Biology,
+    ellipsoid, eyes,
+    surface::{Ray, Surface, TraceResult},
+};
 use spirv_std::glam::{Vec3, vec3, vec4};
-
-use crate::scene::life::animalia::tetralata::oral_tentacles;
-use crate::scene::life::biology::Biology;
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, ellipsoid, eyes};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 90.0,

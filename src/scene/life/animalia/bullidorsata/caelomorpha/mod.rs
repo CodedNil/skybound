@@ -1,12 +1,11 @@
+pub use super::BIOLOGY;
+use crate::scene::life::{
+    CreatureInstance, ellipsoid, smooth_min,
+    surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material},
+};
 use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-pub use super::BIOLOGY;
-use crate::scene::life::surface::{
-    Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material,
-};
-use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 pub mod aerogigantiformes;
 #[cfg(not(target_arch = "spirv"))]
 pub mod cloth;
@@ -372,10 +371,9 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
 
 #[cfg(test)]
 mod tests {
-    use aerogigantiformes::aerogigantidae::aerogigas::auratus as aerogigas;
-
     use super::*;
     use crate::scene::life::Kind;
+    use aerogigantiformes::aerogigantidae::aerogigas::auratus as aerogigas;
 
     #[test]
     fn twisted_cloth_has_no_gaps_between_patches() {

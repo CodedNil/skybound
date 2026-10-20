@@ -1,10 +1,12 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::{Biology, Lift, Organs, Reproduction, Social},
+    capsule, ellipsoid,
+    surface::{Ray, Surface, TraceResult},
+};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::life::biology::{Biology, Lift, Organs, Reproduction, Social};
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, capsule, ellipsoid};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 2.0,

@@ -1,9 +1,10 @@
+use crate::scene::{
+    atmosphere::{get_pole_light_color, render_sky},
+    aur::ambient,
+    life::CreatureInstance,
+    planet::{get_pole_position, surface_coordinates},
+};
 use spirv_std::glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
-
-use crate::scene::atmosphere::{get_pole_light_color, render_sky};
-use crate::scene::aur::ambient;
-use crate::scene::life::CreatureInstance;
-use crate::scene::planet::{get_pole_position, surface_coordinates};
 
 pub mod atmosphere;
 pub mod aur;
@@ -16,6 +17,17 @@ pub mod planet;
 pub mod render;
 
 pub const PLANET_RADIUS: f32 = 1_500_000.0;
+
+/// How many times larger than the world the feature space is, about the
+/// planet's centre.
+///
+/// The aur, its arcs and spires, the clouds and the lightning are modelled
+/// in it: a feature metre is an eighth of a world metre, so all of
+/// them stand at an eighth of their modelled size on the same planet.
+pub const FEATURE_SCALE: f32 = 8.0;
+
+/// The planet's radius in feature space.
+pub const FEATURE_RADIUS: f32 = PLANET_RADIUS * FEATURE_SCALE;
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -89,7 +101,7 @@ impl ViewUniform {
         self.ambient_color =
             (render_sky(up, ro, source) * 0.7 + render_sky(-up, ro, source) * 0.15).extend(0.0);
         let position = self.surface_position(self.world_position.xyz());
-        self.ambient_color += ambient(position, self.time()).extend(0.0);
+        self.ambient_color += ambient(position * FEATURE_SCALE, self.time()).extend(0.0);
     }
 
     pub fn planet_center(&self) -> Vec3 {
@@ -136,13 +148,10 @@ impl ViewUniform {
 
 #[cfg(test)]
 mod tests {
-    use core::f32::consts::FRAC_PI_2;
-
-    use spirv_std::glam::camera::rh::proj::directx::perspective_infinite_reverse;
-    use spirv_std::glam::vec3;
-
     use super::*;
     use crate::scene::planet::REACTION_RADIUS;
+    use core::f32::consts::FRAC_PI_2;
+    use spirv_std::glam::{camera::rh::proj::directx::perspective_infinite_reverse, vec3};
 
     #[test]
     fn adjacent_pixel_rays_remain_distinct_after_large_world_translations() {

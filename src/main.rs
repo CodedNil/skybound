@@ -1,7 +1,8 @@
+use bevy::{
+    prelude::*,
+    window::{PresentMode, WindowPlugin},
+};
 use std::env;
-
-use bevy::prelude::*;
-use bevy::window::{PresentMode, WindowPlugin};
 
 mod benchmark;
 mod game;

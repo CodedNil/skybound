@@ -1,15 +1,15 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
+use crate::scene::life::{
+    CreatureInstance,
+    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
+    biology::Biology,
+    ellipsoid, smooth_min,
+    surface::{Ray, Surface, TraceResult},
+};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
-use crate::scene::life::animalia::bullidorsata::caelomorpha::{
-    GasChamber, drift_body, ribbons, tissue_distance,
-};
-use crate::scene::life::biology::Biology;
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, ellipsoid, smooth_min};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 120.0,

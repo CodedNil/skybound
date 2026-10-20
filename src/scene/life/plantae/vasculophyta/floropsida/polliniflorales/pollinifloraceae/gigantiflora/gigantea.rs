@@ -1,9 +1,11 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::Biology,
+    capsule, ellipsoid, plantae,
+    plantae::{frond, rosette, rotate},
+    surface::{Ray, Surface, TraceResult},
+};
 use spirv_std::glam::{Vec3, vec3};
-
-use crate::scene::life::biology::Biology;
-use crate::scene::life::plantae::{frond, rosette, rotate};
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 400.0,

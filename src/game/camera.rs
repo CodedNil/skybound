@@ -1,12 +1,14 @@
-use bevy::anti_alias::taa::TemporalAntiAliasing;
-use bevy::input::InputSystems;
-use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use bevy::window::WindowResized;
-
-use super::world::WorldData;
+use crate::game::world::WorldData;
+use bevy::{
+    anti_alias::taa::TemporalAntiAliasing,
+    input::{
+        InputSystems,
+        mouse::{AccumulatedMouseMotion, MouseWheel},
+    },
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+    window::WindowResized,
+};
 
 #[derive(Resource, Clone, Default, ExtractResource)]
 #[extract_app(RenderApp)]

@@ -1,11 +1,13 @@
+use crate::scene::life::{
+    CreatureInstance,
+    biology::{Biology, Lift, Organs, Social},
+    capsule, ellipsoid, plantae,
+    plantae::{rosette, rotate},
+    surface::{Ray, Surface, TraceResult},
+};
 use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::life::biology::{Biology, Lift, Organs, Social};
-use crate::scene::life::plantae::{rosette, rotate};
-use crate::scene::life::surface::{Ray, Surface, TraceResult};
-use crate::scene::life::{CreatureInstance, capsule, ellipsoid, plantae};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 7300.0,

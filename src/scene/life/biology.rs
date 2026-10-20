@@ -1,4 +1,4 @@
-use super::Kind;
+use crate::scene::life::Kind;
 
 pub const ANCESTRAL: Biology = Biology {
     maturity_days: 90.0,

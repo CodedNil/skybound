@@ -3,19 +3,21 @@ name = "skybound"
 version = "0.1.0"
 edition = "2024"
 
+# The shaders are this same crate compiled to SPIR-V without default
+# features, so everything that only runs on the host sits behind `desktop`.
 [features]
 default = ["desktop"]
-desktop = ["dep:bevy", "dep:image", "dep:rayon", "dep:half", "dep:serde_json"]
+desktop = ["dep:bevy", "dep:rayon", "dep:half", "dep:serde_json"]
 
 [[bin]]
 name = "skybound"
-path = "src/main.rs"
 required-features = ["desktop"]
 
 [[example]]
 name = "species_preview"
 required-features = ["desktop"]
 
+# rust-gpu builds shader crates as dylibs; the game links the rlib.
 [lib]
 crate-type = ["dylib", "lib"]
 
@@ -38,19 +40,16 @@ bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "855
     "bevy_ui",
     "bevy_ui_render",
     "default_font",
-    "hdr",
     "multi_threaded",
     "tonemapping_luts",
     "zstd_rust",
 ] }
-image = { optional = true, version = "0.25.10", default-features = false, features = [
-    "png",
-    "webp",
-    "gif",
-] }
 rayon = { version = "1.12.0", optional = true }
 half = { version = "2.7.1", optional = true }
 serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
 
 [build-dependencies]
 spirv-builder = "0.11.0"
@@ -80,32 +79,21 @@ assertions_on_result_states = "warn"
 clone_on_ref_ptr = "warn"
 create_dir = "warn"
 dbg_macro = "warn"
-empty_drop = "warn"
 empty_enum_variants_with_brackets = "warn"
 empty_structs_with_brackets = "warn"
-error_impl_error = "warn"
 exit = "warn"
-filetype_is_file = "warn"
 float_cmp_const = "warn"
-fn_to_numeric_cast_any = "warn"
 get_unwrap = "warn"
 if_then_some_else_none = "warn"
 iter_over_hash_type = "warn"
 lossy_float_literal = "warn"
 map_err_ignore = "warn"
-mem_forget = "warn"
 missing_assert_message = "warn"
 mixed_read_write_in_expression = "warn"
-multiple_unsafe_ops_per_block = "warn"
-mutex_atomic = "warn"
-mutex_integer = "warn"
 needless_raw_strings = "warn"
 non_zero_suggestions = "warn"
 panic_in_result_fn = "warn"
-pathbuf_init_then_push = "warn"
 precedence_bits = "warn"
-rc_buffer = "warn"
-rc_mutex = "warn"
 redundant_test_prefix = "warn"
 redundant_type_annotations = "warn"
 renamed_function_params = "warn"
@@ -114,15 +102,10 @@ semicolon_inside_block = "warn"
 separated_literal_suffix = "warn"
 str_to_string = "warn"
 string_add = "warn"
-string_lit_chars_any = "warn"
-suspicious_xor_used_as_pow = "warn"
 tests_outside_test_module = "warn"
 todo = "warn"
 try_err = "warn"
-undocumented_unsafe_blocks = "warn"
 unimplemented = "warn"
-unnecessary_safety_comment = "warn"
-unnecessary_safety_doc = "warn"
 unnecessary_self_imports = "warn"
 unneeded_field_pattern = "warn"
 unreachable = "warn"
@@ -130,14 +113,7 @@ unused_result_ok = "warn"
 verbose_file_reads = "warn"
 
 [profile.release]
-incremental = true
-codegen-units = 256
 lto = true
-
-[profile.release.build-override]
-opt-level = 3
-incremental = true
-codegen-units = 256
 
 [profile.dev]
 opt-level = 3

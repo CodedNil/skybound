@@ -1,9 +1,10 @@
+use crate::scene::life::{
+    Kind, behave,
+    biology::{Anatomy, Biology, Feeding, Social},
+};
 use spirv_std::glam::{Mat3, Quat, Vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use super::Kind;
-use super::biology::{Anatomy, Biology, Feeding, Social};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Activity {
@@ -82,7 +83,7 @@ pub struct Motion {
 
 impl Motion {
     pub fn advance(&mut self, kind: Kind, senses: &Senses, seconds: f32) -> Controls {
-        let controls = super::behave(kind, senses);
+        let controls = behave(kind, senses);
         let dt = seconds.max(0.0);
         let response = controls.response.max(0.001);
         let decay = (-response * dt).exp();
@@ -177,8 +178,8 @@ mod tests {
             ..Senses::default()
         };
         for kind in [Kind::Aerogigas, Kind::Levitans, Kind::Nubivesica] {
-            let passive = super::super::behave(kind, &senses);
-            let empty = super::super::behave(
+            let passive = behave(kind, &senses);
+            let empty = behave(
                 kind,
                 &Senses {
                     food: None,

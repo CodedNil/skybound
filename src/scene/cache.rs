@@ -1,16 +1,17 @@
 //! Planet-projected cache coordinates shared by the host and shaders.
+use crate::scene::{
+    FEATURE_RADIUS, FEATURE_SCALE, ViewUniform,
+    aur::{spire_coordinates, spire_point},
+    planet::surface_frame,
+};
 use spirv_std::glam::{Vec2, Vec3, Vec4Swizzles, vec2};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-use crate::scene::aur::{spire_coordinates, spire_point};
-use crate::scene::planet::surface_frame;
-use crate::scene::{PLANET_RADIUS, ViewUniform};
-
 pub const SIZE: u32 = 512;
 /// Each level doubles the spacing. A factor of four left the texel up to
 /// eight times the pixel footprint just past every level boundary.
-pub const CASCADES: u32 = 8;
+pub const CASCADES: u32 = 10;
 const FINEST: f32 = 32.0;
 
 /// The cache origin moves in steps of this many metres.
@@ -24,19 +25,19 @@ impl ViewUniform {
     pub fn prepare_cache(&mut self) {
         // Fixed to a planet grid, so a moving camera does not resample the
         // waves at shifting texel positions and set distant fog shimmering.
-        let camera = spire_coordinates(self.to_planet(self.world_position.xyz()));
+        let camera = spire_coordinates(self.to_planet(self.world_position.xyz()) * FEATURE_SCALE);
         let snapped = (camera.truncate() / SNAP).round() * SNAP;
         let up = spire_point(snapped.extend(0.0)).normalize();
         let frame = surface_frame(up);
         self.cache_origin =
-            (up * PLANET_RADIUS).extend(f32::from(self.camera_position.w as u32 & 8 == 0));
+            (up * FEATURE_RADIUS).extend(f32::from(self.camera_position.w as u32 & 8 == 0));
         self.cache_east = frame.x_axis.extend(0.0);
         self.cache_north = frame.y_axis.extend(0.0);
     }
 }
 
 pub fn coordinates(point: Vec3, view: &ViewUniform) -> Option<Vec2> {
-    let up = view.cache_origin.xyz() / PLANET_RADIUS;
+    let up = view.cache_origin.xyz() / FEATURE_RADIUS;
     let denominator = point.dot(up);
     if denominator <= 0.0 {
         return None;
@@ -45,7 +46,7 @@ pub fn coordinates(point: Vec3, view: &ViewUniform) -> Option<Vec2> {
         vec2(
             point.dot(view.cache_east.xyz()),
             point.dot(view.cache_north.xyz()),
-        ) * (PLANET_RADIUS / denominator),
+        ) * (FEATURE_RADIUS / denominator),
     )
 }
 
@@ -54,7 +55,7 @@ pub fn point(coordinates: Vec2, view: &ViewUniform) -> Vec3 {
         + view.cache_east.xyz() * coordinates.x
         + view.cache_north.xyz() * coordinates.y)
         .normalize()
-        * PLANET_RADIUS
+        * FEATURE_RADIUS
 }
 
 pub fn cascade(coordinates: Vec2) -> u32 {
@@ -79,9 +80,9 @@ pub fn first_level(altitude: f32, angle: f32) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::{Vec4, vec3};
-
     use super::*;
+    use crate::scene::PLANET_RADIUS;
+    use spirv_std::glam::{Vec4, vec3};
 
     #[test]
     fn pixel_filter_scale_is_continuous_and_independent_of_camera_centre() {
@@ -119,19 +120,20 @@ mod tests {
             ] {
                 let projected = coordinates(point(c, &view), &view).unwrap();
                 assert!(
-                    projected.distance(c) < 0.3,
+                    // f32 holds feature-space points to a metre or so.
+                    projected.distance(c) < 0.3 * FEATURE_SCALE,
                     "cache projection drift: {c} -> {projected}"
                 );
             }
-            assert!(coordinates(-up * PLANET_RADIUS, &view).is_none());
+            assert!(coordinates(-up * FEATURE_RADIUS, &view).is_none());
         }
     }
 
     #[test]
     fn cascade_coverage_and_reference_switch() {
         assert_eq!(cascade(Vec2::ZERO), 0);
-        assert_eq!(cascade(Vec2::splat(2_000_000.0)), CASCADES);
-        assert!(spacing(CASCADES - 1) * SIZE as f32 * 0.46 > 900_000.0);
+        assert_eq!(cascade(Vec2::splat(8_000_000.0)), CASCADES);
+        assert!(spacing(CASCADES - 1) * SIZE as f32 * 0.46 > 3_000_000.0);
         let mut view = view(Vec3::X);
         view.camera_position = Vec4::new(0.0, 0.0, 0.0, 8.0);
         view.prepare_cache();

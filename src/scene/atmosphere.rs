@@ -1,12 +1,12 @@
+use crate::scene::{
+    PLANET_RADIUS,
+    math::{henyey_greenstein, intersect_sphere, square},
+    planet::REACTION_HEIGHT,
+};
 use core::f32::consts::PI;
-
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::PLANET_RADIUS;
-use crate::scene::math::{henyey_greenstein, intersect_sphere, square};
-use crate::scene::planet::REACTION_HEIGHT;
 
 const THREE_OVER_SIXTEEN_PI: f32 = 3.0 / (16.0 * PI);
 
@@ -349,10 +349,9 @@ pub fn cached_air_transmittance(
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::{Vec2, vec2};
-
     use super::*;
     use crate::scene::atmosphere::{TRANSMITTANCE_SIZE, air_texel, transmittance_coordinates};
+    use spirv_std::glam::{Vec2, vec2};
 
     #[test]
     fn cached_transmittance_matches_light_integration_across_cloud_altitudes() {

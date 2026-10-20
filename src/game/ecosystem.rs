@@ -1,18 +1,23 @@
+use crate::{
+    game::{
+        flight::{Mount, Player, SPAWN},
+        weather::CloudField,
+        world::{PlanetPosition, WorldAnchor, WorldData},
+    },
+    math::{ToEngine, ToScene},
+};
+use bevy::{math::DVec3, prelude::*};
+use skybound::scene::{
+    FEATURE_SCALE, PLANET_RADIUS,
+    climate::Climate,
+    life::{
+        KINDS, Kind,
+        behaviour::{Activity, Motion, Senses},
+        biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible},
+        physiology::Vitals,
+    },
+};
 use std::collections::HashMap;
-
-use bevy::math::DVec3;
-use bevy::prelude::*;
-use skybound::scene::PLANET_RADIUS;
-use skybound::scene::climate::Climate;
-use skybound::scene::life::behaviour::{Activity, Motion, Senses};
-use skybound::scene::life::biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible};
-use skybound::scene::life::physiology::Vitals;
-use skybound::scene::life::{KINDS, Kind};
-
-use super::flight::{Mount, Player, SPAWN};
-use super::weather::CloudField;
-use super::world::{PlanetPosition, WorldAnchor, WorldData};
-use crate::math::{ToEngine, ToScene};
 
 const CELL: f32 = 300.0;
 
@@ -204,7 +209,8 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     // Creatures live among the clouds that are drawn: in them the air is
     // saturated, and tall towers mean storms.
     let [cover, layers] = clouds.cover(position.normalize());
-    let altitude = position.length() - PLANET_RADIUS;
+    // Cloud heights are in feature space.
+    let altitude = (position.length() - PLANET_RADIUS) * FEATURE_SCALE;
     let within = if altitude > layers.x && altitude < cover.y {
         cover.x
     } else {
@@ -647,9 +653,8 @@ fn reproduce(
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::system::SystemState;
-
     use super::*;
+    use bevy::ecs::system::SystemState;
 
     #[test]
     fn live_birth_requires_another_living_adult_and_conserves_mass() {

@@ -1,19 +1,22 @@
-use core::f32::consts::TAU;
-
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4};
-use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler, spirv};
-
-use crate::scene::atmosphere::POLE_RADIANCE;
-use crate::scene::aur::{
-    CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH, aur_climate, energy_color, nearest_spire, spire_axes,
-    spire_coordinates,
+use crate::scene::{
+    FEATURE_RADIUS, FEATURE_SCALE, FrameUniform, PLANET_RADIUS, ViewUniform,
+    atmosphere::POLE_RADIANCE,
+    aur::{
+        CURRENT, EJECTION_HEIGHT, EJECTION_WIDTH, aur_climate, energy_color, nearest_spire,
+        spire_axes, spire_coordinates,
+    },
+    cache as grid,
+    math::{cube, fourth, rotated, smoothstep_mean, square},
+    planet::{light_position, surface_frame},
+    render::{march::VolumeSample, textures::Textures},
 };
-use crate::scene::math::{cube, fourth, rotated, smoothstep_mean, square};
-use crate::scene::planet::{light_position, surface_frame};
-use crate::scene::render::march::VolumeSample;
-use crate::scene::render::textures::Textures;
-use crate::scene::{FrameUniform, PLANET_RADIUS, ViewUniform, cache as grid};
+use core::f32::consts::TAU;
+use spirv_std::{
+    Image, Sampler,
+    glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4},
+    num_traits::Float,
+    spirv,
+};
 
 pub const OCEAN_TOP_HEIGHT: f32 = EJECTION_HEIGHT + EJECTION_WIDTH * 3.0;
 
@@ -56,15 +59,10 @@ fn wisp(noise: f32, footprint: f32) -> f32 {
     resolved.lerp(0.2, unresolved)
 }
 
-pub(crate) fn wave_height(position: Vec3, time: f32, footprint: f32, textures: &Textures) -> f32 {
-    wave_base(position, time, footprint, textures)
-        + wave_detail(position, time, footprint, textures)
-}
-
 pub(crate) fn wave_base(position: Vec3, time: f32, footprint: f32, textures: &Textures) -> f32 {
     let storm = aur_climate(position.normalize(), time).x;
     let noise = textures.noise(footprint);
-    let flowing = position.normalize() * PLANET_RADIUS - CURRENT * time;
+    let flowing = position.normalize() * FEATURE_RADIUS - CURRENT * time;
     let drift = noise
         .billows(flowing * 0.0000025 + Vec3::Z * time * 0.001, 0.0000025)
         .xyz()
@@ -88,7 +86,7 @@ pub(crate) fn wave_base(position: Vec3, time: f32, footprint: f32, textures: &Te
 
 /// Fine relief changes the volume boundary, independently of broad lighting.
 pub(crate) fn wave_detail(position: Vec3, time: f32, footprint: f32, textures: &Textures) -> f32 {
-    let flowing = position.normalize() * PLANET_RADIUS - CURRENT * time;
+    let flowing = position.normalize() * FEATURE_RADIUS - CURRENT * time;
     (textures
         .noise(footprint)
         .billows(flowing * 0.00016 + Vec3::Z * time * 0.012, 0.00016)
@@ -100,7 +98,7 @@ pub(crate) fn wave_detail(position: Vec3, time: f32, footprint: f32, textures: &
 /// Blend differently oriented samples so the periodic detail texture cannot
 /// impose a visible grid. Altitude stays in the coordinates: this is a volume.
 fn ocean_detail(point: Vec3, time: f32, footprint: f32, textures: &Textures) -> Vec4 {
-    let altitude = point.length() - PLANET_RADIUS;
+    let altitude = point.length() - FEATURE_RADIUS;
     let coordinates = ((point - CURRENT * time) * 0.00006
         + Vec3::Z * (altitude * 0.0003 - time * 0.025))
         * vec3(3.0, 3.0, 1.0);
@@ -141,7 +139,7 @@ pub(crate) fn column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Co
         let delta = (point - event[0].xyz()) * event[0].w;
         flash += event[1].xyz() * (-delta.length_squared()).exp();
     }
-    let surface = point.normalize() * (PLANET_RADIUS + 200.0);
+    let surface = point.normalize() * (PLANET_RADIUS + 200.0 / FEATURE_SCALE);
     Column {
         flash,
         sun: textures.pole_light(surface, light_position(surface)),
@@ -291,7 +289,7 @@ pub fn sample_body(
     wrap: Wrap,
     textures: &Textures,
 ) -> VolumeSample {
-    let altitude = planet_point.length() - PLANET_RADIUS;
+    let altitude = planet_point.length() - FEATURE_RADIUS;
     let height = altitude - wave;
     if altitude > BODY_TOP_HEIGHT || height - height_span > 900.0 {
         return VolumeSample::default();
@@ -314,7 +312,7 @@ pub fn sample_body(
     let depth = (-height).max(0.0);
     let plume = (-height.max(0.0) / (180.0 * churn)).exp();
     let material = material(
-        flowing.normalize() * (PLANET_RADIUS + wave - 100.0),
+        flowing.normalize() * (FEATURE_RADIUS + wave - 100.0),
         view,
         footprint,
         normal,
@@ -398,7 +396,7 @@ pub fn column_cache(
     let c = (pixel.xy() - vec2(cascade as f32, 0.0) * grid::SIZE as f32 - grid::SIZE as f32 * 0.5)
         * spacing;
     let view = &frame.view;
-    if cascade < grid::first_level(view.altitude(), 2.0 / frame.viewport.w) {
+    if cascade < grid::first_level(view.altitude() * FEATURE_SCALE, 2.0 / frame.viewport.w) {
         *shape = Vec4::ZERO;
         return;
     }

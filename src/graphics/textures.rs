@@ -1,23 +1,28 @@
-use std::env;
-use std::f32::consts::TAU;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
-
-use bevy::asset::RenderAssetUsages;
-use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureView};
-use bevy::render::renderer::RenderDevice;
+use crate::{graphics::targets::texture, math::ToScene};
+use bevy::{
+    asset::RenderAssetUsages,
+    image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    prelude::*,
+    render::{
+        RenderApp,
+        extract_resource::ExtractResource,
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureView},
+        renderer::RenderDevice,
+    },
+};
 use rayon::prelude::*;
-use skybound::scene::atmosphere::{SKY_SIZE, TRANSMITTANCE_SIZE, air_texel, transmittance_texel};
-use skybound::scene::math::{cellular, fbm};
-use skybound::scene::{PLANET_RADIUS, ViewUniform};
+use skybound::scene::{
+    PLANET_RADIUS, ViewUniform,
+    atmosphere::{SKY_SIZE, TRANSMITTANCE_SIZE, air_texel, transmittance_texel},
+    math::{cellular, fbm},
+};
 use spirv_std::glam::{Vec3, vec2, vec3};
-
-use crate::graphics::targets::texture;
-use crate::math::ToScene;
+use std::{
+    env,
+    f32::consts::TAU,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 #[derive(Resource, ExtractResource, Clone)]
 #[extract_app(RenderApp)]

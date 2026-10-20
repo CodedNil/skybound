@@ -1,25 +1,34 @@
-use bevy::ecs::system::SystemParam;
-use bevy::input::InputSystems;
-use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
-use bevy::math::DVec3;
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use bevy::transform::TransformSystems;
-use skybound::scene::aur;
-use skybound::scene::life::animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{
-    nae, naetu,
+use crate::{
+    game::{
+        camera::CameraController,
+        ecosystem::{Individual, Physiology, Relations},
+        world::{WorldAnchor, WorldData},
+    },
+    math::{ToEngine, ToScene},
 };
-use skybound::scene::life::behaviour::{Motion, Senses};
-use skybound::scene::life::surface::{Ray, estimate_normal};
-use skybound::scene::life::{CreatureInstance, Kind, development};
+use bevy::{
+    ecs::system::SystemParam,
+    input::{
+        InputSystems,
+        mouse::{AccumulatedMouseMotion, MouseWheel},
+    },
+    math::DVec3,
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+    transform::TransformSystems,
+};
+use skybound::scene::{
+    aur,
+    life::{
+        CreatureInstance, Kind,
+        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
+        behaviour::{Motion, Senses},
+        development,
+        surface::{Ray, estimate_normal},
+    },
+};
 
-use crate::game::camera::CameraController;
-use crate::game::ecosystem::{Individual, Physiology};
-use crate::game::world::{WorldAnchor, WorldData};
-use crate::math::{ToEngine, ToScene};
-
-pub const SPAWN: Vec3 = vec3(0.0, 4.0, 2400.0);
+pub const SPAWN: Vec3 = vec3(0.0, 4.0, 300.0);
 
 const ROSETTE: Vec3 = vec3(0.0, 5.8, 2.0);
 
@@ -115,7 +124,7 @@ type BodyMotion<'a> = (
 type CompanionMotion<'a> = (
     &'a mut Transform,
     &'a mut Velocity,
-    Option<&'a super::ecosystem::Relations>,
+    Option<&'a Relations>,
     Option<&'a Physiology>,
     Option<&'a Individual>,
 );
@@ -316,10 +325,8 @@ fn contact(
             });
         }
     }
-    let spire_field = |local: Vec3| {
-        let point = world.position(local).as_vec3().to_scene();
-        aur::spire_field(aur::spire_coordinates(point)) * aur::SPIRE_METRIC
-    };
+    let spire_field =
+        |local: Vec3| aur::spire_clearance(world.position(local).as_vec3().to_scene());
     let distance = spire_field(position);
     if distance.abs() < nearest {
         let normal =
@@ -622,11 +629,9 @@ pub fn follow_camera(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use bevy::ecs::system::RunSystemOnce;
-
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    use std::time::Duration;
 
     #[test]
     fn companion_motion_keeps_perched_entities_and_velocities_together() {

@@ -1,11 +1,8 @@
 //! Stable integration of smooth volume segments; no stochastic point estimates.
 use core::f32::consts::PI;
-
 use spirv_std::glam::{IVec3, Vec2, Vec3, Vec4, ivec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::PLANET_RADIUS;
 
 pub fn square(value: f32) -> f32 {
     value * value
@@ -31,21 +28,21 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
 }
 
+/// Where a ray crosses a shell between two altitudes over a sphere of
+/// `radius` at the origin: in and out through the top, then through the
+/// bottom, if it reaches that.
 pub fn ray_shell_intersect(
     ro: Vec3,
     rd: Vec3,
-    planet_center: Vec3,
+    radius: f32,
     bottom_altitude: f32,
     top_altitude: f32,
 ) -> Vec4 {
-    let local_ro = ro - planet_center;
-    let top_radius = PLANET_RADIUS + top_altitude;
-    let top_interval = intersect_sphere(local_ro, rd, top_radius);
+    let top_interval = intersect_sphere(ro, rd, radius + top_altitude);
     if top_interval.x > top_interval.y {
         return vec4(1.0, 0.0, 1.0, 0.0);
     }
-    let bottom_radius = PLANET_RADIUS + bottom_altitude;
-    let bottom_interval = intersect_sphere(local_ro, rd, bottom_radius);
+    let bottom_interval = intersect_sphere(ro, rd, radius + bottom_altitude);
     if bottom_interval.x > bottom_interval.y {
         return vec4(top_interval.x, top_interval.y, 1.0, 0.0);
     }

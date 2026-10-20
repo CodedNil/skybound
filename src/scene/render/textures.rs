@@ -1,25 +1,22 @@
-use spirv_std::glam::{Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
-use spirv_std::num_traits::Float;
-use spirv_std::{Image, Sampler};
-
-use crate::scene::PLANET_RADIUS;
-use crate::scene::atmosphere::{
-    POLE_RADIANCE, TRANSMITTANCE_SIZE, cached_air_transmittance, get_pole_light_color,
-    transmittance_coordinates,
+use crate::scene::{
+    FEATURE_RADIUS,
+    atmosphere::{
+        POLE_RADIANCE, TRANSMITTANCE_SIZE, cached_air_transmittance, get_pole_light_color,
+        transmittance_coordinates,
+    },
+    aur::{EJECTION_CELL, EJECTION_WINDOW, ejection_field_with},
+    climate::{
+        CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, LIGHT_FACE, LIGHT_HEIGHT,
+        LIGHT_LAYERS, LIGHT_WIDTH, atlas_texel,
+    },
+    math::rotated,
+    planet::REACTION_RADIUS,
 };
-#[cfg(doc)]
-use crate::scene::aur::ejection_clearance;
-use crate::scene::aur::{
-    EJECTION_CELL, EJECTION_GRID_HALF, EJECTION_GRID_WIDTH, ejection_field_with,
+use spirv_std::{
+    Image, Sampler,
+    glam::{IVec2, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles},
+    num_traits::Float,
 };
-#[cfg(doc)]
-use crate::scene::climate::CloudCover;
-use crate::scene::climate::{
-    CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, LIGHT_FACE, LIGHT_HEIGHT,
-    LIGHT_LAYERS, LIGHT_WIDTH, atlas_texel,
-};
-use crate::scene::math::rotated;
-use crate::scene::planet::REACTION_RADIUS;
 
 pub struct AtmosphereData {
     /// Sky radiance along the pixel ray.
@@ -80,52 +77,41 @@ impl Textures<'_> {
             self.transmittance.sample_by_lod(*self.sampler, uv, 0.0).w
         })
     }
+    /// See [`ejection_field_with`], for a point in feature surface
+    /// coordinates near the camera.
     pub fn ejection_field(&self, position: Vec3) -> Vec4 {
-        let cell = (position.xy() / EJECTION_CELL).floor().as_ivec2();
-        let mask = self
-            .ejections
-            .fetch(cell + spirv_std::glam::ivec2(EJECTION_GRID_HALF, 1))
-            .w as u32
-            >> 1;
+        let cell = (position.xy() / EJECTION_CELL).floor();
+        let mask = self.ejections.fetch(window_texel(cell)).w as u32 >> 1;
         ejection_field_with(position, mask, |cell| {
-            let pixel = cell.as_ivec2() + spirv_std::glam::ivec2(EJECTION_GRID_HALF, 1);
+            let pixel = window_texel(cell);
             let mut event = self.ejections.fetch(pixel);
             event.w = (event.w as u32 & 1) as f32;
             [
                 event,
                 self.ejections
-                    .fetch(pixel + spirv_std::glam::ivec2(EJECTION_GRID_WIDTH as i32, 0)),
+                    .fetch(pixel + IVec2::new(EJECTION_WINDOW as i32, 0)),
             ]
         })
     }
-    /// See [`ejection_clearance`]; valid anywhere in the position's cell.
+    /// See [`ejection_clearance`](crate::scene::aur::ejection_clearance); valid anywhere in the position's cell.
     pub fn ejection_clearance(&self, position: Vec3) -> f32 {
-        let cell = (position.xy() / EJECTION_CELL).floor().as_ivec2();
+        let cell = (position.xy() / EJECTION_CELL).floor();
         self.ejections
-            .fetch(
-                cell + spirv_std::glam::ivec2(
-                    EJECTION_GRID_HALF + EJECTION_GRID_WIDTH as i32 * 2,
-                    1,
-                ),
-            )
+            .fetch(window_texel(cell) + IVec2::new(EJECTION_WINDOW as i32 * 2, 0))
             .x
     }
-    /// The cloud map over a column: see [`CloudCover::texels`].
-    pub fn cloud_column(&self, up: Vec3) -> [Vec4; 2] {
-        let uv = atlas_texel(up, CLOUD_FACE)
-            / Vec2::new(CLOUD_MAP_WIDTH as f32, CLOUD_MAP_HEIGHT as f32);
+    /// The cloud map over a column, see
+    /// [`CloudCover::texels`](crate::scene::climate::CloudCover::texels);
+    /// then how far convective cloud near it can reach, and the storm tower
+    /// over it, if any.
+    pub fn cloud_column(&self, up: Vec3) -> [Vec4; 4] {
+        let texel = atlas_texel(up, CLOUD_FACE);
+        let uv = texel / Vec2::new(CLOUD_MAP_WIDTH as f32, CLOUD_MAP_HEIGHT as f32);
         [
             self.cloud_cover.sample_by_lod(*self.sampler, uv, 0.0),
             self.cloud_layers.sample_by_lod(*self.sampler, uv, 0.0),
-        ]
-    }
-    /// How far convective cloud near a column can reach, and the storm tower
-    /// over it, if any.
-    pub fn cloud_reach(&self, up: Vec3) -> [Vec4; 2] {
-        let texel = atlas_texel(up, CLOUD_FACE).as_ivec2();
-        [
-            self.cloud_bounds.fetch(texel),
-            self.cloud_towers.fetch(texel),
+            self.cloud_bounds.fetch(texel.as_ivec2()),
+            self.cloud_towers.fetch(texel.as_ivec2()),
         ]
     }
     /// Cloud optical depth from a point towards its pole light, beyond the
@@ -133,7 +119,7 @@ impl Textures<'_> {
     pub fn light_depth(&self, point: Vec3) -> Vec3 {
         let radius = point.length();
         let texel = atlas_texel(point / radius, LIGHT_FACE);
-        let layer = ((radius - PLANET_RADIUS) / CLOUD_TOP * (LIGHT_LAYERS - 1) as f32)
+        let layer = ((radius - FEATURE_RADIUS) / CLOUD_TOP * (LIGHT_LAYERS - 1) as f32)
             .clamp(0.0, (LIGHT_LAYERS - 1) as f32);
         let uvw = Vec3::new(
             texel.x / LIGHT_WIDTH as f32,
@@ -176,4 +162,10 @@ impl Textures<'_> {
         self.details
             .sample_by_lod(*self.sampler, p, (footprint * 64.0).max(1.0).log2())
     }
+}
+
+/// The lookup texel holding an arc cell: its coordinate modulo the window.
+fn window_texel(cell: Vec2) -> IVec2 {
+    let window = EJECTION_WINDOW as f32;
+    (cell - (cell / window).floor() * window).as_ivec2()
 }

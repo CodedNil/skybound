@@ -1,29 +1,20 @@
-use std::array::from_fn;
-use std::env;
-use std::sync::atomic::AtomicBool;
-
-use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::render::extract_resource::ExtractResource;
-use bevy::render::render_resource::{
-    Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
-    TextureViewDescriptor,
+use bevy::{
+    prelude::*,
+    render::{
+        RenderApp,
+        extract_resource::ExtractResource,
+        render_resource::{
+            Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+            TextureView, TextureViewDescriptor,
+        },
+        renderer::RenderDevice,
+        texture::TextureCache,
+    },
 };
-use bevy::render::renderer::RenderDevice;
-use skybound::scene::cache;
-
-pub struct ColumnTargets {
-    pub shape: TextureView,
-}
-
-impl ColumnTargets {
-    pub fn new(device: &RenderDevice) -> Self {
-        let size = UVec2::new(cache::SIZE * cache::CASCADES, cache::SIZE);
-        Self {
-            shape: texture(device, size, TextureFormat::Rgba16Float, "column_shape"),
-        }
-    }
-}
+use std::{
+    env,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 #[derive(Resource, Clone, ExtractResource)]
 #[extract_app(RenderApp)]
@@ -69,67 +60,86 @@ pub struct Targets {
 }
 
 impl SceneTargets {
-    pub fn resize(&mut self, device: &RenderDevice, native: UVec2, scale: f32) {
+    /// Fetch this frame's targets from the texture cache. Each has its own
+    /// label, so it is the same texture every frame while the size holds;
+    /// history stays valid only for as long as that does.
+    pub fn resize(
+        &mut self,
+        device: &RenderDevice,
+        cache: &mut TextureCache,
+        native: UVec2,
+        scale: f32,
+    ) {
         let size = (native.as_vec2() * scale).floor().max(Vec2::ONE).as_uvec2();
-        if self
+        let kept = self
             .0
             .as_ref()
-            .is_some_and(|t| t.size == size && t.native_size == native)
-        {
-            return;
+            .is_some_and(|t| t.size == size && t.native_size == native);
+        if !kept {
+            info!(
+                "Render targets: native={}x{}, volumetrics={}x{}",
+                native.x, native.y, size.x, size.y
+            );
         }
-        info!(
-            "Render targets: native={}x{}, volumetrics={}x{}",
-            native.x, native.y, size.x, size.y
-        );
-        let trace_size = size;
-        let cloud_size = (trace_size + 1) / 2;
-        let low = |format, label| texture(device, size, format, label);
-        let traced = |format, label| texture(device, trace_size, format, label);
-        let native_texture = |label| texture(device, native, TextureFormat::Rgba16Float, label);
+        let valid = kept
+            && self
+                .0
+                .as_ref()
+                .is_some_and(|t| t.valid.load(Ordering::Relaxed));
+        let cloud_size = (size + 1) / 2;
+        let mut get = |size: UVec2, format, label| {
+            cache
+                .get(
+                    device,
+                    TextureDescriptor {
+                        label: Some(label),
+                        size: Extent3d {
+                            width: size.x,
+                            height: size.y,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: TextureDimension::D2,
+                        format,
+                        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    },
+                )
+                .default_view
+        };
+        let (half, full) = (TextureFormat::Rgba16Float, TextureFormat::Rgba32Float);
+        let front = TextureFormat::R32Float;
         self.0 = Some(Targets {
             size,
-            trace_size,
+            trace_size: size,
             native_size: native,
-            color: texture(
-                device,
-                cloud_size,
-                TextureFormat::Rgba16Float,
-                "volume_radiance",
-            ),
-            motion: texture(
-                device,
-                cloud_size,
-                TextureFormat::Rg16Float,
-                "volume_motion",
-            ),
-            metadata: texture(
-                device,
-                cloud_size,
-                TextureFormat::Rgba32Float,
-                "volume_depth",
-            ),
-            history: from_fn(|_| low(TextureFormat::Rgba16Float, "volume_history")),
-            history_metadata: from_fn(|_| low(TextureFormat::Rgba32Float, "volume_history_depth")),
-            cloud_fresh: texture(
-                device,
-                cloud_size,
-                TextureFormat::Rgba16Float,
-                "cloud_fresh",
-            ),
-            cloud_fresh_front: texture(
-                device,
-                cloud_size,
-                TextureFormat::R32Float,
-                "cloud_fresh_front",
-            ),
-            cloud_slab: from_fn(|_| traced(TextureFormat::Rgba16Float, "cloud_slab")),
-            cloud_front: from_fn(|_| traced(TextureFormat::R32Float, "cloud_front")),
+            color: get(cloud_size, half, "volume_radiance"),
+            motion: get(cloud_size, TextureFormat::Rg16Float, "volume_motion"),
+            metadata: get(cloud_size, full, "volume_depth"),
+            history: [
+                get(size, half, "volume_history_0"),
+                get(size, half, "volume_history_1"),
+            ],
+            history_metadata: [
+                get(size, full, "volume_history_depth_0"),
+                get(size, full, "volume_history_depth_1"),
+            ],
+            cloud_fresh: get(cloud_size, half, "cloud_fresh"),
+            cloud_fresh_front: get(cloud_size, front, "cloud_fresh_front"),
+            cloud_slab: [
+                get(size, half, "cloud_slab_0"),
+                get(size, half, "cloud_slab_1"),
+            ],
+            cloud_front: [
+                get(size, front, "cloud_front_0"),
+                get(size, front, "cloud_front_1"),
+            ],
             cloud_size,
-            thin_color: native_texture("thin_radiance"),
-            thin_transmission: native_texture("thin_transmission"),
-            thin_prefix: native_texture("thin_foreground_volume"),
-            valid: AtomicBool::new(false),
+            thin_color: get(native, half, "thin_radiance"),
+            thin_transmission: get(native, half, "thin_transmission"),
+            thin_prefix: get(native, half, "thin_foreground_volume"),
+            valid: AtomicBool::new(valid),
         });
     }
 }

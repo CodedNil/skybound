@@ -1,11 +1,8 @@
-use core::f32::consts::PI;
-use core::mem::swap;
-
+use crate::scene::life::{CreatureInstance, Kind, development};
+use core::{f32::consts::PI, mem::swap};
 use spirv_std::glam::{FloatExt, Quat, Vec2, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-use crate::scene::life::{CreatureInstance, Kind, development};
 
 #[derive(Clone, Copy)]
 pub struct Ray {

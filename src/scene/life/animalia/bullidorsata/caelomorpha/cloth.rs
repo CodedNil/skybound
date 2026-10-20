@@ -1,8 +1,6 @@
-use core::array::from_fn;
-
-use spirv_std::glam::{Vec3, vec3};
-
 use crate::scene::life::CreatureInstance;
+use core::array::from_fn;
+use spirv_std::glam::{Vec3, vec3};
 
 const STEP: f32 = 1.0 / 240.0;
 
@@ -124,10 +122,9 @@ pub fn prepare(c: &mut CreatureInstance, ribbon: usize, anchor: Vec3, length: f3
 
 #[cfg(test)]
 mod tests {
-    use core::mem::size_of;
-
     use super::*;
     use crate::scene::FrameUniform;
+    use core::mem::size_of;
 
     #[test]
     fn fixed_steps_preserve_attachments_and_material_lengths() {

@@ -1,12 +1,14 @@
+use crate::game::{
+    camera::CameraController,
+    flight::{ControlMode, Flight},
+    world::WorldData,
+};
+use bevy::{
+    diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+    time::common_conditions::on_timer,
+};
 use std::time::Duration;
-
-use bevy::diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin};
-use bevy::prelude::*;
-use bevy::time::common_conditions::on_timer;
-
-use crate::game::camera::CameraController;
-use crate::game::flight::{ControlMode, Flight};
-use crate::game::world::WorldData;
 
 pub struct HudPlugin;
 impl Plugin for HudPlugin {

@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-use std::{env, fs};
-
 use spirv_builder::{SpirvBuilder, SpirvMetadata};
+use std::{env, fs, path::PathBuf};
 
 fn main() {
     if env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("spirv") {

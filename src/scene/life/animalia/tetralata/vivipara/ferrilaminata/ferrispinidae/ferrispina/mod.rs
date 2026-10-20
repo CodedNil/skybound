@@ -1,8 +1,6 @@
-use spirv_std::glam::{Vec3, vec3};
-
 pub use super::render_wings;
-use crate::scene::life::biology::Biology;
-use crate::scene::life::tapered_tail;
+use crate::scene::life::{biology::Biology, tapered_tail};
+use spirv_std::glam::{Vec3, vec3};
 pub mod custos;
 pub mod falcata;
 

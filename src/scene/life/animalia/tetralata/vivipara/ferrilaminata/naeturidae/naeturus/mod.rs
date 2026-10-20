@@ -1,13 +1,16 @@
+pub use super::{BIOLOGY, render_wings};
+use crate::scene::{
+    life::{
+        CreatureInstance, ellipsoid,
+        surface::{Hit, Material, Ray, Surface, local_ray, make_hit},
+        tapered_tail,
+    },
+    math::intersect_sphere,
+};
 use core::f32::consts::PI;
-
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-pub use super::{BIOLOGY, render_wings};
-use crate::scene::life::surface::{Hit, Material, Ray, Surface, local_ray, make_hit};
-use crate::scene::life::{CreatureInstance, ellipsoid, tapered_tail};
-use crate::scene::math::intersect_sphere;
 pub mod nae;
 pub mod naetu;
 
@@ -277,9 +280,8 @@ fn wing_roots(origin: Vec2, direction: Vec2, lift: f32, curvature: f32) -> Vec2 
 
 #[cfg(test)]
 mod tests {
-    use spirv_std::glam::Vec4;
-
     use super::*;
+    use spirv_std::glam::Vec4;
 
     #[test]
     fn direct_feather_roots_match_the_sheared_surface() {

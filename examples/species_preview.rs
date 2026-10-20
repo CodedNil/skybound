@@ -1,16 +1,25 @@
-use std::f32::consts::{PI, TAU};
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::{Path, PathBuf};
-use std::{env, fs};
-
-use image::codecs::gif::{GifEncoder, Repeat};
-use image::{Delay, Frame, RgbImage, RgbaImage, imageops};
+use image::{
+    Delay, Frame, RgbImage, RgbaImage,
+    codecs::gif::{GifEncoder, Repeat},
+    imageops,
+};
 use rayon::prelude::*;
-use skybound::scene::life;
-use skybound::scene::life::surface::{Ray, tonemap};
-use skybound::scene::life::{CreatureInstance, SPECIES, SPECIES_MODULES, Taxon};
+use skybound::scene::{
+    life,
+    life::{
+        CreatureInstance, SPECIES, SPECIES_MODULES, Taxon,
+        surface::{Ray, tonemap},
+    },
+};
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
+use std::{
+    env,
+    f32::consts::{PI, TAU},
+    fs,
+    fs::File,
+    io::BufWriter,
+    path::{Path, PathBuf},
+};
 
 const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
 

@@ -1,17 +1,19 @@
 //! Native opacity and emission; the view grid supplies cloud illumination only.
-use spirv_std::glam::{Vec2, Vec3, Vec4, Vec4Swizzles, vec3};
-use spirv_std::num_traits::Float;
-
-use crate::scene::aur::{EJECTION_CELL, EJECTION_EXTENT, EJECTION_WIDTH};
-use crate::scene::climate::{CLOUD_BOTTOM, CLOUD_TOP, cloud_cell};
-use crate::scene::math::{
-    finish_opaque, henyey_greenstein, intersect_sphere, ray_shell_intersect, square,
+use crate::scene::{
+    FEATURE_RADIUS, FEATURE_SCALE, ViewUniform,
+    aur::{EJECTION_CELL, EJECTION_EXTENT, EJECTION_WIDTH},
+    climate::{CLOUD_BOTTOM, CLOUD_TOP, cloud_cell},
+    math::{finish_opaque, henyey_greenstein, intersect_sphere, ray_shell_intersect, square},
+    planet::{REACTION_RADIUS, feature_surface, light_position, light_towards},
+    render::{
+        clouds, ocean, poles,
+        textures::{AtmosphereData, Textures},
+    },
 };
-use crate::scene::planet::{REACTION_RADIUS, light_position, surface_coordinates};
-use crate::scene::render::ocean::sample;
-use crate::scene::render::textures::{AtmosphereData, Textures};
-use crate::scene::render::{clouds, ocean, poles};
-use crate::scene::{PLANET_RADIUS, ViewUniform};
+use spirv_std::{
+    glam::{Vec2, Vec3, Vec4, Vec4Swizzles, vec3},
+    num_traits::Float,
+};
 
 const VEIL_STEP: f32 = 112.0;
 
@@ -23,13 +25,13 @@ const MIST_STRIDE: f32 = 4000.0;
 
 const MIST_SAMPLES: f32 = 6.0;
 
-/// The narrowest a parcel index cell can be, so its layer bounds hold for
-/// at least this far across it.
-const CLOUD_CELL_REACH: f32 = 30_000.0;
+/// The narrowest a parcel index cell can be, in feature metres, so its layer
+/// bounds hold for at least this far across it.
+const CLOUD_CELL_REACH: f32 = 30_000.0 * FEATURE_SCALE;
 
-/// The longest horizontal stride between cloud layers: well under a cloud
-/// map texel, so the layers cannot change much across it.
-const LAYER_STRIDE: f32 = 3000.0;
+/// The longest horizontal stride between cloud layers, in feature metres:
+/// well under a cloud map texel, so the layers cannot change much across it.
+const LAYER_STRIDE: f32 = 3000.0 * FEATURE_SCALE;
 
 #[derive(Default)]
 pub(super) struct VolumeSample {
@@ -207,7 +209,7 @@ impl CloudMarch {
         }
         self.misses = 0.0;
         self.depth = (self.depth + 1.0).min(8.0);
-        let light = (light_position(point) - point).normalize();
+        let light = light_towards(point);
         // One tap towards the light, through the shapes of the clouds alone,
         // stands for the sample's own cloud out to the light volume.
         let nearby = overhead.sample(
@@ -228,10 +230,10 @@ impl CloudMarch {
         let mut scattering = droplets * cloud.density + rain * cloud.rain;
         // The ocean's light reaches cloud bases as a drifting caustic net;
         // too fine to resolve far away, where it averages out.
-        let altitude = point.length() - PLANET_RADIUS;
+        let altitude = point.length() - FEATURE_RADIUS;
         let resolve = (-footprint / 1500.0).exp() * (-altitude / 9000.0).exp();
         if resolve > 0.01 {
-            let surface = surface_coordinates(point);
+            let surface = feature_surface(point);
             let net = ocean::caustics(surface.truncate() * 0.0003, view.time() * 0.35);
             scattering += vec3(0.40, 0.34, 0.52)
                 * view.sky_horizon.y
@@ -268,8 +270,10 @@ pub fn march_clouds(
     textures: &Textures,
     cells: &[Vec4],
 ) -> CloudSlab {
-    let ro = view.to_planet(origin);
+    // Marched in feature space; the front is returned in the world.
+    let ro = view.to_planet(origin) * FEATURE_SCALE;
     let rd = view.planet_rotation.conjugate() * direction;
+    let limit = limit * FEATURE_SCALE;
     let profile = view.camera_position.w as u32;
     let forced = clouds::forced_weather(view);
     let clear = forced && view.weather.x + view.weather.z + view.weather.w <= 0.0;
@@ -281,10 +285,10 @@ pub fn march_clouds(
     if profile & 2 != 0 || clear {
         return slab;
     }
-    let shell = ray_shell_intersect(ro, rd, Vec3::ZERO, CLOUD_BOTTOM, CLOUD_TOP);
+    let shell = ray_shell_intersect(ro, rd, FEATURE_RADIUS, CLOUD_BOTTOM, CLOUD_TOP);
     // Nothing beneath the aur's surface can be seen; its thin upper veil
     // is no bound, or clouds beyond the horizon would be cut off there.
-    let surface = intersect_sphere(ro, rd, PLANET_RADIUS - 200.0);
+    let surface = intersect_sphere(ro, rd, FEATURE_RADIUS - 200.0);
     let limit = if surface.x <= surface.y && surface.x > 0.0 {
         limit.min(surface.x)
     } else {
@@ -345,13 +349,13 @@ pub fn march_clouds(
             // A faint mist through the cloud shell carries their shadows as
             // shafts: of the pole light, and of the aur's glow rising. Shafts
             // are broad, so it is gathered over strides of several steps.
-            let altitude = sample_point.length() - PLANET_RADIUS;
+            let altitude = sample_point.length() - FEATURE_RADIUS;
             let mist = MIST * (-altitude / 7000.0).exp();
             let depth = textures.light_depth(sample_point);
-            let source = light_position(sample_point);
-            let light = (source - sample_point).normalize();
-            let up = sample_point / (altitude + PLANET_RADIUS);
-            let sun = textures.pole_light(sample_point, source)
+            let world = sample_point / FEATURE_SCALE;
+            let light = light_towards(sample_point);
+            let up = sample_point / (altitude + FEATURE_RADIUS);
+            let sun = textures.pole_light(world, light_position(world))
                 * henyey_greenstein(rd.dot(light), 0.7)
                 * (-depth.y).exp();
             let aur = vec3(0.5, 0.42, 0.7)
@@ -366,19 +370,20 @@ pub fn march_clouds(
     }
     slab.radiance = result.color.xyz();
     slab.transmittance = result.color.w;
-    slab.front = front;
+    slab.front = front / FEATURE_SCALE;
     slab
 }
 
 /// How far a ray may run through the cloud shell before it could meet any
-/// cloud, from the parcel index; zero where it must sample.
+/// cloud, from the parcel index; zero where it must sample. The index holds
+/// clearances in the world and layer altitudes in feature space.
 fn cloud_gap(point: Vec3, rd: Vec3, cells: &[Vec4]) -> f32 {
     let radius = point.length();
     let up = point / radius;
-    let altitude = radius - PLANET_RADIUS;
+    let altitude = radius - FEATURE_RADIUS;
     let cell = cells[cloud_cell(up)];
     if cell.x > 0.0 {
-        return cell.x;
+        return cell.x * FEATURE_SCALE;
     }
     // Within reach of a system, but perhaps between its layers: run on to
     // the next layer in the ray's direction, within this cell's reach.
@@ -398,8 +403,8 @@ fn cloud_gap(point: Vec3, rd: Vec3, cells: &[Vec4]) -> f32 {
     } else {
         return CLOUD_CELL_REACH;
     };
-    let crossing = intersect_sphere(point, rd, PLANET_RADIUS + target);
-    let distance = if radius < PLANET_RADIUS + target {
+    let crossing = intersect_sphere(point, rd, FEATURE_RADIUS + target);
+    let distance = if radius < FEATURE_RADIUS + target {
         crossing.y
     } else if crossing.x <= crossing.y {
         crossing.x
@@ -443,24 +448,32 @@ pub fn integrate(
     textures: &Textures,
     slab: CloudSlab,
 ) -> RaymarchResult {
-    let ro = view.to_planet(origin);
+    // The aur is marched in feature space; the poles and the air stay in
+    // the world, and their distances are scaled to and from it.
+    let world = view.to_planet(origin);
+    let ro = world * FEATURE_SCALE;
     let rd = view.planet_rotation.conjugate() * direction;
+    let world_limit = limit;
+    let limit = limit * FEATURE_SCALE;
+    let mut slab = slab;
+    slab.front *= FEATURE_SCALE;
     let profile = view.camera_position.w as u32;
     let absent = Vec2::new(limit, 0.0);
     let ocean = if profile & 4 == 0 {
-        intersect_sphere(ro, rd, PLANET_RADIUS + ocean::OCEAN_TOP_HEIGHT)
+        intersect_sphere(ro, rd, FEATURE_RADIUS + ocean::OCEAN_TOP_HEIGHT)
     } else {
         absent
     };
     // The body is bounded far below the arcs. Entering its shell exactly
     // replaces a geometric crawl down towards it from the arc ceiling.
     let body = if profile & 4 == 0 {
-        intersect_sphere(ro, rd, PLANET_RADIUS + ocean::BODY_TOP_HEIGHT)
+        intersect_sphere(ro, rd, FEATURE_RADIUS + ocean::BODY_TOP_HEIGHT)
     } else {
         absent
     };
-    let polar = poles::poles_raymarch_entry(ro, rd, limit);
-    let (beam_light, beam_depth, beam_at) = poles::beam(ro, rd, limit, view);
+    let polar = poles::poles_raymarch_entry(world, rd, world_limit) * FEATURE_SCALE;
+    let (beam_light, beam_depth, beam_at) = poles::beam(world, rd, world_limit, view);
+    let beam_at = beam_at * FEATURE_SCALE;
     let mut beamed = beam_depth <= 0.0;
     // No arc can be met before this distance along the ray.
     let mut arc_free = 0.0;
@@ -506,7 +519,7 @@ pub fn integrate(
             // Longitude stretches towards the poles, so surface distances
             // overstate world distances by up to this factor.
             let metric = point.truncate().length() / point.length().max(1.0);
-            let clearance = textures.ejection_clearance(surface_coordinates(point)) * metric;
+            let clearance = textures.ejection_clearance(feature_surface(point)) * metric;
             // The veil heaves and glows around a loop's feet out to about
             // twice its reach; only skip lookups where that has faded too.
             if clearance > EJECTION_WIDTH * 4.0 {
@@ -520,7 +533,7 @@ pub fn integrate(
                 let inner = (EJECTION_WIDTH * 0.12).max(footprint * 0.75);
                 let probe = inner * 0.5;
                 let ahead = point + rd * probe;
-                curve = textures.ejection_field(surface_coordinates(ahead));
+                curve = textures.ejection_field(feature_surface(ahead));
                 // The field searches the neighbouring cells; loops beyond them
                 // are at least a cell, less their extent, away.
                 let free = (curve.x - reach).min(EJECTION_CELL - EJECTION_EXTENT) * metric - probe;
@@ -534,13 +547,14 @@ pub fn integrate(
             }
         }
         if inside_body {
-            let altitude = point.length() - PLANET_RADIUS;
-            let up = point / (altitude + PLANET_RADIUS);
-            ocean_shape = sample(point, view, footprint, textures);
+            let altitude = point.length() - FEATURE_RADIUS;
+            let up = point / (altitude + FEATURE_RADIUS);
+            ocean_shape = ocean::sample(point, view, footprint, textures);
             let wave = if ocean_shape.yzw().length_squared() > 0.25 {
                 ocean_shape.x * 4096.0
             } else {
-                ocean::wave_height(point, view.time(), footprint, textures)
+                ocean::wave_base(point, view.time(), footprint, textures)
+                    + ocean::wave_detail(point, view.time(), footprint, textures)
             };
             let mut height = altitude - wave;
             ocean_height = height;
@@ -565,9 +579,11 @@ pub fn integrate(
         }
         if inside_poles {
             // Only the reaction shell is marched; the beams are integrated.
-            let shell_distance = (point.length() - REACTION_RADIUS).abs();
+            let shell_distance = (point.length() / FEATURE_SCALE - REACTION_RADIUS).abs();
             // Its corona layers are kilometres thick: step a fraction of them.
-            step = step.min(((shell_distance - 45_000.0) * 0.8).max(1800.0 + footprint));
+            let stride =
+                ((shell_distance - 45_000.0) * 0.8).max(1800.0 + footprint / FEATURE_SCALE);
+            step = step.min(stride * FEATURE_SCALE);
         }
         step = step.max(0.5).min(end - t);
         if step <= 0.0 {
@@ -585,7 +601,7 @@ pub fn integrate(
             scattering += jet.emission * density;
         }
         if ocean_height < 1.0e9 {
-            let altitude = sample_point.length() - PLANET_RADIUS;
+            let altitude = sample_point.length() - FEATURE_RADIUS;
             // The cached height gradient extrapolates the wave across this
             // short segment instead of fetching it again at the midpoint.
             let up = point.normalize();
@@ -596,7 +612,7 @@ pub fn integrate(
             };
             let gradient = (up - normal / normal.dot(up).max(0.01)) * 0.1;
             let mut wave =
-                point.length() - PLANET_RADIUS - ocean_height + gradient.dot(rd) * step * 0.5;
+                point.length() - FEATURE_RADIUS - ocean_height + gradient.dot(rd) * step * 0.5;
             let span = (altitude - wave - ocean_height).abs();
             let wrap = if altitude - wave - span < 1300.0 {
                 ocean::wrap(sample_point, view.time(), footprint)
@@ -632,8 +648,13 @@ pub fn integrate(
             }
         }
         if inside_poles {
-            let beam = poles::sample_poles(sample_point, view, footprint, textures);
-            let density = beam.density * 0.018;
+            let beam = poles::sample_poles(
+                sample_point / FEATURE_SCALE,
+                view,
+                footprint / FEATURE_SCALE,
+                textures,
+            );
+            let density = beam.density * 0.018 / FEATURE_SCALE;
             sigma += density;
             scattering += (beam.emission * view.sky_horizon.y
                 + beam.color * view.ambient_color.xyz() * 0.2)
@@ -668,8 +689,9 @@ pub fn integrate(
         result.color = band * 0.5;
         return result;
     }
-    let transmission = textures.air_transmittance(ro, rd, limit);
-    let front = textures.air_transmittance(ro, rd, result.depth.min(limit));
+    result.depth /= FEATURE_SCALE;
+    let transmission = textures.air_transmittance(world, rd, world_limit);
+    let front = textures.air_transmittance(world, rd, result.depth.min(world_limit));
     let air = (1.0 - front) + result.color.w * (front - transmission).max(0.0);
     result.color =
         (result.color.xyz() * front + atmosphere.haze * air).extend(result.color.w * transmission);

@@ -1,20 +1,17 @@
-use std::num::NonZeroU64;
-
-use bevy::prelude::*;
-use bevy::render::diagnostic::RecordDiagnostics;
-use bevy::render::render_resource::binding_types::{
-    sampler, storage_buffer_sized, texture_2d, uniform_buffer_sized,
+use crate::graphics::binding::{Bind, Binder, Compute};
+use bevy::{
+    prelude::*,
+    render::{
+        diagnostic::RecordDiagnostics,
+        render_resource::{
+            BindGroup, BindingResource, Buffer, BufferDescriptor, BufferUsages,
+            ComputePassDescriptor, Extent3d, PipelineCache, Sampler, TexelCopyBufferInfo,
+            TexelCopyBufferLayout, Texture, TextureDescriptor, TextureDimension, TextureFormat,
+            TextureUsages, TextureView, TextureViewDescriptor,
+        },
+        renderer::{RenderContext, RenderDevice},
+    },
 };
-use bevy::render::render_resource::{
-    BindGroup, BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntries, BindingResource, Buffer, BufferDescriptor, BufferUsages,
-    CachedComputePipelineId, ComputePassDescriptor, ComputePipelineDescriptor, Extent3d,
-    PipelineCache, Sampler, SamplerBindingType, ShaderStages, TexelCopyBufferInfo,
-    TexelCopyBufferLayout, Texture, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor,
-};
-use bevy::render::renderer::{RenderContext, RenderDevice};
-use skybound::scene::FrameUniform;
 use skybound::scene::climate::{LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH};
 
 /// The cloud's shadow from the pole lights and the aur at every altitude,
@@ -23,35 +20,12 @@ pub struct LightVolume {
     pub view: TextureView,
     texture: Texture,
     buffer: Buffer,
-    layout: BindGroupLayout,
-    pipeline: CachedComputePipelineId,
+    pass: Compute,
     group: Option<BindGroup>,
 }
 
 impl LightVolume {
-    pub fn new(world: &World) -> Self {
-        let device = world.resource::<RenderDevice>();
-        let map = || texture_2d(TextureSampleType::Float { filterable: true });
-        let entries = BindGroupLayoutEntries::sequential(
-            ShaderStages::COMPUTE,
-            (
-                uniform_buffer_sized(false, NonZeroU64::new(size_of::<FrameUniform>() as u64)),
-                sampler(SamplerBindingType::Filtering),
-                map(),
-                map(),
-                storage_buffer_sized(false, None),
-            ),
-        );
-        let pipeline =
-            world
-                .resource::<PipelineCache>()
-                .queue_compute_pipeline(ComputePipelineDescriptor {
-                    label: Some("cloud_light".into()),
-                    layout: vec![BindGroupLayoutDescriptor::new("cloud_light", &entries)],
-                    shader: world.resource::<super::SceneShader>().0.clone(),
-                    entry_point: Some("cloud_light".into()),
-                    ..default()
-                });
+    pub fn new(device: &RenderDevice) -> Self {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("cloud_light"),
             size: Self::extent(),
@@ -71,36 +45,32 @@ impl LightVolume {
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             }),
-            layout: device.create_bind_group_layout("cloud_light", &entries),
-            pipeline,
+            pass: Compute::new("cloud_light"),
             group: None,
         }
     }
 
     pub fn prepare(
         &mut self,
-        device: &RenderDevice,
+        binder: &Binder,
         frame: BindingResource,
         sampler: &Sampler,
         maps: [&TextureView; 2],
     ) {
-        self.group = Some(device.create_bind_group(
-            "cloud_light",
-            &self.layout,
-            &BindGroupEntries::sequential((
-                frame,
-                sampler,
-                maps[0],
-                maps[1],
-                self.buffer.as_entire_binding(),
-            )),
+        self.group = Some(self.pass.group(
+            binder,
+            &[
+                Bind::Frame(frame),
+                Bind::Sampler(sampler),
+                Bind::Float(maps[0]),
+                Bind::Float(maps[1]),
+                Bind::Output(self.buffer.as_entire_binding()),
+            ],
         ));
     }
 
     pub fn draw(&self, context: &mut RenderContext, cache: &PipelineCache) -> bool {
-        let (Some(pipeline), Some(group)) =
-            (cache.get_compute_pipeline(self.pipeline), &self.group)
-        else {
+        let (Some(pipeline), Some(group)) = (self.pass.get(cache), &self.group) else {
             return false;
         };
         let recorder = context.diagnostic_recorder();
