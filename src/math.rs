@@ -1,4 +1,3 @@
-//! Explicit boundary between Bevy's math types and Rust-GPU's default glam.
 use bevy::math as engine;
 use spirv_std::glam as scene;
 

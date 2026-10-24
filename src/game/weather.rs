@@ -1,5 +1,3 @@
-//! The planet's weather systems, indexed for the renderer and for anything
-//! that needs to know how cloudy its sky is; and the lightning of its storms.
 use bevy::{
     prelude::*,
     render::{RenderApp, extract_resource::ExtractResource},
@@ -7,7 +5,7 @@ use bevy::{
 use core::f32::consts::{PI, TAU};
 use rayon::prelude::*;
 use skybound::scene::{
-    FEATURE_SCALE, PLANET_RADIUS, ViewUniform,
+    PLANET_RADIUS, ViewUniform,
     aur::{aur_climate, energy_color},
     climate::{
         CLOUD_CELLS, CLOUD_GRID, CLOUD_SLOTS, CloudCover, CloudParcel, cloud_cell, cloud_parcel,
@@ -26,13 +24,13 @@ const INDEX_PERIOD: f32 = 60.0;
 const INDEX_MARGIN: f32 = 14_000.0;
 
 /// Altitude margin on the layers listed for a cell.
-const LAYER_MARGIN: f32 = 600.0;
+const LAYER_MARGIN: f32 = 75.0;
 
 /// Clear distances beyond this gain the march nothing.
 const CLEARANCE_LIMIT: f32 = 400_000.0;
 
-/// How deep inside the veil a discharge is rooted, in the world.
-const ROOT_DEPTH: f32 = 900.0 / FEATURE_SCALE;
+/// How deep inside the veil a discharge is rooted.
+const ROOT_DEPTH: f32 = 112.5;
 
 /// Every weather system in flight, and an index of the systems over each
 /// cube-face cell of the planet.
@@ -124,8 +122,7 @@ impl Lightning {
                 + self.up * (self.reach * t)
                 + (basis.x_axis * east + basis.y_axis * north) * (self.reach * 0.045);
             segments[index - 1] = [
-                points[index - 1]
-                    .extend((24.0 + self.random * 18.0) * (1.0 - t * 0.45) / FEATURE_SCALE),
+                points[index - 1].extend((3.0 + self.random * 2.25) * (1.0 - t * 0.45)),
                 points[index].extend(self.strength * 12.0 * (1.0 - t * 0.25)),
             ];
         }
@@ -135,7 +132,7 @@ impl Lightning {
             let sideways = basis.x_axis * angle.cos() + basis.y_axis * angle.sin();
             let end = points[index] + (self.up * 0.13 + sideways * 0.10) * self.reach;
             segments[6 + branch] = [
-                points[index].extend((10.0 + self.random * 6.0) / FEATURE_SCALE),
+                points[index].extend(1.25 + self.random * 0.75),
                 end.extend(self.strength * 4.0),
             ];
         }
@@ -316,13 +313,13 @@ pub fn lightning_events(time: f32) -> impl Iterator<Item = Lightning> {
             // Each recurring storm produces a new channel on its next discharge.
             let cycle = ((time + seed.offset) / seed.period).floor() as u32;
             let strike = strike_random((id as u32) ^ cycle.wrapping_mul(0x9e37_79b9));
-            let reach = (8000.0 + strike * 20_000.0) / FEATURE_SCALE;
+            let reach = 1000.0 + strike * 2500.0;
             Some(Lightning {
                 id: id as u32,
                 position: seed.up * (PLANET_RADIUS + reach * 0.5),
                 up: seed.up,
                 reach,
-                radius: (6000.0 + seed.random * 10_000.0) / FEATURE_SCALE,
+                radius: 750.0 + seed.random * 1250.0,
                 strength: envelope * (0.25 + flicker * 0.75),
                 random: strike,
                 pulse: (flicker_phase / TAU).floor() as u32,
@@ -335,7 +332,7 @@ pub fn lightning_events(time: f32) -> impl Iterator<Item = Lightning> {
 pub fn prepare_flashes(view: &mut ViewUniform) {
     view.aur_flashes = [[Vec4::ZERO; 2]; 32];
     view.aur_bolts = [[Vec4::ZERO; 2]; 32];
-    let camera = view.to_planet(view.world_position.xyz());
+    let camera = view.camera();
     let mut visible: Vec<_> = lightning_events(view.time())
         .filter_map(|event| {
             let offset = event.position - camera;
@@ -361,10 +358,9 @@ pub fn prepare_flashes(view: &mut ViewUniform) {
     visible.sort_unstable_by(|a, b| b.0.total_cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
     let mut bolt_count = 0;
     for (index, (_, event)) in visible.iter().take(32).enumerate() {
-        // The veil it lights is in feature space.
-        let root = event.up * (PLANET_RADIUS - ROOT_DEPTH) * FEATURE_SCALE;
+        let root = event.up * (PLANET_RADIUS - ROOT_DEPTH);
         view.aur_flashes[index] = [
-            root.extend((event.radius * FEATURE_SCALE).recip()),
+            root.extend(event.radius.recip()),
             (energy_color(event.random, 0.45 + event.random * 0.2) * event.strength * 9.0)
                 .extend(event.strength),
         ];

@@ -1,8 +1,5 @@
-//! The shared climate: regional weather, and the weather systems that carry
-//! clouds from the equator to the poles. All of it is analytic, so the game
-//! and the renderer always agree on where the clouds are.
 use crate::scene::{
-    FEATURE_SCALE, PLANET_RADIUS,
+    PLANET_RADIUS,
     math::{cube, lattice, square},
     planet::surface_frame,
 };
@@ -18,12 +15,12 @@ pub const WEATHER_SCALE: f32 = 1.0 / 256_000.0;
 pub const WEATHER_SIZE: i32 = 64;
 
 /// The cloud shell, from the rain beneath storms up to anvils and cirrus.
-pub const CLOUD_BOTTOM: f32 = 1500.0;
+pub const CLOUD_BOTTOM: f32 = 187.5;
 
-pub const CLOUD_TOP: f32 = 110_000.0;
+pub const CLOUD_TOP: f32 = 13_750.0;
 
-/// The cloud layers, one genus to each: from 2 km up in the world to 12 km,
-/// at even spacing. Altitudes in feature metres.
+/// The cloud layers, one genus to each: from 2 km up to 12 km, at even
+/// spacing.
 ///
 /// 0. cumulus, heaping up into congestus where it is unstable;
 /// 1. stratocumulus, lumpy sheets broken into rolls and cells;
@@ -36,13 +33,13 @@ pub const CLOUD_TOP: f32 = 110_000.0;
 /// Cumulonimbus towers rise through all of them.
 pub const LAYERS: u32 = 7;
 
-pub const LAYER_BASE: f32 = 16_000.0;
+pub const LAYER_BASE: f32 = 2000.0;
 
-pub const LAYER_SPACING: f32 = 80_000.0 / 6.0;
+pub const LAYER_SPACING: f32 = 10_000.0 / 6.0;
 
 /// How far a cloud's base strays above or below its layer's, regionally
 /// and from one cloud to the next, so the layers never read as flat sheets.
-pub const LAYER_DRIFT: f32 = 4200.0;
+pub const LAYER_DRIFT: f32 = 525.0;
 
 pub fn layer_altitude(layer: u32) -> f32 {
     LAYER_BASE + layer as f32 * LAYER_SPACING
@@ -52,12 +49,12 @@ pub fn layer_altitude(layer: u32) -> f32 {
 /// as its column's convection allows, up to this.
 pub const fn layer_depth(layer: u32) -> f32 {
     match layer {
-        0 => 30_000.0,
-        1 | 3 => 5000.0,
-        2 => 3600.0,
-        4 => 6000.0,
-        5 => 2400.0,
-        _ => 4000.0,
+        0 => 3750.0,
+        1 | 3 => 625.0,
+        2 => 450.0,
+        4 => 750.0,
+        5 => 300.0,
+        _ => 500.0,
     }
 }
 
@@ -80,7 +77,7 @@ pub const CLOUD_MAP_WIDTH: u32 = (CLOUD_FACE + 2) * 6;
 pub const CLOUD_MAP_HEIGHT: u32 = CLOUD_FACE + 2;
 
 /// Rain falls this far below the base of a deep storm, nearly to the aur.
-pub const RAIN_DEPTH: f32 = 13_000.0;
+pub const RAIN_DEPTH: f32 = 1625.0;
 
 /// Texels across one cube face of the cloud light volume.
 ///
@@ -160,14 +157,12 @@ pub struct Climate {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CloudParcel {
-    /// Unit direction to the centre, and the radius of everything it holds,
-    /// in the world.
+    /// Unit direction to the centre, and the radius of everything it holds.
     pub centre: Vec4,
-    /// Kind, strength, base altitude and top altitude in feature metres; a
-    /// deck or cirrus sheet holds its layer in place of a top.
+    /// Kind, strength, base altitude and top altitude; a deck or cirrus
+    /// sheet holds its layer in place of a top.
     pub shape: Vec4,
-    /// Core radius, spin phase, layer thickness and a stable seed; sizes in
-    /// feature metres.
+    /// Core radius, spin phase, layer thickness and a stable seed.
     pub detail: Vec4,
 }
 
@@ -339,7 +334,7 @@ impl CloudCover {
             }
             TOWER => {
                 // Steep walls and a flat crown at the anvil, not a mound.
-                let core = parcel.detail.x / FEATURE_SCALE;
+                let core = parcel.detail.x;
                 let core = 1.0 - distance.smoothstep(core * 0.6, core);
                 self.convective(
                     core * strength * 1.5,
@@ -539,7 +534,7 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
                 (40_000.0 + form.x * 60_000.0) * (0.8 + humid * 0.4),
                 0.0,
                 base,
-                base + 3000.0 + development.powf(1.5) * 26_000.0,
+                base + 375.0 + development.powf(1.5) * 3250.0,
                 0.0,
                 low,
             )
@@ -547,15 +542,15 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
         TOWER => {
             // Thunderheads build, mature and collapse again as they drift.
             let maturity = 0.5 + 0.5 * (progress * TAU * 5.0 + seed.w * TAU).sin();
-            let core = 14_000.0 + form.x * 16_000.0;
+            let core = 1750.0 + form.x * 2000.0;
             (
                 // At least as far as its anvil spreads, so every cell its
                 // anvil covers lists it.
-                core * (1.6 + form.w * 1.6 * maturity) / FEATURE_SCALE,
+                core * (1.6 + form.w * 1.6 * maturity),
                 core,
                 layer_altitude(0),
-                58_000.0 + form.z * 40_000.0 * (0.55 + 0.45 * maturity),
-                4000.0 + form.w * 5000.0,
+                7250.0 + form.z * 5000.0 * (0.55 + 0.45 * maturity),
+                500.0 + form.w * 625.0,
                 low * (0.6 + 0.4 * humid),
             )
         }
@@ -596,8 +591,8 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
                 (260_000.0 + form.x * 320_000.0) * (0.25 + 0.75 * growth),
                 0.0,
                 layer_altitude(0),
-                80_000.0 + form.y * 18_000.0,
-                5000.0,
+                10_000.0 + form.y * 2250.0,
+                625.0,
                 low * growth,
             )
         }

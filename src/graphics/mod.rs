@@ -9,7 +9,6 @@ use crate::{
     },
 };
 use bevy::{
-    anti_alias::taa::temporal_anti_alias,
     core_pipeline::{Core3d, Core3dSystems, core_3d::main_opaque_pass_3d},
     post_process::auto_exposure::AutoExposurePlugin,
     prelude::*,
@@ -24,6 +23,7 @@ mod light;
 pub mod pipeline;
 mod targets;
 mod textures;
+pub mod upscale;
 
 #[derive(Resource, Clone, bevy::render::extract_resource::ExtractResource)]
 #[extract_app(RenderApp)]
@@ -42,7 +42,6 @@ pub struct SceneShader(pub Handle<Shader>);
 impl Plugin for GraphicsPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(AutoExposurePlugin)
-            .init_resource::<targets::VolumeScale>()
             .init_resource::<AtmosphereSettings>()
             .init_resource::<PlayerModel>()
             .add_plugins((
@@ -52,7 +51,6 @@ impl Plugin for GraphicsPlugin {
                 ExtractResourcePlugin::<WorldData>::default(),
                 ExtractResourcePlugin::<CloudField>::default(),
                 ExtractResourcePlugin::<DebugView>::default(),
-                ExtractResourcePlugin::<targets::VolumeScale>::default(),
             ))
             .add_systems(Startup, prepare_volume_textures);
 
@@ -75,11 +73,13 @@ impl Plugin for GraphicsPlugin {
                 Render,
                 prepare_bindings.in_set(RenderSystems::PrepareBindGroups),
             )
+            // The whole scene is composited before any post-process, so an
+            // upscaler or anti-aliasing works on all of it.
             .add_systems(
                 Core3d,
                 composite_pass
-                    .after(temporal_anti_alias)
-                    .in_set(Core3dSystems::EarlyPostProcess),
+                    .after(main_opaque_pass_3d)
+                    .in_set(Core3dSystems::MainPass),
             )
             .add_systems(
                 Core3d,

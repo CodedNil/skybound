@@ -1,4 +1,4 @@
-use crate::scene::{FEATURE_SCALE, PLANET_RADIUS};
+use crate::scene::PLANET_RADIUS;
 use core::f32::consts::FRAC_PI_2;
 use spirv_std::glam::{Mat3, Quat, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
@@ -10,15 +10,9 @@ pub const REACTION_RADIUS: f32 = PLANET_RADIUS + REACTION_HEIGHT;
 
 pub const REACTION_SPREAD: f32 = 220_000.0;
 
-/// Surface coordinates of a feature-space point, in feature metres.
-pub fn feature_surface(point: Vec3) -> Vec3 {
-    surface_coordinates(point / FEATURE_SCALE) * FEATURE_SCALE
-}
-
-/// The direction towards its pole light from a feature-space point.
+/// The direction towards its pole light from a point in the planet.
 pub fn light_towards(point: Vec3) -> Vec3 {
-    let world = point / FEATURE_SCALE;
-    (light_position(world) - world).normalize()
+    (light_position(point) - point).normalize()
 }
 
 pub fn surface_coordinates(point: Vec3) -> Vec3 {

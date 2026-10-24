@@ -1,6 +1,8 @@
-use crate::game::world::WorldData;
+use crate::{
+    game::world::WorldData,
+    graphics::upscale::{History, reset_history},
+};
 use bevy::{
-    anti_alias::taa::TemporalAntiAliasing,
     input::{
         InputSystems,
         mouse::{AccumulatedMouseMotion, MouseWheel},
@@ -77,7 +79,7 @@ fn camera_controller(
 fn choose_show_prepass_mode(
     mut mode: ResMut<DebugView>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut taa: Single<&mut TemporalAntiAliasing>,
+    history: Single<History, With<Camera3d>>,
 ) {
     if let Some(index) = [
         KeyCode::Digit1,
@@ -89,7 +91,7 @@ fn choose_show_prepass_mode(
     .position(|&key| keyboard.just_pressed(key))
     {
         mode.0 = index as u32;
-        taa.reset = true;
+        reset_history(history.into_inner());
     }
 }
 
@@ -129,9 +131,9 @@ pub fn movement(keys: &ButtonInput<KeyCode>, transform: &Transform, up: Vec3) ->
 
 fn reset_history_on_resize(
     mut events: MessageReader<WindowResized>,
-    mut taa: Single<&mut TemporalAntiAliasing>,
+    history: Single<History, With<Camera3d>>,
 ) {
     if events.read().next().is_some() {
-        taa.reset = true;
+        reset_history(history.into_inner());
     }
 }

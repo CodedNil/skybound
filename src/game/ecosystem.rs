@@ -8,7 +8,7 @@ use crate::{
 };
 use bevy::{math::DVec3, prelude::*};
 use skybound::scene::{
-    FEATURE_SCALE, PLANET_RADIUS,
+    PLANET_RADIUS,
     climate::{Climate, layer_altitude},
     life::{
         KINDS, Kind,
@@ -209,8 +209,7 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     // Creatures live among the clouds that are drawn: in them the air is
     // saturated, and tall towers mean storms.
     let [lower, upper] = clouds.cover(position.normalize());
-    // Cloud heights are in feature space.
-    let altitude = (position.length() - PLANET_RADIUS) * FEATURE_SCALE;
+    let altitude = position.length() - PLANET_RADIUS;
     let cumulus = layer_altitude(0);
     let within = if altitude > cumulus && altitude < upper.w {
         lower.x

@@ -8,12 +8,13 @@ use crate::{
     graphics::{
         binding::{Bind, Binder, Pass},
         light::LightVolume,
-        targets::{SceneTargets, Targets, VolumeScale, texture},
+        targets::{SceneTargets, texture},
         textures::{SkyLookup, VolumeTextures},
     },
     math::ToScene,
 };
 use bevy::{
+    camera::MainPassResolutionOverride,
     core_pipeline::{FullscreenShader, prepass::ViewPrepassTextures},
     diagnostic::FrameCount,
     ecs::system::SystemParam,
@@ -37,22 +38,17 @@ use bevy::{
 use skybound::scene::{
     FrameUniform, ViewUniform,
     atmosphere::SKY_SIZE,
-    aur::EJECTION_WINDOW,
+    aur::{EJECTION_WINDOW, spire_origins},
     cache as volume_cache,
     climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel},
 };
+use spirv_std::glam::DVec3 as SceneDVec3;
 use std::{array::from_fn, env, sync::atomic::Ordering};
 
 #[derive(Resource)]
 pub struct SceneBuffer {
     uniform: RawBufferVec<FrameUniform>,
     previous_clip: Mat4,
-    previous_position: Vec3,
-    previous_origin: DVec3,
-    previous_rotation: Quat,
-    previous_debug: u32,
-    previous_weather: Vec4,
-    frame: u32,
     profile: u32,
     parcels: RawBufferVec<CloudParcel>,
     cloud_index: RawBufferVec<u32>,
@@ -66,12 +62,6 @@ impl Default for SceneBuffer {
         Self {
             uniform: RawBufferVec::new(BufferUsages::UNIFORM),
             previous_clip: Mat4::IDENTITY,
-            previous_position: Vec3::ZERO,
-            previous_origin: DVec3::ZERO,
-            previous_rotation: Quat::IDENTITY,
-            previous_debug: 0,
-            previous_weather: Vec4::ZERO,
-            frame: 0,
             parcels: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_index: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_cells: RawBufferVec::new(BufferUsages::STORAGE),
@@ -84,7 +74,21 @@ impl Default for SceneBuffer {
     }
 }
 
-type ViewQuery = (&'static ExtractedView, Option<&'static TemporalJitter>);
+type ViewQuery = (
+    &'static ExtractedView,
+    Option<&'static TemporalJitter>,
+    Option<&'static MainPassResolutionOverride>,
+);
+
+/// The part of a view the scene renders into: all of it, or under an
+/// upscaler, a smaller rectangle at its corner.
+pub fn render_viewport(
+    view: &ExtractedView,
+    resolution: Option<&MainPassResolutionOverride>,
+) -> UVec4 {
+    let size = resolution.map_or_else(|| view.viewport.zw(), |resolution| resolution.0);
+    view.viewport.xy().extend(size.x).extend(size.y)
+}
 
 #[derive(SystemParam)]
 pub(super) struct PrepareSceneView<'w, 's> {
@@ -98,7 +102,6 @@ pub(super) struct PrepareSceneView<'w, 's> {
     world: Res<'w, WorldData>,
     debug: Res<'w, DebugView>,
     atmosphere: Res<'w, super::AtmosphereSettings>,
-    scale: Res<'w, VolumeScale>,
     clouds: Res<'w, CloudField>,
     sky: ResMut<'w, SkyLookup>,
     targets: ResMut<'w, SceneTargets>,
@@ -112,14 +115,12 @@ struct BindGroups {
     native: [TextureViewId; 2],
     opaque: BindGroup,
     volume_group: BindGroup,
-    march_group: [BindGroup; 2],
-    cloud_resolve_group: [BindGroup; 2],
+    march_group: BindGroup,
     sky: BindGroup,
     columns: BindGroup,
     cloud_map: BindGroup,
     cloud_bounds: BindGroup,
-    resolve: [BindGroup; 2],
-    composite: [[BindGroup; 2]; 2],
+    composite: [BindGroup; 2],
 }
 
 /// Every fullscreen scene pass, and the textures the passes share.
@@ -128,14 +129,12 @@ pub struct ScenePipeline {
     opaque: Pass,
     volume: Pass,
     clouds: Pass,
-    cloud_resolve: Pass,
     thin: Pass,
     sky: Pass,
     ejection_lookup: Pass,
     columns: Pass,
     cloud_map: Pass,
     cloud_bounds_pass: Pass,
-    resolve: Pass,
     composite: Pass,
     ejections: TextureView,
     column_shape: TextureView,
@@ -145,7 +144,6 @@ pub struct ScenePipeline {
     cloud_bounds: TextureView,
     light: LightVolume,
     repeat_sampler: Sampler,
-    linear_sampler: Sampler,
     groups: Option<BindGroups>,
 }
 
@@ -185,17 +183,15 @@ impl FromWorld for ScenePipeline {
                 &[HALF, TextureFormat::Rg16Float, TextureFormat::Rgb10a2Unorm],
                 true,
             ),
-            volume: Pass::new("volume", &[HALF, TextureFormat::Rg16Float, FULL], false),
+            volume: Pass::new("volume", &[HALF, TextureFormat::Rg16Float], false),
             clouds: Pass::new("clouds", &[HALF, TextureFormat::R32Float], false),
-            cloud_resolve: Pass::new("cloud_resolve", &[HALF, TextureFormat::R32Float], false),
             thin: Pass::new("transparent", &[HALF; 3], false),
             sky: Pass::new("sky", &[HALF], false),
             ejection_lookup: Pass::new("ejection_lookup", &[FULL], false),
             columns: Pass::new("column_cache", &[HALF], false),
             cloud_map: Pass::new("cloud_map", &[HALF, HALF, FULL], false),
             cloud_bounds_pass: Pass::new("cloud_bounds", &[HALF], false),
-            resolve: Pass::new("volume_resolve", &[HALF, FULL], false),
-            composite: Pass::new("volume_composite", &[HALF], false),
+            composite: Pass::new("volume_composite", &[HALF, TextureFormat::Rg16Float], false),
             ejections: texture(
                 device,
                 UVec2::new(EJECTION_WINDOW * 3, EJECTION_WINDOW),
@@ -216,8 +212,7 @@ impl FromWorld for ScenePipeline {
             cloud_towers: map(FULL, "cloud_towers"),
             cloud_bounds: map(HALF, "cloud_bounds"),
             light: LightVolume::new(device),
-            repeat_sampler: scene_sampler(device, true),
-            linear_sampler: scene_sampler(device, false),
+            repeat_sampler: scene_sampler(device),
             groups: None,
         }
     }
@@ -235,28 +230,25 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         world,
         debug,
         atmosphere,
-        scale,
         clouds,
         mut sky,
         mut targets,
         mut texture_cache,
     } = params;
     prepare_cloud_buffers(&mut buffer, &clouds, &device, &queue);
-    let (view, jitter) = *views;
-    let viewport = view.viewport.as_vec4();
+    let (view, jitter, resolution) = *views;
+    let viewport = render_viewport(view, resolution).as_vec4();
     targets.resize(
         &device,
         &mut texture_cache,
         viewport.zw().as_uvec2(),
-        scale.0,
+        view.viewport.zw(),
     );
-    let targets = targets.0.as_ref().expect("prepared volume targets");
     let mut clip_from_view = view.clip_from_view;
     if let Some(jitter) = jitter {
         jitter.jitter_projection(&mut clip_from_view, viewport.zw());
     }
     let world_from_view = view.world_from_view.to_matrix();
-    let position = view.world_from_view.translation();
     let mut uniform = camera_uniform(
         view,
         clip_from_view,
@@ -276,30 +268,16 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
     prepare_flashes(&mut uniform);
     uniform.prepare_cache();
     sky.update(&mut uniform);
-    let valid = history_valid(&buffer, targets, view, &world, debug.0, atmosphere.0);
     buffer.uniform.clear();
     buffer.uniform.push(FrameUniform {
         view: uniform,
         players: player.0,
         viewport: viewport.to_scene(),
-        history: vec4(
-            f32::from(valid),
-            (frame_count.0 % 4) as f32,
-            targets.trace_size.x as f32,
-            targets.trace_size.y as f32,
-        )
-        .to_scene(),
     });
     buffer.uniform.write_buffer(&device, &queue);
     buffer.previous_clip = view
         .clip_from_world
         .unwrap_or_else(|| view.clip_from_view * world_from_view.inverse());
-    buffer.previous_position = position;
-    buffer.previous_origin = world.origin;
-    buffer.previous_rotation = view.world_from_view.rotation();
-    buffer.previous_debug = debug.0;
-    buffer.previous_weather = atmosphere.0;
-    buffer.frame = frame_count.0;
 }
 
 fn camera_uniform(
@@ -315,6 +293,7 @@ fn camera_uniform(
     let (rotation, latitude, longitude) = world.planet_frame(position);
     ViewUniform {
         clip_from_world: (clip_from_view * world_from_view.inverse()).to_scene(),
+        unjittered_clip_from_world: (view.clip_from_view * world_from_view.inverse()).to_scene(),
         world_from_clip: world_from_clip.to_scene(),
         prev_clip_from_world: previous.to_scene(),
         direction_from_clip_unjittered: (Mat4::from_quat(view.world_from_view.rotation())
@@ -333,6 +312,7 @@ fn camera_uniform(
         )
         .to_scene(),
         planet_rotation: rotation.to_scene(),
+        spire_origins: spire_origins(SceneDVec3::from_array(world.position(position).to_array())),
         ..default()
     }
 }
@@ -358,29 +338,6 @@ fn prepare_cloud_buffers(
     buffer.cloud_index.write_buffer(device, queue);
     buffer.cloud_cells.write_buffer(device, queue);
     buffer.cloud_built = clouds.built;
-}
-
-fn history_valid(
-    buffer: &SceneBuffer,
-    targets: &Targets,
-    view: &ExtractedView,
-    world: &WorldData,
-    debug: u32,
-    weather: Vec4,
-) -> bool {
-    let position = view.world_from_view.translation();
-    buffer.profile & 16 == 0
-        && targets.valid.load(Ordering::Relaxed)
-        && position.distance(buffer.previous_position) < 100.0
-        && world.origin == buffer.previous_origin
-        && view
-            .world_from_view
-            .rotation()
-            .dot(buffer.previous_rotation)
-            .abs()
-            > 0.95
-        && debug == buffer.previous_debug
-        && weather == buffer.previous_weather
 }
 
 #[expect(
@@ -463,7 +420,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     let opaque = pipeline.opaque.group(&binder, &common());
     // The cloud, thin-surface and volume passes all read the whole scene;
     // the volume pass also reads the clouds rebuilt before it.
-    let scene = |slab: Option<usize>| {
+    let scene = |slab: bool| {
         let mut binds = common().into_iter().collect::<Vec<_>>();
         binds.extend([
             Bind::Depth(depth),
@@ -478,31 +435,18 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Data(&pipeline.cloud_towers),
             Bind::Volume(shapes),
         ]);
-        if let Some(index) = slab {
+        if slab {
             binds.extend([
-                Bind::Data(&targets.cloud_slab[index]),
-                Bind::Data(&targets.cloud_front[index]),
+                Bind::Data(&targets.cloud_slab),
+                Bind::Data(&targets.cloud_front),
             ]);
         }
         binds
     };
-    let (layout, volume_group) = binder.group("scene", &scene(None));
+    let (layout, volume_group) = binder.group("scene", &scene(false));
     pipeline.clouds.queue(&binder, &layout);
     pipeline.thin.queue(&binder, &layout);
-    let march_group = from_fn(|index| pipeline.volume.group(&binder, &scene(Some(index))));
-    let cloud_resolve_group = from_fn(|index| {
-        pipeline.cloud_resolve.group(
-            &binder,
-            &[
-                Bind::Frame(frame.clone()),
-                Bind::Sampler(&pipeline.linear_sampler),
-                Bind::Float(&targets.cloud_fresh),
-                Bind::Data(&targets.cloud_fresh_front),
-                Bind::Float(&targets.cloud_slab[1 - index]),
-                Bind::Data(&targets.cloud_front[1 - index]),
-            ],
-        )
-    });
+    let march_group = pipeline.volume.group(&binder, &scene(true));
     let (layout, sky_group) = binder.group("sky", &[Bind::Frame(frame.clone())]);
     pipeline.sky.queue(&binder, &layout);
     pipeline.ejection_lookup.queue(&binder, &layout);
@@ -529,36 +473,20 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Volume(shapes),
         ],
     );
-    let resolve = from_fn(|index| {
-        pipeline.resolve.group(
+    let composite = from_fn(|native_index| {
+        pipeline.composite.group(
             &binder,
             &[
                 Bind::Frame(frame.clone()),
+                Bind::Float(native[native_index]),
                 Bind::Float(&targets.color),
+                Bind::Float(&targets.thin_color),
+                Bind::Float(&targets.thin_transmission),
+                Bind::Float(&targets.thin_prefix),
+                Bind::Data(&targets.scene_motion),
                 Bind::Data(&targets.motion),
-                Bind::Data(&targets.metadata),
-                Bind::Float(&targets.history[1 - index]),
-                Bind::Data(&targets.history_metadata[1 - index]),
-                Bind::Sampler(&pipeline.linear_sampler),
             ],
         )
-    });
-    let composite = from_fn(|native_index| {
-        from_fn(|index| {
-            pipeline.composite.group(
-                &binder,
-                &[
-                    Bind::Frame(frame.clone()),
-                    Bind::Float(native[native_index]),
-                    Bind::Float(&targets.history[index]),
-                    Bind::Data(&targets.history_metadata[index]),
-                    Bind::Depth(depth),
-                    Bind::Float(&targets.thin_color),
-                    Bind::Float(&targets.thin_transmission),
-                    Bind::Float(&targets.thin_prefix),
-                ],
-            )
-        })
     });
     pipeline.light.prepare(
         &binder,
@@ -574,12 +502,10 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         opaque,
         volume_group,
         march_group,
-        cloud_resolve_group,
         sky: sky_group,
         columns,
         cloud_map,
         cloud_bounds,
-        resolve,
         composite,
     });
 }
@@ -650,44 +576,34 @@ fn draw(
 pub fn raymarch_pass(
     world: &World,
     mut context: RenderContext,
-    views: Query<(&ExtractedView, &ViewTarget, &ViewPrepassTextures)>,
+    views: Query<(
+        &ExtractedView,
+        Option<&MainPassResolutionOverride>,
+        &ViewTarget,
+        &ViewPrepassTextures,
+    )>,
 ) {
     let pipeline = world.resource::<ScenePipeline>();
     let cache = world.resource::<PipelineCache>();
     let sky = world.resource::<SkyLookup>();
-    let (
-        Some(groups),
-        Some(targets),
-        Some(opaque),
-        Some(volume),
-        Some(clouds),
-        Some(cloud_resolve),
-        Some(sky_pipeline),
-    ) = (
+    let (Some(groups), Some(targets), Some(opaque), Some(volume), Some(clouds), Some(sky_pipeline)) = (
         pipeline.groups.as_ref(),
         world.resource::<SceneTargets>().0.as_ref(),
         pipeline.opaque.get(cache),
         pipeline.volume.get(cache),
         pipeline.clouds.get(cache),
-        pipeline.cloud_resolve.get(cache),
         pipeline.sky.get(cache),
-    )
-    else {
+    ) else {
         return;
     };
-    let index = world.resource::<SceneBuffer>().frame as usize % 2;
     if !draw_lookup_passes(&mut context, pipeline, groups, cache) {
         return;
     }
     if !pipeline.light.draw(&mut context, cache) {
         return;
     }
-    for (view, target, prepass) in &views {
-        let (Some(depth), Some(motion), Some(normal)) = (
-            prepass.depth_only_view(),
-            prepass.motion_vectors_view(),
-            prepass.normal_view(),
-        ) else {
+    for (view, resolution, target, prepass) in &views {
+        let (Some(depth), Some(normal)) = (prepass.depth_only_view(), prepass.normal_view()) else {
             continue;
         };
         if sky.dirty.swap(false, Ordering::Relaxed) {
@@ -707,11 +623,11 @@ pub fn raymarch_pass(
             &groups.opaque,
             &[
                 Some(target.get_color_attachment()),
-                Some(attachment(motion, true)),
+                Some(attachment(&targets.scene_motion, true)),
                 Some(attachment(normal, true)),
             ],
             Some(depth),
-            view.viewport,
+            render_viewport(view, resolution),
             "opaque",
         );
         draw(
@@ -719,36 +635,23 @@ pub fn raymarch_pass(
             clouds,
             &groups.volume_group,
             &[
-                Some(attachment(&targets.cloud_fresh, true)),
-                Some(attachment(&targets.cloud_fresh_front, true)),
+                Some(attachment(&targets.cloud_slab, true)),
+                Some(attachment(&targets.cloud_front, true)),
             ],
             None,
-            UVec4::new(0, 0, targets.cloud_size.x, targets.cloud_size.y),
+            UVec4::new(0, 0, targets.size.x, targets.size.y),
             "clouds",
         );
         draw(
             &mut context,
-            cloud_resolve,
-            &groups.cloud_resolve_group[index],
-            &[
-                Some(attachment(&targets.cloud_slab[index], true)),
-                Some(attachment(&targets.cloud_front[index], true)),
-            ],
-            None,
-            UVec4::new(0, 0, targets.trace_size.x, targets.trace_size.y),
-            "cloud_resolve",
-        );
-        draw(
-            &mut context,
             volume,
-            &groups.march_group[index],
+            &groups.march_group,
             &[
                 Some(attachment(&targets.color, true)),
                 Some(attachment(&targets.motion, true)),
-                Some(attachment(&targets.metadata, true)),
             ],
             None,
-            UVec4::new(0, 0, targets.cloud_size.x, targets.cloud_size.y),
+            UVec4::new(0, 0, targets.size.x, targets.size.y),
             "volumetrics",
         );
     }
@@ -823,15 +726,19 @@ fn draw_lookup_passes(
 pub fn composite_pass(
     world: &World,
     mut context: RenderContext,
-    views: Query<(&ExtractedView, &ViewTarget)>,
+    views: Query<(
+        &ExtractedView,
+        Option<&MainPassResolutionOverride>,
+        &ViewTarget,
+        &ViewPrepassTextures,
+    )>,
 ) {
     let pipeline = world.resource::<ScenePipeline>();
     let cache = world.resource::<PipelineCache>();
-    let (Some(groups), Some(targets), Some(thin), Some(resolve), Some(composite)) = (
+    let (Some(groups), Some(targets), Some(thin), Some(composite)) = (
         pipeline.groups.as_ref(),
         world.resource::<SceneTargets>().0.as_ref(),
         pipeline.thin.get(cache),
-        pipeline.resolve.get(cache),
         pipeline.composite.get(cache),
     ) else {
         return;
@@ -840,7 +747,6 @@ pub fn composite_pass(
         &pipeline.opaque,
         &pipeline.volume,
         &pipeline.clouds,
-        &pipeline.cloud_resolve,
         &pipeline.sky,
         &pipeline.ejection_lookup,
         &pipeline.columns,
@@ -850,23 +756,12 @@ pub fn composite_pass(
     .iter()
     .any(|pass| pass.get(cache).is_none())
     {
-        targets.valid.store(false, Ordering::Relaxed);
         return;
     }
-    let index = world.resource::<SceneBuffer>().frame as usize % 2;
-    for (view, target) in &views {
-        draw(
-            &mut context,
-            resolve,
-            &groups.resolve[index],
-            &[
-                Some(attachment(&targets.history[index], true)),
-                Some(attachment(&targets.history_metadata[index], true)),
-            ],
-            None,
-            UVec4::new(0, 0, targets.size.x, targets.size.y),
-            "volume_resolve",
-        );
+    for (view, resolution, target, prepass) in &views {
+        let Some(motion) = prepass.motion_vectors_view() else {
+            continue;
+        };
         draw(
             &mut context,
             thin,
@@ -877,7 +772,7 @@ pub fn composite_pass(
                 Some(attachment(&targets.thin_prefix, true)),
             ],
             None,
-            UVec4::new(0, 0, targets.native_size.x, targets.native_size.y),
+            UVec4::new(0, 0, targets.size.x, targets.size.y),
             "thin_surfaces",
         );
         let output = target.post_process_write();
@@ -885,33 +780,27 @@ pub fn composite_pass(
         draw(
             &mut context,
             composite,
-            &groups.composite[native_index][index],
-            &[Some(attachment(output.destination, true))],
+            &groups.composite[native_index],
+            &[
+                Some(attachment(output.destination, true)),
+                // The view's motion: the volumes' where they cover the solids.
+                Some(attachment(motion, true)),
+            ],
             None,
-            view.viewport,
+            render_viewport(view, resolution),
             "volume_composite",
         );
-        targets.valid.store(true, Ordering::Relaxed);
     }
 }
 
-fn scene_sampler(device: &RenderDevice, repeat: bool) -> Sampler {
-    let address = if repeat {
-        AddressMode::Repeat
-    } else {
-        AddressMode::ClampToEdge
-    };
+fn scene_sampler(device: &RenderDevice) -> Sampler {
     device.create_sampler(&SamplerDescriptor {
-        address_mode_u: address,
-        address_mode_v: address,
-        address_mode_w: address,
+        address_mode_u: AddressMode::Repeat,
+        address_mode_v: AddressMode::Repeat,
+        address_mode_w: AddressMode::Repeat,
         mag_filter: FilterMode::Linear,
         min_filter: FilterMode::Linear,
-        mipmap_filter: if repeat {
-            MipmapFilterMode::Linear
-        } else {
-            MipmapFilterMode::Nearest
-        },
+        mipmap_filter: MipmapFilterMode::Linear,
         ..default()
     })
 }

@@ -44,6 +44,9 @@
           ]
           + ":/run/opengl-driver/lib:/run/lib-opengl-driver-32/lib";
         VULKAN_SDK = "${pkgs.vulkan-headers}";
+        shellHook = ''
+          export DLSS_SDK="$PWD/vendor/dlss"
+        '';
       };
     };
 }

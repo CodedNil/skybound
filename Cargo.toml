@@ -24,7 +24,7 @@ crate-type = ["dylib", "lib"]
 [dependencies]
 bytemuck = { version = "1.25.2", features = ["derive"] }
 spirv-std = { version = "0.11.0", features = ["bytemuck"] }
-bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "85503941e488152711a4695bbe248e9ed9f453fc", default-features = false, features = [
+bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "3a796854abd94144c6e08c4112e5bd9229392b37", default-features = false, features = [
     "wayland",
     "std",
     "async_executor",
@@ -40,6 +40,7 @@ bevy = { optional = true, git = "https://github.com/bevyengine/bevy", rev = "855
     "bevy_ui",
     "bevy_ui_render",
     "default_font",
+    "dlss",
     "multi_threaded",
     "png",
     "tonemapping_luts",
@@ -50,7 +51,10 @@ half = { version = "2.7.1", optional = true }
 serde_json = { version = "1.0", optional = true }
 
 [dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = ["png", "gif"] }
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "gif",
+] }
 
 [build-dependencies]
 spirv-builder = "0.11.0"
@@ -122,3 +126,6 @@ codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+dlss_wgpu = { path = "vendor/dlss_wgpu" }

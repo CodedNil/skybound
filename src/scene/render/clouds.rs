@@ -1,5 +1,5 @@
 use crate::scene::{
-    FEATURE_RADIUS, FEATURE_SCALE, FrameUniform, PLANET_RADIUS, ViewUniform,
+    FrameUniform, PLANET_RADIUS, ViewUniform,
     aur::aur_climate,
     climate::{
         CLOUD_BOTTOM, CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, CloudCover,
@@ -26,25 +26,25 @@ use spirv_std::{
 /// copies half a period apart crossfade, so detail never stretches far.
 const FLOW_PERIOD: f32 = 900.0;
 
-/// The spacing of cumulus heaps, about a kilometre and a half apart in the
-/// world, and the scale of the clusters they gather into.
-const CUMULUS_CELL: f32 = 12_000.0;
+/// The spacing of cumulus heaps, about a kilometre and a half apart, and
+/// the scale of the clusters they gather into.
+const CUMULUS_CELL: f32 = 1500.0;
 
-const CLUSTER_SCALE: f32 = 50_000.0;
+const CLUSTER_SCALE: f32 = 6250.0;
 
 /// The size of the broad swells on which every layer rises and falls
 /// together, and how far they lift or lower it; and how far each cloud's
 /// own base strays from the swell.
-const SWELL_SCALE: f32 = 120_000.0;
+const SWELL_SCALE: f32 = 15_000.0;
 
 const SWELL: f32 = LAYER_DRIFT * 0.7;
 
 const STRAY: f32 = LAYER_DRIFT * 0.3;
 
-/// The size of one cloud map texel at a face's centre, in feature metres.
-const CLOUD_TEXEL: f32 = FEATURE_RADIUS * FRAC_PI_2 / CLOUD_FACE as f32;
+/// The size of one cloud map texel at a face's centre.
+const CLOUD_TEXEL: f32 = PLANET_RADIUS * FRAC_PI_2 / CLOUD_FACE as f32;
 
-const RAIN_EXTINCTION: f32 = 0.0003;
+const RAIN_EXTINCTION: f32 = 0.0024;
 
 /// The share of a layer's peak extinction that shadows are traced through,
 /// where the noise is not evaluated. Light threads the gaps between clouds,
@@ -53,7 +53,7 @@ const MEAN_FILL: f32 = 0.15;
 
 /// Each march sample traces its own shadow this far towards the light; the
 /// light volume supplies the rest of the path.
-pub const NEAR_SHADOW: f32 = 1500.0;
+pub const NEAR_SHADOW: f32 = 187.5;
 
 /// Cloud droplet diameter in micrometres, which sets the shape of the
 /// forward peak, the fogbow and the glory.
@@ -67,13 +67,13 @@ const WAVELENGTH: Vec3 = vec3(650.0, 550.0, 450.0);
 /// the sky.
 fn extinction(layer: u32) -> f32 {
     match layer {
-        0 => 0.02,
-        1 => 0.012,
-        2 => 0.01,
-        3 => 0.006,
-        4 => 0.012,
-        5 => 0.0025,
-        _ => 0.000_3,
+        0 => 0.16,
+        1 => 0.096,
+        2 => 0.08,
+        3 => 0.048,
+        4 => 0.096,
+        5 => 0.005,
+        _ => 0.0009,
     }
 }
 
@@ -102,45 +102,33 @@ fn genus(layer: u32) -> Genus {
     };
     match layer {
         // Stratocumulus: broad lumpy rolls along the wind.
-        1 => genus(13_000.0, 0.0, 0.25, 0.45, 0.4, 0.0),
+        1 => genus(1625.0, 0.0, 0.25, 0.45, 0.4, 0.0),
         // Altocumulus: small rounded puffs, often in waves.
-        2 => genus(4500.0, 0.0, 0.5, 0.4, 0.4, 0.3),
+        2 => genus(562.5, 0.0, 0.5, 0.4, 0.4, 0.3),
         // Lenticular lenses and altostratus: smooth and drawn out.
-        3 => genus(32_000.0, 3.0, 0.5, 0.08, 0.12, 0.0),
+        3 => genus(4000.0, 3.0, 0.5, 0.08, 0.12, 0.0),
         // Castellanus: turrets rising from a common base.
-        4 => genus(6000.0, 0.0, 0.0, 0.55, 0.45, 0.0),
-        // Cirrocumulus: fine grains in ripples.
-        5 => genus(2600.0, 0.0, 0.5, 0.2, 0.3, 0.55),
+        4 => genus(750.0, 0.0, 0.0, 0.55, 0.45, 0.0),
+        // Cirrocumulus: thin, fine grains in ripples.
+        5 => genus(200.0, 0.0, 0.5, 0.15, 0.45, 0.7),
         // Cirrus: fibres combed far out along the wind.
-        _ => genus(2600.0, 12.0, 0.35, 0.0, 0.5, 0.0),
+        _ => genus(325.0, 12.0, 0.35, 0.0, 0.5, 0.0),
     }
 }
 
 /// How finely a density is evaluated: in full; as a cheap probe that may
 /// only overstate the cloud, to decide whether a step needs the full
-/// density at all; as a cheap estimate of it, for shadows; or, for the
-/// upper layers far off, as each layer's whole depth through its column.
+/// density at all; or as a cheap estimate of it, for shadows.
 #[derive(Clone, Copy)]
 #[repr(u32)]
 pub enum Detail {
     Full,
     Probe,
     Shadow,
-    Slab,
 }
-
-/// The lowest layer crossed whole far off, and how far off: thin layers
-/// seen from afar cover few pixels in depth, and marching through them is
-/// most of a ray's cost.
-pub const SLAB_LAYER: u32 = 2;
-
-pub const SLAB_DISTANCE: f32 = 60_000.0;
 
 /// Cloud at a point: droplet and rain extinction, and how far up its cloud
 /// the point sits, from a dark base at 0 to a sunlit crown at 1.
-///
-/// Crossed whole, the density is the layers' optical depth straight up
-/// through the column, and `free` the deepest of their clouds.
 pub struct CloudSample {
     pub density: f32,
     pub rain: f32,
@@ -291,14 +279,14 @@ impl CloudColumn {
             let floor = if self.raining() {
                 base - RAIN_DEPTH
             } else {
-                base + low * 0.5 - 300.0
+                base + low * 0.5 - 37.5
             };
             let crown = (self.bounds.y - base).max(0.0) * 1.2;
             return vec2(floor, base + high * 0.5 + crown);
         }
         if layer == 6 {
             // Fall streaks hang below the cirrus.
-            return vec2(base + low - 2500.0, base + high + layer_depth(6));
+            return vec2(base + low - 312.5, base + high + layer_depth(6));
         }
         let depth = layer_depth(layer) * 1.55;
         vec2(base + low - depth * 0.2, base + high + depth * 1.2)
@@ -316,7 +304,7 @@ impl CloudColumn {
         if mask == 0 {
             return (1.0e9, 1.0e9);
         }
-        let altitude = point.length() - FEATURE_RADIUS;
+        let altitude = point.length() - PLANET_RADIUS;
         // The nearest band above and below the point.
         let mut above = vec2(1.0e9, 1.0e9);
         let mut below = vec2(-1.0e9, -1.0e9);
@@ -350,42 +338,6 @@ impl CloudColumn {
         (room, rise)
     }
 
-    /// Where a ray leaves the upper layers it is within, to cross them whole
-    /// in one step; zero where it is within a lower layer, which is always
-    /// marched.
-    pub fn crossing(&self, point: Vec3, direction: Vec3) -> f32 {
-        let mask = self.bounds.x as u32;
-        let altitude = point.length() - FEATURE_RADIUS;
-        let mut exit = 0.0f32;
-        let mut entry = 1.0e9f32;
-        for layer in 0..LAYERS {
-            if mask & (1 << layer) == 0 {
-                continue;
-            }
-            let band = self.band(layer);
-            let inside = altitude >= band.x && altitude <= band.y;
-            if layer < SLAB_LAYER {
-                if inside {
-                    return 0.0;
-                }
-                // Stop short of any lower layer the ray would enter.
-                entry = entry.min(approach(point, direction, altitude, band.x, band.y));
-                continue;
-            }
-            if inside {
-                let top = intersect_sphere(point, direction, FEATURE_RADIUS + band.y).y;
-                let bottom = intersect_sphere(point, direction, FEATURE_RADIUS + band.x);
-                let leave = if bottom.x <= bottom.y && bottom.x >= 0.0 {
-                    bottom.x
-                } else {
-                    top
-                };
-                exit = exit.max(leave);
-            }
-        }
-        exit.min(entry)
-    }
-
     pub fn sample(
         &self,
         point: Vec3,
@@ -394,7 +346,7 @@ impl CloudColumn {
         detail: Detail,
     ) -> CloudSample {
         let radius = point.length();
-        let altitude = radius - FEATURE_RADIUS;
+        let altitude = radius - PLANET_RADIUS;
         let mut sample = CloudSample {
             density: 0.0,
             rain: 0.0,
@@ -424,7 +376,6 @@ impl CloudColumn {
         };
         let mut height = 0.0;
         let mut weights = 0.0;
-        let mut thickest = 0.0f32;
         for layer in 0..LAYERS {
             if mask & (1 << layer) == 0 {
                 continue;
@@ -442,10 +393,6 @@ impl CloudColumn {
                 sample.free = 0.0;
                 continue;
             }
-            let slab = matches!(detail, Detail::Slab);
-            if slab && layer < SLAB_LAYER {
-                continue;
-            }
             let found = if layer == 0 {
                 self.convective(&drift, up, altitude, cover)
             } else if layer == 6 {
@@ -453,13 +400,6 @@ impl CloudColumn {
             } else {
                 stratiform(&drift, layer, up, altitude, cover)
             };
-            if slab {
-                if found.x > 0.0 {
-                    sample.density += found.x * extinction(layer);
-                    thickest = thickest.max(found.z);
-                }
-                continue;
-            }
             // Outside every footprint, the field's bounded slope says how
             // far the nearest cloud of this layer is.
             sample.free = sample
@@ -469,10 +409,6 @@ impl CloudColumn {
             sample.density += density;
             height += fraction * density;
             weights += density;
-        }
-        if matches!(detail, Detail::Slab) {
-            sample.free = thickest;
-            return sample;
         }
         if weights > 0.0 {
             sample.height = height / weights;
@@ -485,9 +421,9 @@ impl CloudColumn {
             let fall = (base - altitude) / RAIN_DEPTH;
             let leaning = self.along.xyz() * ((base - altitude) * 0.4);
             let shafts = match detail {
-                Detail::Full => drift.detail(point + leaning, 3000.0).z,
+                Detail::Full => drift.detail(point + leaning, 375.0).z,
                 Detail::Probe => 0.95,
-                Detail::Shadow | Detail::Slab => 0.7,
+                Detail::Shadow => 0.7,
             };
             let rain = remap(shafts, 0.55, 0.8) * (1.0 - fall * fall) * deep;
             sample.rain += rain * RAIN_EXTINCTION;
@@ -531,7 +467,7 @@ impl CloudColumn {
         // Each heap's own height: flat humilis, heaped mediocris, and in the
         // clusters congestus towering over their neighbours, as far as the
         // column's convection reaches.
-        let development = (self.upper.w - base).max(2500.0);
+        let development = (self.upper.w - base).max(312.5);
         let own = remap(
             drift.smooth(column * 1.13, CUMULUS_CELL * 1.1).w,
             0.32,
@@ -539,11 +475,11 @@ impl CloudColumn {
         );
         let tallest = (CUMULUS_CELL * (0.18 + 0.75 * own * own * (0.35 + 0.65 * grouped)))
             .min(development)
-            .max(2000.0);
+            .max(250.0);
         if probe && !towering {
             // Above or below every heap here; heaps' heights vary slowly
             // enough that half the gap is clear all round.
-            let gap = (-300.0 - rise).max(rise - tallest * 1.2 - STRAY);
+            let gap = (-37.5 - rise).max(rise - tallest * 1.2 - STRAY);
             return if gap > 0.0 {
                 vec3(0.0, 0.5, gap * 0.45)
             } else {
@@ -559,13 +495,13 @@ impl CloudColumn {
             // Storm towers are the weather's own: placed and grown by it.
             let top = self.tower.xyz().length();
             let centre = self.tower.xyz() / top;
-            let horizontal = (up - centre) * FEATURE_RADIUS;
+            let horizontal = (up - centre) * PLANET_RADIUS;
             let local = vec3(
                 horizontal.dot(self.along.xyz()),
                 horizontal.dot(up.cross(self.along.xyz())),
                 rise,
             );
-            let (profile, along) = tower_profile(local, self.tower.w, (top - base).max(20_000.0));
+            let (profile, along) = tower_profile(local, self.tower.w, (top - base).max(2500.0));
             if profile > shape {
                 shape = profile;
                 fraction = along;
@@ -574,7 +510,7 @@ impl CloudColumn {
         }
         if rise < 0.0 {
             // A flat, slightly ragged base.
-            shape = shape.min(rise / 250.0);
+            shape = shape.min(rise / 31.25);
         }
         vec3(heap(shape, fraction, scale, drift), fraction, 0.0)
     }
@@ -603,7 +539,7 @@ fn wander(drift: &Drift, column: Vec3, cell: f32, layer: f32) -> f32 {
 /// in metres. It stays put rather than drifting with the clouds, so the
 /// bounds pass can bound it over each column.
 fn swell(shapes: &Image!(3D, type=f32, sampled=true), sampler: &Sampler, point: Vec3) -> f32 {
-    let at = point.normalize() * (FEATURE_RADIUS / (SWELL_SCALE * 8.0));
+    let at = point.normalize() * (PLANET_RADIUS / (SWELL_SCALE * 8.0));
     let value: Vec4 = shapes.sample_by_lod(*sampler, at, 2.0);
     ((value.w - 0.5) * 3.2).clamp(-1.0, 1.0) * SWELL
 }
@@ -619,7 +555,7 @@ fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
     match drift.detail {
         Detail::Full => {}
         Detail::Probe => return (profile + 0.45).clamp(0.0, 1.0),
-        Detail::Shadow | Detail::Slab => return (profile * 3.0).clamp(0.0, 0.8),
+        Detail::Shadow => return (profile * 3.0).clamp(0.0, 0.8),
     }
     // Cauliflower: lobes a third of the heap across, with smaller lobes on
     // them, bulging from the crown and flanks but not the flat base.
@@ -631,19 +567,16 @@ fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
         let lobes = remap(drift.detail(drift.point, lobe).y, 0.3, 0.67);
         shape += (lobes - 0.45) * 0.9 * crown * resolve;
     }
-    let resolve = drift.resolve(1500.0);
+    let resolve = drift.resolve(187.5);
     if resolve > 0.01 && shape < 1.0 {
         let billows = remap(
-            drift.detail(drift.point + Vec3::splat(700.0), 1500.0).z,
+            drift.detail(drift.point + Vec3::splat(87.5), 187.5).z,
             0.55,
             0.9,
         );
         let wisps = drift
             .textures
-            .details_filtered(
-                (drift.point + drift.lead) / 1600.0,
-                drift.footprint / 1600.0,
-            )
+            .details_filtered((drift.point + drift.lead) / 200.0, drift.footprint / 200.0)
             .w;
         let erosion = remap(wisps, 0.23, 0.77).lerp(billows, crown);
         shape -= (1.0 - erosion) * 0.45 * (1.0 - shape) * resolve;
@@ -695,16 +628,6 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     // Denser cover thickens the layer, and each cloud has its own depth.
     let own = remap(drift.smooth(level * 1.07, genus.cell * 1.3).w, 0.32, 0.68);
     let depth = layer_depth(layer) * (0.3 + 0.7 * cover) * (0.45 + 1.1 * own);
-    if matches!(drift.detail, Detail::Slab) {
-        // The whole depth of the cloud over this column, its edge frayed
-        // by the same detail as up close.
-        let scale = (genus.cell * 0.15).max(800.0);
-        let detail = drift.detail(level + Vec3::splat(1300.0), scale);
-        let frayed =
-            footprint - (1.0 - remap(detail.w, 0.23, 0.77)) * genus.erosion * (1.0 - footprint);
-        let fill = (frayed * (2.0 - frayed) * 1.6).clamp(0.0, 1.0);
-        return vec3(fill * fill * depth * 0.42, 0.5, depth);
-    }
     if matches!(drift.detail, Detail::Probe) {
         // Allowing for any stray of the base from the swell. The swell, the
         // stray and the depth all vary slowly enough that well under half
@@ -717,7 +640,7 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
             vec3(1.0, 0.5, 0.0)
         };
     }
-    let h = (altitude - base) / depth.max(500.0);
+    let h = (altitude - base) / depth.max(62.5);
     if h < -0.2 || h > 1.2 {
         return vec3(0.0, 0.5, 0.0);
     }
@@ -744,7 +667,7 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         let resolve = drift.resolve(lobe);
         if resolve > 0.01 {
             let lobes = drift
-                .detail(drift.point + Vec3::splat(layer as f32 * 917.0), lobe)
+                .detail(drift.point + Vec3::splat(layer as f32 * 114.625), lobe)
                 .y;
             shape += (remap(lobes, 0.3, 0.67) - 0.5)
                 * genus.puffs
@@ -752,10 +675,10 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
                 * resolve;
         }
     }
-    let scale = (genus.cell * 0.15).max(800.0);
+    let scale = (genus.cell * 0.15).max(100.0);
     let resolve = drift.resolve(scale);
     if resolve > 0.01 {
-        let detail = drift.detail(drift.point + Vec3::splat(1300.0), scale);
+        let detail = drift.detail(drift.point + Vec3::splat(162.5), scale);
         let erosion = remap(detail.w, 0.23, 0.77)
             .lerp(remap(detail.z, 0.55, 0.9), fraction.smoothstep(0.1, 0.6));
         let edge = (1.0 - shape).clamp(0.0, 1.0);
@@ -808,15 +731,19 @@ fn streaks(drift: &Drift, level: Vec3, up: Vec3, genus: Genus, layer: u32) -> f3
     sum
 }
 
-/// Cirrus: a thin sheet of ice combed into fibres along the fixed axes,
-/// bent into hooks, and sagging into fall streaks where the fibres are
-/// thickest.
+/// Cirrus: a thin veil of ice. Bands of it lie across the sky with open sky
+/// between, each combed into fine fibres along the fixed axes and bent into
+/// hooks, sagging into fall streaks where it is thickest.
 fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     let nominal = layer_altitude(6);
     let level = drift.point - up * (altitude - nominal);
     let weights = streak_axes(up);
-    let warp = drift.smooth(level * 0.53, 20_000.0);
-    let bent = level + (warp.yzw() - 0.5) * 24_000.0;
+    let warp = drift.smooth(level * 0.53, 2500.0);
+    let bent = level + (warp.yzw() - 0.5) * 3000.0;
+    // Fibres are far finer than the bands that hold them; where a pixel
+    // cannot resolve them they fade to their mean.
+    let resolve = drift.resolve(40.0);
+    let mut bands = 0.0;
     let mut fibres = 0.0;
     for axis in 0..2 {
         let weight = if axis == 0 { weights.x } else { weights.y };
@@ -824,26 +751,29 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
             continue;
         }
         let direction = if axis == 0 { Vec3::X } else { Vec3::Z };
-        let at = squeezed(bent, direction, 16.0);
-        let broad = remap(drift.smooth(at, 4000.0).w, 0.32, 0.68);
-        let fine = if matches!(drift.detail, Detail::Full) {
-            remap(drift.detail(at * 1.7, 1250.0).x, 0.2, 0.8)
+        bands += remap(
+            drift.smooth(squeezed(bent, direction, 6.0), 400.0).w,
+            0.38,
+            0.66,
+        ) * weight;
+        let fine = if matches!(drift.detail, Detail::Full) && resolve > 0.01 {
+            let combed = squeezed(bent, direction, 40.0);
+            remap(drift.detail(combed, 40.0).x, 0.25, 0.85).lerp(0.55, 1.0 - resolve)
         } else {
-            1.0
+            0.55
         };
-        fibres += (broad * 0.65 + fine * 0.35) * weight;
+        fibres += fine * weight;
     }
-    let patches = remap(drift.smooth(level * 0.61, 12_000.0).w, 0.32, 0.68);
-    let field = fibres * 0.75 + patches * 0.25;
-    let presence = remap(field, 1.0 - cover, 1.3 - cover);
+    let patches = remap(drift.smooth(level * 0.61, 1500.0).w, 0.3, 0.7);
+    // Even full cover leaves sky between the bands.
+    let field = bands * 0.6 + patches * 0.4;
+    let threshold = 1.0 - cover * 0.8;
+    let presence = remap(field, threshold, threshold + 0.35);
     if presence <= 0.0 {
-        return vec3(0.0, 0.5, (1.0 - cover - field) * 1500.0);
+        return vec3(0.0, 0.5, (threshold - field) * 150.0);
     }
     let depth = layer_depth(6) * (0.4 + 0.6 * presence);
-    let sag = presence * presence * 2500.0;
-    if matches!(drift.detail, Detail::Slab) {
-        return vec3(presence * presence.sqrt() * depth * 0.4, 0.5, depth);
-    }
+    let sag = presence * presence * 312.5;
     if matches!(drift.detail, Detail::Probe) {
         let rise = altitude - nominal - swell(drift.textures.shapes, drift.textures.sampler, level);
         let gap = (-STRAY - sag - rise).max(rise - STRAY - depth);
@@ -853,12 +783,12 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
             vec3(1.0, 0.5, 0.0)
         };
     }
-    let base = nominal + wander(drift, level, 12_000.0, 6.0);
+    let base = nominal + wander(drift, level, 1500.0, 6.0);
     // Thicker fibres hang lower, trailing fall streaks beneath them.
     let h = (altitude - base + sag) / depth;
     let envelope = (1.0 - square(h * 2.0 - 1.0)).max(0.0);
-    let density = presence * envelope;
-    vec3(density * density.sqrt(), h.clamp(0.0, 1.0), 0.0)
+    let density = presence * envelope * fibres;
+    vec3(density * density, h.clamp(0.0, 1.0), 0.0)
 }
 
 /// The dimensional profile of a storm tower about a point relative to its
@@ -867,7 +797,7 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
 fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
     let along = (q.z / height).clamp(0.0, 1.0);
     if q.z < 0.0 {
-        return (q.z / 200.0, 0.0);
+        return (q.z / 25.0, 0.0);
     }
     let girth = radius * (0.6 + 0.4 * (1.0 - along).powi(3));
     // The column leans downwind and wavers as it climbs.
@@ -882,7 +812,7 @@ fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
     let outward = (spread / extent).length();
     let thickness = (height - anvil_base) * (1.0 - outward * outward).max(0.0);
     let anvil = (1.0 - outward)
-        .min(1.0 - (q.z - anvil_base - thickness * 0.4).abs() / (thickness * 0.6 + 1.0));
+        .min(1.0 - (q.z - anvil_base - thickness * 0.4).abs() / (thickness * 0.6 + 0.125));
     let top = 1.0 - q.z / height;
     (column.min(top * 4.0).max(anvil * 0.8), along)
 }
@@ -892,11 +822,11 @@ fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
 /// clean over them.
 fn climb(layer: u32) -> f32 {
     match layer {
-        0 => 1000.0,
-        1 | 3 | 4 => 650.0,
-        2 => 450.0,
-        5 => 300.0,
-        _ => 500.0,
+        0 => 125.0,
+        1 | 3 | 4 => 81.25,
+        2 => 56.25,
+        5 => 37.5,
+        _ => 62.5,
     }
 }
 
@@ -906,7 +836,7 @@ fn remap(value: f32, low: f32, high: f32) -> f32 {
 
 /// How much a column's convection is a deep, raining storm.
 fn storm(lower: Vec4, upper: Vec4) -> f32 {
-    lower.x.smoothstep(0.45, 0.8) * (upper.w - layer_altitude(0)).smoothstep(32_000.0, 56_000.0)
+    lower.x.smoothstep(0.45, 0.8) * (upper.w - layer_altitude(0)).smoothstep(4000.0, 7000.0)
 }
 
 /// The share of a layer's band its cloud fills on average.
@@ -955,7 +885,7 @@ fn taper(layer: u32, band: Vec2, altitude: f32) -> f32 {
     if layer > 0 {
         return 1.0;
     }
-    let up = ((altitude - band.x) / (band.y - band.x).max(1.0)).clamp(0.0, 1.0);
+    let up = ((altitude - band.x) / (band.y - band.x).max(0.125)).clamp(0.0, 1.0);
     2.0 * (1.0 - up)
 }
 
@@ -968,7 +898,7 @@ fn depth_below(lower: Vec4, upper: Vec4, altitude: f32) -> f32 {
             let band = mean_band(layer, lower, upper);
             // The taper averages to one over the band; beneath an altitude
             // within it, the lower part holds more than its share.
-            let share = ((altitude - band.x) / (band.y - band.x).max(1.0)).clamp(0.0, 1.0);
+            let share = ((altitude - band.x) / (band.y - band.x).max(0.125)).clamp(0.0, 1.0);
             let share = if layer == 0 {
                 share * (2.0 - share)
             } else {
@@ -998,7 +928,7 @@ fn approach(point: Vec3, direction: Vec3, altitude: f32, low: f32, high: f32) ->
         return 0.0;
     }
     let target = if altitude < low { low } else { high };
-    let crossing = intersect_sphere(point, direction, FEATURE_RADIUS + target);
+    let crossing = intersect_sphere(point, direction, PLANET_RADIUS + target);
     if altitude < low {
         crossing.y.max(0.0)
     } else if crossing.x <= crossing.y && crossing.x >= 0.0 {
@@ -1012,8 +942,8 @@ fn approach(point: Vec3, direction: Vec3, altitude: f32, low: f32, high: f32) ->
 /// another altitude: both distances, nearer first, or an empty range. Kept
 /// in altitudes so the planet's radius never cancels in single precision.
 fn crossing(altitude: f32, cosine: f32, target: f32) -> Vec2 {
-    let b = (FEATURE_RADIUS + altitude) * cosine;
-    let c = (altitude - target) * (2.0 * FEATURE_RADIUS + altitude + target);
+    let b = (PLANET_RADIUS + altitude) * cosine;
+    let c = (altitude - target) * (2.0 * PLANET_RADIUS + altitude + target);
     let discriminant = b * b - c;
     if discriminant < 0.0 {
         return vec2(1.0, -1.0);
@@ -1053,10 +983,9 @@ pub fn cloud_column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Clo
     let up = point.normalize();
     let [lower, upper, bounds, tower] = textures.cloud_column(up);
     let time = view.time();
-    // Carry the noise with the large-scale flow, which moves through the
-    // world, restarting each copy before the converging wind can stretch it
-    // out of shape.
-    let wind = cloud_wind(up) * FEATURE_SCALE;
+    // Carry the noise with the large-scale flow, restarting each copy
+    // before the converging wind can stretch it out of shape.
+    let wind = cloud_wind(up);
     let phase = time / FLOW_PERIOD - (time / FLOW_PERIOD).floor();
     let later = phase + 0.5 - (phase + 0.5).floor();
     CloudColumn {
@@ -1066,9 +995,9 @@ pub fn cloud_column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Clo
         tower,
         // A slow rise through the noise keeps every cloud evolving. Each
         // copy holds alone for most of its life; they blend briefly.
-        near: (Vec3::Z * (time * 0.5) - wind * (phase * FLOW_PERIOD))
+        near: (Vec3::Z * (time * 0.0625) - wind * (phase * FLOW_PERIOD))
             .extend((1.0 - (1.0 - phase * 2.0).abs()).smoothstep(0.45, 0.55)),
-        far: (Vec3::Z * (time * 0.5) - wind * (later * FLOW_PERIOD)).extend(0.0),
+        far: (Vec3::Z * (time * 0.0625) - wind * (later * FLOW_PERIOD)).extend(0.0),
         along: (wind / wind.length().max(0.001)).extend(0.0),
     }
 }
@@ -1196,14 +1125,13 @@ pub fn cloud_light(
     let diffuse = (-optical * 0.25).exp() * 0.07 + (-optical * 0.06).exp() * 0.05 + orders;
     // Thin edges facing the light hold too few droplets to brighten much.
     let powder = 1.0 - (-shadow * 2.0 - 0.15).exp();
-    let world = point / FEATURE_SCALE;
-    let sun = textures.pole_light(world, light_position(world)) * view.sky_horizon.y * 1.5;
+    let sun = textures.pole_light(point, light_position(point)) * view.sky_horizon.y * 1.5;
     // Seen from above at night, clouds over the aur glow with its light
     // diffused up through them.
-    let altitude = point.length() - FEATURE_RADIUS;
+    let altitude = point.length() - PLANET_RADIUS;
     // A cloud's own body hides the glow from all but its base.
     let upward = optics.glow.xyz()
-        * (-altitude.max(0.0) / 22_000.0).exp()
+        * (-altitude.max(0.0) / 2750.0).exp()
         * ((-depth.z).exp() * 0.6 + (-depth.z * 0.15).exp() * 0.4)
         * (1.0 - 0.75 * height);
     // Skylight: crowns see the open sky, bases sit in their own shadow.
@@ -1225,13 +1153,10 @@ pub fn short_volume(
     length: f32,
     textures: &Textures,
 ) -> RaymarchResult {
-    let world = view.to_planet(ro);
-    let origin = world * FEATURE_SCALE;
+    let origin = view.to_planet(ro);
     let direction = view.planet_rotation.conjugate() * rd;
-    let world_length = length;
-    let length = length * FEATURE_SCALE;
     let middle = origin + direction * (length * 0.5);
-    let footprint = (length / 8.0).max(4.0);
+    let footprint = (length / 8.0).max(0.5);
     let density = |point| {
         let sample =
             cloud_column(point, view, textures).sample(point, footprint, textures, Detail::Shadow);
@@ -1241,7 +1166,7 @@ pub fn short_volume(
     let m = density(middle);
     let b = density(origin + direction * length);
     let optical = simpson(a, m, b, length);
-    let air = textures.air_transmittance(world, direction, world_length);
+    let air = textures.air_transmittance(origin, direction, length);
     let transmission = (-optical).exp() * air;
     let lighting = if optical > 0.0001 {
         cloud_light(
@@ -1258,7 +1183,7 @@ pub fn short_volume(
     };
     RaymarchResult {
         color: (lighting * (1.0 - transmission)).extend(transmission),
-        depth: world_length,
+        depth: length,
     }
 }
 
@@ -1307,7 +1232,7 @@ pub fn cloud_map(
                 weather.w * 0.7,
                 weather.z * 0.8,
                 weather.z,
-                layer_altitude(0) + 3000.0 + weather.y * 60_000.0,
+                layer_altitude(0) + 375.0 + weather.y * 7500.0,
             ),
         )
     } else {
@@ -1321,11 +1246,11 @@ pub fn cloud_map(
             cover.add(parcel, up);
             // Only the strongest, deepest systems build a full thunderhead;
             // the rest are fields of towering cumulus.
-            if parcel.kind() == TOWER && parcel.shape.y > 0.6 && parcel.shape.w > 62_000.0 {
+            if parcel.kind() == TOWER && parcel.shape.y > 0.6 && parcel.shape.w > 7750.0 {
                 let centre = parcel.centre.xyz();
                 let distance = (up - centre).length() * PLANET_RADIUS;
                 let column = parcel.detail.x * 0.35;
-                let reach = column * 4.2 / FEATURE_SCALE + CLOUD_TEXEL / FEATURE_SCALE * 1.5;
+                let reach = column * 4.2 + CLOUD_TEXEL * 1.5;
                 let inside = 1.0 - distance / reach;
                 if inside > nearest {
                     nearest = inside;
@@ -1432,7 +1357,7 @@ pub fn cloud_shadow(
     };
     let up = atlas_direction(vec2(id.x as f32, id.y as f32) + 0.5, LIGHT_FACE);
     let altitude = light_altitude(layer as f32);
-    let start = up * (FEATURE_RADIUS + altitude);
+    let start = up * (PLANET_RADIUS + altitude);
     let light = light_towards(start);
     let cosine = up.dot(light);
     let (lower, upper) = column(start);
@@ -1441,7 +1366,7 @@ pub fn cloud_shadow(
     let mut near = 0.0;
     // The convective top varies from column to column; bound it by the
     // highest it reaches here or where the light leaves the cloud.
-    let (ahead, beyond) = column(start + light * 60_000.0);
+    let (ahead, beyond) = column(start + light * 7500.0);
     let reach = mean_band(0, lower, upper)
         .y
         .max(mean_band(0, ahead, beyond).y);
@@ -1472,7 +1397,7 @@ pub fn cloud_shadow(
                 let mut density = mean_density(band, layer_cover(lower, upper, band));
                 if band == 0 {
                     // Thinning up to this column's own convective top.
-                    let height = point.length() - FEATURE_RADIUS;
+                    let height = point.length() - PLANET_RADIUS;
                     density *= taper(0, mean_band(0, lower, upper), height);
                 }
                 depth += density * length * 0.5;

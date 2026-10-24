@@ -1,4 +1,3 @@
-//! Stable integration of smooth volume segments; no stochastic point estimates.
 use core::f32::consts::PI;
 use spirv_std::glam::{IVec3, Vec2, Vec3, Vec4, ivec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]

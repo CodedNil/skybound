@@ -1,5 +1,5 @@
 use crate::scene::{
-    FEATURE_SCALE, FrameUniform, PLANET_RADIUS, ViewUniform,
+    FrameUniform, PLANET_RADIUS, ViewUniform,
     atmosphere::{render_sky, sky_direction, sky_uv},
     aur::{CURRENT, EJECTION_CELL, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
     climate::{CLOUD_TOP, cloud_wind},
@@ -16,7 +16,7 @@ use crate::scene::{
 };
 use spirv_std::{
     Image, Sampler,
-    glam::{Mat4, Vec2, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4},
+    glam::{FloatExt, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec2, vec3, vec4},
     num_traits::Float,
     spirv,
 };
@@ -66,8 +66,7 @@ pub fn ejection_lookup(
     let x = pixel.x as u32;
     // The cell nearest the camera among those sharing this texel.
     let view = &frame.view;
-    let camera = surface_coordinates(view.to_planet(view.world_position.xyz())) * FEATURE_SCALE;
-    let centre = (camera.truncate() / EJECTION_CELL).floor();
+    let (centre, _) = view.place(Vec3::ZERO).arc();
     let window = EJECTION_WINDOW as f32;
     let texel = vec2((x % EJECTION_WINDOW) as f32, pixel.y.floor());
     let offset = texel - centre;
@@ -78,11 +77,13 @@ pub fn ejection_lookup(
             Vec2::splat(window),
             Vec2::ZERO,
         );
+    let mut event = ejection(cell, frame.view.time());
     if x >= EJECTION_WINDOW * 2 {
-        *out = Vec4::splat(ejection_clearance(cell, frame.view.time()));
+        // The cell's clearance shares a texel with its loop's shape.
+        event[2].x = ejection_clearance(cell, frame.view.time());
+        *out = event[2];
         return;
     }
-    let mut event = ejection(cell, frame.view.time());
     if x < EJECTION_WINDOW {
         let mut active = 0u32;
         for index in 0..9 {
@@ -244,10 +245,20 @@ fn atmosphere(
     }
 }
 
-fn motion(uv: Vec2, position: Vec3, frame: &FrameUniform) -> Vec2 {
-    let clip = frame.view.prev_clip_from_world * position.extend(1.0);
-    if clip.w > 0.0 {
-        uv - (clip.xy() / clip.w * vec2(0.5, -0.5) + 0.5)
+/// Where a point lies on the screen in UV, and whether it lies in front.
+fn screen(clip_from_world: Mat4, point: Vec3) -> Vec3 {
+    let clip = clip_from_world * point.extend(1.0);
+    (clip.xy() / clip.w.max(1.0e-6) * vec2(0.5, -0.5) + 0.5).extend(clip.w)
+}
+
+/// How far a point has moved across the screen since last frame, from where
+/// it was then. Both are projected without jitter: upscalers expect motion
+/// to hold only movement.
+fn motion(position: Vec3, previous: Vec3, frame: &FrameUniform) -> Vec2 {
+    let now = screen(frame.view.unjittered_clip_from_world, position);
+    let then = screen(frame.view.prev_clip_from_world, previous);
+    if now.z > 0.0 && then.z > 0.0 {
+        now.xy() - then.xy()
     } else {
         Vec2::ZERO
     }
@@ -272,12 +283,12 @@ pub fn opaque(
         let clip = frame.view.clip_from_world * point.extend(1.0);
         (
             clip.z / clip.w,
-            motion(uv, hit.previous_position, frame),
+            motion(point, hit.previous_position, frame),
             hit.color(),
         )
     } else {
         let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
-        (0.0, motion(uv, point, frame), sky)
+        (0.0, motion(point, point, frame), sky)
     };
     *out_color = match frame.view.times.z as u32 {
         1 => Vec3::splat(depth.max(0.0).sqrt()),
@@ -296,6 +307,7 @@ pub fn opaque(
 #[spirv(fragment(entry_point_name = "clouds"))]
 pub fn clouds(
     #[spirv(frag_coord)] fragment: Vec4,
+    #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
@@ -314,11 +326,7 @@ pub fn clouds(
     #[spirv(location = 0)] out_slab: &mut Vec4,
     #[spirv(location = 1)] out_front: &mut Vec4,
 ) {
-    // Each frame traces one pixel of every 2x2 block; the resolve pass
-    // rebuilds the others from history.
-    let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
-    let uv = (traced + 0.5) / frame.history.zw();
-    let ray = scene_ray(uv, frame, false);
+    let ray = scene_ray(uv, frame, true);
     let geometry_limit = depth_limit(uv, frame, depth_texture);
     let limit = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
@@ -340,14 +348,16 @@ pub fn clouds(
         cached: true,
         sampler,
     };
-    // White noise per pixel and frame: a phase for the cloud steps that the
-    // cloud history averages away without leaving a pattern.
-    let pixel = traced.as_uvec2();
-    let seed = pixel.x.wrapping_mul(73_856_093)
-        ^ pixel.y.wrapping_mul(19_349_663)
-        ^ (frame.view.frame_count() as u32).wrapping_mul(83_492_791);
+    // A phase for the cloud steps: interleaved gradient noise across the
+    // screen, so neighbouring pixels sample different depths, advanced by
+    // the golden ratio each frame, so every pixel visits its phases evenly
+    // and the upscaler's history averages them without leaving speckle.
+    let pixel = fragment.xy().floor();
+    let gradient =
+        (52.982_918 * (0.067_110_56 * pixel.x + 0.005_837_15 * pixel.y).fract_gl()).fract_gl();
+    let turn = (frame.view.frame_count() as u32 % 256) as f32 * 0.618_034;
     let slab = march::march_clouds(
-        f32::from_bits((seed >> 9) | 0x3f80_0000) - 1.0,
+        (gradient + turn).fract_gl(),
         ray.origin,
         ray.direction,
         &frame.view,
@@ -360,203 +370,37 @@ pub fn clouds(
     *out_front = Vec4::splat(slab.front);
 }
 
-/// Which pixel of each 2x2 block the clouds trace this frame.
-fn block_offset(frame: &FrameUniform) -> Vec2 {
-    match frame.history.y as u32 & 3 {
-        0 => vec2(0.0, 0.0),
-        1 => vec2(1.0, 1.0),
-        2 => vec2(1.0, 0.0),
-        _ => vec2(0.0, 1.0),
-    }
-}
-
-/// Rebuild the clouds at full resolution: the pixel traced this frame is
-/// kept, the other three come from where history saw them, held within
-/// the range of the freshly traced clouds around them.
-#[spirv(fragment(entry_point_name = "cloud_resolve"))]
-pub fn cloud_resolve(
-    #[spirv(frag_coord)] fragment: Vec4,
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
-    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
-    #[spirv(descriptor_set = 0, binding = 2)] fresh: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 3)] fresh_front: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] history: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 5)] history_front: &Image!(2D, type=f32, sampled=true),
-    #[spirv(location = 0)] out_slab: &mut Vec4,
-    #[spirv(location = 1)] out_front: &mut Vec4,
-) {
-    let pixel = fragment.xy().floor();
-    let block = (pixel * 0.5).floor();
-    let own: Vec4 = fresh.fetch(block.as_ivec2());
-    let own_front: Vec4 = fresh_front.fetch(block.as_ivec2());
-    let traced = (pixel - (block * 2.0 + block_offset(frame)))
-        .abs()
-        .max_element()
-        < 0.5;
-    if frame.history.x < 0.5 {
-        *out_slab = own;
-        *out_front = own_front;
-        return;
-    }
-    // Where this pixel's clouds were last frame: they drift with the wind.
-    let size = frame.history.zw();
-    let uv = (pixel + 0.5) / size;
-    let ray = scene_ray(uv, frame, false);
-    let depth = own_front.x.min(400_000.0);
-    let position = ray.origin + ray.direction * depth;
-    let wind = frame.view.planet_rotation * cloud_wind(frame.view.to_planet(position).normalize());
-    let previous = uv - motion(uv, position - wind * frame.view.times.w, frame);
-    if previous.cmplt(Vec2::ZERO).any() || previous.cmpgt(Vec2::ONE).any() {
-        *out_slab = own;
-        *out_front = own_front;
-        return;
-    }
-    let past: Vec4 = history.sample_by_lod(*sampler, previous, 0.0);
-    let past_front: Vec4 = history_front.fetch((previous * size).as_ivec2());
-    // The range of the fresh clouds in the blocks around this pixel.
-    let mut low = own;
-    let mut high = own;
-    for index in 0..9 {
-        let offset = vec2((index % 3) as f32 - 1.0, (index / 3) as f32 - 1.0);
-        let neighbour = (block + offset)
-            .clamp(Vec2::ZERO, (size * 0.5).ceil() - 1.0)
-            .as_ivec2();
-        let value: Vec4 = fresh.fetch(neighbour);
-        low = low.min(value);
-        high = high.max(value);
-    }
-    // The pixel traced this frame also averages with its history, so the
-    // noise of each frame's step phases settles instead of shimmering.
-    let held = past.clamp(low, high);
-    if traced {
-        *out_slab = held.lerp(own, 0.35);
-        *out_front = own_front;
-        return;
-    }
-    *out_slab = held;
-    *out_front = if past_front.x < own_front.x * 4.0 {
-        past_front
-    } else {
-        own_front
-    };
-}
-
-/// Rebuild the volume at full resolution: the pixel traced this frame keeps
-/// its fresh value, softened by history; the other three come from where
-/// history saw them, held within the range of the fresh blocks around them.
-#[spirv(fragment(entry_point_name = "volume_resolve"))]
-pub fn volume_resolve(
-    #[spirv(location = 0)] uv: Vec2,
-    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
-    #[spirv(descriptor_set = 0, binding = 1)] volume: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 2)] motion: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 3)] metadata: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] history: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 5)] history_metadata: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] sampler: &Sampler,
-    #[spirv(location = 0)] out_color: &mut Vec4,
-    #[spirv(location = 1)] out_metadata: &mut Vec4,
-) {
-    let size = frame.history.zw();
-    let pixel = (uv * size).floor().clamp(Vec2::ZERO, size - 1.0);
-    let block = (pixel * 0.5).floor();
-    let blocks = (size * 0.5).ceil() - 1.0;
-    let sample: Vec4 = metadata.fetch(block.as_ivec2());
-    let fresh: Vec4 = volume.fetch(block.as_ivec2());
-    let mut low = fresh;
-    let mut high = fresh;
-    let mut filtered = Vec4::ZERO;
-    let mut total = 0.0;
-    for index in 0..9 {
-        let offset = vec2((index % 3) as f32 - 1.0, (index / 3) as f32 - 1.0);
-        let neighbour = (block + offset).clamp(Vec2::ZERO, blocks).as_ivec2();
-        let geometry = metadata.fetch(neighbour).y;
-        if (geometry - sample.y).abs() <= (sample.y * 0.04).max(10.0) {
-            let weight = (2.0 - offset.x.abs()) * (2.0 - offset.y.abs());
-            let value: Vec4 = volume.fetch(neighbour);
-            filtered += value * weight;
-            total += weight;
-            low = low.min(value);
-            high = high.max(value);
-        }
-    }
-    filtered /= total.max(1.0);
-    let traced = (pixel - (block * 2.0 + block_offset(frame)))
-        .abs()
-        .max_element()
-        < 0.5;
-    let current = if traced {
-        fresh.lerp(filtered, 0.25)
-    } else {
-        filtered
-    };
-    *out_metadata = sample;
-    *out_color = current;
-    let previous = uv - motion.fetch(block.as_ivec2()).xy();
-    if frame.history.x < 0.5 || previous.cmplt(Vec2::ZERO).any() || previous.cmpgt(Vec2::ONE).any()
-    {
-        return;
-    }
-    let old: Vec4 = history.sample_by_lod(*sampler, previous, 0.0);
-    let old_sample: Vec4 = history_metadata.fetch(
-        (previous * size)
-            .floor()
-            .clamp(Vec2::ZERO, size - 1.0)
-            .as_ivec2(),
-    );
-    let difference = (sample.xy() - old_sample.xy()).abs();
-    let tolerance = (sample.xy() * vec2(0.35, 0.04)).max(vec2(1500.0, 10.0));
-    let thin_edge = current.w.max(old.w) > 0.8;
-    if difference.y < tolerance.y && (difference.x < tolerance.x || thin_edge) {
-        // A traced pixel takes most of its fresh value; the others rely on
-        // history, refreshed every fourth frame.
-        *out_color = current.lerp(old.clamp(low, high), if traced { 0.35 } else { 0.9 });
-    }
-}
-
-/// Lay the volume over the native scene, upsampled where its depth agrees
-/// with the scene's, and slot the thin layers in front of it.
+/// Lay the volume over the scene and slot the thin layers in front of it;
+/// all three are drawn at every pixel. The view's motion follows whichever
+/// the pixel mostly shows: an upscaler given the solids' motion beneath a
+/// cloud smears the cloud.
 #[spirv(fragment(entry_point_name = "volume_composite"))]
 pub fn volume_composite(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] scene: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 2)] volume: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 3)] metadata: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 4)] depth: &Depth,
-    #[spirv(descriptor_set = 0, binding = 5)] thin_color: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 6)] thin_transmission: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 7)] thin_prefix: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 3)] thin_color: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 4)] thin_transmission: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 5)] thin_prefix: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 6)] scene_motion: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 7)] volume_motion: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
+    #[spirv(location = 1)] out_motion: &mut Vec4,
 ) {
-    let native = frame.viewport.zw();
-    let pixel = (uv * native)
-        .floor()
-        .clamp(Vec2::ZERO, native - 1.0)
-        .as_ivec2();
+    let size = frame.viewport.zw();
+    let pixel = (uv * size).floor().clamp(Vec2::ZERO, size - 1.0).as_ivec2();
     let background = scene.fetch(pixel).xyz();
+    let solids: Vec4 = scene_motion.fetch(pixel);
     *out_color = background.extend(1.0);
+    *out_motion = solids;
     if frame.view.times.z > 0.5 {
         return;
     }
-    let distance = depth_limit(uv, frame, depth);
-    let size = frame.history.zw();
-    let coordinates = uv * size - 0.5;
-    let base = coordinates.floor();
-    let fraction = coordinates - base;
-    let mut accumulated = Vec4::ZERO;
-    let mut total = 0.0;
-    for index in 0..4 {
-        let corner = vec2((index % 2) as f32, (index / 2) as f32);
-        let texel = (base + corner).clamp(Vec2::ZERO, size - 1.0).as_ivec2();
-        let spatial = corner * fraction + (Vec2::ONE - corner) * (Vec2::ONE - fraction);
-        let geometry = metadata.fetch(texel).y;
-        let weight = spatial.x * spatial.y
-            / (1.0 + (geometry - distance).abs() / (distance * 0.02).max(2.0));
-        accumulated += volume.fetch(texel) * weight;
-        total += weight;
-    }
-    let fog = accumulated / total.max(0.000_001);
+    let fog: Vec4 = volume.fetch(pixel);
+    let drifting: Vec4 = volume_motion.fetch(pixel);
+    let cover = ((0.7 - fog.w) / 0.4).clamp(0.0, 1.0);
+    *out_motion = solids.lerp(drifting, cover * cover * (3.0 - 2.0 * cover));
     let profile = frame.view.camera_position.w as u32;
     if profile & 32 != 0 {
         *out_color = (fog.xyz() + fog.w * background).extend(1.0);
@@ -568,10 +412,6 @@ pub fn volume_composite(
         return;
     }
     let transmission = thin_transmission.fetch(pixel).xyz();
-    if thin.w < 0.0 {
-        *out_color = (thin.xyz() + transmission * background).extend(1.0);
-        return;
-    }
     // The thin layers lie in front of the volume's leading part, which is
     // taken out of it so it is not counted twice.
     let prefix: Vec4 = thin_prefix.fetch(pixel);
@@ -581,11 +421,12 @@ pub fn volume_composite(
     *out_color = (thin.xyz() + transmission * (remainder + through * background)).extend(1.0);
 }
 
-/// The aur, its arcs and the pole lights, with the clouds slotted in; like
-/// the clouds, traced at one pixel of each 2x2 block per frame.
+/// The aur, its arcs and the pole lights, with the clouds slotted in: along
+/// the same jittered ray as the solids at every pixel, so an upscaler is
+/// given the whole scene alike.
 #[spirv(fragment(entry_point_name = "volume"))]
 pub fn volume(
-    #[spirv(frag_coord)] fragment: Vec4,
+    #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 2)] base_texture: &Image!(3D, type=f32, sampled=true),
@@ -605,11 +446,8 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 17)] cloud_front: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
-    #[spirv(location = 2)] out_metadata: &mut Vec4,
 ) {
-    let traced = fragment.xy().floor() * 2.0 + block_offset(frame);
-    let uv = (traced + 0.5) / frame.history.zw();
-    let ray = scene_ray(uv, frame, false);
+    let ray = scene_ray(uv, frame, true);
     let geometry_limit = depth_limit(uv, frame, depth_texture);
     let limit = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
@@ -632,7 +470,8 @@ pub fn volume(
         cached: true,
         sampler,
     };
-    let texel = traced.as_ivec2();
+    let size = frame.viewport.zw();
+    let texel = (uv * size).floor().clamp(Vec2::ZERO, size - 1.0).as_ivec2();
     let clouds: Vec4 = cloud_slab.fetch(texel);
     let front: Vec4 = cloud_front.fetch(texel);
     let volume = march::integrate(
@@ -650,19 +489,17 @@ pub fn volume(
         },
     );
     let position = ray.origin + ray.direction * volume.depth;
-    // Feature-space heights and the aur's feature-space flow, in the world.
     let altitude = position.distance(frame.view.planet_center()) - PLANET_RADIUS;
-    let current = if altitude <= 3700.0 / FEATURE_SCALE {
-        frame.view.planet_rotation * (CURRENT / FEATURE_SCALE)
-    } else if altitude > CLOUD_TOP / FEATURE_SCALE {
+    let current = if altitude <= ocean::BODY_TOP_HEIGHT {
+        frame.view.planet_rotation * CURRENT
+    } else if altitude > CLOUD_TOP {
         Vec3::ZERO
     } else {
         frame.view.planet_rotation * cloud_wind(frame.view.to_planet(position).normalize())
     };
     let previous = position - current * frame.view.times.w;
     *out_color = volume.color;
-    *out_motion = motion(uv, previous, frame).extend(0.0).extend(0.0);
-    *out_metadata = vec3(volume.depth, limit, volume.color.xyz().max_element()).extend(1.0);
+    *out_motion = motion(position, previous, frame).extend(0.0).extend(0.0);
 }
 
 #[spirv(fragment(entry_point_name = "transparent"))]
@@ -688,7 +525,7 @@ pub fn transparent(
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
 ) {
-    let mut ray = scene_ray(uv, frame, false);
+    let mut ray = scene_ray(uv, frame, true);
     let geometry_limit = depth_limit(uv, frame, depth_texture);
     ray.max_distance = if geometry_limit >= T_MAX - 1.0 {
         10_000_000.0
@@ -712,7 +549,7 @@ pub fn transparent(
         }
         life::visit_thin(ray, c, |hit| hits.add(hit));
     }
-    if hits.count == 0 && ray.max_distance >= 1000.0 {
+    if hits.count == 0 {
         *out_color = Vec4::ZERO;
         *out_transmittance = Vec4::ONE;
         *out_prefix = Vec4::W;
@@ -762,20 +599,7 @@ pub fn transparent(
         transmission *= hits.transmission[i].xyz();
         cursor = hit.w;
     }
-    if ray.max_distance < 1000.0 {
-        let fog = short_volume(
-            ray.origin + ray.direction * cursor,
-            ray.direction,
-            &environment,
-            &frame.view,
-            (ray.max_distance - cursor).max(0.0),
-            &textures,
-        );
-        color += transmission * fog.color.xyz();
-        transmission *= fog.color.w;
-        cursor = -1.0;
-    }
-    *out_color = color.extend(cursor);
+    *out_color = color.extend(1.0);
     *out_transmittance = transmission.extend(if hits.count > 0 { hits.color[0].w } else { 0.0 });
     *out_prefix = prefix.extend(prefix_t);
 }

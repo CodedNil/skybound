@@ -18,21 +18,13 @@ pub mod render;
 
 pub const PLANET_RADIUS: f32 = 1_500_000.0;
 
-/// How many times larger than the world the feature space is, about the
-/// planet's centre.
-///
-/// The aur, its arcs and spires, the clouds and the lightning are modelled
-/// in it: a feature metre is an eighth of a world metre, so all of
-/// them stand at an eighth of their modelled size on the same planet.
-pub const FEATURE_SCALE: f32 = 8.0;
-
-/// The planet's radius in feature space.
-pub const FEATURE_RADIUS: f32 = PLANET_RADIUS * FEATURE_SCALE;
-
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewUniform {
     pub clip_from_world: Mat4,
+    /// The projection without this frame's jitter, which motion is measured
+    /// in, as upscalers expect.
+    pub unjittered_clip_from_world: Mat4,
     pub world_from_clip: Mat4,
     pub prev_clip_from_world: Mat4,
     pub direction_from_clip_unjittered: Mat4,
@@ -50,6 +42,9 @@ pub struct ViewUniform {
     pub cache_origin: Vec4,
     pub cache_east: Vec4,
     pub cache_north: Vec4,
+    /// The camera's spire cells and offsets on each face, from
+    /// `aur::spire_origins`.
+    pub spire_origins: [Vec4; 6],
     pub aur_flashes: [[Vec4; 2]; 32],
     pub aur_bolts: [[Vec4; 2]; 32],
 }
@@ -60,9 +55,6 @@ pub struct FrameUniform {
     pub view: ViewUniform,
     pub players: [CreatureInstance; 2],
     pub viewport: Vec4,
-    /// Whether last frame's history is usable, which pixel of each 2x2
-    /// block the clouds trace this frame, and the traced resolution.
-    pub history: Vec4,
 }
 
 impl ViewUniform {
@@ -101,7 +93,7 @@ impl ViewUniform {
         self.ambient_color =
             (render_sky(up, ro, source) * 0.7 + render_sky(-up, ro, source) * 0.15).extend(0.0);
         let position = self.surface_position(self.world_position.xyz());
-        self.ambient_color += ambient(position * FEATURE_SCALE, self.time()).extend(0.0);
+        self.ambient_color += ambient(position, self.time()).extend(0.0);
     }
 
     pub fn planet_center(&self) -> Vec3 {
@@ -110,6 +102,11 @@ impl ViewUniform {
 
     pub fn ro_relative(&self) -> Vec3 {
         self.world_position.xyz() - self.planet_center()
+    }
+
+    /// The camera's position in the planet, which turns under the scene.
+    pub fn camera(&self) -> Vec3 {
+        self.to_planet(self.world_position.xyz())
     }
 
     pub fn to_planet(&self, point: Vec3) -> Vec3 {
@@ -126,6 +123,13 @@ impl ViewUniform {
 
     pub fn altitude(&self) -> f32 {
         self.camera_position.z
+    }
+
+    /// The place of a point given by its offset from the camera along the
+    /// planet's axes: how everything placed on the face grid is found near
+    /// the camera.
+    pub fn place(&self, offset: Vec3) -> aur::Place {
+        aur::place_near(&self.spire_origins, self.camera(), self.altitude(), offset)
     }
 
     pub fn time(&self) -> f32 {

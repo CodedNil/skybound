@@ -3,12 +3,10 @@ use crate::{
         ecosystem::{EcologicalMotion, Relations},
         flight::{SPAWN, Velocity, follow_camera},
     },
-    math::{ToEngine, ToScene},
+    graphics::upscale::{History, add_upscaler, reset_history},
 };
 use bevy::{
-    anti_alias::{
-        contrast_adaptive_sharpening::ContrastAdaptiveSharpening, taa::TemporalAntiAliasing,
-    },
+    anti_alias::dlss::DlssSuperResolutionSupported,
     camera::Hdr,
     core_pipeline::prepass::{
         DepthPrepass, MotionVectorPrepass, NoBackgroundMotionVectors, NormalPrepass,
@@ -19,7 +17,7 @@ use bevy::{
     render::{RenderApp, extract_resource::ExtractResource, view::DebandDither},
     transform::TransformSystems,
 };
-use skybound::scene::{PLANET_RADIUS, planet::surface_coordinates};
+use skybound::scene::PLANET_RADIUS;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
 const CAMERA_RESET_THRESHOLD: f32 = 2048.0;
@@ -82,9 +80,6 @@ impl WorldData {
     pub fn down(&self, local: Vec3) -> Vec3 {
         -self.up(local)
     }
-    pub fn surface_position(&self, local: Vec3) -> Vec3 {
-        surface_coordinates(self.position(local).as_vec3().to_scene()).to_engine()
-    }
     pub fn planet_frame(&self, local: Vec3) -> (Quat, f32, f32) {
         let point = self.position(local);
         (
@@ -128,8 +123,8 @@ type RebaseAnchor<'a> = (
     Option<&'a mut Relations>,
 );
 
-fn setup(mut commands: Commands) {
-    commands.spawn((
+fn setup(mut commands: Commands, dlss: Option<Res<DlssSuperResolutionSupported>>) {
+    let mut camera = commands.spawn((
         Camera3d::default(),
         WorldAnchor,
         Camera::default(),
@@ -151,14 +146,10 @@ fn setup(mut commands: Commands) {
                 speed_darken: 2.0,
                 ..default()
             },
-            TemporalAntiAliasing::default(),
-            ContrastAdaptiveSharpening {
-                sharpening_strength: 0.3,
-                ..default()
-            },
         ),
         Transform::from_translation(SPAWN + vec3(0.0, -56.0, 13.0)).looking_at(SPAWN, Vec3::Z),
     ));
+    add_upscaler(&mut camera, dlss.is_some());
 }
 
 fn sync_positions(
@@ -184,7 +175,7 @@ fn update(
     mut world: ResMut<WorldData>,
     camera: Single<Entity, With<Camera3d>>,
     mut anchors: Query<RebaseAnchor, With<WorldAnchor>>,
-    mut taa: Single<&mut TemporalAntiAliasing>,
+    history: Single<History, With<Camera3d>>,
 ) {
     let (transform, coordinate, _, _, _) = anchors.get(*camera).expect("camera world anchor");
     if transform.translation.abs().max_element() < CAMERA_RESET_THRESHOLD {
@@ -195,7 +186,7 @@ fn update(
     let rotation = (basis.conjugate() * world.basis).as_quat();
     world.origin = origin;
     world.basis = basis;
-    taa.reset = true;
+    reset_history(history.into_inner());
     for (mut transform, mut coordinate, velocity, ecological, relations) in &mut anchors {
         transform.translation = world.local(coordinate.position);
         coordinate.local = transform.translation;
@@ -215,7 +206,7 @@ fn update(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::ecs::system::RunSystemOnce;
+    use bevy::{anti_alias::taa::TemporalAntiAliasing, ecs::system::RunSystemOnce};
 
     #[test]
     fn down_points_to_planet_at_every_latitude_and_longitude() {

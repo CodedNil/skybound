@@ -1,10 +1,8 @@
-//! Crystal spires: sphere traced through their altitude band and lit by the
-//! glowing ocean they rise from.
 use crate::scene::{
-    FEATURE_RADIUS, FEATURE_SCALE, ViewUniform, aur,
-    aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes, spire_coordinates},
+    PLANET_RADIUS, ViewUniform, aur,
+    aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes},
     life::surface::Hit,
-    planet::{feature_surface, light_towards},
+    planet::{light_towards, surface_coordinates},
     render::ocean::caustics,
 };
 use spirv_std::{
@@ -12,20 +10,23 @@ use spirv_std::{
     num_traits::Float,
 };
 
-fn field(point: Vec3) -> f32 {
-    aur::spire_field(spire_coordinates(point)) * SPIRE_METRIC
+/// The spire field at an offset from the camera.
+fn field(view: &ViewUniform, offset: Vec3) -> f32 {
+    aur::spire_field_at(view.place(offset)) * SPIRE_METRIC
 }
 
-/// Trace the spires along a world ray; they live in feature space.
+/// Trace the spires along a ray.
+///
+/// Positions are kept as offsets from the camera: absolute ones this far
+/// from the planet's centre round to an eighth of a metre, and spire
+/// coordinates laid across six cube faces to a metre or more, which shows
+/// as stepped, shimmering surfaces up close.
 pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angle: f32) -> Hit {
-    let ro = view.to_planet(origin) * FEATURE_SCALE;
+    let ro = view.to_planet(origin);
     let rd = view.planet_rotation.conjugate() * direction;
+    let start = view.planet_rotation.conjugate() * (origin - view.world_position.xyz());
     let height = ro.length();
-    let band = aur::spire_band(
-        height - FEATURE_RADIUS,
-        rd.dot(ro / height),
-        limit * FEATURE_SCALE,
-    );
+    let band = aur::spire_band(height - PLANET_RADIUS, rd.dot(ro / height), limit);
     let mut t = band.x;
     let mut relaxed = 1.6;
     let mut stride = 0.0;
@@ -34,18 +35,18 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
         if t >= band.y {
             return Hit::MISS;
         }
-        let point = ro + rd * t;
-        let surface = spire_coordinates(point);
-        let cell = (surface.truncate() / SPIRE_CELL).floor();
-        let epsilon = (t * angle * 0.5).max(0.5);
-        if aur::spire_count(cell) == 0 {
+        let offset = start + rd * t;
+        let place = view.place(offset);
+        let epsilon = (t * angle * 0.5).max(0.01);
+        if aur::spire_count(place.cell) == 0 {
             // Cross open ocean one cell at a time: step straight to the
             // cell's far edge using the ray's velocity in spire coordinates.
             // Coordinates jump across a face edge, where the step stays short.
+            let point = ro + rd * t;
             let (first, second) = spire_axes(point);
             let velocity = vec2(first.dot(rd), second.dot(rd))
-                * (FEATURE_RADIUS / point.length() / SPIRE_METRIC);
-            let local = surface.truncate() - cell * SPIRE_CELL;
+                * (PLANET_RADIUS / point.length() / SPIRE_METRIC);
+            let local = place.local + SPIRE_CELL * 0.5;
             let exit = |position: f32, speed: f32| {
                 if speed > 1.0e-6 {
                     (SPIRE_CELL - position) / speed
@@ -56,7 +57,7 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
                 }
             };
             let across = exit(local.x, velocity.x).min(exit(local.y, velocity.y));
-            t += (across + 20.0).max(epsilon);
+            t += (across + 2.5).max(epsilon);
             relaxed = 1.6;
             stride = 0.0;
             previous = 0.0;
@@ -64,7 +65,7 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
         }
         // Over-relaxed sphere tracing: stride further while consecutive
         // spheres overlap, and fall back to the plain step when they do not.
-        let distance = field(point);
+        let distance = aur::spire_field_at(place) * SPIRE_METRIC;
         if relaxed > 1.0 && distance + previous < stride {
             t += stride * (1.0 - relaxed) / relaxed;
             relaxed = 1.0;
@@ -72,8 +73,15 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
             continue;
         }
         if distance < epsilon {
-            let world = t / FEATURE_SCALE;
-            return shade(point, origin + direction * world, rd, world, view, epsilon);
+            return shade(
+                offset,
+                ro + rd * t,
+                origin + direction * t,
+                rd,
+                t,
+                view,
+                epsilon,
+            );
         }
         stride = distance.max(epsilon) * relaxed;
         previous = distance;
@@ -82,20 +90,32 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
     Hit::MISS
 }
 
-fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon: f32) -> Hit {
-    let e = epsilon.max(2.0);
+fn shade(
+    offset: Vec3,
+    point: Vec3,
+    world: Vec3,
+    rd: Vec3,
+    t: f32,
+    view: &ViewUniform,
+    epsilon: f32,
+) -> Hit {
+    let e = epsilon.max(0.0125);
     let a = vec3(1.0, -1.0, -1.0);
     let b = vec3(-1.0, -1.0, 1.0);
     let c = vec3(-1.0, 1.0, -1.0);
     let d = Vec3::ONE;
-    let normal = (a * field(point + a * e)
-        + b * field(point + b * e)
-        + c * field(point + c * e)
-        + d * field(point + d * e))
+    let normal = (a * field(view, offset + a * e)
+        + b * field(view, offset + b * e)
+        + c * field(view, offset + c * e)
+        + d * field(view, offset + d * e))
     .normalize();
     let up = point.normalize();
-    let surface = feature_surface(point);
-    let altitude = surface.z;
+    let surface = surface_coordinates(point);
+    let aur::Place {
+        cell,
+        local,
+        altitude,
+    } = view.place(offset);
     let time = view.time();
     let light = light_towards(point);
     let pole = view.pole_color.xyz().min(Vec3::splat(1.5));
@@ -116,10 +136,10 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
 
     // The ocean below is the brightest thing in the sky. Faces turned down
     // and outward catch it, strongest near the waterline.
-    let waterline = (-altitude.max(0.0) / 1800.0).exp();
+    let waterline = (-altitude.max(0.0) / 225.0).exp();
     let facing_sea = 0.35 + 0.65 * (0.5 - 0.5 * normal.dot(up));
     let net = caustics(
-        surface.truncate() * 0.0016 + vec2(altitude * 0.0004, 0.0),
+        surface.truncate() * 0.0128 + vec2(altitude * 0.0032, 0.0),
         time * 0.6,
     );
     let sea = vec3(0.42, 0.36, 0.62)
@@ -127,12 +147,9 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
         * waterline
         * facing_sea
         * (0.55 + net * 1.8 * waterline);
-    let rim = vec3(0.4, 0.62, 0.6) * view.sky_horizon.y * (-altitude.max(0.0) / 160.0).exp() * 1.5;
+    let rim = vec3(0.4, 0.62, 0.6) * view.sky_horizon.y * (-altitude.max(0.0) / 20.0).exp() * 1.5;
 
     // Veins of aur follow the twisted flutes and pulse upwards.
-    let coordinates = spire_coordinates(point);
-    let cell = (coordinates.truncate() / SPIRE_CELL).floor();
-    let local = coordinates.truncate() - (cell + 0.5) * SPIRE_CELL;
     let mut vein = 0.0;
     let mut nearest = f32::MAX;
     for index in 0..aur::spire_count(cell) {
@@ -154,7 +171,7 @@ fn shade(point: Vec3, world: Vec3, rd: Vec3, t: f32, view: &ViewUniform, epsilon
     // Far off, a spire dissolves into the glow of the aur it rises from
     // rather than standing as a dark speck against it.
     let glow = vec3(0.42, 0.38, 0.58) * view.sky_horizon.y + view.ambient_color.xyz() * 0.3;
-    let color = color.lerp(glow, 1.0 - (-t * FEATURE_SCALE / 260_000.0).exp());
+    let color = color.lerp(glow, 1.0 - (-t / 32_500.0).exp());
     Hit {
         color_depth: color.extend(t),
         normal: view.planet_rotation * normal,

@@ -1,5 +1,3 @@
-//! Scene passes declare what they bind once: the layout and the bind group
-//! are both derived from that one list, so they cannot drift apart.
 use bevy::{
     core_pipeline::FullscreenShader,
     prelude::*,

@@ -1,10 +1,10 @@
 use crate::scene::{
-    FEATURE_RADIUS,
+    PLANET_RADIUS,
     atmosphere::{
         POLE_RADIANCE, TRANSMITTANCE_SIZE, cached_air_transmittance, get_pole_light_color,
         transmittance_coordinates,
     },
-    aur::{EJECTION_CELL, EJECTION_WINDOW, ejection_field_with},
+    aur::{EJECTION_WINDOW, Place, ejection_field_with},
     climate::{
         CLOUD_FACE, CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CLOUD_TOP, LIGHT_BOTTOM, LIGHT_FACE,
         LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH, atlas_texel,
@@ -78,25 +78,26 @@ impl Textures<'_> {
             self.transmittance.sample_by_lod(*self.sampler, uv, 0.0).w
         })
     }
-    /// See [`ejection_field_with`], for a point in feature surface
-    /// coordinates near the camera.
-    pub fn ejection_field(&self, position: Vec3) -> Vec4 {
-        let cell = (position.xy() / EJECTION_CELL).floor();
+    /// See [`ejection_field_with`], for a place near the camera.
+    pub fn ejection_field(&self, place: Place) -> (Vec4, f32) {
+        let (cell, position) = place.arc();
         let mask = self.ejections.fetch(window_texel(cell)).w as u32 >> 1;
-        ejection_field_with(position, mask, |cell| {
+        ejection_field_with(cell, position, mask, |cell| {
             let pixel = window_texel(cell);
             let mut event = self.ejections.fetch(pixel);
             event.w = (event.w as u32 & 1) as f32;
+            let window = EJECTION_WINDOW as i32;
             [
                 event,
-                self.ejections
-                    .fetch(pixel + IVec2::new(EJECTION_WINDOW as i32, 0)),
+                self.ejections.fetch(pixel + IVec2::new(window, 0)),
+                self.ejections.fetch(pixel + IVec2::new(window * 2, 0)),
             ]
         })
     }
-    /// See [`ejection_clearance`](crate::scene::aur::ejection_clearance); valid anywhere in the position's cell.
-    pub fn ejection_clearance(&self, position: Vec3) -> f32 {
-        let cell = (position.xy() / EJECTION_CELL).floor();
+    /// See [`ejection_clearance`](crate::scene::aur::ejection_clearance);
+    /// valid anywhere in the place's arc cell.
+    pub fn ejection_clearance(&self, place: Place) -> f32 {
+        let (cell, _) = place.arc();
         self.ejections
             .fetch(window_texel(cell) + IVec2::new(EJECTION_WINDOW as i32 * 2, 0))
             .x
@@ -120,20 +121,20 @@ impl Textures<'_> {
     pub fn light_depth(&self, point: Vec3) -> Vec3 {
         let mut point = point;
         let mut radius = point.length();
-        if radius < FEATURE_RADIUS + LIGHT_BOTTOM {
+        if radius < PLANET_RADIUS + LIGHT_BOTTOM {
             // Beneath every cloud the shadows only run on along the light:
             // read them where this point's ray towards the light rises
             // through the volume's floor, with nothing below to shade.
             let light = light_towards(point);
-            let rise = intersect_sphere(point, light, FEATURE_RADIUS + LIGHT_BOTTOM).y;
+            let rise = intersect_sphere(point, light, PLANET_RADIUS + LIGHT_BOTTOM).y;
             if rise <= 0.0 {
                 return Vec3::ZERO;
             }
             point += light * rise;
-            radius = FEATURE_RADIUS + LIGHT_BOTTOM;
+            radius = PLANET_RADIUS + LIGHT_BOTTOM;
         }
         let texel = atlas_texel(point / radius, LIGHT_FACE);
-        let layer = ((radius - FEATURE_RADIUS - LIGHT_BOTTOM) / (CLOUD_TOP - LIGHT_BOTTOM)
+        let layer = ((radius - PLANET_RADIUS - LIGHT_BOTTOM) / (CLOUD_TOP - LIGHT_BOTTOM)
             * (LIGHT_LAYERS - 1) as f32)
             .clamp(0.0, (LIGHT_LAYERS - 1) as f32);
         let uvw = Vec3::new(
