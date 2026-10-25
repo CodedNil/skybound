@@ -1,8 +1,8 @@
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::oral_tentacles,
+    CreatureInstance, Look,
+    animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::{Biology, Feeding},
-    eyes, feathers, prepare_pose, smooth_min,
+    eyes, feathers, mouth, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail, tapered_tail, torso,
 };
@@ -35,31 +35,45 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 8.0, 14.0, 0);
     c.opaque_bounds = vec3(7.0, 6.0, 21.0).extend(0.0);
+    rig_tentacles(c, mouth(7.6, 1.15), 0.9, BIOLOGY.oral_pairs);
 }
 
+/// A dark, silent night-grazer: a lean, deep-keeled body built for long
+/// glides, a narrow head with large eyes for the dim phase, and a single
+/// swept horn over the brow.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(torso(p, vec3(3.4, 3.7, 7.2), 1.0), 0);
-    hit.distance = smooth_min(hit.distance, tail(p, c), 0.45);
+    let body = torso(p, vec3(2.9, 3.1, 7.6), 1.15);
+    let keel = rounded(p - vec3(0.0, -2.2, -1.0), vec3(1.0, 1.6, 4.5));
+    let mut hit = Surface::new(smooth_min(smooth_min(body, keel, 1.0), tail(p, c), 0.45), 0);
     hit.join(feathers(p, c, 4.6), 1);
     hit.join(
-        tapered_tail(p, vec3(0.0, 0.5, -9.0), vec3(0.0, -0.4, -12.0), 0.8, 0.1),
-        6,
+        tapered_tail(p, vec3(0.0, 1.6, -8.4), vec3(0.0, 3.4, -5.4), 0.55, 0.06),
+        7,
     );
-    hit.join(eyes(p, 7.2, 1.0), 3);
+    hit.join(eyes(p, 7.6, 1.15), 3);
+    // A night grazer: wide downward eyes take in what little light the dim
+    // aur gives.
     hit.join(
-        oral_tentacles(p, c, vec3(0.0, -0.5, -10.0), 0.9, BIOLOGY.oral_pairs),
+        rounded(
+            vec3(p.x.abs(), p.y, p.z) - vec3(0.8, -0.8, -8.3),
+            vec3(0.5, 0.42, 0.55),
+        ),
+        3,
+    );
+    hit.join(
+        oral_tentacles(p, c, mouth(7.6, 1.15), 0.9, BIOLOGY.oral_pairs),
         8,
     );
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.06, 0.08, 0.14, 0.0),
+    vec3(0.16, 0.23, 0.29),
+    [vec4(20.0, 5.0, -2.0, 0.98), vec4(13.0, 3.0, 2.8, 0.98)],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.06, 0.08, 0.14, 0.0),
-        vec3(0.16, 0.23, 0.29),
-        [vec4(20.0, 5.0, 0.0, 0.98), vec4(13.0, 3.0, 9.0, 0.98)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

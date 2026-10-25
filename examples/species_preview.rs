@@ -281,28 +281,35 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
     let mut fixed = View::fit(1, &adult);
     fixed.field *= 1.2;
     let mut grid = RgbImage::new((size * 3) as u32, (size * 3) as u32);
-    for (panel, &seed) in SEEDS.iter().enumerate() {
-        let age = if output == Output::Lifecycle {
-            life::development::grid_age(biology, panel)
-        } else {
-            biology.maturity_days * 1.25
-        };
-        let seed = if output == Output::Variation { seed } else { 0 };
-        let c = specimen(kind, age, seed, seconds);
-        let angled =
-            matches!(output, Output::Render | Output::Anatomy).then(|| View::fit(panel, &c));
-        let view = angled.as_ref().unwrap_or(&fixed);
-        let mut pixels = render_tile(&c, view, size, output == Output::Anatomy);
-        if output == Output::Lifecycle {
-            let title = if age >= 365.0 {
-                format!("{:.1}Y", age / 365.0)
+    let tiles: Vec<(usize, Vec<u8>)> = SEEDS
+        .par_iter()
+        .enumerate()
+        .map(|(panel, &seed)| {
+            let age = if output == Output::Lifecycle {
+                life::development::grid_age(biology, panel)
             } else {
-                format!("{age:.1}D")
+                biology.maturity_days * 1.25
             };
-            label(&mut pixels, size, &title);
-        } else if output == Output::Variation {
-            label(&mut pixels, size, &format!("S{seed}"));
-        }
+            let seed = if output == Output::Variation { seed } else { 0 };
+            let c = specimen(kind, age, seed, seconds);
+            let angled =
+                matches!(output, Output::Render | Output::Anatomy).then(|| View::fit(panel, &c));
+            let view = angled.as_ref().unwrap_or(&fixed);
+            let mut pixels = render_tile(&c, view, size, output == Output::Anatomy);
+            if output == Output::Lifecycle {
+                let title = if age >= 365.0 {
+                    format!("{:.1}Y", age / 365.0)
+                } else {
+                    format!("{age:.1}D")
+                };
+                label(&mut pixels, size, &title);
+            } else if output == Output::Variation {
+                label(&mut pixels, size, &format!("S{seed}"));
+            }
+            (panel, pixels)
+        })
+        .collect();
+    for (panel, pixels) in tiles {
         let tile = RgbImage::from_raw(size as u32, size as u32, pixels).expect("tile pixels");
         imageops::replace(
             &mut grid,
@@ -314,7 +321,11 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
     grid
 }
 
+/// The idle animation, at half the stills' size: a GIF's palette discards
+/// more detail than the halved resolution does. Frames render all at once,
+/// so the cores stay busy through each frame's ragged end.
 fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
+    let size = (size / 2).max(64);
     let age = life::KINDS[kind].biology().maturity_days * 1.25;
     let c = specimen(kind, age, 0, seconds);
     let mut view = View::fit(1, &c);
@@ -322,9 +333,14 @@ fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
     let mut encoder =
         GifEncoder::new_with_speed(BufWriter::new(File::create(path).expect("create GIF")), 10);
     encoder.set_repeat(Repeat::Infinite).expect("GIF loop");
-    for frame in 0..48 {
-        let c = specimen(kind, age, 0, seconds + frame as f32 / 12.0);
-        let pixels = render_tile(&c, &view, size, false);
+    let frames: Vec<Vec<u8>> = (0..48)
+        .into_par_iter()
+        .map(|frame| {
+            let c = specimen(kind, age, 0, seconds + frame as f32 / 12.0);
+            render_tile(&c, &view, size, false)
+        })
+        .collect();
+    for pixels in frames {
         let rgba: Vec<u8> = pixels
             .as_chunks::<3>()
             .0

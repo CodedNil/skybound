@@ -113,9 +113,28 @@ impl Cloth {
     }
 }
 
+/// How long cloth is settled for before it is drawn: damping forgets
+/// anything older, and in the world the clock runs for hours.
+const SETTLE: f32 = 3.0;
+
 pub fn prepare(c: &mut CreatureInstance, ribbon: usize, anchor: Vec3, length: f32, width: f32) {
-    let mut cloth = Cloth::new(anchor, length, width);
-    cloth.advance(2.0 + c.animation.z.max(0.0));
+    // Settled from two starts on a fixed grid, the later fading in as the
+    // earlier ages out: smooth from one moment to the next, though each is
+    // simulated afresh.
+    let end = 2.0 + c.animation.z.max(0.0);
+    let grid = (end / SETTLE).floor();
+    let weight = end / SETTLE - grid;
+    let settle = |start: f32| {
+        let mut cloth = Cloth::new(anchor, length, width);
+        cloth.time = start.max(0.0);
+        cloth.advance(end - cloth.time);
+        cloth
+    };
+    let mut cloth = settle((grid - 1.0) * SETTLE);
+    let later = settle(grid * SETTLE);
+    for (point, other) in cloth.points.iter_mut().zip(later.points) {
+        *point = point.lerp(other, weight);
+    }
     cloth.write(c, ribbon);
     c.previous_cloth[ribbon] = c.cloth[ribbon];
 }

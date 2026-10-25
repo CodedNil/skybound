@@ -1,10 +1,11 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look, annulated,
     biology::Biology,
-    ellipsoid, eyes, feathers, prepare_pose,
+    eyespots, feathers, prepare_pose, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
+    tail,
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 21.0,
@@ -34,20 +35,40 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 2.0, 10.0).extend(0.0);
 }
 
+/// A feathered flying leech: a ringed body running into a feathered tail,
+/// a gripping cup at the mouth and eyespots along the head.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.7, 0.55, 2.8)), 0);
+    let body = annulated(
+        p,
+        vec3(0.0, 0.0, -2.7),
+        vec3(0.0, 0.05, 2.8),
+        vec3(0.34, 0.62, 0.3),
+        14.0,
+        0.06,
+        0.8,
+    );
+    let mut hit = Surface::new(smooth_min(body, tail(p, c) * 1.6, 0.3), 0);
     hit.join(feathers(p, c, 2.0), 1);
-    hit.join(eyes(p, 2.8, 0.5), 3);
+    hit.join(
+        sucker(
+            p,
+            vec3(0.0, -0.05, -2.8),
+            vec3(0.0, -0.3, -1.0).normalize(),
+            0.3,
+        ),
+        8,
+    );
+    hit.join(eyespots(p, vec3(0.16, 0.2, -2.45), 0.25, 2, 0.05), 3);
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.25, 0.32, 0.42, 0.0),
+    vec3(0.69, 0.73, 0.80),
+    [vec4(9.0, 3.0, -0.6, 0.98), Vec4::ZERO],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.25, 0.32, 0.42, 0.0),
-        vec3(0.69, 0.73, 0.80),
-        [vec4(9.0, 3.0, 0.0, 0.98)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

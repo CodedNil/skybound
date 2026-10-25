@@ -1,12 +1,14 @@
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::oral_tentacles,
+    CreatureInstance, Look,
+    animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::Biology,
-    eyes, prepare_pose, ribbons,
+    eyes, mouth, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail, torso,
 };
 use spirv_std::glam::{Vec3, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 18000.0,
@@ -34,39 +36,48 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 10.0, 17.0, 5);
     c.opaque_bounds = vec3(10.0, 12.0, 27.0).extend(0.0);
+    rig_tentacles(c, mouth(12.5, 2.1), 2.6, BIOLOGY.oral_pairs);
+    // Display streamers off the belly, flown for companions across open air.
+    rig_ribbons(c, 5, vec3(0.0, -4.6, 3.0), 1.4, 18.0);
 }
 
+/// An ancient, enormous singer: a massive, wrinkled body with a throat sac
+/// slung beneath the jaw, a beard of long, stiff barbels, and trailing
+/// ribbons.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(torso(p, vec3(6.0, 6.0, 12.0), 1.8), 0);
-    hit.join(eyes(p, 12.0, 1.8), 3);
+    let folds = (p.z * 1.3 + (p.x * 0.6).sin()).sin() * 0.12;
+    let body = torso(p, vec3(5.4, 5.4, 12.5), 2.1) + folds;
+    let sac = rounded(p - vec3(0.0, -4.2, -11.5), vec3(3.6, 3.3, 4.2));
+    let mut hit = Surface::new(smooth_min(body, sac, 1.6), 0);
+    hit.join(eyes(p, 12.5, 2.1), 3);
     for i in -3..=3 {
-        let x = i as f32 * 0.7;
+        let x = i as f32 * 0.75;
         hit.join(
             tapered_tail(
                 p,
-                vec3(x, -1.0, -13.0),
-                vec3(x * 1.5, -10.0 + x.abs(), -7.0),
-                0.65,
-                0.12,
+                vec3(x, -1.6, -13.2),
+                vec3(x * 1.5, -9.5 + x.abs(), -8.5),
+                0.55,
+                0.08,
             ),
             7,
         );
     }
     hit.join(ribbons(p, c, 5), 7);
     hit.join(
-        oral_tentacles(p, c, vec3(0.0, -0.5, -17.0), 2.6, BIOLOGY.oral_pairs),
+        oral_tentacles(p, c, mouth(12.5, 2.1), 2.6, BIOLOGY.oral_pairs),
         8,
     );
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.75, 0.73, 0.64, 0.0),
+    vec3(0.94, 0.92, 0.83),
+    [vec4(26.0, 8.0, -3.5, 0.98), vec4(18.0, 6.0, 4.5, 0.98)],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.75, 0.73, 0.64, 0.0),
-        vec3(0.94, 0.92, 0.83),
-        [vec4(26.0, 8.0, 0.0, 0.98), vec4(18.0, 6.0, 12.0, 0.98)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

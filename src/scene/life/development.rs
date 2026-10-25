@@ -9,7 +9,7 @@ use crate::scene::life::{
 use core::f32::consts::{PI, TAU};
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec4;
-use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
+use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -132,7 +132,7 @@ pub fn juvenile_surface(point: Vec3, c: &CreatureInstance) -> Surface {
     match c.life.w as u32 {
         1 => {
             d = ellipsoid(p, vec3(0.7, 0.4 + age * 0.3, 0.75));
-            let fringe = ((p.x.hypot(p.z) - 0.64).hypot(p.y + 0.2)
+            let fringe = (vec2(vec2(p.x, p.z).length() - 0.64, p.y + 0.2).length()
                 - 0.08
                 - (p.x.atan2(p.z) * 24.0 + time * 3.0).sin() * 0.025)
                 .max(p.y);

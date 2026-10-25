@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     biology::{Biology, Lift, Organs, Social},
     capsule, ellipsoid, plantae,
     plantae::{rosette, rotate},
@@ -65,12 +65,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     shape
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::plant(vec3(0.15, 0.44, 0.3), vec3(0.37, 0.85, 0.56));
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render(
-        ray,
-        c,
-        surface,
-        vec3(0.15, 0.44, 0.3),
-        vec3(0.37, 0.85, 0.56),
-    )
+    super::render(ray, c, surface, LOOK)
 }

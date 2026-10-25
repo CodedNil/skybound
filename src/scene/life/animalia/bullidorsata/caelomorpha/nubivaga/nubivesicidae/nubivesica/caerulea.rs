@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::Biology,
-    ellipsoid, smooth_min,
+    ellipsoid, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
 use spirv_std::glam::{Vec3, vec3};
@@ -53,7 +53,7 @@ const CHAMBERS: [GasChamber; 3] = [
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.7, 5.5, 4.7).extend(0.0);
     for i in 0..2 {
-        cloth::prepare(c, i, vec3((i as f32 - 0.5) * 2.0, -2.0, 0.6), 5.0, 1.15);
+        cloth::prepare(c, i, vec3((i as f32 - 0.5) * 2.0, -2.25, 0.6), 5.0, 1.15);
     }
 }
 
@@ -81,11 +81,28 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     Surface::new(distance + tissue_distance(p, 3.0), 0)
 }
 
+/// A compact balloon whose packed chambers bulge through the skin as
+/// lobes, the organs slung low beneath them so the short collecting folds
+/// hang from the underside.
 pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
-    let q = p - vec3(0.0, 0.9, 0.3);
+    let mut distance = rounded(p - vec3(0.0, 0.6, 0.3), vec3(3.0, 3.0, 2.8));
+    for index in 0..3 {
+        let chamber = CHAMBERS[index];
+        distance = smooth_min(
+            distance,
+            rounded(
+                p - chamber.center - vec3(0.0, 0.2, 0.0),
+                chamber.radii * 1.22,
+            ),
+            0.9,
+        );
+    }
     let fold = (p.x * 1.8 + p.z * 0.7).sin() * (p.y * 0.8).sin() * 0.035;
-    Surface::new(ellipsoid(q, vec3(3.65, 3.8, 3.35)) + fold, 0)
+    Surface::new(distance + fold, 0)
 }
+
+/// Tint and scale, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::drift(vec3(0.42, 0.67, 0.24), 3.5);
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     let mut result = drift_body(

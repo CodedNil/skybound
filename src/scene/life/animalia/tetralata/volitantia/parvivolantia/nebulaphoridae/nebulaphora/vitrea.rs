@@ -1,10 +1,14 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
+    animalia::tetralata::curved_tube,
     biology::Biology,
-    capsule, ellipsoid, smooth_min,
+    eyes, mouth,
     surface::{Ray, Surface, TraceResult},
+    torso,
 };
 use spirv_std::glam::{Vec3, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 45.0,
@@ -31,32 +35,38 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(2.0, 2.1, 4.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.48, 0.55, 2.2)), 0);
-    hit.distance = smooth_min(
-        hit.distance,
-        ellipsoid(p - vec3(0.0, 0.1, -2.0), vec3(0.65, 0.65, 0.70)),
-        0.2,
-    );
-    let q = vec3(p.x.abs(), p.y, p.z);
+/// A soft, slender nectar-feeder between its wings: a furred thorax, a
+/// long ringed abdomen, and a small head with neat eyes and curling
+/// feelers.
+/// A broad-winged nectar-feeder: a slight body beneath its wings, and in
+/// place of the ancestral tentacle pair a single long feeding tube, held
+/// curled beneath the cowl, that reaches into a bloom without the animal
+/// ever settling on it.
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+    let mut hit = Surface::new(torso(p, vec3(0.45, 0.45, 1.9), 0.32), 0);
+    let lip = mouth(1.9, 0.32);
+    let reach = (c.animation.z * 0.9).sin() * 0.15;
     hit.join(
-        capsule(q, vec3(0.35, 0.4, -2.3), vec3(1.5, 1.8, -3.5), 0.045),
-        4,
+        curved_tube(
+            p,
+            lip,
+            lip + vec3(0.0, -0.7, -0.3),
+            lip + vec3(0.0, -0.35 + reach, -1.15 - reach),
+            0.06,
+        ),
+        8,
     );
-    hit.join(
-        ellipsoid(q - vec3(0.48, 0.25, -2.35), vec3(0.23, 0.28, 0.30)),
-        3,
-    );
+    hit.join(eyes(p, 1.9, 0.32), 3);
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.25, 0.28, 0.36, 0.0),
+    vec3(0.17, 0.74, 0.68),
+    [vec4(7.0, 3.5, -0.6, 0.24), vec4(5.0, 2.7, 0.5, 0.28)],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.25, 0.28, 0.36, 0.0),
-        vec3(0.17, 0.74, 0.68),
-        [vec4(7.0, 3.5, 1.0, 0.24), vec4(5.0, 2.7, 4.0, 0.28)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

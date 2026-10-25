@@ -4,7 +4,7 @@ use crate::scene::{
     aur::{CURRENT, EJECTION_CELL, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
     climate::{CLOUD_TOP, cloud_wind},
     life::{
-        self,
+        self, CreatureInstance, HERD,
         surface::{Hit, Ray},
     },
     math::intersect_sphere,
@@ -102,19 +102,45 @@ pub fn ejection_lookup(
 fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     let view = &frame.view;
     let origin = view.world_position.xyz();
+    // The bright veil below lights everything above it from beneath, fading
+    // with height as it does into the haze.
+    let veil =
+        vec3(0.30, 0.26, 0.40) * view.sky_horizon.y * (-view.altitude().max(0.0) / 3000.0).exp();
     Ray {
         origin,
         direction: view.ray_direction(uv, jittered),
         light: view.pole_direction(),
-        ambient: view.ambient_color.xyz().min(Vec3::splat(0.8)),
+        ambient: (view.ambient_color.xyz() + veil).min(Vec3::splat(0.8)),
         radiance: view.pole_color.xyz().min(Vec3::splat(1.5)),
         max_distance: T_MAX,
         footprint: 2.0 / frame.viewport.w,
     }
 }
 
-fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
+/// Whether a ray passes within a creature's bounding sphere before the
+/// nearest hit so far.
+fn reaches(ray: Ray, c: &CreatureInstance, before: f32) -> bool {
+    let bounds = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
+    c.position.w > 0.0 && bounds.x <= bounds.y && bounds.y > 0.0 && bounds.x < before
+}
+
+fn opaque_hit(ray: Ray, frame: &FrameUniform, creatures: &[CreatureInstance]) -> Hit {
     let mut closest = Hit::MISS;
+    for i in 0..HERD {
+        let c = &creatures[i];
+        if reaches(ray, c, closest.distance()) {
+            let hit = life::render_opaque(
+                Ray {
+                    max_distance: closest.distance(),
+                    ..ray
+                },
+                c,
+            );
+            if hit.distance() < closest.distance() {
+                closest = hit;
+            }
+        }
+    }
     for i in 0..2 {
         let c = &frame.players[i];
         let bounds = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
@@ -271,13 +297,14 @@ pub fn opaque(
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 4)] sky_texture: &Image!(2D, type=f32, sampled=true),
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] creatures: &[CreatureInstance],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_normal: &mut Vec4,
     #[spirv(frag_depth)] out_depth: &mut f32,
 ) {
     let ray = scene_ray(uv, frame, true);
-    let hit = opaque_hit(ray, frame);
+    let hit = opaque_hit(ray, frame, creatures);
     let point = ray.origin + ray.direction * hit.distance();
     let (depth, mv, color) = if hit.is_hit() {
         let clip = frame.view.clip_from_world * point.extend(1.0);
@@ -367,7 +394,7 @@ pub fn clouds(
         cloud_cells,
     );
     *out_slab = slab.radiance.extend(slab.transmittance);
-    *out_front = Vec4::splat(slab.front);
+    *out_front = slab.depths;
 }
 
 /// Lay the volume over the scene and slot the thin layers in front of it;
@@ -442,8 +469,8 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 14)] cloud_towers: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 15)] shapes_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 16)] cloud_slab: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 17)] cloud_front: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 17)] cloud_slab: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 18)] cloud_front: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
 ) {
@@ -485,7 +512,7 @@ pub fn volume(
         march::CloudSlab {
             radiance: clouds.xyz(),
             transmittance: clouds.w,
-            front: front.x,
+            depths: front,
         },
     );
     let position = ray.origin + ray.direction * volume.depth;
@@ -521,6 +548,7 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 15)] shapes_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
     #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] _cloud_cells: &[Vec4],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 16)] creatures: &[CreatureInstance],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
@@ -538,6 +566,12 @@ pub fn transparent(
         count: 0,
     };
     energy_layers(ray, &frame.view, &mut hits);
+    for i in 0..HERD {
+        let c = &creatures[i];
+        if reaches(ray, c, ray.max_distance) {
+            life::visit_thin(ray, c, |hit| hits.add(hit));
+        }
+    }
     for i in 0..2 {
         let c = &frame.players[i];
         if c.position.w <= 0.0 {

@@ -1,7 +1,8 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     biology::{Anatomy, Biology},
-    surface::{Ray, Surface, TraceResult, paired_sheets, trace},
+    smooth_min,
+    surface::{Hit, Ray, Surface, TraceResult, trace, visit_paired_sheets, wing_bones},
 };
 use spirv_std::glam::{Vec3, Vec4, vec3};
 pub mod bullidorsata;
@@ -26,25 +27,67 @@ taxon!(
     ],
 );
 
-/// Render the body and wing pairs (span, chord, root Z, opacity).
-pub fn render_wings<const N: usize>(
+/// Render the body in its coat and its wing pairs; a pair of no span is
+/// absent.
+pub fn render_wings(
     ray: Ray,
     c: &CreatureInstance,
     surface: impl Fn(Vec3, &CreatureInstance) -> Surface,
-    pigment: Vec4,
-    accent: Vec3,
-    wings: [Vec4; N],
+    look: Look,
 ) -> TraceResult {
-    let mut result = TraceResult::opaque(trace(ray, c, surface, pigment, accent));
-    for wing in wings {
-        paired_sheets(
-            &mut result,
+    let body = |p: Vec3, c: &CreatureInstance| with_wings(surface(p, c), p, c, look);
+    let mut result = TraceResult::opaque(trace(ray, c, body, look.pigment, look.accent));
+    visit_wings(ray, c, look, |hit| result.add(hit));
+    result
+}
+
+/// Where a wing pair's roots meet the body: on its midline, where the
+/// body itself hides the membrane's inner edge.
+fn wing_root(wing: Vec4) -> Vec3 {
+    vec3(0.0, 0.0, wing.z)
+}
+
+/// A body with the frames of its wings grown out of it, blended in at the
+/// roots so each wing visibly springs from the flank.
+pub fn with_wings(body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> Surface {
+    let mut frame = 1e6f32;
+    for index in 0..2 {
+        let wing = look.wings[index];
+        if wing.x > 0.0 {
+            frame = frame.min(wing_bones(
+                p,
+                c,
+                wing_root(wing),
+                wing.truncate().truncate(),
+                wing.w > 0.9,
+            ));
+        }
+    }
+    let joined = smooth_min(body.distance, frame, look.wings[0].y * 0.12);
+    Surface::new(
+        joined,
+        if frame < body.distance {
+            1
+        } else {
+            body.material
+        },
+    )
+}
+
+/// The wing membranes of a species' look along a ray.
+pub fn visit_wings<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, look: Look, mut emit: F) {
+    for index in 0..2 {
+        let wing = look.wings[index];
+        if wing.x <= 0.0 {
+            continue;
+        }
+        visit_paired_sheets(
             ray,
             c,
-            vec3(0.0, 0.5, wing.z),
+            wing_root(wing),
             wing.truncate().truncate(),
-            accent.extend(wing.w),
+            look.accent.extend(wing.w),
+            &mut emit,
         );
     }
-    result
 }

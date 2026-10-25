@@ -1,9 +1,9 @@
 use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::oral_tentacles,
+    CreatureInstance, Look,
+    animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::Biology,
-    ellipsoid, prepare_pose, smooth_min,
+    cowl, ellipsoid, eyes, louvres, mouth, prepare_pose, rounded, slit, smooth_min,
     surface::{Hit, Material, Ray, Surface, TraceResult, trace_material, visit_shell},
     tapered_tail,
 };
@@ -34,30 +34,56 @@ taxon!(
     ],
 );
 
+/// The Nætu's body: its length and breadth, and the size of its cowl.
+const LENGTH: f32 = 19.0;
+
+const HEAD: f32 = 2.4;
+
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 20.0, 25.0, 0);
     creature.opaque_bounds = vec3(14.0, 12.0, 52.0).extend(0.0);
+    rig_tentacles(creature, mouth(LENGTH, HEAD), 3.0, BIOLOGY.oral_pairs);
 }
 
+/// A flying island: a lifting body far broader than it is deep, its back
+/// flattened where the grassy fibres grow and the Næ build, and a deep keel
+/// beneath housing the great crop inside its pale, pleated folds. Redundant
+/// gas chambers bulge along the upper flanks, so no single wound can bring
+/// it down; the louvres of its breathing channels open behind the cowl, and
+/// its aur sacs glow in a row along each side, charged on its dives
+/// through the mists.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
-    let mut body = ellipsoid(point, vec3(5.8, 5.2, 19.0));
-    body = smooth_min(
-        body,
-        ellipsoid(point - vec3(0.0, 0.8, -18.5), vec3(4.1, 3.4, 5.6)),
-        1.4,
+    let along = (point.z / LENGTH).clamp(-1.0, 1.0);
+    let breadth = 7.2 * (1.0 - 0.25 * along * along);
+    let mut body = rounded(point - vec3(0.0, -0.3, 0.0), vec3(breadth, 5.0, LENGTH)) * 0.9;
+    // The back flattened, a smooth shoulder down to the flanks.
+    body = -smooth_min(-body, -(point.y - 5.15), 0.9);
+    let keel = rounded(point - vec3(0.0, -3.4, -2.0), vec3(3.6, 2.6, 9.5));
+    let mut folds = smooth_min(body, keel, 2.0);
+    if point.y < -2.0 && point.x.abs() < 4.0 {
+        folds += (1.0 - (point.z * 1.4).sin().abs()) * 0.1;
+    }
+    let mut d = folds;
+    for i in 0..3 {
+        let z = i as f32 * 10.0 - 10.0;
+        let chamber = rounded(
+            vec3(point.x.abs(), point.y, point.z) - vec3(5.0, 3.0, z),
+            vec3(2.5, 1.7, 4.2),
+        );
+        d = smooth_min(d, chamber, 1.4);
+    }
+    d = smooth_min(d, cowl(point, LENGTH, HEAD), 2.2);
+    d = louvres(
+        slit(d, point, LENGTH, HEAD),
+        point,
+        vec3(breadth, 5.0, LENGTH),
     );
-    body = smooth_min(
-        body,
-        ellipsoid(point - vec3(0.0, 0.0, -23.0), vec3(3.3, 2.1, 3.9)),
-        1.0,
-    );
-    body += (point.x * 7.0).sin().powi(2) * (-point.y).smoothstep(1.5, 4.0) * 0.035;
     let fur = (point.x * 23.0 + (point.z * 7.0).sin() * 2.0).sin()
         * (point.z * 29.0 + (point.x * 3.0).sin() * 3.0).sin();
-    if point.y > 3.5 {
-        body -= fur.abs() * 0.015;
+    if point.y > 4.4 {
+        d -= fur.abs() * 0.015;
     }
-    let mut hit = Surface::new(body, if point.y > 3.5 { 10 } else { 0 });
+    let mut hit = Surface::new(d, if point.y > 4.4 { 10 } else { 0 });
     if point.z > 9.0 {
         let tail = tail_shaft(point, creature, vec3(3.0, 3.0, 1.0), 2.4);
         let distance = smooth_min(hit.distance, tail.distance, 0.7);
@@ -67,10 +93,17 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     if point.z < -12.0 {
         hit = head_surface(point, creature, hit);
     }
+    let mirrored = vec3(point.x.abs(), point.y, point.z);
+    for i in 0..3 {
+        let z = i as f32 * 5.5 - 8.5;
+        hit.join(
+            rounded(mirrored - vec3(7.0, 1.2, z), vec3(0.8, 0.65, 1.4)),
+            9,
+        );
+    }
     for i in 0..5 {
         let z = i as f32 * 3.1 - 10.0;
-        let mirrored = vec3(point.x.abs(), point.y, point.z);
-        hit.join(feather(mirrored, vec3(4.5, 3.1, z), 4.0, 0.55, 0.4), 1);
+        hit.join(feather(mirrored, vec3(6.2, 3.1, z), 4.0, 0.55, 0.4), 1);
     }
     hit.join(
         ellipsoid(point - vec3(0.0, 5.12, 2.0), vec3(0.9, 0.16, 0.9)),
@@ -79,27 +112,15 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     hit
 }
 
+/// The head: the eyes around the cowl, the exchange frills fanning from
+/// behind it where the air it flies through strikes them first, and the
+/// mouth tentacles beneath.
 fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let eye = vec3(3.25, 1.8, -22.0);
-    hit.join(ellipsoid(mirrored - eye, vec3(0.58, 0.61, 0.55)), 3);
-    hit.join(
-        ellipsoid(
-            mirrored - eye - vec3(0.10, 0.02, -0.40),
-            vec3(0.25, 0.33, 0.14),
-        ),
-        9,
-    );
-    hit.join(
-        ellipsoid(
-            mirrored - eye - vec3(0.03, 0.52, 0.04),
-            vec3(0.72, 0.13, 0.52),
-        ),
-        0,
-    );
+    hit.join(eyes(point, LENGTH, HEAD), 3);
     for i in 0..3 {
         let index = i as f32;
-        let root = vec3(3.1, 0.4 + index * 0.75, -18.0 + index * 0.8);
+        let root = vec3(5.4, 0.6 + index * 0.75, -17.5 + index * 0.8);
         let tip = root + vec3(6.0 - index * 0.9, 1.2 + index * 1.1, 4.0);
         let axis = (tip - root).normalize();
         let across = axis.cross(Vec3::Z).normalize();
@@ -120,18 +141,12 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
         oral_tentacles(
             point,
             creature,
-            vec3(0.0, -0.65, -25.6),
+            mouth(LENGTH, HEAD),
             3.0,
             BIOLOGY.oral_pairs,
         ),
         2,
     );
-    let lip = vec3(
-        mirrored.x,
-        point.y + 0.7 + mirrored.x * mirrored.x * 0.08,
-        point.z + 25.5,
-    );
-    hit.join(ellipsoid(lip, vec3(2.65, 0.10, 0.22)), 8);
     hit
 }
 
@@ -196,6 +211,9 @@ fn material(point: Vec3, id: u32) -> Material {
     }
     m
 }
+
+/// Drawn by its own tracers.
+pub const LOOK: Look = Look::OWN;
 
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
     let mut result = TraceResult::opaque(render_opaque(ray, creature));

@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction},
     surface::{Material, Ray, Surface, TraceResult, trace_material},
 };
@@ -80,13 +80,52 @@ pub fn sway(mut p: Vec3, c: &CreatureInstance) -> Vec3 {
     p
 }
 
+/// Bark, leaf, glowing tissue, gloss and water: a plant's materials.
+pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
+    let grain = (p.y * 31.0 + (p.x * 4.0).sin()).sin() * 0.04;
+    let veins = (p.x * 8.0 + (p.z * 3.0).sin())
+        .sin()
+        .abs()
+        .smoothstep(0.9, 0.98);
+    let mut material = Material::skin(pigment * (0.8 + grain + veins * 0.2), 0.48);
+    match id {
+        0 => {
+            material.color = vec3(0.18, 0.085, 0.035) * (1.0 + grain);
+            material.roughness = 0.82;
+        }
+        1 => {
+            material.transmission = pigment.sqrt() * 0.28;
+            material.ior = 1.38;
+            material.translucency = 0.45;
+        }
+        2 => {
+            material.color = glow;
+            material.emission = 1.8;
+            material.roughness = 0.3;
+        }
+        3 => {
+            material.roughness = 0.22;
+            material.color = pigment.lerp(glow, (p.y * 0.2 + 0.5).clamp(0.0, 1.0));
+        }
+        4 => {
+            material.color = vec3(0.2, 0.5, 0.62);
+            material.transmission = vec3(0.72, 0.88, 0.94);
+            material.ior = 1.333;
+            material.roughness = 0.07;
+        }
+        _ => {}
+    }
+    material
+}
+
 pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     ray: Ray,
     c: &CreatureInstance,
     surface: F,
-    pigment: Vec3,
-    glow: Vec3,
+    look: Look,
 ) -> TraceResult {
+    let pigment = look.pigment.truncate();
+    let glow = look.accent;
     let mut result = TraceResult::MISS;
     let mut offset = 0.0;
     for _ in 0..8 {
@@ -98,42 +137,7 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
             },
             c,
             &surface,
-            |p, id| {
-                let grain = (p.y * 31.0 + (p.x * 4.0).sin()).sin() * 0.04;
-                let veins = (p.x * 8.0 + (p.z * 3.0).sin())
-                    .sin()
-                    .abs()
-                    .smoothstep(0.9, 0.98);
-                let mut material = Material::skin(pigment * (0.8 + grain + veins * 0.2), 0.48);
-                match id {
-                    0 => {
-                        material.color = vec3(0.18, 0.085, 0.035) * (1.0 + grain);
-                        material.roughness = 0.82;
-                    }
-                    1 => {
-                        material.transmission = pigment.sqrt() * 0.28;
-                        material.ior = 1.38;
-                        material.translucency = 0.45;
-                    }
-                    2 => {
-                        material.color = glow;
-                        material.emission = 1.8;
-                        material.roughness = 0.3;
-                    }
-                    3 => {
-                        material.roughness = 0.22;
-                        material.color = pigment.lerp(glow, (p.y * 0.2 + 0.5).clamp(0.0, 1.0));
-                    }
-                    4 => {
-                        material.color = vec3(0.2, 0.5, 0.62);
-                        material.transmission = vec3(0.72, 0.88, 0.94);
-                        material.ior = 1.333;
-                        material.roughness = 0.07;
-                    }
-                    _ => {}
-                }
-                material
-            },
+            |p, id| plant_material(p, id, pigment, glow),
         );
         if !hit.is_hit() {
             break;

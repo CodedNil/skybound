@@ -1,6 +1,7 @@
 use crate::{
     game::{
         camera::DebugView,
+        ecosystem::Herd,
         flight::PlayerModel,
         weather::{CloudField, prepare_flashes},
         world::WorldData,
@@ -41,6 +42,7 @@ use skybound::scene::{
     aur::{EJECTION_WINDOW, spire_origins},
     cache as volume_cache,
     climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel},
+    life::{CreatureInstance, HERD},
 };
 use spirv_std::glam::DVec3 as SceneDVec3;
 use std::{array::from_fn, env, sync::atomic::Ordering};
@@ -53,6 +55,9 @@ pub struct SceneBuffer {
     parcels: RawBufferVec<CloudParcel>,
     cloud_index: RawBufferVec<u32>,
     cloud_cells: RawBufferVec<Vec4>,
+    /// The world's creatures drawn this frame, always `HERD` long so the
+    /// buffer, and the bind groups that hold it, never change.
+    creatures: RawBufferVec<CreatureInstance>,
     /// When the uploaded cloud index was built.
     cloud_built: f32,
 }
@@ -65,6 +70,7 @@ impl Default for SceneBuffer {
             parcels: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_index: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_cells: RawBufferVec::new(BufferUsages::STORAGE),
+            creatures: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_built: f32::NAN,
             profile: env::var("SKYBOUND_PROFILE_VOLUME")
                 .ok()
@@ -96,6 +102,7 @@ pub(super) struct PrepareSceneView<'w, 's> {
     queue: Res<'w, RenderQueue>,
     buffer: ResMut<'w, SceneBuffer>,
     player: Res<'w, PlayerModel>,
+    herd: Res<'w, Herd>,
     views: Single<'w, 's, ViewQuery, With<Camera3d>>,
     time: Res<'w, Time>,
     frame_count: Res<'w, FrameCount>,
@@ -184,7 +191,7 @@ impl FromWorld for ScenePipeline {
                 true,
             ),
             volume: Pass::new("volume", &[HALF, TextureFormat::Rg16Float], false),
-            clouds: Pass::new("clouds", &[HALF, TextureFormat::R32Float], false),
+            clouds: Pass::new("clouds", &[HALF, FULL], false),
             thin: Pass::new("transparent", &[HALF; 3], false),
             sky: Pass::new("sky", &[HALF], false),
             ejection_lookup: Pass::new("ejection_lookup", &[FULL], false),
@@ -224,6 +231,7 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         queue,
         mut buffer,
         player,
+        herd,
         views,
         time,
         frame_count,
@@ -275,6 +283,11 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         viewport: viewport.to_scene(),
     });
     buffer.uniform.write_buffer(&device, &queue);
+    buffer.creatures.clear();
+    buffer
+        .creatures
+        .extend((0..HERD).map(|index| herd.0.get(index).copied().unwrap_or_default()));
+    buffer.creatures.write_buffer(&device, &queue);
     buffer.previous_clip = view
         .clip_from_world
         .unwrap_or_else(|| view.clip_from_view * world_from_view.inverse());
@@ -370,6 +383,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         Some(parcels),
         Some(index),
         Some(cells),
+        Some(creatures),
     ) = (
         prepass.depth_only_view(),
         targets.0.as_ref(),
@@ -381,6 +395,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         buffer.parcels.binding(),
         buffer.cloud_index.binding(),
         buffer.cloud_cells.binding(),
+        buffer.creatures.binding(),
     )
     else {
         return;
@@ -417,7 +432,9 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Float(&sky.view),
         ]
     };
-    let opaque = pipeline.opaque.group(&binder, &common());
+    let mut opaque_binds = common().into_iter().collect::<Vec<_>>();
+    opaque_binds.push(Bind::Storage(creatures.clone()));
+    let opaque = pipeline.opaque.group(&binder, &opaque_binds);
     // The cloud, thin-surface and volume passes all read the whole scene;
     // the volume pass also reads the clouds rebuilt before it.
     let scene = |slab: bool| {
@@ -434,6 +451,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Float(&pipeline.cloud_bounds),
             Bind::Data(&pipeline.cloud_towers),
             Bind::Volume(shapes),
+            Bind::Storage(creatures.clone()),
         ]);
         if slab {
             binds.extend([

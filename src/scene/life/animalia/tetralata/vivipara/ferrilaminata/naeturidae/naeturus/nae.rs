@@ -1,12 +1,12 @@
-use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
+use super::{TailFeathers, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::oral_tentacles,
+    CreatureInstance, Look,
+    animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::Biology,
-    ellipsoid, prepare_pose, smooth_min,
+    capsule, prepare_pose, rounded, smooth_min,
     surface::{Hit, Material, Ray, Surface, TraceResult, trace_material},
 };
-use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -34,6 +34,9 @@ taxon!(
     ],
 );
 
+/// Where the Næ's mouth opens beneath its hood, and its tentacles with it.
+const MOUTH: Vec3 = vec3(0.0, 0.46, -0.13);
+
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 0.45, 1.5, 0);
     for point in &mut creature.tail {
@@ -41,86 +44,83 @@ pub fn animate(creature: &mut CreatureInstance) {
         point.z -= 0.15;
     }
     creature.opaque_bounds = vec3(0.9, 1.2, 2.4).extend(0.0);
+    rig_tentacles(creature, MOUTH, 0.5, BIOLOGY.oral_pairs);
 }
 
+/// A point in the frame of the Næ's hood, which leans forward and down
+/// over its front.
+fn hood_frame(point: Vec3) -> Vec3 {
+    let q = point - vec3(0.0, 0.56, -0.08);
+    let (sine, cosine) = 0.45f32.sin_cos();
+    vec3(q.x, q.y * cosine - q.z * sine, q.y * sine + q.z * cosine)
+}
+
+/// A Næ: small and pear-shaped, held upright when perched with its weight
+/// low in the crop. It has no face. A hood-like cowl leans forward over its
+/// front, eyes set round the rim for every bearing and a larger pair
+/// beneath looking down; under it hang the four pairs of mouth tentacles
+/// that are its hands, the long outer pair for tools and the short inner
+/// ones to steady things and feed. A swept crest runs back from the
+/// hood's crown, aur sacs glow at the chest, and louvres on the flanks win
+/// back moisture on short flights. It wears one thing it made: a woven
+/// strap with a bronze clasp.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
-    let chest = ellipsoid(point - vec3(0.0, 0.08, 0.0), vec3(0.23, 0.37, 0.17));
-    let waist = ellipsoid(point - vec3(0.0, -0.24, 0.02), vec3(0.17, 0.20, 0.15));
-    let head = ellipsoid(point - vec3(0.0, 0.64, -0.015), vec3(0.205, 0.26, 0.19));
-    let neck = ellipsoid(point - vec3(0.0, 0.39, 0.0), vec3(0.115, 0.18, 0.12));
-    let mut hit = Surface::new(
-        smooth_min(
-            smooth_min(chest, waist, 0.08),
-            smooth_min(head, neck, 0.06),
-            0.04,
-        ),
-        0,
+    let belly = rounded(point - vec3(0.0, -0.16, 0.02), vec3(0.26, 0.3, 0.23));
+    let chest = rounded(point - vec3(0.0, 0.2, 0.0), vec3(0.18, 0.22, 0.16));
+    let neck = capsule(point, vec3(0.0, 0.3, 0.0), vec3(0.0, 0.5, -0.05), 0.09);
+    let mut d = smooth_min(smooth_min(belly, chest, 0.12), neck, 0.07);
+    let hood = hood_frame(point);
+    let lift = hood.x * hood.x / 0.0676 * 0.03;
+    d = smooth_min(
+        d,
+        rounded(hood - vec3(0.0, lift, 0.0), vec3(0.26, 0.065, 0.24)),
+        0.05,
     );
-    hit = head_surface(point, creature, hit);
+    d = smooth_min(
+        d,
+        rounded(hood - vec3(0.0, 0.07, 0.16), vec3(0.018, 0.075, 0.22)),
+        0.03,
+    );
+    let side = vec3(point.x.abs(), point.y, point.z);
+    for i in 0..3 {
+        let slant = side.y + 0.05 + i as f32 * 0.09 + side.z * 0.4;
+        let louvre = (slant.abs() - 0.012)
+            .max(side.z.abs() - 0.14)
+            .max(0.2 - side.x);
+        d = d.max(-louvre);
+    }
+    let mut hit = Surface::new(d, 0);
+    let rim = vec3(hood.x.abs(), hood.y, hood.z);
+    let mut eyes = (rim - vec3(0.08, -0.075, -0.05)).length() - 0.03;
+    for i in 0..3 {
+        let angle = 0.55 + i as f32 * 0.38;
+        let x = angle.sin() * 0.25;
+        eyes =
+            eyes.min((rim - vec3(x, x * x / 0.0676 * 0.03, -angle.cos() * 0.23)).length() - 0.02);
+    }
+    hit.join(eyes, 3);
+    hit.join((side - vec3(0.1, 0.12, -0.14)).length() - 0.045, 9);
+    let strap = point - vec3(0.0, 0.08, 0.0);
+    let (sine, cosine) = 0.6f32.sin_cos();
+    let strap = vec3(
+        strap.x * cosine - strap.y * sine,
+        strap.x * sine + strap.y * cosine,
+        strap.z,
+    );
     hit.join(
-        ellipsoid(point - vec3(0.0, 0.26, -0.17), vec3(0.044, 0.055, 0.026)),
+        vec2(vec2(strap.x * 0.95, strap.z).length() - 0.215, strap.y).length() - 0.016,
+        5,
+    );
+    hit.join(
+        rounded(point - vec3(0.07, 0.15, -0.19), vec3(0.03, 0.03, 0.012)),
         7,
+    );
+    hit.join(
+        oral_tentacles(point, creature, MOUTH, 0.5, BIOLOGY.oral_pairs),
+        2,
     );
     let tail = tail_shaft(point, creature, vec3(0.20, 0.25, 1.0), 0.07);
     hit.join(tail.distance, tail.material);
-    hit
-}
-
-fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> Surface {
-    let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let cheek = ellipsoid(
-        mirrored - vec3(0.13, 0.59, -0.16),
-        vec3(0.085, 0.065, 0.065),
-    );
-    hit.distance = smooth_min(hit.distance, cheek, 0.045);
-    hit.join(
-        ellipsoid(point - vec3(0.0, 0.54, -0.235), vec3(0.07, 0.014, 0.018)),
-        8,
-    );
-    hit.join(
-        ellipsoid(
-            mirrored - vec3(0.128, 0.70, -0.18),
-            vec3(0.058, 0.044, 0.032),
-        ),
-        3,
-    );
-    hit.join(
-        ellipsoid(
-            mirrored - vec3(0.128, 0.70, -0.213),
-            vec3(0.027, 0.032, 0.009),
-        ),
-        9,
-    );
-    hit.join(
-        ellipsoid(
-            mirrored - vec3(0.128, 0.70, -0.222),
-            vec3(0.009, 0.026, 0.004),
-        ),
-        3,
-    );
-    hit.join(
-        oral_tentacles(
-            point,
-            creature,
-            vec3(0.0, 0.56, -0.22),
-            0.60,
-            BIOLOGY.oral_pairs,
-        ),
-        2,
-    );
-    for i in 0..5 {
-        let index = i as f32;
-        hit.join(
-            feather(
-                vec3(point.x, -point.z, point.y),
-                vec3((index - 2.0) * 0.035, -0.025, 0.84),
-                0.18 - (index - 2.0).abs() * 0.028,
-                0.035,
-                (index - 2.0) * 0.18,
-            ),
-            1,
-        );
-    }
     hit
 }
 
@@ -148,8 +148,7 @@ fn material(point: Vec3, id: u32) -> Material {
         vec3(0.16, 0.38, 0.40).lerp(vec3(0.80, 0.74, 0.52), mask),
         0.56,
     );
-    let clothed = id == 0 && point.y > -0.32 && point.y < 0.30 && point.x.abs() < 0.24;
-    match if clothed { 5 } else { id } {
+    match id {
         2 => {
             m.color = vec3(0.34, 0.58, 0.54)
                 .lerp(vec3(0.84, 0.65, 0.40), (-point.z).smoothstep(0.25, 0.7));
@@ -185,14 +184,18 @@ fn material(point: Vec3, id: u32) -> Material {
             m.roughness = 0.3;
         }
         9 => {
+            // Aur sacs, glowing with what they hold.
             m.color = vec3(0.18, 0.72, 0.70);
             m.roughness = 0.16;
-            m.emission = 0.15;
+            m.emission = 0.6;
         }
         _ => {}
     }
     m
 }
+
+/// Drawn by its own tracers.
+pub const LOOK: Look = Look::OWN;
 
 pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
     let mut result = TraceResult::opaque(render_opaque(ray, creature));

@@ -69,7 +69,7 @@ impl SceneTargets {
                 .default_view
         };
         let half = TextureFormat::Rgba16Float;
-        let front = TextureFormat::R32Float;
+        let front = TextureFormat::Rgba32Float;
         self.0 = Some(Targets {
             size,
             color: get(size, half, "volume_radiance"),

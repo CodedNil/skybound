@@ -32,6 +32,17 @@ const CUMULUS_CELL: f32 = 1500.0;
 
 const CLUSTER_SCALE: f32 = 6250.0;
 
+/// How far past its dome a heap's lobes can bulge, as a share of its
+/// height: the lobes in `heap` add at most 0.55 to a dome of height one.
+const CROWN_BULGE: f32 = 1.3;
+
+/// How far a cumulus base sags below its level in places.
+const BASE_SAG: f32 = 70.0;
+
+/// The furthest the lobes in `heap` raise a profile, so a profile below
+/// this holds no cloud at all.
+const LOBE_REACH: f32 = 0.6;
+
 /// The size of the broad swells on which every layer rises and falls
 /// together, and how far they lift or lower it; and how far each cloud's
 /// own base strays from the swell.
@@ -53,7 +64,7 @@ const MEAN_FILL: f32 = 0.15;
 
 /// Each march sample traces its own shadow this far towards the light; the
 /// light volume supplies the rest of the path.
-pub const NEAR_SHADOW: f32 = 187.5;
+pub const NEAR_SHADOW: f32 = 300.0;
 
 /// Cloud droplet diameter in micrometres, which sets the shape of the
 /// forward peak, the fogbow and the glory.
@@ -64,14 +75,15 @@ const WAVELENGTH: Vec3 = vec3(650.0, 550.0, 450.0);
 
 /// Peak extinction of each layer's cloud, per metre: dense heaps of
 /// cumulus, through thinner middle cloud, to ice crystals that barely veil
-/// the sky.
+/// the sky. Low enough that light reaches tens of metres in, so edges read
+/// as soft and translucent rather than as a hard skin.
 fn extinction(layer: u32) -> f32 {
     match layer {
-        0 => 0.16,
-        1 => 0.096,
-        2 => 0.08,
-        3 => 0.048,
-        4 => 0.096,
+        0 => 0.07,
+        1 => 0.055,
+        2 => 0.05,
+        3 => 0.035,
+        4 => 0.055,
         5 => 0.005,
         _ => 0.0009,
     }
@@ -279,9 +291,9 @@ impl CloudColumn {
             let floor = if self.raining() {
                 base - RAIN_DEPTH
             } else {
-                base + low * 0.5 - 37.5
+                base + low * 0.5 - BASE_SAG
             };
-            let crown = (self.bounds.y - base).max(0.0) * 1.2;
+            let crown = (self.bounds.y - base).max(0.0) * CROWN_BULGE;
             return vec2(floor, base + high * 0.5 + crown);
         }
         if layer == 6 {
@@ -446,9 +458,11 @@ impl CloudColumn {
         let grouped = remap(clusters.w, 0.42, 0.66);
         let cells = drift.cells(column, CUMULUS_CELL, true);
         // Clusters raise both how many footprints break the surface and how
-        // tall they grow; cover sets the share of the sky they fill.
+        // tall they grow; cover sets the share of the sky they fill. The
+        // footprint rises all the way to each heap's heart rather than
+        // levelling off, so heaps crown in domes, not flat-topped mesas.
         let field = cells * 0.75 + grouped * 0.25 + slack(drift.detail);
-        let footprint = remap(field, 1.0 - cover, 1.45 - cover);
+        let footprint = remap(field, 1.0 - cover, 1.75 - cover);
         let towering = self.tower.w > 0.0;
         if footprint <= 0.0 && !towering {
             return vec3(0.0, 0.5, (1.0 - cover - field) * CUMULUS_CELL * 0.2);
@@ -473,13 +487,13 @@ impl CloudColumn {
             0.32,
             0.68,
         );
-        let tallest = (CUMULUS_CELL * (0.18 + 0.75 * own * own * (0.35 + 0.65 * grouped)))
+        let tallest = (CUMULUS_CELL * (0.25 + 0.7 * own * own * (0.35 + 0.65 * grouped)))
             .min(development)
             .max(250.0);
         if probe && !towering {
             // Above or below every heap here; heaps' heights vary slowly
             // enough that half the gap is clear all round.
-            let gap = (-37.5 - rise).max(rise - tallest * 1.2 - STRAY);
+            let gap = (-BASE_SAG - rise).max(rise - tallest * CROWN_BULGE - STRAY);
             return if gap > 0.0 {
                 vec3(0.0, 0.5, gap * 0.45)
             } else {
@@ -508,10 +522,16 @@ impl CloudColumn {
                 scale = self.tower.w;
             }
         }
-        if rise < 0.0 {
-            // A flat, slightly ragged base.
-            shape = shape.min(rise / 31.25);
-        }
+        // A base that reads flat from afar but up close sags and lifts in
+        // broad lumps, and thickens over its lowest tens of metres rather
+        // than starting at full density on a razor-flat plane.
+        let sag = if matches!(drift.detail, Detail::Full) && rise < 250.0 {
+            ((drift.detail(column + Vec3::splat(311.0), 300.0).w - 0.5) * 4.0).clamp(-1.0, 1.0)
+                * BASE_SAG
+        } else {
+            0.0
+        };
+        shape = shape.min((rise + sag) / 110.0);
         vec3(heap(shape, fraction, scale, drift), fraction, 0.0)
     }
 }
@@ -549,41 +569,59 @@ fn swell(shapes: &Image!(3D, type=f32, sampled=true), sampler: &Sampler, point: 
 /// its tops and wisps fray its base, both stronger towards its edge and
 /// faded out where they are smaller than a pixel.
 fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
-    if profile <= -0.45 {
+    if profile <= -LOBE_REACH {
         return 0.0;
     }
     match drift.detail {
         Detail::Full => {}
-        Detail::Probe => return (profile + 0.45).clamp(0.0, 1.0),
-        Detail::Shadow => return (profile * 3.0).clamp(0.0, 0.8),
+        Detail::Probe => return (profile + LOBE_REACH).clamp(0.0, 1.0),
+        Detail::Shadow => return (profile * 2.0).clamp(0.0, 0.7),
     }
-    // Cauliflower: lobes a third of the heap across, with smaller lobes on
-    // them, bulging from the crown and flanks but not the flat base.
+    // Cauliflower in two generations: lobes a third of the heap across,
+    // and buds a third of that on them, bulging from the crown and flanks
+    // but barely from the flat base. Together they add at most LOBE_REACH.
     let crown = fraction.smoothstep(0.03, 0.3);
-    let lobe = scale * 0.33;
     let mut shape = profile;
+    let lobe = scale * 0.33;
     let resolve = drift.resolve(lobe);
     if resolve > 0.01 {
         let lobes = remap(drift.detail(drift.point, lobe).y, 0.3, 0.67);
-        shape += (lobes - 0.45) * 0.9 * crown * resolve;
+        shape += (lobes - 0.5) * 0.7 * (0.3 + 0.7 * crown) * resolve;
     }
-    let resolve = drift.resolve(187.5);
-    if resolve > 0.01 && shape < 1.0 {
-        let billows = remap(
-            drift.detail(drift.point + Vec3::splat(87.5), 187.5).z,
-            0.55,
-            0.9,
+    let bud = (scale * 0.11).max(125.0);
+    let resolve = drift.resolve(bud);
+    if resolve > 0.01 && shape > -0.3 {
+        let buds = remap(
+            drift.detail(drift.point + Vec3::splat(87.5), bud).y,
+            0.3,
+            0.67,
         );
-        let wisps = drift
-            .textures
-            .details_filtered((drift.point + drift.lead) / 200.0, drift.footprint / 200.0)
-            .w;
-        let erosion = remap(wisps, 0.23, 0.77).lerp(billows, crown);
-        shape -= (1.0 - erosion) * 0.45 * (1.0 - shape) * resolve;
+        shape += (buds - 0.5) * 0.4 * crown * resolve;
     }
-    // A soft rim whose width follows the pixel, so outlines never flicker.
-    let width = 0.07 + drift.footprint / scale;
-    (shape / width).clamp(0.0, 1.0).powf(1.5)
+    // Fine erosion only where the cloud is thin: billowing puffs on the
+    // crown, torn wisps about the base, eating into the edge and leaving
+    // the core whole.
+    let resolve = drift.resolve(50.0);
+    if resolve > 0.01 && shape > 0.0 && shape < EDGE {
+        let fine = drift
+            .textures
+            .details_filtered((drift.point + drift.lead) / 200.0, drift.footprint / 200.0);
+        let puffs = 1.0 - (fine.x * 0.625 + fine.y * 0.25 + fine.z * 0.125);
+        let keep = remap(fine.w, 0.25, 0.75).lerp(remap(puffs, 0.35, 0.8), crown);
+        shape -= (1.0 - keep) * 0.3 * (1.0 - shape / EDGE) * resolve;
+    }
+    soften(shape, EDGE + drift.footprint / scale)
+}
+
+/// How deep into a profile its density ramps up to full: wide enough that
+/// a heap's outer tens of metres are thin and light passes into them.
+const EDGE: f32 = 0.35;
+
+/// Density from a profile: nothing outside, rising smoothly through the
+/// edge to full in the core.
+fn soften(shape: f32, edge: f32) -> f32 {
+    let x = (shape / edge).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
 }
 
 /// The cloud of one of the layers above the cumulus at a point, and how
@@ -615,7 +653,9 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         let rows = ((phase * TAU).sin() * 0.5 - 0.1) * (weights.x - weights.y).abs();
         field += rows * genus.ripples * drift.resolve(genus.cell);
     }
-    let footprint = remap(field, 1.0 - cover, 1.3 - cover);
+    // Ramping up all the way to each cloud's heart, so it is rounded and
+    // thickest in its middle rather than a flat-topped slab.
+    let footprint = remap(field, 1.0 - cover, 1.6 - cover);
     if footprint <= 0.0 {
         return vec3(0.0, 0.5, (1.0 - cover - field) * genus.cell * 0.2);
     }
@@ -681,11 +721,25 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         let detail = drift.detail(drift.point + Vec3::splat(162.5), scale);
         let erosion = remap(detail.w, 0.23, 0.77)
             .lerp(remap(detail.z, 0.55, 0.9), fraction.smoothstep(0.1, 0.6));
-        let edge = (1.0 - shape).clamp(0.0, 1.0);
+        // Eat into the thin edge, leaving the core whole.
+        let edge = (1.0 - shape / 0.6).clamp(0.0, 1.0);
         shape -= (1.0 - erosion) * genus.erosion * edge * resolve;
     }
-    let width = 0.1 + drift.footprint / genus.cell;
-    vec3((shape / width).clamp(0.0, 1.0).powf(1.3), fraction, 0.0)
+    // Finer still, fraying the rims into wisps.
+    let resolve = drift.resolve(50.0);
+    if resolve > 0.01 && shape > 0.0 && shape < 0.3 {
+        let fine = drift
+            .textures
+            .details_filtered((drift.point + drift.lead) / 200.0, drift.footprint / 200.0);
+        let puffs = 1.0 - (fine.x * 0.625 + fine.y * 0.25 + fine.z * 0.125);
+        let keep = remap(fine.w, 0.25, 0.75).lerp(remap(puffs, 0.35, 0.8), fraction);
+        shape -= (1.0 - keep) * 0.25 * (1.0 - shape / 0.3) * resolve;
+    }
+    vec3(
+        soften(shape, 0.3 + drift.footprint / genus.cell),
+        fraction,
+        0.0,
+    )
 }
 
 /// How much each of the two fixed axes along which streaks are drawn out
@@ -916,6 +970,43 @@ fn depth_below(lower: Vec4, upper: Vec4, altitude: f32) -> f32 {
             * (altitude.min(base) - (base - RAIN_DEPTH)).max(0.0)
 }
 
+/// Optical depth towards the light through the clouds of the layers above
+/// a point, each read once where the light's ray crosses the middle of its
+/// band and taken through the depth of its clouds there.
+pub fn shadow_above(point: Vec3, light: Vec3, view: &ViewUniform, textures: &Textures) -> f32 {
+    let radius = point.length();
+    let altitude = radius - PLANET_RADIUS;
+    // A light on the horizon never climbs into the layers above; a low one
+    // crosses them far off, out past where one sample can stand for them.
+    let cosine = (point / radius).dot(light);
+    if cosine < 0.015 {
+        return 0.0;
+    }
+    // The two nearest layers above that hold cloud cast nearly all the
+    // shadow worth tracing; further ones only deepen it a little.
+    let mut depth = 0.0;
+    let mut found = 0;
+    for layer in 1..LAYERS {
+        let middle = layer_altitude(layer) + layer_depth(layer) * 0.45;
+        if found >= 2 || middle < altitude + layer_depth(layer) {
+            continue;
+        }
+        let distance = crossing(altitude, cosine, middle).y;
+        if distance <= 0.0 || distance > 150_000.0 {
+            continue;
+        }
+        let at = point + light * distance;
+        let column = cloud_column(at, view, textures);
+        if (column.bounds.x as u32) & (1 << layer) == 0 {
+            continue;
+        }
+        found += 1;
+        let sample = column.sample(at, 150.0, textures, Detail::Shadow);
+        depth += sample.density * layer_depth(layer) * 0.7 / cosine.max(0.1);
+    }
+    depth
+}
+
 /// Forced benchmark weather replaces the weather systems everywhere.
 pub fn forced_weather(view: &ViewUniform) -> bool {
     view.weather.x >= 0.0
@@ -1103,8 +1194,9 @@ pub fn cloud_optics(
 
 /// Light scattered towards the eye by cloud droplets and by rain at a
 /// point, per unit of each one's extinction. `shadow` is the optical depth
-/// the sample traced towards the light itself, and `height` how far up its
-/// cloud it sits.
+/// the sample traced towards the light itself, `height` how far up its
+/// cloud it sits, and `open` how much of the sky above it its own cloud
+/// leaves unhidden.
 pub fn cloud_light(
     point: Vec3,
     view: &ViewUniform,
@@ -1112,17 +1204,21 @@ pub fn cloud_light(
     optics: &CloudOptics,
     shadow: f32,
     height: f32,
+    open: f32,
 ) -> (Vec3, Vec3) {
     let depth = textures.light_depth(point);
     let optical = depth.x + shadow;
     // Light scattered again and again: each order reaches deeper into the
-    // cloud, less attenuated and less forward (Wrenninge's octaves).
+    // cloud, less attenuated and less forward (Wrenninge's octaves). Many
+    // scatterings redden what survives a long path a little, so the heart
+    // of a cloud glows warmer than its rim.
     let direct = (-optical).exp();
-    let orders = optics.spread.x * (-optical * 0.5).exp() * 0.5
-        + optics.spread.y * (-optical * 0.25).exp() * 0.25;
+    let deep = -optical * SCATTER_TINT;
+    let orders = Vec3::splat(optics.spread.x) * (deep * 0.5).exp() * 0.5
+        + Vec3::splat(optics.spread.y) * (deep * 0.25).exp() * 0.25;
     // Deep inside, light that has scattered many times keeps the interior
     // from going black.
-    let diffuse = (-optical * 0.25).exp() * 0.07 + (-optical * 0.06).exp() * 0.05 + orders;
+    let diffuse = (deep * 0.25).exp() * 0.055 + (deep * 0.08).exp() * 0.03 + orders;
     // Thin edges facing the light hold too few droplets to brighten much.
     let powder = 1.0 - (-shadow * 2.0 - 0.15).exp();
     let sun = textures.pole_light(point, light_position(point)) * view.sky_horizon.y * 1.5;
@@ -1134,16 +1230,20 @@ pub fn cloud_light(
         * (-altitude.max(0.0) / 2750.0).exp()
         * ((-depth.z).exp() * 0.6 + (-depth.z * 0.15).exp() * 0.4)
         * (1.0 - 0.75 * height);
-    // Skylight: crowns see the open sky, bases sit in their own shadow.
-    let sky =
-        (view.ambient_color.xyz() * 0.45 + vec3(0.025, 0.035, 0.055)) * (0.45 + 0.55 * height);
+    // Skylight, cool against the warm sunlit body: rims and crowns see the
+    // open sky, while the cloud heaped above a point hides it.
+    let sky = (view.ambient_color.xyz() * 0.7 + vec3(0.03, 0.04, 0.065))
+        * vec3(0.9, 0.97, 1.1)
+        * ((0.15 + 0.85 * open) * (0.6 + 0.4 * height));
     (
-        sun * (optics.droplets.xyz() * (direct * (0.55 + 0.45 * powder)) + Vec3::splat(diffuse))
-            + upward
-            + sky,
-        sun * (optics.rain.xyz() * direct + Vec3::splat(diffuse * 0.5)) + upward * 0.5 + sky,
+        sun * (optics.droplets.xyz() * (direct * (0.7 + 0.3 * powder)) + diffuse) + upward + sky,
+        sun * (optics.rain.xyz() * direct + diffuse * 0.5) + upward * 0.5 + sky,
     )
 }
+
+/// How much more strongly each channel is lost over many scatterings:
+/// blue a little faster than red, which is what tints deep cloud warm.
+const SCATTER_TINT: Vec3 = vec3(0.88, 1.0, 1.15);
 
 pub fn short_volume(
     ro: Vec3,
@@ -1176,6 +1276,7 @@ pub fn short_volume(
             &cloud_optics(middle, direction, view, false),
             0.0,
             0.5,
+            1.0,
         )
         .0
     } else {

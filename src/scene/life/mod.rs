@@ -1,9 +1,18 @@
-#[cfg(target_arch = "spirv")]
-use crate::scene::life::surface::Hit;
-use crate::scene::life::surface::Ray;
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::surface::TraceResult;
-use spirv_std::glam::{FloatExt, UVec4, Vec3, Vec4, vec3};
+use crate::scene::life::{
+    animalia::{
+        bullidorsata::caelomorpha::{
+            aerogigantiformes::aerogigantidae::aerogigas::auratus,
+            gel,
+            nubivaga::{levitantidae::levitans::taeniatus, nubivesicidae::nubivesica::caerulea},
+        },
+        tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
+        visit_wings, with_wings,
+    },
+    plantae::plant_material,
+    surface::{Hit, Ray, Surface, TraceResult, coat, trace_material},
+};
+use core::f32::consts::TAU;
+use spirv_std::glam::{FloatExt, Quat, UVec4, Vec3, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -64,6 +73,25 @@ impl CreatureInstance {
         c.previous_proportions = c.proportions;
         c.previous_animation = c.animation;
         prepare_instance(&mut c);
+        // The bounds must hold the wings' frames at full stretch and stroke,
+        // or tracing clips them.
+        let look = KINDS[kind as usize].look();
+        if look.family == COAT {
+            for index in 0..2 {
+                let wing = look.wings[index];
+                if wing.x > 0.0 {
+                    c.opaque_bounds = c
+                        .opaque_bounds
+                        .truncate()
+                        .max(vec3(
+                            wing.x * 1.1,
+                            wing.x * 0.5,
+                            wing.z.abs() + wing.y * 1.6 + wing.x * 0.35,
+                        ))
+                        .extend(0.0);
+                }
+            }
+        }
         c.previous_tail = c.tail;
         c.position.w = c.position.w.max(c.opaque_bounds.truncate().length());
         c.position.w *= development::scale(&c).max_element().max(1.0);
@@ -165,7 +193,7 @@ taxon!(
 macro_rules! species {
     ($($id:ident: $($path:ident)::+;)*) => {
         #[repr(u32)]
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum Kind { $($id),* }
         pub const KINDS: &[Kind] = &[$(Kind::$id),*];
         impl Kind {
@@ -175,6 +203,19 @@ macro_rules! species {
             pub const fn biology(self) -> biology::Biology {
                 match self { $(Self::$id => $($path)::+::BIOLOGY,)* }
             }
+            pub const fn look(self) -> Look {
+                match self { $(Self::$id => $($path)::+::LOOK,)* }
+            }
+        }
+        /// The look of a species by its index.
+        pub fn look_of(kind: u32) -> Look {
+            match kind { $(kind if kind == Kind::$id as u32 => $($path)::+::LOOK,)* _ => Look::OWN }
+        }
+        /// The body of any creature: one distance function switching on its
+        /// species, so the world's tracer is compiled once for all of them.
+        pub fn any_surface(point: Vec3, c: &CreatureInstance) -> Surface {
+            if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
+            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => Surface::new(1e6, 0) }
         }
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES: &[&Taxon] = &[$(&$($path)::+::TAXON),*];
@@ -183,7 +224,6 @@ macro_rules! species {
         pub fn behave(kind: Kind, senses: &behaviour::Senses) -> behaviour::Controls {
             behaviour::organism(senses, kind.biology())
         }
-        #[cfg(not(target_arch = "spirv"))]
         pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
             if c.life.w > 0.0 { return development::render_juvenile(ray, c); }
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::render(ray, c),)* _ => TraceResult::MISS }
@@ -246,17 +286,145 @@ species! {
     Aeromuscus: plantae::chlorophyta::muscopsida::aeromuscales::aeromuscaceae::aeromuscus::velutinus;
 }
 
-#[cfg(target_arch = "spirv")]
-pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
-    if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::render_opaque(
-            ray, c,
-        )
-    } else {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::render_opaque(
-            ray, c,
-        )
+/// How a species is coloured and what thin surfaces it carries, read by
+/// both its preview and the world renderer: a family of materials, a base
+/// pigment (with its glow), an accent, and up to two wing pairs.
+#[derive(Clone, Copy)]
+pub struct Look {
+    pub family: u32,
+    pub pigment: Vec4,
+    pub accent: Vec3,
+    pub wings: [Vec4; 2],
+}
+
+/// Animals in a living coat, with membrane or feathered wings.
+pub const COAT: u32 = 0;
+
+/// Plants, in bark, leaf and glowing tissue.
+pub const PLANT: u32 = 1;
+
+/// Drifting gas-bags: gel round their organs inside a clear envelope.
+pub const DRIFT: u32 = 2;
+
+/// The player and their mount, drawn by their own tracers.
+pub const OWN: u32 = 3;
+
+impl Look {
+    pub const fn coat(pigment: Vec4, accent: Vec3, wings: [Vec4; 2]) -> Self {
+        Self {
+            family: COAT,
+            pigment,
+            accent,
+            wings,
+        }
     }
+
+    pub const fn plant(pigment: Vec3, glow: Vec3) -> Self {
+        Self {
+            family: PLANT,
+            pigment: Vec4::new(pigment.x, pigment.y, pigment.z, 0.0),
+            accent: glow,
+            wings: [Vec4::ZERO; 2],
+        }
+    }
+
+    /// A gas-bag's tint and the scale of its body.
+    pub const fn drift(tint: Vec3, scale: f32) -> Self {
+        Self {
+            family: DRIFT,
+            pigment: Vec4::new(tint.x, tint.y, tint.z, scale),
+            accent: tint,
+            wings: [Vec4::ZERO; 2],
+        }
+    }
+
+    pub const OWN: Self = Self {
+        family: OWN,
+        pigment: Vec4::ZERO,
+        accent: Vec3::ZERO,
+        wings: [Vec4::ZERO; 2],
+    };
+}
+
+/// How many of the world's creatures are drawn at once, besides the
+/// player and their mount: those that cover the most of the screen.
+pub const HERD: usize = 24;
+
+/// The clear envelope of a drifting gas-bag, for the world renderer.
+fn any_envelope(point: Vec3, c: &CreatureInstance) -> Surface {
+    if c.kind.x == Kind::Aerogigas as u32 {
+        auratus::envelope(point, c)
+    } else if c.kind.x == Kind::Levitans as u32 {
+        taeniatus::envelope(point, c)
+    } else if c.kind.x == Kind::Nubivesica as u32 {
+        caerulea::envelope(point, c)
+    } else {
+        Surface::new(1e6, 0)
+    }
+}
+
+/// The solid surface of a creature along a ray, for the world's opaque
+/// pass. The player and their mount are drawn by their own tracers; every
+/// other species by one tracer over [`any_surface`], in its family's
+/// materials: the same shapes and colours as its preview.
+pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
+    let look = look_of(c.kind.x);
+    if look.family == OWN && c.life.w <= 0.0 {
+        return if c.kind.x == Kind::Nae as u32 {
+            nae::render_opaque(ray, c)
+        } else {
+            naetu::render_opaque(ray, c)
+        };
+    }
+    let grain = (c.position.w * 0.15).max(0.7);
+    let body = |p: Vec3, c: &CreatureInstance| {
+        let surface = any_surface(p, c);
+        if look.family == COAT {
+            with_wings(surface, p, c, look)
+        } else {
+            surface
+        }
+    };
+    let mut hit = trace_material(ray, c, body, |p, id| {
+        if look.family == PLANT {
+            plant_material(p, id, look.pigment.truncate(), look.accent)
+        } else if look.family == DRIFT {
+            gel(p, look.pigment.w * 0.45, look.accent)
+        } else {
+            coat(p / grain, id, look.pigment, look.accent)
+        }
+    });
+    hit.transmittance = Vec3::ZERO;
+    hit
+}
+
+/// The thin, see-through surfaces of a creature along a ray, such as wing
+/// membranes and gas envelopes, for the transparent pass.
+pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, mut emit: F) {
+    let look = look_of(c.kind.x);
+    if look.family == OWN && c.life.w <= 0.0 {
+        if c.kind.x == Kind::Nae as u32 {
+            nae::visit_thin(ray, c, emit);
+        } else {
+            naetu::visit_thin(ray, c, emit);
+        }
+        return;
+    }
+    if look.family == DRIFT {
+        let tint = look.accent;
+        let mut hit = trace_material(ray, c, any_envelope, |p, _| {
+            let mut skin = gel(p, look.pigment.w, tint);
+            skin.transmission = (-(Vec3::ONE - tint) * 0.2).exp() * 0.9;
+            skin
+        });
+        if hit.is_hit() {
+            hit.transmittance = (-(Vec3::ONE - tint) * 0.2).exp() * 0.9;
+            hit.part = 2;
+            emit(hit);
+        }
+        return;
+    }
+    visit_wings(ray, c, look, emit);
 }
 
 pub fn ellipsoid(p: Vec3, radius: Vec3) -> f32 {
@@ -265,6 +433,20 @@ pub fn ellipsoid(p: Vec3, radius: Vec3) -> f32 {
         return exterior;
     }
     ((p / radius).length() - 1.0) * radius.min_element()
+}
+
+/// A rounded ellipsoid whose distance stays smooth all around it, for
+/// parts blended into one another: `ellipsoid` switches to a box bound
+/// away from the surface, whose corners blending and soft shadows pick up
+/// as facets. Slightly overstated near the ends of long ones, so it is
+/// scaled back.
+pub fn rounded(p: Vec3, radius: Vec3) -> f32 {
+    let k0 = (p / radius).length();
+    let k1 = (p / (radius * radius)).length();
+    if k1 < 1e-6 {
+        return -radius.min_element();
+    }
+    k0 * (k0 - 1.0) / k1 * 0.85
 }
 
 pub fn capsule(p: Vec3, a: Vec3, b: Vec3, radius: f32) -> f32 {
@@ -278,22 +460,143 @@ pub fn tapered_tail(p: Vec3, a: Vec3, b: Vec3, start: f32, end: f32) -> f32 {
     ((p - a - axis * fraction).length() - start.lerp(end, fraction)) * 0.95
 }
 
+/// A body along an axis from `a` to `b` whose radius swells from `start`
+/// to its broadest, `middle`, a third of the way along, then narrows to
+/// `end`; ringed by `rings` shallow grooves `groove` deep as a share of the
+/// radius, as worms, leeches and the abdomens of small flyers are. Its
+/// cross-section is squashed to `flat` of its width vertically.
+pub fn annulated(
+    p: Vec3,
+    a: Vec3,
+    b: Vec3,
+    radii: Vec3,
+    rings: f32,
+    groove: f32,
+    flat: f32,
+) -> f32 {
+    let axis = b - a;
+    let t = ((p - a).dot(axis) / axis.length_squared()).saturate();
+    let swell = if t < 0.35 {
+        radii.x.lerp(radii.y, (t / 0.35).smoothstep(0.0, 1.0))
+    } else {
+        radii
+            .y
+            .lerp(radii.z, ((t - 0.35) / 0.65).smoothstep(0.0, 1.0))
+    };
+    let ring = (t * rings * TAU).cos() * 0.5 + 0.5;
+    let radius = swell * (1.0 - groove * ring * ring);
+    let offset = p - a - axis * t;
+    let squashed = vec3(offset.x, offset.y / flat, offset.z);
+    (squashed.length() - radius) * flat.min(1.0) * 0.8
+}
+
+/// A sucking disc facing along `facing` from `centre`: a thick rim around a
+/// shallow cup.
+pub fn sucker(p: Vec3, centre: Vec3, facing: Vec3, radius: f32) -> f32 {
+    let q = p - centre;
+    let along = q.dot(facing);
+    let across = (q - facing * along).length();
+    let rim = vec2(across - radius * 0.78, along).length() - radius * 0.24;
+    let disc = ellipsoid(
+        vec3(across, along + radius * 0.25, 0.0),
+        vec3(radius, radius * 0.4, radius),
+    );
+    let cup = ellipsoid(
+        vec3(across, along - radius * 0.12, 0.0),
+        vec3(radius * 0.72, radius * 0.32, radius * 0.72),
+    );
+    smooth_min(rim, disc.max(-cup), radius * 0.15)
+}
+
+/// Small domed eyes, a pair to each of `rows` along the head, as leeches
+/// and many-eyed grazers carry them.
+pub fn eyespots(p: Vec3, first: Vec3, spacing: f32, rows: u32, radius: f32) -> f32 {
+    let q = vec3(p.x.abs(), p.y, p.z);
+    let mut d = 1e6f32;
+    for i in 0..rows {
+        let f = i as f32;
+        d = d.min(
+            (q - first - vec3(-f * spacing * 0.15, -f * spacing * 0.1, f * spacing)).length()
+                - radius * (1.0 - f * 0.12),
+        );
+    }
+    d
+}
+
 pub fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
     let h = (0.5 + 0.5 * (b - a) / k).saturate();
     b.lerp(a, h) - k * h * (1.0 - h)
 }
 
+/// A tetralate body, shaped by a life spent gliding in updrafts with no
+/// ground to stand on. A lifting body, flattened and widest at the wing
+/// roots, drawn out towards the tail, with gas stored in a soft ridge along
+/// the spine, clear of the breathing passages. There is no neck or skull:
+/// the forebody spreads into a broad, thin cowl whose rim cleaves the
+/// oncoming air and whose underside funnels drifting food back to a slit
+/// mouth beneath it. Behind the cowl, slanted louvres open onto the pleated
+/// breathing passages, ventilated by flight itself and wringing the water
+/// back out of every breath.
 pub fn torso(p: Vec3, size: Vec3, head: f32) -> f32 {
-    let body = ellipsoid(p, size);
-    let skull = ellipsoid(
-        p - vec3(0.0, 0.65 * head, -size.z),
-        vec3(1.9, 1.5, 2.4) * head,
+    let along = (p.z / size.z).clamp(-1.0, 1.0);
+    let girth = 1.0 + 0.12 * (1.0 - (along + 0.3).abs() * 1.6).max(-0.6);
+    let body = rounded(
+        p - vec3(0.0, p.z * 0.03, 0.0),
+        size * vec3(1.12 * girth, 0.82 * girth, 1.0),
     );
-    let snout = ellipsoid(
-        p - vec3(0.0, 0.5 * head, -size.z - 1.7 * head),
-        vec3(1.7, 0.95, 1.3) * head,
+    let ridge = capsule(
+        p,
+        vec3(0.0, size.y * 0.6, -size.z * 0.55),
+        vec3(0.0, size.y * 0.4, size.z * 0.7),
+        size.y * 0.2,
     );
-    smooth_min(smooth_min(body, skull, 0.7), snout, 0.5)
+    let body = smooth_min(body, ridge, size.y * 0.35);
+    let d = smooth_min(body, cowl(p, size.z, head), 0.9 * head + size.y * 0.1);
+    louvres(slit(d, p, size.z, head), p, size)
+}
+
+/// The cowl ahead of a tetralate body `length` long: broad and thin, its
+/// rim lifting towards the edges, a little dihedral for stability.
+pub fn cowl(p: Vec3, length: f32, head: f32) -> f32 {
+    let q = p - cowl_centre(length, head);
+    let lift = q.x * q.x / (2.2 * head).powi(2) * 0.35 * head;
+    rounded(q - vec3(0.0, lift, 0.0), vec3(2.2, 0.55, 2.0) * head)
+}
+
+/// A body with the slit of its mouth cut beneath the cowl.
+pub fn slit(body: f32, p: Vec3, length: f32, head: f32) -> f32 {
+    let slit = rounded(
+        p - mouth(length, head) - vec3(0.0, -0.02 * head, 0.0),
+        vec3(1.1, 0.12, 0.35) * head,
+    );
+    body.max(-slit)
+}
+
+/// A body with slanted louvres cut into its flanks behind the cowl, over
+/// the pleated breathing passages.
+pub fn louvres(body: f32, p: Vec3, size: Vec3) -> f32 {
+    let mut d = body;
+    let side = vec3(p.x.abs(), p.y, p.z);
+    for i in 0..5 {
+        let z = -size.z * 0.72 + i as f32 * size.z * 0.11;
+        let slant = side.z - z - side.y * 0.35;
+        let louvre = (slant.abs() - size.z * 0.016)
+            .max(side.y.abs() - size.y * 0.42)
+            .max(size.x * 0.55 - side.x);
+        d = d.max(-louvre);
+    }
+    d
+}
+
+/// The centre of a tetralate's cowl, ahead of a body `length` long.
+fn cowl_centre(length: f32, head: f32) -> Vec3 {
+    vec3(0.0, 0.25 * head, -length - 0.9 * head)
+}
+
+/// Where a tetralate's slit mouth opens beneath its cowl, and its mouth
+/// tentacles with it.
+pub fn mouth(length: f32, head: f32) -> Vec3 {
+    cowl_centre(length, head) + vec3(0.0, -0.55 * head, 0.25 * head)
 }
 
 pub fn tail(p: Vec3, c: &CreatureInstance) -> f32 {
@@ -335,11 +638,29 @@ pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
     distance
 }
 
+/// Eyes for open air lit from below: a row of small eyes around the cowl's
+/// rim, watching every bearing at once, for in open sky a threat can come
+/// from anywhere; and a larger pair beneath, looking down at the glowing
+/// aur, where both the light and the deadliest danger lie.
 pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
-    ellipsoid(
-        vec3(p.x.abs(), p.y, p.z) - vec3(1.52 * head, 1.12 * head, -length - 1.2 * head),
-        vec3(0.30, 0.32, 0.38) * head,
-    )
+    let q = vec3(p.x.abs(), p.y, p.z);
+    let centre = cowl_centre(length, head);
+    let mut d = 1e6f32;
+    for i in 0..3 {
+        let angle = 0.55 + i as f32 * 0.38;
+        let x = angle.sin() * 2.05 * head;
+        // On the rim's edge, bulging out past it, so each sees level and
+        // down as well as up.
+        let rim = centre
+            + vec3(
+                x * 1.0,
+                x * x / (2.2 * head).powi(2) * 0.35 * head,
+                -angle.cos() * 2.0 * head,
+            );
+        d = d.min((q - rim).length() - 0.11 * head);
+    }
+    let below = centre + vec3(0.68 * head, -0.62 * head, 0.35 * head);
+    d.min((q - below).length() - 0.21 * head)
 }
 
 pub fn gills(p: Vec3, length: f32, pairs: u32) -> f32 {
@@ -358,35 +679,103 @@ pub fn gills(p: Vec3, length: f32, pairs: u32) -> f32 {
     d
 }
 
+/// Pose trailing strands by simulating them: `count` chains hung side by
+/// side from `root`, `spacing` apart and `length` long, passive but for a
+/// little stiffness, swinging under gravity in the animal's own frame and
+/// streaming back in the air it flies through. Settled from two starts on a
+/// fixed grid and crossfaded, so the pose moves smoothly frame to frame.
+pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: f32, length: f32) {
+    const STEP: f32 = 1.0 / 120.0;
+    const SETTLE: f32 = 2.0;
+    let turn = Quat::from_array(c.rotation.to_array()).conjugate();
+    let gravity = turn * vec3(0.0, -9.8, 0.0);
+    let flow = vec3(0.0, 0.0, c.animation.w.max(2.0));
+    let end = c.animation.z.max(0.0);
+    let segment = length / 5.0;
+    for chain in 0..count.min(5) {
+        let lane = chain as f32 - (count as f32 - 1.0) * 0.5;
+        let anchor = root + vec3(lane * spacing, 0.0, 0.0);
+        let settle = |start: f32| {
+            let start = start.max(0.0);
+            let mut points = [Vec3::ZERO; 6];
+            for (knot, point) in points.iter_mut().enumerate() {
+                *point = anchor + vec3(0.0, -0.4, 0.9) * (segment * knot as f32);
+            }
+            let mut previous = points;
+            let steps = ((end - start) / STEP) as usize;
+            for step in 0..steps {
+                let time = start + step as f32 * STEP;
+                for knot in 1..6 {
+                    let velocity = (points[knot] - previous[knot]) * 0.99;
+                    previous[knot] = points[knot];
+                    let gust = vec3(
+                        (time * 1.1 + lane * 1.7 + knot as f32 * 0.6).sin(),
+                        (time * 0.8 + lane).cos() * 0.5,
+                        0.0,
+                    ) * 2.0;
+                    let drag = (flow + gust - velocity / STEP) * 0.8;
+                    points[knot] += velocity + (gravity * 0.3 + drag) * STEP * STEP;
+                }
+                for _ in 0..2 {
+                    for knot in 1..6 {
+                        let delta = points[knot] - points[knot - 1];
+                        let fix = delta * (1.0 - segment / delta.length().max(1e-6));
+                        if knot == 1 {
+                            points[knot] -= fix;
+                        } else {
+                            points[knot - 1] += fix * 0.5;
+                            points[knot] -= fix * 0.5;
+                        }
+                    }
+                }
+                points[0] = anchor;
+            }
+            points
+        };
+        let grid = (end / SETTLE).floor();
+        let weight = end / SETTLE - grid;
+        let earlier = settle((grid - 1.0) * SETTLE);
+        let later = settle(grid * SETTLE);
+        for knot in 0..6 {
+            c.ribbons[chain * 6 + knot] = earlier[knot]
+                .lerp(later[knot], weight)
+                .extend(length * 0.02);
+        }
+    }
+    c.opaque_bounds = c
+        .opaque_bounds
+        .truncate()
+        .max(root.abs() + Vec3::splat(length * 1.05 + spacing * count as f32))
+        .extend(0.0);
+}
+
+/// Trailing strands posed by [`rig_ribbons`]: smooth, tapering, a little
+/// flattened, blended through their knots.
 pub fn ribbons(p: Vec3, c: &CreatureInstance, count: usize) -> f32 {
     let mut d = 1e6f32;
     for i in 0..count {
+        let root = c.ribbons[i * 6];
+        let width = root.w.max(0.05);
         for j in 0..5 {
-            let t = (j + 1) as f32 / 5.0;
-            d = d.min(
-                capsule(
-                    p * vec3(1.0, 3.0, 1.0),
-                    c.ribbons[i * 6 + j].truncate(),
-                    c.ribbons[i * 6 + j + 1].truncate(),
-                    0.5 * (1.0 - t * 0.75),
-                ) / 3.0,
+            let a = c.ribbons[i * 6 + j];
+            let b = c.ribbons[i * 6 + j + 1];
+            let t = j as f32 / 5.0;
+            let ra = width * (1.0 - t * 0.75);
+            let rb = width * (1.0 - (t + 0.2) * 0.75);
+            d = smooth_min(
+                d,
+                tapered_tail(
+                    p * vec3(1.0, 1.6, 1.0),
+                    a.truncate() * vec3(1.0, 1.6, 1.0),
+                    b.truncate() * vec3(1.0, 1.6, 1.0),
+                    ra,
+                    rb,
+                ) / 1.6,
+                ra * 0.8,
             );
         }
     }
     d
-}
-
-#[cfg(target_arch = "spirv")]
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
-    if c.kind.x == Kind::Nae as u32 {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae::visit_thin(
-            ray, c, emit,
-        );
-    } else {
-        animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu::visit_thin(
-            ray, c, emit,
-        );
-    }
 }
 
 #[cfg(test)]

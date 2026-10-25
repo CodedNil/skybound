@@ -1,11 +1,12 @@
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, gel, skin, tissue_distance},
+    CreatureInstance, Look,
+    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, tissue_distance},
     biology::Biology,
-    ellipsoid, smooth_min,
-    surface::{Ray, Surface, TraceResult, local_ray, make_hit},
+    rounded, smooth_min,
+    surface::{Ray, Surface, TraceResult},
 };
-use spirv_std::glam::{Vec3, vec3};
+use core::f32::consts::{PI, TAU};
+use spirv_std::glam::{FloatExt, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -32,104 +33,111 @@ taxon!(
     ],
 );
 
+/// The canopy's lift: a ring of chambers in the crown's thickness around a
+/// larger one at its heart, so a torn chamber costs only part of the lift.
 const CHAMBERS: [GasChamber; 6] = [
     GasChamber {
-        center: vec3(-8.5, 0.5, -3.0),
-        radii: vec3(3.8, 3.5, 2.6),
+        center: vec3(0.0, 3.7, 0.0),
+        radii: vec3(3.6, 1.1, 3.6),
     },
     GasChamber {
-        center: vec3(0.0, 2.6, -3.0),
-        radii: vec3(4.0, 3.7, 2.7),
+        center: vec3(6.6, 2.9, 0.0),
+        radii: vec3(2.5, 0.95, 2.5),
     },
     GasChamber {
-        center: vec3(8.5, 0.3, -3.0),
-        radii: vec3(3.8, 3.3, 2.6),
+        center: vec3(2.04, 2.9, 6.28),
+        radii: vec3(2.5, 0.95, 2.5),
     },
     GasChamber {
-        center: vec3(-8.0, 0.6, 2.8),
-        radii: vec3(3.7, 3.3, 2.6),
+        center: vec3(-5.34, 2.9, 3.88),
+        radii: vec3(2.5, 0.95, 2.5),
     },
     GasChamber {
-        center: vec3(0.5, 2.7, 2.8),
-        radii: vec3(4.0, 3.6, 2.7),
+        center: vec3(-5.34, 2.9, -3.88),
+        radii: vec3(2.5, 0.95, 2.5),
     },
     GasChamber {
-        center: vec3(8.9, 0.1, 2.8),
-        radii: vec3(3.6, 3.0, 2.5),
+        center: vec3(2.04, 2.9, -6.28),
+        radii: vec3(2.5, 0.95, 2.5),
     },
 ];
 
+/// Ribs and the hollows between them, around the canopy.
+const SECTOR: f32 = TAU / 10.0;
+
+/// The canopy's outline at an angle: a scalloped fringe.
+fn rim(angle: f32) -> f32 {
+    15.5 * (1.0 + (angle * 10.0).cos() * 0.045)
+}
+
+/// The canopy's upper surface and its thickness at a share of the way out
+/// to the fringe, rising and falling slowly as the chambers breathe.
+fn shell(reach: f32, c: &CreatureInstance) -> (f32, f32) {
+    let breathe = (c.animation.z * 0.4).sin() * 0.15;
+    let crown = 1.0 - reach * reach;
+    ((4.6 + breathe) * crown, 0.35 + 2.4 * crown)
+}
+
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(20.0, 13.0, 14.0).extend(0.0);
+    c.opaque_bounds = vec3(17.0, 9.0, 17.0).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
-    let arch = vec3(p.x, p.y + p.x * p.x * 0.022, p.z);
-    let mut distance = ellipsoid(arch - vec3(0.0, -0.7, 0.0), vec3(10.5, 0.9, 4.5));
-    for i in -3..=3 {
-        let x = i as f32;
-        for side in [-1.0, 1.0] {
-            let center = vec3(
-                x * 3.5,
-                -0.8 + (x * 1.7).sin() * 0.7,
-                side * (3.0 - x.abs() * 0.25),
-            );
-            distance = smooth_min(distance, ellipsoid(arch - center, vec3(2.1, 1.5, 1.9)), 1.8);
-        }
-    }
-    Surface::new(distance + tissue_distance(p, 12.0), 0)
+/// The organs: a gelatinous mass at the heart of the crown, and amber ribs
+/// branching out through the canopy's thickness to its fringe, holding the
+/// vaults open beneath.
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+    let angle = p.z.atan2(p.x);
+    let core = rounded(p - vec3(0.0, 3.2, 0.0), vec3(3.0, 0.8, 3.0));
+    let turn = (angle / SECTOR).round() * SECTOR;
+    let (sine, cosine) = turn.sin_cos();
+    let along = p.x * cosine + p.z * sine;
+    let across = p.z * cosine - p.x * sine;
+    let reach = (along / rim(turn)).clamp(0.0, 1.0);
+    let (top, thickness) = shell(reach, c);
+    let rib = (vec2(across, p.y - (top - thickness * 0.5)).length() - 0.3 * (1.0 - reach * 0.7))
+        .max(along - rim(turn) * 0.95)
+        .max(-along);
+    Surface::new(smooth_min(core, rib, 0.8) + tissue_distance(p, 12.0), 0)
 }
 
+/// The canopy: a broad, low dome of gel, thickest at the crown and
+/// thinning to a scalloped fringe; its underside vaulted up into arches
+/// between the ribs, each hollow sheltering a curtain of feeding folds from
+/// drying out and from sudden gusts, rippling in the air drawn through it.
 pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
-    skin(p, c, surface, &CHAMBERS, 12.0)
+    let radial = vec2(p.x, p.z).length();
+    let angle = p.z.atan2(p.x);
+    let edge = rim(angle);
+    let reach = (radial / edge).min(1.2);
+    let (top, thickness) = shell(reach, c);
+    let ribs = (angle * 5.0).cos().abs();
+    let vault = (1.0 - ribs).sqrt()
+        * 1.6
+        * reach.smoothstep(0.15, 0.55)
+        * (1.0 - reach.smoothstep(0.85, 1.0));
+    // Never vaulting through the canopy itself, however thin it grows.
+    let bottom = (top - thickness + vault).min(top - 0.3);
+    let dome = (p.y - top).max(bottom - p.y).max(radial - edge) * 0.5;
+    let hollow = ((angle - SECTOR * 0.5) / SECTOR).round() * SECTOR + SECTOR * 0.5;
+    let (sine, cosine) = hollow.sin_cos();
+    let along = p.x * cosine + p.z * sine;
+    let across = p.z * cosine - p.x * sine;
+    let out = (along / edge).clamp(0.0, 1.0);
+    let (fold_top, fold_thickness) = shell(out, c);
+    let roof = (fold_top - fold_thickness + 1.2 * out.smoothstep(0.15, 0.55)).min(fold_top - 0.3);
+    let drop = 3.0 * (out * PI).sin();
+    let ripple = (along * 1.1 - c.animation.z * 0.8).sin() * 0.3 * (roof - p.y).max(0.0) / 3.0;
+    let fold = ((across - ripple).abs() - 0.14)
+        .max(p.y - roof)
+        .max(roof - drop - p.y)
+        .max((along - edge * 0.52).abs() - edge * 0.34)
+        * 0.6;
+    Surface::new(smooth_min(dome, fold, 0.5) + tissue_distance(p, 12.0), 0)
 }
 
-fn canopy(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, tint: Vec3) {
-    let local = local_ray(ray, c);
-    let curvature = vec3(8.5 / 256.0, 0.0, 8.5 / 64.0);
-    let quadratic = (curvature * local.direction * local.direction).element_sum();
-    let linear =
-        local.direction.y + (curvature * local.origin * local.direction).element_sum() * 2.0;
-    let constant = local.origin.y - 0.2 + (curvature * local.origin * local.origin).element_sum();
-    let discriminant = linear * linear - 4.0 * quadratic * constant;
-    if discriminant < 0.0 || (quadratic.abs() < 1e-8 && linear.abs() < 1e-8) {
-        return;
-    }
-    let roots = if quadratic.abs() < 1e-8 {
-        [-constant / linear, -1.0]
-    } else {
-        let root = discriminant.sqrt();
-        [
-            (-linear - root) / (2.0 * quadratic),
-            (-linear + root) / (2.0 * quadratic),
-        ]
-    };
-    for distance in roots {
-        if distance <= 0.0 || distance >= ray.max_distance {
-            continue;
-        }
-        let point = local.origin + local.direction * distance;
-        let radial = vec3(point.x / 16.0, 0.0, point.z / 8.0);
-        let rim = 1.0 + (radial.z.atan2(radial.x) * 10.0).cos() * 0.08;
-        if radial.length_squared() > rim * rim {
-            continue;
-        }
-        let mut normal = (curvature * point * 2.0 + Vec3::Y).normalize();
-        if normal.dot(local.direction) > 0.0 {
-            normal = -normal;
-        }
-        let cosine = normal.dot(local.direction).abs();
-        let mut material = gel(point, 12.0, tint.lerp(vec3(0.95, 0.88, 0.6), 0.45));
-        material.transmission = (-(Vec3::ONE - tint) * (0.18 / cosine.max(0.12))).exp() * 0.9;
-        let mut hit = make_hit(ray, c, distance, normal, point, material);
-        hit.part = 1;
-        result.add(hit);
-    }
-}
+/// Tint and scale, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::drift(vec3(0.78, 0.65, 0.30), 12.0);
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    let tint = vec3(0.78, 0.65, 0.30);
-    let mut result = drift_body(ray, c, envelope, surface, tint, 12.0, &CHAMBERS);
-    canopy(&mut result, ray, c, tint);
-    result
+    drift_body(ray, c, envelope, surface, LOOK.accent, 12.0, &CHAMBERS)
 }

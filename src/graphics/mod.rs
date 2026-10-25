@@ -1,5 +1,8 @@
 use crate::{
-    game::{camera::DebugView, flight::PlayerModel, weather::CloudField, world::WorldData},
+    game::{
+        camera::DebugView, ecosystem::Herd, flight::PlayerModel, weather::CloudField,
+        world::WorldData,
+    },
     graphics::{
         pipeline::{
             SceneBuffer, ScenePipeline, composite_pass, prepare_bindings, prepare_scene_view,
@@ -44,10 +47,12 @@ impl Plugin for GraphicsPlugin {
         app.add_plugins(AutoExposurePlugin)
             .init_resource::<AtmosphereSettings>()
             .init_resource::<PlayerModel>()
+            .init_resource::<Herd>()
             .add_plugins((
                 ExtractResourcePlugin::<VolumeTextures>::default(),
                 ExtractResourcePlugin::<AtmosphereSettings>::default(),
                 ExtractResourcePlugin::<PlayerModel>::default(),
+                ExtractResourcePlugin::<Herd>::default(),
                 ExtractResourcePlugin::<WorldData>::default(),
                 ExtractResourcePlugin::<CloudField>::default(),
                 ExtractResourcePlugin::<DebugView>::default(),

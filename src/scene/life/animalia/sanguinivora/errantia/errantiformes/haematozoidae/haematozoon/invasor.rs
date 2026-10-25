@@ -1,10 +1,13 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look, annulated,
     biology::{Biology, Reproduction},
-    ellipsoid,
+    capsule, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
+    tapered_tail,
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 1.0,
@@ -30,26 +33,54 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(1.0, 1.0, 3.0).extend(0.0);
+    c.opaque_bounds = vec3(1.0, 1.0, 3.1).extend(0.0);
 }
 
+/// A ringed worm swollen with blood, daughters budding from one flank and
+/// growing larger towards the tail, its proboscis armed with hooks.
 pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.55, 0.55, 2.3)), 0);
-    for i in 0..7 {
-        let z = i as f32 * 0.55 - 1.6;
-        hit.join(ellipsoid(p - vec3(0.4, 0.25, z), vec3(0.3, 0.35, 0.35)), 2);
+    let body = annulated(
+        p,
+        vec3(0.0, 0.0, -2.2),
+        vec3(0.0, 0.05, 2.3),
+        vec3(0.28, 0.5, 0.2),
+        12.0,
+        0.08,
+        0.88,
+    );
+    let mut buds = 1e6f32;
+    for i in 0..4 {
+        let f = i as f32;
+        let at = vec3(0.34 + f * 0.04, 0.16 - f * 0.03, -0.7 + f * 0.6);
+        buds = buds.min(rounded(p - at, vec3(0.9, 0.85, 1.1) * (0.14 + f * 0.05)));
     }
-    hit.join(ellipsoid(p - vec3(0.0, 0.0, -2.1), vec3(0.45, 0.4, 0.5)), 8);
+    let mut hit = Surface::new(
+        smooth_min(body, buds, 0.12),
+        if buds < body { 2 } else { 0 },
+    );
+    hit.join(
+        tapered_tail(p, vec3(0.0, 0.0, -2.1), vec3(0.0, -0.04, -2.8), 0.2, 0.07),
+        8,
+    );
+    for i in 0..5 {
+        let angle = i as f32 * 1.256_6;
+        let around = vec3(angle.cos(), angle.sin(), 0.0);
+        let root = vec3(0.0, -0.03, -2.6) + around * 0.1;
+        hit.join(
+            capsule(p, root, root + around * 0.13 + vec3(0.0, 0.0, 0.1), 0.025),
+            7,
+        );
+    }
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.54, 0.13, 0.22, 0.0),
+    vec3(0.87, 0.43, 0.46),
+    [Vec4::ZERO; 2],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.54, 0.13, 0.22, 0.0),
-        vec3(0.87, 0.43, 0.46),
-        [],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

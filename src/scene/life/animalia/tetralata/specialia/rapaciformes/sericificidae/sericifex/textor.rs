@@ -1,12 +1,16 @@
 pub use super::render_wings;
 use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::oral_tentacles,
+    CreatureInstance, Look,
+    animalia::tetralata::{oral_tentacles, rig_tentacles},
+    annulated,
     biology::Biology,
-    ellipsoid, eyes,
+    capsule, eyes, eyespots, mouth, smooth_min,
     surface::{Ray, Surface, TraceResult},
+    torso,
 };
 use spirv_std::glam::{Vec3, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 90.0,
@@ -31,27 +35,47 @@ taxon!(
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(6.0, 5.0, 6.0).extend(0.0);
+    rig_tentacles(c, mouth(1.6, 0.6), 0.65, BIOLOGY.oral_pairs);
 }
 
+/// A silk-spinner: a compact forebody with a spare pair of eyespots above
+/// the true eyes, and a heavy, ringed abdomen ending in spinnerets.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(1.3, 1.0, 2.4)), 0);
-    hit.join(ellipsoid(p - vec3(0.0, 0.0, -2.2), vec3(1.0, 0.8, 1.0)), 0);
+    let front = torso(p, vec3(1.1, 0.95, 1.6), 0.6);
+    let abdomen = annulated(
+        p,
+        vec3(0.0, 0.15, 0.5),
+        vec3(0.0, -0.25, 4.1),
+        vec3(0.9, 1.35, 0.38),
+        5.0,
+        0.1,
+        0.85,
+    );
+    let mut hit = Surface::new(smooth_min(front, abdomen, 0.35), 0);
+    for i in 0..3 {
+        let angle = (i as f32 - 1.0) * 0.6;
+        let root = vec3(angle.sin() * 0.25, -0.35 - angle.cos() * 0.05, 4.15);
+        hit.join(
+            capsule(p, root, root + vec3(angle.sin() * 0.2, -0.15, 0.4), 0.09),
+            7,
+        );
+    }
+    hit.join(eyes(p, 1.6, 0.6), 3);
+    hit.join(eyespots(p, vec3(0.45, 1.15, -1.8), 0.3, 2, 0.08), 3);
     hit.join(
-        oral_tentacles(p, c, vec3(0.0, -0.3, -2.80), 0.65, BIOLOGY.oral_pairs),
+        oral_tentacles(p, c, mouth(1.6, 0.6), 0.65, BIOLOGY.oral_pairs),
         8,
     );
-    hit.join(ellipsoid(p - vec3(0.0, -0.6, 2.0), vec3(0.65, 0.6, 0.8)), 7);
-    hit.join(eyes(p, 2.4, 0.65), 3);
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.35, 0.24, 0.44, 0.0),
+    vec3(0.83, 0.58, 0.30),
+    [vec4(6.0, 2.0, -0.5, 0.27), vec4(4.0, 1.5, 0.6, 0.27)],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.35, 0.24, 0.44, 0.0),
-        vec3(0.83, 0.58, 0.30),
-        [vec4(6.0, 2.0, 0.0, 0.27), vec4(4.0, 1.5, 3.0, 0.27)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

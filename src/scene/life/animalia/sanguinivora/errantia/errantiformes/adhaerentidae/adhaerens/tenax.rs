@@ -1,10 +1,12 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look, annulated,
     biology::Biology,
-    ellipsoid,
+    eyespots, sucker,
     surface::{Ray, Surface, TraceResult},
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 15.0,
@@ -29,29 +31,55 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(1.2, 1.0, 4.0).extend(0.0);
+    c.opaque_bounds = vec3(1.3, 1.1, 4.2).extend(0.0);
 }
 
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.9, 0.5, 3.2)), 0);
-    for i in 0..8 {
-        let z = i as f32 * 0.7 - 2.5;
-        hit.join(ellipsoid(p - vec3(0.0, 0.0, z), vec3(0.94, 0.53, 0.23)), 4);
-    }
+/// A flattened, ringed leech, narrow at the head and broad behind, gripping
+/// with a small sucker around its mouth and a broad disc at its tail.
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+    let sway = (c.animation.z * 1.5 + p.z * 0.9).sin() * 0.05 * (p.z + 3.2).max(0.0);
+    let q = p - vec3(sway, 0.0, 0.0);
+    let mut hit = Surface::new(
+        annulated(
+            q,
+            vec3(0.0, 0.0, -3.0),
+            vec3(0.0, -0.05, 2.9),
+            vec3(0.32, 0.9, 0.55),
+            17.0,
+            0.07,
+            0.48,
+        ),
+        0,
+    );
     hit.join(
-        ellipsoid(p - vec3(0.0, -0.3, -3.0), vec3(0.7, 0.25, 0.6)),
+        sucker(
+            q,
+            vec3(0.0, -0.1, -3.05),
+            vec3(0.0, -0.45, -0.9).normalize(),
+            0.36,
+        ),
         8,
     );
+    hit.join(
+        sucker(
+            q,
+            vec3(0.0, -0.3, 3.0),
+            vec3(0.0, -0.9, 0.45).normalize(),
+            0.7,
+        ),
+        4,
+    );
+    hit.join(eyespots(q, vec3(0.12, 0.13, -2.8), 0.2, 3, 0.04), 3);
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.39, 0.29, 0.21, 0.0),
+    vec3(0.69, 0.54, 0.32),
+    [Vec4::ZERO; 2],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.39, 0.29, 0.21, 0.0),
-        vec3(0.69, 0.54, 0.32),
-        [],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

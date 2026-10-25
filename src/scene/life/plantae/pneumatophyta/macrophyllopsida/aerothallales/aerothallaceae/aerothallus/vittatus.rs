@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     biology::Biology,
     ellipsoid,
     plantae::{frond, rotate},
@@ -53,7 +53,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             ellipsoid(p - root - vec3(0.0, 0.6, 0.0), vec3(0.45, 0.7, 0.45)),
             3,
         );
-        for side in [-1.0, 1.0] {
+        for half in 0..2 {
+            let side = if half == 0 { -1.0 } else { 1.0 };
             let local = rotate(p - root, side * 1.1);
             shape.join(
                 frond(local, 5.0, 1.0, 0.5 + 0.2 * (z + c.animation.z).sin(), 4.0),
@@ -64,12 +65,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     shape
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::plant(vec3(0.22, 0.46, 0.08), vec3(0.57, 0.69, 0.15));
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render(
-        ray,
-        c,
-        surface,
-        vec3(0.22, 0.46, 0.08),
-        vec3(0.57, 0.69, 0.15),
-    )
+    super::render(ray, c, surface, LOOK)
 }

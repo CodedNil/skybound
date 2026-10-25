@@ -6,12 +6,18 @@ use crate::{
     },
     math::{ToEngine, ToScene},
 };
-use bevy::{math::DVec3, prelude::*};
+use bevy::{
+    math::DVec3,
+    prelude::*,
+    render::{RenderApp, extract_resource::ExtractResource},
+    transform::TransformSystems,
+};
+use rayon::prelude::*;
 use skybound::scene::{
     PLANET_RADIUS,
     climate::{Climate, layer_altitude},
     life::{
-        KINDS, Kind,
+        CreatureInstance, HERD, KINDS, Kind,
         behaviour::{Activity, Motion, Senses},
         biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible},
         physiology::Vitals,
@@ -100,6 +106,12 @@ impl Default for Pool {
     }
 }
 
+/// The world's creatures drawn this frame, besides the player and their
+/// mount: those covering the most of the screen.
+#[derive(Resource, Clone, Default, ExtractResource)]
+#[extract_app(RenderApp)]
+pub struct Herd(pub Vec<CreatureInstance>);
+
 #[derive(Resource, Default)]
 pub struct Ecosystem {
     pub living: usize,
@@ -115,7 +127,9 @@ impl Plugin for EcosystemPlugin {
         app.init_resource::<Ecosystem>()
             .add_systems(Startup, seed)
             .add_systems(Update, (attach_players, identify))
-            .add_systems(FixedUpdate, simulate);
+            .add_systems(FixedUpdate, simulate)
+            .add_systems(PostUpdate, gather_herd.after(TransformSystems::Propagate))
+            .add_systems(Update, census);
     }
 }
 
@@ -150,7 +164,9 @@ fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle {
         EcologicalMotion::default(),
         Relations::default(),
         WorldAnchor,
-        Transform::from_translation(position),
+        // Level, heading along the local horizon until the first step of
+        // the simulation steers it.
+        Transform::from_translation(position).looking_to(Vec3::X, Vec3::Z),
     )
 }
 
@@ -160,14 +176,17 @@ fn seed(mut commands: Commands) {
             continue;
         }
         let biology = kind.biology();
-        for cohort in 0..3 {
-            let angle = (index * 3 + cohort) as f32 * 2.399_963;
+        // Six of each, scattered over a wide disc about the start, so a few
+        // losses cannot end a lineage and every kind is met near the player.
+        for cohort in 0..6 {
+            let angle = (index * 6 + cohort) as f32 * 2.399_963;
+            let reach = 160.0 + (cohort as f32 * 0.37 + index as f32 * 0.61).fract() * 520.0;
             let altitude = SPAWN
                 .z
                 .clamp(biology.altitude.0 + 60.0, biology.altitude.1 - 60.0);
             let position = vec3(
-                angle.cos() * 220.0,
-                angle.sin() * 220.0,
+                angle.cos() * reach,
+                angle.sin() * reach,
                 altitude + angle.sin() * 50.0,
             );
             commands.spawn(population(kind, position, 0.9));
@@ -335,6 +354,130 @@ fn simulate(
         }
     }
     ecosystem.deaths += transfer_meals(&mut organisms, &meals, now);
+}
+
+type Drawn<'a> = (
+    Entity,
+    &'a Species,
+    &'a Physiology,
+    &'a Transform,
+    &'a EcologicalMotion,
+    Option<&'a Individual>,
+    &'a Relations,
+);
+
+/// Every minute, how many of each species are alive, so a lineage dying
+/// out shows in the log.
+fn census(organisms: Query<(&Species, &Physiology)>, time: Res<Time>, mut last: Local<f32>) {
+    if time.elapsed_secs() - *last < 60.0 {
+        return;
+    }
+    *last = time.elapsed_secs();
+    let mut counts: HashMap<Kind, usize> = HashMap::new();
+    for (species, body) in &organisms {
+        if body.0.health > 0.0 {
+            *counts.entry(species.0).or_default() += 1;
+        }
+    }
+    let mut line = String::new();
+    for kind in KINDS {
+        line.push_str(&format!(
+            " {kind:?}={}",
+            counts.get(kind).copied().unwrap_or(0)
+        ));
+    }
+    info!("census{line}");
+}
+
+/// Pose the creatures that will cover the most of the screen this frame,
+/// carrying each one's last pose along for motion vectors.
+fn gather_herd(
+    mut herd: ResMut<Herd>,
+    mut last: Local<HashMap<Entity, CreatureInstance>>,
+    camera: Single<&GlobalTransform, With<Camera3d>>,
+    organisms: Query<Drawn, (Without<Player>, Without<Mount>)>,
+    time: Res<Time>,
+) {
+    let eye = camera.translation();
+    let forward = camera.forward();
+    let mut ranked: Vec<(f32, Entity)> = organisms
+        .iter()
+        .filter_map(|(entity, species, _, transform, _, _, _)| {
+            let radius = species.0.render_radius();
+            let offset = transform.translation - eye;
+            let distance = offset.length().max(1.0);
+            // Behind the camera, or too small to cover a pixel.
+            if offset.dot(*forward) < -radius || radius / distance < 0.0015 {
+                return None;
+            }
+            Some((radius / distance, entity))
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    ranked.truncate(HERD);
+    let now = time.elapsed_secs();
+    // What each pose needs, read out of the world so the poses, each with
+    // its own tentacle and cloth simulation, can be built across every core.
+    let chosen: Vec<_> = ranked
+        .into_iter()
+        .filter_map(|(_, entity)| {
+            let (_, species, body, transform, motion, individual, relations) =
+                organisms.get(entity).ok()?;
+            Some((
+                entity,
+                species.0,
+                body.0.age_days as f32,
+                *transform,
+                motion.0.length(),
+                individual.map_or(entity.to_bits() as u32, |identity| identity.0),
+                relations.activity,
+            ))
+        })
+        .collect();
+    let poses: Vec<(Entity, CreatureInstance)> = chosen
+        .par_iter()
+        .map(|&(entity, kind, age, transform, speed, seed, activity)| {
+            // Each individual beats its wings at its own phase and pace,
+            // harder the faster it flies.
+            let phase = (seed % 997) as f32 * 0.37;
+            let rate = 3.0 + (seed % 13) as f32 * 0.12;
+            // Resting animals fold their wings and stop beating them.
+            let resting = matches!(activity, Activity::Rest | Activity::Attach);
+            let fold = if resting { 0.9 } else { 0.0 };
+            let stroke = ((now + phase) * rate).sin()
+                * (0.08 + (speed / 40.0).min(1.0) * 0.25)
+                * (1.0 - fold);
+            let pose = CreatureInstance::specimen(
+                transform
+                    .translation
+                    .extend(kind.render_radius())
+                    .to_scene(),
+                transform.rotation.to_array().into(),
+                Vec4::new(stroke, fold, now + phase, speed).to_scene(),
+                kind as u32,
+                age,
+                seed,
+            );
+            (entity, pose)
+        })
+        .collect();
+    let mut posed = HashMap::with_capacity(poses.len());
+    herd.0.clear();
+    for (entity, mut pose) in poses {
+        if let Some(old) = last.get(&entity)
+            && old.position.truncate().distance(pose.position.truncate()) < 100.0
+        {
+            pose.previous_position = old.position;
+            pose.previous_rotation = old.rotation;
+            pose.previous_animation = old.animation;
+            pose.previous_proportions = old.proportions;
+            pose.previous_tail = old.tail;
+            pose.previous_cloth = old.cloth;
+        }
+        posed.insert(entity, pose);
+        herd.0.push(pose);
+    }
+    *last = posed;
 }
 
 fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {

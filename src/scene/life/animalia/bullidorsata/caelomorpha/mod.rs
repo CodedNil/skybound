@@ -57,9 +57,10 @@ fn cubic(before: Vec3, start: Vec3, end: Vec3, after: Vec3, t: f32) -> (Vec3, Ve
 fn ribbon_patch(points: &[[Vec4; 3]; 12], row: usize, t: f32, v: f32) -> (Vec3, Vec3, Vec3) {
     let mut across = [Vec3::ZERO; 3];
     let mut tangents = [Vec3::ZERO; 3];
-    for (col, point) in across.iter_mut().enumerate() {
-        (*point, tangents[col]) = cubic(
-            points[row.saturating_sub(1)][col].truncate(),
+    let before = if row > 0 { row - 1 } else { 0 };
+    for col in 0..3 {
+        (across[col], tangents[col]) = cubic(
+            points[before][col].truncate(),
             points[row][col].truncate(),
             points[row + 1][col].truncate(),
             points[(row + 2).min(11)][col].truncate(),
@@ -97,7 +98,8 @@ fn ribbon_coordinates(p: Vec3, points: &[[Vec4; 3]; 12]) -> (usize, f32, f32) {
     }
     let mut closest = (row, t, 0.0);
     best = f32::MAX;
-    for candidate in row.saturating_sub(1)..=(row + 1).min(10) {
+    let first = if row > 0 { row - 1 } else { 0 };
+    for candidate in first..=(row + 1).min(10) {
         let center = ribbon_point(points, candidate, 0.5, 0.0);
         let edge =
             ribbon_point(points, candidate, 0.5, 1.0) - ribbon_point(points, candidate, 0.5, -1.0);
@@ -133,16 +135,20 @@ pub fn ribbon_distance(p: Vec3, c: &CreatureInstance, ribbon: usize) -> f32 {
     (p - ribbon_point(points, row, t, v)).length() * 0.4 - 0.012
 }
 
-pub fn skin<F: Fn(Vec3, &CreatureInstance) -> Surface>(
+pub fn skin<F: Fn(Vec3, &CreatureInstance) -> Surface, const N: usize>(
     p: Vec3,
     c: &CreatureInstance,
     organs: F,
-    chambers: &[GasChamber],
+    chambers: &[GasChamber; N],
     scale: f32,
 ) -> Surface {
     let mut distance = organs(p, c).distance - scale * 0.035;
-    for chamber in chambers {
-        distance = smooth_min(distance, chamber.distance(p) - scale * 0.018, scale * 0.16);
+    for index in 0..N {
+        distance = smooth_min(
+            distance,
+            chambers[index].distance(p) - scale * 0.018,
+            scale * 0.16,
+        );
     }
     Surface::new(distance, 0)
 }
@@ -173,6 +179,7 @@ fn closed_hits<F: Fn(Vec3, &CreatureInstance) -> Surface>(
 pub fn drift_body<
     F: Fn(Vec3, &CreatureInstance) -> Surface,
     G: Fn(Vec3, &CreatureInstance) -> Surface,
+    const N: usize,
 >(
     ray: Ray,
     c: &CreatureInstance,
@@ -180,7 +187,7 @@ pub fn drift_body<
     organs: G,
     tint: Vec3,
     scale: f32,
-    chambers: &[GasChamber],
+    chambers: &[GasChamber; N],
 ) -> TraceResult {
     let [front, back] = closed_hits(ray, c, &envelope);
     if !front.is_hit() {
@@ -190,8 +197,8 @@ pub fn drift_body<
         let mut distance = organs(p, c)
             .distance
             .max(envelope(p, c).distance + scale * 0.025);
-        for chamber in chambers {
-            distance = distance.max(-chamber.distance(p));
+        for index in 0..N {
+            distance = distance.max(-chambers[index].distance(p));
         }
         Surface::new(distance, 0)
     };
@@ -199,7 +206,8 @@ pub fn drift_body<
     let local = local_ray(ray, c);
     let [tissue_front, tissue_back] = closed_hits(ray, c, tissue);
     let depth = (tissue_back.distance() - tissue_front.distance()).max(0.0) / scale;
-    for mut hit in [tissue_front, tissue_back] {
+    for side in 0..2 {
+        let mut hit = if side == 0 { tissue_front } else { tissue_back };
         if !hit.is_hit() {
             continue;
         }
@@ -220,7 +228,8 @@ pub fn drift_body<
     } else {
         0.0
     };
-    for (index, mut hit) in [front, back].into_iter().enumerate() {
+    for index in 0..2 {
+        let mut hit = if index == 0 { front } else { back };
         if !hit.is_hit() || hit.distance() <= 0.0 || hit.distance() >= ray.max_distance {
             continue;
         }
@@ -243,8 +252,12 @@ pub fn drift_body<
             result.add(hit);
         }
     }
-    for chamber in chambers {
-        for mut hit in closed_hits(ray, c, |p, _| Surface::new(chamber.distance(p), 0)) {
+    for chamber in 0..N {
+        let hits = closed_hits(ray, c, |p, _| {
+            Surface::new(chambers[chamber].distance(p), 0)
+        });
+        for side in 0..2 {
+            let mut hit = hits[side];
             if hit.is_hit()
                 && hit.distance() > 0.0
                 && hit.distance() < result.opaque.distance().min(ray.max_distance)
@@ -401,9 +414,11 @@ mod tests {
             Vec4::ZERO,
             Kind::Aerogigas as u32,
         );
+        // The canopy is a vaulted dome, so rays from the sides are cast
+        // through its crown rather than through the hollow beneath it.
         for direction in [Vec3::X, Vec3::Y, Vec3::Z, -Vec3::X, -Vec3::Y, -Vec3::Z] {
             let ray = Ray {
-                origin: direction * 80.0,
+                origin: direction * 80.0 + Vec3::Y * 3.2,
                 direction: -direction,
                 light: Vec3::Y,
                 ambient: Vec3::ONE,

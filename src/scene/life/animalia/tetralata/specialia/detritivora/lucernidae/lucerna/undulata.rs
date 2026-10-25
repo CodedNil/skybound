@@ -1,11 +1,13 @@
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look, annulated,
     biology::Biology,
-    ellipsoid, prepare_pose, ribbons, smooth_min,
+    eyespots, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
 };
 use spirv_std::glam::{Vec3, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 60.0,
@@ -31,26 +33,43 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 7.0, 17.0, 2);
     c.opaque_bounds = vec3(5.0, 5.0, 24.0).extend(0.0);
+    // Sticky streamers under the forebody comb particles from the air it
+    // ripples through.
+    rig_ribbons(c, 2, vec3(0.0, -0.55, -3.5), 1.2, 14.0);
 }
 
+/// A long, ribbon-bodied drifter rippling as it goes: a flattened, finely
+/// ringed body with a row of glowing organs along its back and trailing
+/// ribbons beneath.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(ellipsoid(p, vec3(1.0, 0.75, 9.0)), 0);
-    hit.distance = smooth_min(hit.distance, tail(p, c), 0.3);
+    let ripple = (p.z * 0.7 - c.animation.z * 2.0).sin() * 0.25;
+    let q = p - vec3(0.0, ripple, 0.0);
+    let body = annulated(
+        q,
+        vec3(0.0, 0.0, -8.6),
+        vec3(0.0, 0.0, 8.8),
+        vec3(0.65, 1.05, 0.55),
+        20.0,
+        0.05,
+        0.62,
+    );
+    let mut hit = Surface::new(smooth_min(body, tail(p, c), 0.3), 0);
     for i in 0..8 {
         let z = i as f32 * 2.0 - 7.0;
-        hit.join(ellipsoid(p - vec3(0.0, 0.68, z), vec3(0.65, 0.16, 0.3)), 9);
+        hit.join(rounded(q - vec3(0.0, 0.6, z), vec3(0.42, 0.13, 0.26)), 9);
     }
+    hit.join(eyespots(q, vec3(0.32, 0.25, -8.6), 0.4, 2, 0.11), 3);
     hit.join(ribbons(p, c, 2), 4);
     hit
 }
 
+/// Colouring and wings, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::coat(
+    vec4(0.16, 0.26, 0.41, 0.0),
+    vec3(0.22, 0.82, 0.89),
+    [vec4(12.0, 5.0, -3.0, 0.25), vec4(9.0, 3.0, 3.0, 0.25)],
+);
+
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-    super::render_wings(
-        ray,
-        c,
-        surface,
-        vec4(0.16, 0.26, 0.41, 0.0),
-        vec3(0.22, 0.82, 0.89),
-        [vec4(12.0, 5.0, 0.0, 0.25), vec4(9.0, 3.0, 9.0, 0.25)],
-    )
+    super::render_wings(ray, c, surface, LOOK)
 }

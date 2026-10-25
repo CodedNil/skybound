@@ -283,21 +283,34 @@ impl CloudParcel {
     }
 
     /// Altitudes its cloud can fill below the cirrus level, and in it.
+    ///
+    /// These must hold everything the shaders draw, or the march skips past
+    /// it and the cloud is sliced flat: a layer's thickest clouds grow to
+    /// half again its nominal depth and bulge past that, cirrus trails fall
+    /// streaks below its base, and cumulus heaps sit on the layer's own base
+    /// whatever the system's, their crowns bulging a third past their top.
     pub fn extent(self) -> Vec4 {
         let (base, top) = (self.shape.z, self.shape.w);
         let band = |layer: u32| {
+            let depth = layer_depth(layer);
             vec2(
-                layer_altitude(layer) - LAYER_DRIFT,
-                layer_altitude(layer) + layer_depth(layer) + LAYER_DRIFT,
+                layer_altitude(layer) - LAYER_DRIFT - (depth * 0.5).max(350.0),
+                layer_altitude(layer) + LAYER_DRIFT + depth * 1.9,
             )
         };
         let none = vec2(1.0e9, -1.0e9);
+        let heaps = |base: f32, top: f32| {
+            vec2(
+                base.min(layer_altitude(0)) - LAYER_DRIFT - 100.0,
+                top + LAYER_DRIFT + (top - base).max(250.0) * 0.35,
+            )
+        };
         let (low, high) = match self.kind() {
-            CUMULUS => (vec2(base - LAYER_DRIFT, top + LAYER_DRIFT), none),
+            CUMULUS => (heaps(base, top), none),
             TOWER => (
                 vec2(
                     (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
-                    top + self.detail.z + LAYER_DRIFT,
+                    (top + self.detail.z + LAYER_DRIFT).max(heaps(base, top).y),
                 ),
                 none,
             ),
@@ -305,7 +318,10 @@ impl CloudParcel {
             CIRRUS => (none, band(top as u32)),
             FRONT => (vec2(band(1).x, band(4).y), vec2(band(5).x, band(6).y)),
             _ => (
-                vec2((base - RAIN_DEPTH).max(CLOUD_BOTTOM), top + LAYER_DRIFT),
+                vec2(
+                    (base - RAIN_DEPTH).max(CLOUD_BOTTOM),
+                    heaps(base, top).y.max(band(3).y),
+                ),
                 band(6),
             ),
         };

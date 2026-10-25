@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::{
-    CreatureInstance,
+    CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::Biology,
-    ellipsoid, smooth_min,
+    ellipsoid, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
 use spirv_std::glam::{Vec3, vec3};
@@ -56,7 +56,7 @@ pub fn animate(c: &mut CreatureInstance) {
         cloth::prepare(
             c,
             i,
-            vec3((i as f32 - 1.0) * 2.1, -0.25, 2.8),
+            vec3((i as f32 - 1.0) * 2.1, -0.45, 4.5),
             10.0 + i as f32 * 2.0,
             1.4,
         );
@@ -67,7 +67,8 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     let mut distance = ellipsoid(p - vec3(0.0, -0.35, 0.0), vec3(0.9, 0.4, 1.1));
     for i in -2..=2 {
         let x = i as f32;
-        for side in [-1.0, 1.0] {
+        for half in 0..2 {
+            let side = if half == 0 { -1.0 } else { 1.0 };
             let center = vec3(
                 x * 0.7,
                 -0.5 + (x * 2.0).sin() * 0.3,
@@ -79,10 +80,24 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     Surface::new(distance + tissue_distance(p, 3.0), 0)
 }
 
+/// A flattened lens drawn out to a pointed leading edge, so the current
+/// presses unevenly across it and turns it to face useful air; behind, it
+/// thins to a lip along which the feeding ribbons are rooted, trailing
+/// clear of the body into the neighbouring streams.
 pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
-    let q = p - vec3(0.0, -0.2 + p.z * p.z * 0.035, 0.0);
-    Surface::new(ellipsoid(q, vec3(4.3, 1.9, 4.6)) * 0.8, 0)
+    let front = (-p.z / 4.6).clamp(0.0, 1.0);
+    let radii = vec3(
+        4.3 * (1.0 - 0.75 * front * front),
+        1.9 * (1.0 - 0.55 * front),
+        4.6,
+    );
+    let lens = rounded(p - vec3(0.0, -0.2 + p.z * p.z * 0.03, 0.0), radii) * 0.75;
+    let lip = rounded(p - vec3(0.0, -0.45, 3.9), vec3(3.6, 0.35, 0.9));
+    Surface::new(smooth_min(lens, lip, 0.6), 0)
 }
+
+/// Tint and scale, shared by the preview and the world renderer.
+pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     let mut result = drift_body(
