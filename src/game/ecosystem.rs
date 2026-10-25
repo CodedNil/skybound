@@ -17,13 +17,13 @@ use skybound::scene::{
     PLANET_RADIUS,
     climate::{Climate, layer_altitude},
     life::{
-        CreatureInstance, HERD, KINDS, Kind,
+        CLUTCH, CreatureInstance, FULL_POUCH, HERD, KINDS, Kind,
         behaviour::{Activity, Motion, Senses},
-        biology::{Anatomy, Feeding, Lift, Reproduction, Social, edible},
+        biology::{Anatomy, Brood, Feeding, Lift, Reproduction, Social, edible},
         physiology::Vitals,
     },
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write};
 
 const CELL: f32 = 300.0;
 
@@ -48,6 +48,8 @@ pub struct Relations {
     pub activity: Activity,
     pub senses: Senses,
     host: Option<Entity>,
+    /// The parent that bore it, while it still depends on that parent.
+    parent: Option<Entity>,
     remembered_food: Option<(Entity, DVec3, f32)>,
     pollen: Option<(Entity, Kind)>,
     pollinated_until: f32,
@@ -86,6 +88,7 @@ struct Agent {
     vitals: Vitals,
     position: Vec3,
     velocity: Vec3,
+    rotation: Quat,
 }
 
 struct Pool {
@@ -93,6 +96,16 @@ struct Pool {
     detritus: f32,
     bound_aur: f32,
     recycled_at: f32,
+}
+
+impl Pool {
+    /// Detritus breaking down into nutrients since it was last recycled.
+    fn recycle(&mut self, now: f32) {
+        let recycled = self.detritus * (1.0 - (-(now - self.recycled_at) * 0.001).exp());
+        self.detritus -= recycled;
+        self.nutrients += recycled;
+        self.recycled_at = now;
+    }
 }
 
 impl Default for Pool {
@@ -268,10 +281,7 @@ fn simulate(
     let now = time.elapsed_secs();
     let agents = snapshot(&organisms);
     let index: HashMap<_, _> = agents.iter().map(|agent| (agent.entity, *agent)).collect();
-    let mut grid: HashMap<IVec3, Vec<Agent>> = HashMap::new();
-    for agent in &agents {
-        grid.entry(cell(agent.position)).or_default().push(*agent);
-    }
+    let grid = grid(&agents);
     let mut meals = Vec::new();
     ecosystem.living = agents
         .iter()
@@ -286,10 +296,7 @@ fn simulate(
             .patches
             .entry(cell(world.position(transform.translation).as_vec3()))
             .or_default();
-        let recycled = patch.detritus * (1.0 - (-(now - patch.recycled_at) * 0.001).exp());
-        patch.detritus -= recycled;
-        patch.nutrients += recycled;
-        patch.recycled_at = now;
+        patch.recycle(now);
         if body.0.health <= 0.0 {
             decompose(&mut body.0, patch, dt);
             if !player && !mount && body.0.mass < biology.adult_mass * 0.001 {
@@ -299,13 +306,11 @@ fn simulate(
         }
         let neighbours = neighbours(transform.translation, biology.perception, &grid);
         let agent = index[&entity];
-        let senses = perceive(agent, &mut relations, climate, &neighbours, now, &world);
+        let mut senses = perceive(agent, &mut relations, climate, &neighbours, now, &world);
+        let stage = nurture(agent, &mut relations, &index, now);
+        stage.steer(&mut senses);
         relations.senses = senses;
-        let mut movement = Motion {
-            position: Vec3::ZERO.to_scene(),
-            velocity: motion.0.to_scene(),
-            rotation: transform.rotation.to_scene(),
-        };
+        let mut movement = moving(motion.0, transform.rotation);
         let controls = movement.advance(species.0, &senses, dt);
         relations.activity = controls.activity;
         let effort = (movement.velocity - climate.wind).length() / biology.speed.max(1.0);
@@ -318,25 +323,32 @@ fn simulate(
             ecosystem.deaths += 1;
             continue;
         }
-        if let Some(meal) = forage(agent, &mut body.0, &relations, &neighbours, patch, dt) {
-            meals.push(meal);
-        }
+        meals.extend(if stage.forages() {
+            forage(agent, &mut body.0, &relations, &neighbours, patch, dt)
+        } else {
+            stage.provide(entity, &mut body.0, dt)
+        });
         if !player && !mount {
             if let Some(host) = relations
                 .host
                 .and_then(|host| index.get(&host))
                 .filter(|host| host.vitals.health > 0.0)
             {
-                transform.translation = host.position
-                    + world.up(host.position) * host.kind.biology().adult_mass.cbrt() * 0.3;
+                let carried = relations.parent == relations.host;
+                transform.translation = held_position(agent, host, carried, &world);
+                if carried && biology.brood == Brood::Strings {
+                    transform.rotation = host.rotation;
+                }
                 motion.0 = host.velocity;
+            } else if stage == Stage::Egg {
+                // An egg cast loose goes where the air takes it.
+                let drift = climate.wind.to_engine();
+                travel(entity, drift * dt, &mut transform, &mut coordinates, &world);
+                motion.0 = drift;
             } else {
                 relations.host = None;
-                if let Ok(mut coordinate) = coordinates.get_mut(entity) {
-                    coordinate.translate(movement.position.to_engine(), &mut transform, &world);
-                } else {
-                    transform.translation += movement.position.to_engine();
-                }
+                let offset = movement.position.to_engine();
+                travel(entity, offset, &mut transform, &mut coordinates, &world);
                 transform.rotation = movement.rotation.to_engine();
                 motion.0 = movement.velocity.to_engine();
             }
@@ -344,11 +356,18 @@ fn simulate(
         if ecosystem.living < POPULATION_LIMIT
             && reproduce(agent, &mut body.0, &mut relations, &neighbours, now)
         {
-            commands.spawn(population(
-                species.0,
-                transform.translation + Vec3::X * 3.0,
-                0.15,
-            ));
+            let host = nest(agent, &neighbours);
+            commands
+                .spawn(population(
+                    species.0,
+                    transform.translation + Vec3::X * 3.0,
+                    0.15,
+                ))
+                .insert(Relations {
+                    host,
+                    parent: Some(entity),
+                    ..Relations::default()
+                });
             ecosystem.living += 1;
             ecosystem.births += 1;
         }
@@ -381,10 +400,7 @@ fn census(organisms: Query<(&Species, &Physiology)>, time: Res<Time>, mut last: 
     }
     let mut line = String::new();
     for kind in KINDS {
-        line.push_str(&format!(
-            " {kind:?}={}",
-            counts.get(kind).copied().unwrap_or(0)
-        ));
+        let _ = write!(line, " {kind:?}={}", counts.get(kind).copied().unwrap_or(0));
     }
     info!("census{line}");
 }
@@ -400,9 +416,27 @@ fn gather_herd(
 ) {
     let eye = camera.translation();
     let forward = camera.forward();
+    // Young carried inside or glued onto a parent are drawn as part of it.
+    let mut carrying: HashMap<Entity, u32> = HashMap::new();
+    for (entity, species, body, _, _, _, relations) in &organisms {
+        let biology = species.0.biology();
+        let young = body.0.age_days / f64::from(biology.maturity_days);
+        if relations.host.is_some() && relations.host == relations.parent {
+            let brood = match biology.brood {
+                Brood::Carried if young < 0.3 => CLUTCH,
+                Brood::Pouch => FULL_POUCH,
+                _ => continue,
+            };
+            carrying.insert(relations.host.unwrap_or(entity), brood);
+            carrying.insert(entity, 0);
+        }
+    }
     let mut ranked: Vec<(f32, Entity)> = organisms
         .iter()
         .filter_map(|(entity, species, _, transform, _, _, _)| {
+            if carrying.get(&entity) == Some(&0) {
+                return None;
+            }
             let radius = species.0.render_radius();
             let offset = transform.translation - eye;
             let distance = offset.length().max(1.0);
@@ -429,39 +463,45 @@ fn gather_herd(
                 body.0.age_days as f32,
                 *transform,
                 motion.0.length(),
-                individual.map_or(entity.to_bits() as u32, |identity| identity.0),
+                individual.map_or_else(|| entity.to_bits() as u32, |identity| identity.0),
                 relations.activity,
+                carrying.get(&entity).copied().unwrap_or(0),
             ))
         })
         .collect();
     let poses: Vec<(Entity, CreatureInstance)> = chosen
         .par_iter()
-        .map(|&(entity, kind, age, transform, speed, seed, activity)| {
-            // Each individual beats its wings at its own phase and pace,
-            // harder the faster it flies.
-            let phase = (seed % 997) as f32 * 0.37;
-            let rate = 3.0 + (seed % 13) as f32 * 0.12;
-            // Resting animals fold their wings and stop beating them.
-            let resting = matches!(activity, Activity::Rest | Activity::Attach);
-            let fold = if resting { 0.9 } else { 0.0 };
-            let stroke = ((now + phase) * rate).sin()
-                * (0.08 + (speed / 40.0).min(1.0) * 0.25)
-                * (1.0 - fold);
-            let pose = CreatureInstance::specimen(
-                transform
-                    .translation
-                    .extend(kind.render_radius())
-                    .to_scene(),
-                transform.rotation.to_array().into(),
-                Vec4::new(stroke, fold, now + phase, speed).to_scene(),
-                kind as u32,
-                age,
-                seed,
-            );
-            (entity, pose)
-        })
+        .map(
+            |&(entity, kind, age, transform, speed, seed, activity, held)| {
+                // Each individual beats its wings at its own phase and pace,
+                // harder the faster it flies.
+                let phase = (seed % 997) as f32 * 0.37;
+                let rate = 3.0 + (seed % 13) as f32 * 0.12;
+                // Resting animals fold their wings and stop beating them.
+                let resting = matches!(activity, Activity::Rest | Activity::Attach);
+                let fold = if resting { 0.9 } else { 0.0 };
+                let stroke = ((now + phase) * rate).sin()
+                    * (0.08 + (speed / 40.0).min(1.0) * 0.25)
+                    * (1.0 - fold);
+                let mut pose = CreatureInstance::specimen(
+                    transform
+                        .translation
+                        .extend(kind.render_radius())
+                        .to_scene(),
+                    transform.rotation.to_array().into(),
+                    Vec4::new(stroke, fold, now + phase, speed).to_scene(),
+                    kind as u32,
+                    age,
+                    seed,
+                );
+                if held != 0 {
+                    pose.kind.z = held;
+                }
+                (entity, pose)
+            },
+        )
         .collect();
-    let mut posed = HashMap::with_capacity(poses.len());
+    let mut drawn = HashMap::with_capacity(poses.len());
     herd.0.clear();
     for (entity, mut pose) in poses {
         if let Some(old) = last.get(&entity)
@@ -474,10 +514,10 @@ fn gather_herd(
             pose.previous_tail = old.tail;
             pose.previous_cloth = old.cloth;
         }
-        posed.insert(entity, pose);
+        drawn.insert(entity, pose);
         herd.0.push(pose);
     }
-    *last = posed;
+    *last = drawn;
 }
 
 fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
@@ -490,9 +530,19 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
                 vitals: body.0,
                 position: transform.translation,
                 velocity: motion.0,
+                rotation: transform.rotation,
             },
         )
         .collect()
+}
+
+/// The organisms sorted into cells, so each finds its neighbours quickly.
+fn grid(agents: &[Agent]) -> HashMap<IVec3, Vec<Agent>> {
+    let mut grid: HashMap<IVec3, Vec<Agent>> = HashMap::new();
+    for agent in agents {
+        grid.entry(cell(agent.position)).or_default().push(*agent);
+    }
+    grid
 }
 
 fn cell(position: Vec3) -> IVec3 {
@@ -749,6 +799,196 @@ fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], now: f32) ->
     deaths
 }
 
+/// An organism's motion this step in the scene's frame, starting from
+/// where it is, at its velocity and heading.
+fn moving(velocity: Vec3, rotation: Quat) -> Motion {
+    Motion {
+        position: Vec3::ZERO.to_scene(),
+        velocity: velocity.to_scene(),
+        rotation: rotation.to_scene(),
+    }
+}
+
+/// Where a newborn is first kept, by its lineage's way of keeping them: on
+/// its parent, tethered to the nearest living plant (its food plant if
+/// there is one in reach), or nowhere.
+fn nest(parent: Agent, neighbours: &[Agent]) -> Option<Entity> {
+    match parent.kind.biology().brood {
+        Brood::Carried | Brood::Strings | Brood::Pouch => Some(parent.entity),
+        Brood::Tethered => {
+            let rank = |other: &Agent| {
+                let preference = if edible(parent.kind, other.kind) {
+                    0.2
+                } else {
+                    1.0
+                };
+                other.position.distance(parent.position) * preference
+            };
+            neighbours
+                .iter()
+                .filter(|other| {
+                    other.kind.biology().anatomy == Anatomy::Plant && other.vitals.health > 0.0
+                })
+                .min_by(|a, b| rank(a).total_cmp(&rank(b)))
+                .map(|plant| plant.entity)
+        }
+        Brood::Live | Brood::Drifting => None,
+    }
+}
+
+/// Where an organism held by another sits. Carried by its parent, it is in
+/// its pouch or glued to its body, or on a string trailing behind it;
+/// clinging to a plant or animal, it is somewhere on it, each at its own
+/// place.
+fn held_position(agent: Agent, host: &Agent, carried: bool, world: &WorldData) -> Vec3 {
+    if carried {
+        return if agent.kind.biology().brood == Brood::Strings {
+            host.position + host.rotation * Vec3::Z * host.kind.render_radius() * 0.5
+        } else {
+            host.position
+        };
+    }
+    let bits = agent.entity.to_bits();
+    let around = Vec3::new(
+        (bits % 7) as f32 - 3.0,
+        (bits % 5) as f32 - 2.0,
+        (bits % 3) as f32 - 1.0,
+    ) * 0.3;
+    host.position + (world.up(host.position) + around) * host.kind.biology().adult_mass.cbrt() * 0.3
+}
+
+/// Move an organism through the world, on the planet's surface frame when
+/// it has one.
+fn travel(
+    entity: Entity,
+    offset: Vec3,
+    transform: &mut Transform,
+    coordinates: &mut Query<&mut PlanetPosition>,
+    world: &WorldData,
+) {
+    if let Ok(mut coordinate) = coordinates.get_mut(entity) {
+        coordinate.translate(offset, transform, world);
+    } else {
+        transform.translation += offset;
+    }
+}
+
+/// How far a young organism still depends on its parent.
+#[derive(Clone, Copy, PartialEq)]
+enum Stage {
+    /// Grown, or never cared for.
+    Free,
+    /// An egg, carried or cast loose, living on its yolk.
+    Egg,
+    /// In its parent's pouch, fed there.
+    Pouch(Entity),
+    /// Out of the pouch and due back: the way to the parent.
+    Homing(Vec3),
+}
+
+impl Stage {
+    /// Back to the pouch, whatever else it might rather be doing.
+    fn steer(self, senses: &mut Senses) {
+        if let Self::Homing(offset) = self {
+            senses.habitat = Some(offset.to_scene());
+            senses.danger = None;
+            senses.separation *= 0.0;
+        }
+    }
+
+    const fn forages(self) -> bool {
+        !matches!(self, Self::Egg | Self::Pouch(_))
+    }
+
+    /// What a young organism that does not forage lives on: an egg on its
+    /// yolk, and pouch young on what the parent feeds them.
+    fn provide(self, entity: Entity, body: &mut Vitals, dt: f32) -> Option<Meal> {
+        if let Self::Pouch(parent) = self {
+            return Some(Meal {
+                eater: entity,
+                food: parent,
+                amount: body.mass * dt * 0.002,
+            });
+        }
+        body.energy = body.energy.max(0.6);
+        body.hydration = body.hydration.max(0.6);
+        None
+    }
+}
+
+/// Where a young organism is kept, by its lineage's way of keeping them.
+/// Eggs stay where they were laid until they hatch, except strings, which
+/// the parent cuts loose to drift soon after laying them. Pouch young stay
+/// in the pouch until they are formed, then make trips out to feed, at
+/// first brief and then longer, homing on the parent when each is over,
+/// until they no longer come back.
+fn nurture(
+    agent: Agent,
+    relations: &mut Relations,
+    index: &HashMap<Entity, Agent>,
+    now: f32,
+) -> Stage {
+    let biology = agent.kind.biology();
+    let young = (agent.vitals.age_days / f64::from(biology.maturity_days)) as f32;
+    let Some(parent) = relations
+        .parent
+        .and_then(|parent| index.get(&parent))
+        .filter(|parent| parent.vitals.health > 0.0)
+    else {
+        relations.parent = None;
+        let egg = biology.anatomy == Anatomy::Tetralate
+            && biology.reproduction == Reproduction::Eggs
+            && young < 0.3;
+        // Orphaned or hatched, a young tetralate flies free of whatever it
+        // was laid on.
+        if biology.anatomy == Anatomy::Tetralate && !egg {
+            relations.host = None;
+        }
+        return if egg { Stage::Egg } else { Stage::Free };
+    };
+    let parent = *parent;
+    match biology.brood {
+        Brood::Pouch if young < 0.2 => {
+            relations.host = Some(parent.entity);
+            Stage::Pouch(parent.entity)
+        }
+        Brood::Pouch if young < 0.7 => {
+            let independence = (young - 0.2) / 0.5;
+            let cycle = 120.0;
+            let phase = ((now + (agent.entity.to_bits() % 997) as f32) / cycle).fract();
+            if phase < 0.1 + independence * 0.85 {
+                relations.host = None;
+                return Stage::Free;
+            }
+            let offset = parent.position - agent.position;
+            if relations.host == Some(parent.entity)
+                || offset.length() < parent.kind.render_radius() * 0.4 + 3.0
+            {
+                relations.host = Some(parent.entity);
+                Stage::Pouch(parent.entity)
+            } else {
+                Stage::Homing(offset)
+            }
+        }
+        Brood::Pouch | Brood::Live => {
+            relations.parent = None;
+            relations.host = None;
+            Stage::Free
+        }
+        _ if young < 0.3 => {
+            if biology.brood == Brood::Strings && young > 0.08 {
+                relations.host = None;
+            }
+            Stage::Egg
+        }
+        _ => {
+            relations.parent = None;
+            relations.host = None;
+            Stage::Free
+        }
+    }
+}
+
 fn decompose(body: &mut Vitals, pool: &mut Pool, dt: f32) {
     let amount = body.mass * (1.0 - (-dt * 0.005).exp());
     body.mass -= amount;
@@ -815,6 +1055,7 @@ mod tests {
             vitals: body,
             position: Vec3::ZERO,
             velocity: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
         };
         let mut relations = Relations::default();
         assert!(!reproduce(
@@ -887,6 +1128,93 @@ mod tests {
     }
 
     #[test]
+    fn young_stay_with_their_parent_as_their_lineage_keeps_them() {
+        let mut world = World::new();
+        let mother = world.spawn_empty().id();
+        let child = world.spawn_empty().id();
+        let agent = |entity, kind: Kind, young: f32, position| {
+            let mut vitals = Vitals::new(kind.biology());
+            vitals.age_days = f64::from(kind.biology().maturity_days * young);
+            Agent {
+                entity,
+                kind,
+                vitals,
+                position,
+                velocity: Vec3::ZERO,
+                rotation: Quat::IDENTITY,
+            }
+        };
+        let far = Vec3::new(500.0, 0.0, 0.0);
+        let kind = Kind::Herbivolus;
+        let index: HashMap<_, _> = [(mother, agent(mother, kind, 2.0, Vec3::ZERO))].into();
+        let mut relations = Relations {
+            parent: Some(mother),
+            ..Relations::default()
+        };
+        assert!(
+            nurture(agent(child, kind, 0.1, far), &mut relations, &index, 0.0)
+                == Stage::Pouch(mother),
+            "a newborn left the pouch"
+        );
+        assert_eq!(relations.host, Some(mother));
+        // Half grown, it spends some of each cycle away and comes home.
+        let stages: Vec<_> = (0..120)
+            .map(|second| {
+                let mut relations = Relations {
+                    parent: Some(mother),
+                    ..Relations::default()
+                };
+                nurture(
+                    agent(child, kind, 0.45, far),
+                    &mut relations,
+                    &index,
+                    second as f32,
+                )
+            })
+            .collect();
+        assert!(stages.contains(&Stage::Free), "pouch young never left");
+        assert!(
+            stages.iter().any(|stage| matches!(stage, Stage::Homing(_))),
+            "pouch young never came home"
+        );
+        let mut relations = Relations {
+            parent: Some(mother),
+            ..Relations::default()
+        };
+        assert!(nurture(agent(child, kind, 0.8, far), &mut relations, &index, 0.0) == Stage::Free);
+        assert!(
+            relations.parent.is_none(),
+            "grown young still depend on the parent"
+        );
+        // A string of eggs is cut loose to drift before it hatches.
+        let kind = Kind::Manduca;
+        let index: HashMap<_, _> = [(mother, agent(mother, kind, 2.0, Vec3::ZERO))].into();
+        let mut relations = Relations {
+            parent: Some(mother),
+            host: Some(mother),
+            ..Relations::default()
+        };
+        assert!(
+            nurture(
+                agent(child, kind, 0.05, Vec3::ZERO),
+                &mut relations,
+                &index,
+                0.0
+            ) == Stage::Egg
+        );
+        assert_eq!(relations.host, Some(mother));
+        assert!(
+            nurture(
+                agent(child, kind, 0.2, Vec3::ZERO),
+                &mut relations,
+                &index,
+                0.0
+            ) == Stage::Egg
+        );
+        assert!(relations.host.is_none(), "egg string never cut loose");
+    }
+
+    #[test]
     fn food_memory_survives_origin_shifts_and_expires() {
         let mut world = World::new();
         let entity = world.spawn_empty().id();
@@ -898,6 +1226,7 @@ mod tests {
             vitals: Vitals::new(kind.biology()),
             position: vec3(0.0, 0.0, 2400.0),
             velocity: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
         };
         let mut relations = Relations {
             remembered_food: Some((

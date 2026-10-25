@@ -1,12 +1,12 @@
+use super::{Build, shredder};
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::{Biology, Social},
-    eyes, gills, mouth, prepare_pose, rounded, smooth_min,
+    mouth, prepare_pose,
     surface::{Ray, Surface, TraceResult},
-    tail, torso,
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 2200.0,
@@ -22,49 +22,63 @@ taxon!(
     "Ferrispina custos",
     "Iron Spined Guardians",
     [
-        "Iron Spined Guardians are heavy-bodied Shredders that remain near communal nursery currents.",
-        "Conspicuous spinal blades and repeated banking patrols discourage predators from approaching slowly developing young.",
-        "Their attacks retain the sweeping motion of roaming relatives, but begin from a defended area rather than a prolonged pursuit.",
+        "Iron Spined Guardians are Shredders that stay near communal nursery currents: shorter and deeper chested, with fewer, broader blades standing nearly upright and broad wings for hovering in a stand-off.",
+        "Faced with a predator they raise the crest, spread the gold-banded web between the blades and flare the red gill plates at the throat, and repeated banking patrols discourage anything from approaching the young.",
+        "The same display, given to one another, decides which guardians pair, and the broadest crests are the most sought after.",
         "Vocal exchanges and the motion of nearby adults help maintain a loose moving boundary around the nursery.",
         "The nursery travels with a suitable current, so protection depends on recognising companions rather than defending a fixed place.",
     ],
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 6.0, 14.0, 0);
-    c.opaque_bounds = vec3(6.0, 7.0, 27.0).extend(0.0);
-    rig_tentacles(c, mouth(7.0, 1.1), 1.1, BIOLOGY.oral_pairs);
+    prepare_pose(c, 6.0, 10.0, 0);
+    c.opaque_bounds = vec3(6.0, 7.5, 22.0).extend(0.0);
+    rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.1, BIOLOGY.oral_pairs);
 }
 
+/// A Shredder that stays to fight rather than chase: shorter and much
+/// deeper in the chest, so it can hang facing an attacker and turn on the
+/// spot, with a shorter tail and broader, rounder wings for hovering. Its
+/// crest has fewer, broader blades standing nearly upright, a rampart over
+/// the nursery more than a lance, and a tall web between them, gold-banded,
+/// that it spreads to warn off anything that comes too near.
+const BUILD: Build = Build {
+    length: 7.0,
+    depth: 1.65,
+    head: 0.9,
+    blades: 5,
+    height: 4.6,
+    width: 1.5,
+    rake: 0.2,
+    web: 0.95,
+};
+
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(torso(p, vec3(2.5, 2.3, 7.0), 1.1), 0);
-    hit.distance = smooth_min(hit.distance, tail(p, c), 0.5);
-    // Born as soft nubs, so they cannot wound the brood chamber; the
-    // blades harden and lengthen as the animal matures.
-    let grown = c.life.y * c.life.y;
-    for i in 0..7 {
-        let z = i as f32 * 2.0 - 5.5;
+    let mut hit = shredder(p, c, BUILD);
+    // A ruff of red gill plates at the throat, flared in threat.
+    let throat = vec3(p.x.abs(), -p.y, p.z);
+    for plate in 0..3 {
+        let f = plate as f32;
         hit.join(
             super::blade(
-                p,
-                vec3(0.0, 1.8, z),
-                vec3(0.0, 1.8, z).lerp(vec3(0.0, 5.6, z + 2.0), grown),
-                0.7 * (0.4 + 0.6 * grown),
+                throat,
+                vec3(0.45, BUILD.depth * 0.35, -BUILD.length * 0.62 + f * 0.7),
+                (1.4 - f * 0.25) * c.life.y.max(0.3),
+                0.35,
+                0.7,
+                0.7 + f * 0.15,
             ),
-            6,
+            2,
         );
     }
-    hit.join(gills(p, 7.0, 2), 9);
-    // A guardian meets attackers head on: its cowl is roofed by an iron
-    // shield, thickest at the rim it strikes with.
-    let shield = rounded(
-        p - vec3(0.0, 0.75, -8.3),
-        vec3(2.55, 0.32, 2.3) * (0.6 + 0.4 * grown),
-    );
-    hit.join(shield, 6);
-    hit.join(eyes(p, 7.0, 1.1), 3);
     hit.join(
-        oral_tentacles(p, c, mouth(7.0, 1.1), 1.1, BIOLOGY.oral_pairs),
+        oral_tentacles(
+            p,
+            c,
+            mouth(BUILD.length, BUILD.head),
+            1.1,
+            BIOLOGY.oral_pairs,
+        ),
         8,
     );
     hit
@@ -72,10 +86,15 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
-    vec4(0.26, 0.45, 0.43, 0.0),
-    vec3(0.86, 0.68, 0.28),
-    [vec4(17.0, 3.0, -2.0, 0.98), vec4(11.0, 2.2, 2.8, 0.98)],
-);
+    vec4(0.26, 0.36, 0.35, 0.0),
+    vec3(0.88, 0.62, 0.20),
+    [vec4(11.0, 3.4, -1.6, 0.8), vec4(8.0, 2.6, 2.4, 0.8)],
+)
+.hinged([vec2(1.2, 0.4), vec2(1.1, 0.35)])
+.styled([vec4(0.6, 0.7, 4.0, 0.0), vec4(0.5, 0.8, 3.0, 0.0)])
+.skinned(vec4(2.0, 0.9, 1.0, 0.10))
+.flying(vec4(0.70, 0.36, 0.40, 1.00))
+.marked(vec4(2.00, 5.00, 0.80, 0.40), vec3(0.85, 0.60, 0.15));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

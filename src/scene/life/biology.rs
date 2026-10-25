@@ -10,6 +10,7 @@ pub const ANCESTRAL: Biology = Biology {
     feeding: Feeding::Absorption,
     energy: Energy::Food,
     reproduction: Reproduction::Eggs,
+    brood: Brood::Tethered,
     social: Social::Solitary,
     speed: 0.0,
     perception: 180.0,
@@ -60,6 +61,31 @@ pub enum Reproduction {
     Fragmentation,
     Spores,
     Pollination,
+}
+
+/// How a lineage keeps its young through their first, most helpless days,
+/// so that as few as possible are lost to the long fall into the aur.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Brood {
+    /// Born live and able to fly, if weakly, from their first hour.
+    Live,
+    /// Born tiny and blind into a pouch on the parent's back, opening
+    /// forwards and upwards so nothing can fall from it; as they grow they
+    /// make short trips out to feed, longer each time, until they no longer
+    /// come back.
+    Pouch,
+    /// Eggs bound by a tether to living vegetation, which holds them up.
+    Tethered,
+    /// Eggs released one by one into the updraft, each with a crown of fine
+    /// threads that the rising air holds up like a seed's down.
+    Drifting,
+    /// Eggs glued in a band round the parent's own body, carried and
+    /// defended until they hatch.
+    Carried,
+    /// Eggs paid out on long sticky strings, dozens to a string, that trail
+    /// behind the parent until they are cut loose to drift.
+    Strings,
 }
 
 #[repr(u32)]
@@ -152,6 +178,7 @@ pub struct Biology {
     pub feeding: Feeding,
     pub energy: Energy,
     pub reproduction: Reproduction,
+    pub brood: Brood,
     pub social: Social,
     pub speed: f32,
     pub perception: f32,

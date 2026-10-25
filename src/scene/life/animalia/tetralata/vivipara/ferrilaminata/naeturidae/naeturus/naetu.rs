@@ -4,7 +4,9 @@ use crate::scene::life::{
     animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::Biology,
     cowl, ellipsoid, eyes, louvres, mouth, prepare_pose, rounded, slit, smooth_min,
-    surface::{Hit, Material, Ray, Surface, TraceResult, trace_material, visit_shell},
+    surface::{
+        FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material, visit_shell,
+    },
     tapered_tail,
 };
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
@@ -45,13 +47,14 @@ pub fn animate(creature: &mut CreatureInstance) {
     rig_tentacles(creature, mouth(LENGTH, HEAD), 3.0, BIOLOGY.oral_pairs);
 }
 
-/// A flying island: a lifting body far broader than it is deep, its back
-/// flattened where the grassy fibres grow and the Næ build, and a deep keel
-/// beneath housing the great crop inside its pale, pleated folds. Redundant
-/// gas chambers bulge along the upper flanks, so no single wound can bring
-/// it down; the louvres of its breathing channels open behind the cowl, and
-/// its aur sacs glow in a row along each side, charged on its dives
-/// through the mists.
+/// A flying island: a lifting body far broader than it is deep.
+///
+/// Its back is flattened where the grassy fibres grow and the Næ build, and a
+/// deep keel beneath houses the great crop inside its pale, pleated folds.
+/// Redundant gas chambers bulge along the upper flanks, so no single wound can
+/// bring it down; the louvres of its breathing channels open behind the cowl,
+/// and its aur sacs glow in a row along each side, charged on its dives through
+/// the mists.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let along = (point.z / LENGTH).clamp(-1.0, 1.0);
     let breadth = 7.2 * (1.0 - 0.25 * along * along);
@@ -178,6 +181,9 @@ fn material(point: Vec3, id: u32) -> Material {
         .lerp(vec3(0.31, 0.61, 0.54), bands * 0.55)
         .lerp(vec3(0.81, 0.77, 0.59), belly);
     let mut m = Material::skin(colour, 0.4);
+    m.texture = WRINKLED;
+    m.relief = 0.3;
+    m.grain = 0.45;
     match id {
         1 => {
             let vane = (point.z * 4.0 + point.x.abs() * 7.0).sin() * 0.035;
@@ -206,6 +212,9 @@ fn material(point: Vec3, id: u32) -> Material {
         10 => {
             m.color = vec3(0.07, 0.21, 0.12).lerp(vec3(0.23, 0.36, 0.16), speckles);
             m.roughness = 0.92;
+            m.texture = FURRED;
+            m.relief = 0.6;
+            m.grain = 1.5;
         }
         _ => {}
     }

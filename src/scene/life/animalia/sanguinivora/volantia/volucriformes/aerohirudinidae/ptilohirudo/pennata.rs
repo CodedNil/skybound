@@ -1,11 +1,12 @@
 use crate::scene::life::{
-    CreatureInstance, Look, annulated,
+    CreatureInstance, Look,
     biology::Biology,
-    eyespots, feathers, prepare_pose, smooth_min, sucker,
+    rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
-    tail,
 };
-use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
+use spirv_std::glam::{Vec3, Vec4, vec2, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 21.0,
@@ -31,34 +32,47 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 4.5, 5.0, 0);
-    c.opaque_bounds = vec3(4.0, 2.0, 10.0).extend(0.0);
+    c.opaque_bounds = vec3(3.6, 1.6, 3.6).extend(0.0);
 }
 
-/// A feathered flying leech: a ringed body running into a feathered tail,
-/// a gripping cup at the mouth and eyespots along the head.
+/// A glider of the cloud margins whose one wing pair has grown right round it.
+///
+/// A single finely fringed disc encircles a compact body, rippling as it
+/// steers, so it slips along the mist edge in any direction. Two large eyes
+/// flank the sucker, built for the weak aur-lit contrasts by which it finds
+/// hosts hidden in cloud.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let body = annulated(
-        p,
-        vec3(0.0, 0.0, -2.7),
-        vec3(0.0, 0.05, 2.8),
-        vec3(0.34, 0.62, 0.3),
-        14.0,
-        0.06,
-        0.8,
-    );
-    let mut hit = Surface::new(smooth_min(body, tail(p, c) * 1.6, 0.3), 0);
-    hit.join(feathers(p, c, 2.0), 1);
+    let body = rounded(p, vec3(0.6, 0.5, 0.95));
+    let radial = vec2(p.x, p.z).length();
+    let around = p.z.atan2(p.x);
+    let ripple = (around * 3.0 + c.animation.z * 2.5).sin() * 0.12 * radial / 3.2;
+    let droop = radial * radial * 0.03;
+    let fringe = 3.2 + (around * 64.0).sin() * 0.12 + (around * 9.0).sin() * 0.1;
+    let thickness = 0.07 * (1.0 - radial / 3.4).max(0.15);
+    let disc = ((p.y + droop - ripple).abs() - thickness)
+        .max(radial - fringe)
+        .max(0.45 - radial)
+        * 0.6;
+    let mut hit = Surface::new(smooth_min(body, disc, 0.25), 0);
+    if disc < body {
+        hit.material = 1;
+    }
     hit.join(
         sucker(
             p,
-            vec3(0.0, -0.05, -2.8),
-            vec3(0.0, -0.3, -1.0).normalize(),
+            vec3(0.0, -0.05, -0.95),
+            vec3(0.0, -0.2, -1.0).normalize(),
             0.3,
         ),
         8,
     );
-    hit.join(eyespots(p, vec3(0.16, 0.2, -2.45), 0.25, 2, 0.05), 3);
+    hit.join(
+        rounded(
+            vec3(p.x.abs(), p.y, p.z) - vec3(0.32, 0.22, -0.72),
+            vec3(0.2, 0.2, 0.18),
+        ),
+        3,
+    );
     hit
 }
 
@@ -66,8 +80,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 pub const LOOK: Look = Look::coat(
     vec4(0.25, 0.32, 0.42, 0.0),
     vec3(0.69, 0.73, 0.80),
-    [vec4(9.0, 3.0, -0.6, 0.98), Vec4::ZERO],
-);
+    // Its disc is its wing: there are no separate membranes.
+    [Vec4::ZERO; 2],
+)
+.skinned(vec4(5.0, 0.8, 1.4, -0.2));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

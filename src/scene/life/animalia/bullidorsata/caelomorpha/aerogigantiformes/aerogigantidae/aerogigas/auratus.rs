@@ -35,6 +35,10 @@ taxon!(
 
 /// The canopy's lift: a ring of chambers in the crown's thickness around a
 /// larger one at its heart, so a torn chamber costs only part of the lift.
+#[expect(
+    clippy::approx_constant,
+    reason = "6.28 is where two chambers sit on the ring, not a turn"
+)]
 const CHAMBERS: [GasChamber; 6] = [
     GasChamber {
         center: vec3(0.0, 3.7, 0.0),
@@ -100,10 +104,12 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     Surface::new(smooth_min(core, rib, 0.8) + tissue_distance(p, 12.0), 0)
 }
 
-/// The canopy: a broad, low dome of gel, thickest at the crown and
-/// thinning to a scalloped fringe; its underside vaulted up into arches
-/// between the ribs, each hollow sheltering a curtain of feeding folds from
-/// drying out and from sudden gusts, rippling in the air drawn through it.
+/// The canopy: a broad, low dome of gel.
+///
+/// It is thickest at the crown and thins to a scalloped fringe; its underside
+/// is vaulted up into arches between the ribs, each hollow sheltering a curtain
+/// of feeding folds from drying out and from sudden gusts, rippling in the air
+/// drawn through it.
 pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);

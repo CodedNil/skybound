@@ -51,7 +51,7 @@ const fn slot(index: usize) -> (usize, usize) {
 /// around the mouth, and how far each reaches.
 fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
     let lane = (index / 2) as f32;
-    let side = if index % 2 == 0 { -1.0 } else { 1.0 };
+    let side = if index.is_multiple_of(2) { -1.0 } else { 1.0 };
     let root = mouth
         + vec3(
             side * (0.14 + lane * 0.09),
@@ -61,12 +61,13 @@ fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
     (root, scale * (1.5 - lane * 0.23), side)
 }
 
-/// Pose the mouth tentacles by simulating them: each is a chain of knots
-/// held at the mouth, pulled by its own muscle towards a pose reaching
-/// forward and in beneath the face, but given to gravity in the animal's
-/// own frame and to the air streaming past as it flies, and writhing
-/// slowly as muscle waves run down it. Settled from that pose over the
-/// last second and a half, which is all the damping remembers.
+/// Pose the mouth tentacles by simulating them.
+///
+/// Each is a chain of knots held at the mouth, pulled by its own muscle towards
+/// a pose reaching forward and in beneath the face, but given to gravity in the
+/// animal's own frame and to the air streaming past as it flies, and writhing
+/// slowly as muscle waves run down it. Settled from that pose over the last
+/// second and a half, which is all the damping remembers.
 pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
@@ -99,10 +100,11 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
             let steps = ((end - start) / STEP) as usize;
             for step in 0..steps {
                 let time = start + step as f32 * STEP;
+                let last = previous;
+                previous = points;
                 for knot in 1..KNOTS {
                     let t = knot as f32 / (KNOTS - 1) as f32;
-                    let velocity = (points[knot] - previous[knot]) * 0.985;
-                    previous[knot] = points[knot];
+                    let velocity = (points[knot] - last[knot]) * 0.985;
                     // Muscle tone, strongest near the root where the tentacle
                     // is thickest, holds the pose against the load.
                     let tone = (rest(knot, time) - points[knot]) * (60.0 * (1.0 - t * 0.7));
@@ -137,9 +139,9 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
         }
         let radius = scale * (0.055 - lane * 0.006);
         let (sheet, column) = slot(index);
-        for knot in 0..KNOTS {
+        for (knot, point) in points.iter().enumerate() {
             let t = knot as f32 / (KNOTS - 1) as f32;
-            c.cloth[sheet][knot][column] = points[knot].extend(radius * (1.0 - t * 0.85));
+            c.cloth[sheet][knot][column] = point.extend(radius * (1.0 - t * 0.85));
         }
         c.previous_cloth[sheet] = c.cloth[sheet];
     }

@@ -8,6 +8,7 @@ use skybound::scene::{
     life,
     life::{
         CreatureInstance, SPECIES, SPECIES_MODULES, Taxon,
+        biology::Brood,
         surface::{Ray, tonemap},
     },
 };
@@ -238,7 +239,7 @@ fn label(pixels: &mut [u8], size: usize, text: &str) {
     let scale = (size / 128).max(1);
     for (column, ch) in text.chars().enumerate() {
         let glyph: [u8; 5] = match ch {
-            '0' => [62, 65, 65, 65, 62],
+            '0' | 'O' => [62, 65, 65, 65, 62],
             '1' => [0, 66, 127, 64, 0],
             '2' => [98, 81, 73, 73, 70],
             '3' => [34, 65, 73, 73, 54],
@@ -252,6 +253,10 @@ fn label(pixels: &mut [u8], size: usize, text: &str) {
             'D' => [127, 65, 65, 65, 62],
             'Y' => [7, 8, 112, 8, 7],
             'S' => [38, 73, 73, 73, 50],
+            'B' => [127, 73, 73, 73, 54],
+            'R' => [127, 9, 25, 41, 70],
+            'U' => [63, 64, 64, 64, 63],
+            'H' => [127, 8, 8, 8, 127],
             _ => [0; 5],
         };
         for (x, bits) in glyph.into_iter().enumerate() {
@@ -291,7 +296,17 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
                 biology.maturity_days * 1.25
             };
             let seed = if output == Output::Variation { seed } else { 0 };
-            let c = specimen(kind, age, seed, seconds);
+            let mut c = specimen(kind, age, seed, seconds);
+            // The first grown panel of a lifecycle shows a parent with its
+            // brood, where its lineage carries one.
+            let brooding = output == Output::Lifecycle && panel == 6;
+            if brooding {
+                match biology.brood {
+                    Brood::Carried => c.kind.z = life::CLUTCH,
+                    Brood::Pouch => c.kind.z = life::FULL_POUCH,
+                    _ => {}
+                }
+            }
             let angled =
                 matches!(output, Output::Render | Output::Anatomy).then(|| View::fit(panel, &c));
             let view = angled.as_ref().unwrap_or(&fixed);
@@ -301,6 +316,11 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
                     format!("{:.1}Y", age / 365.0)
                 } else {
                     format!("{age:.1}D")
+                };
+                let title = if brooding && c.kind.z != 0 {
+                    format!("{title} BROOD")
+                } else {
+                    title
                 };
                 label(&mut pixels, size, &title);
             } else if output == Output::Variation {

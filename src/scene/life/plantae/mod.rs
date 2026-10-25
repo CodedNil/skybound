@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction},
-    surface::{Material, Ray, Surface, TraceResult, trace_material},
+    surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
 };
 use core::f32::consts::{PI, TAU};
 use spirv_std::glam::{FloatExt, Vec3, vec3};
@@ -92,6 +92,9 @@ pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
         0 => {
             material.color = vec3(0.18, 0.085, 0.035) * (1.0 + grain);
             material.roughness = 0.82;
+            material.texture = RINGED;
+            material.relief = 0.5;
+            material.grain = 0.8;
         }
         1 => {
             material.transmission = pigment.sqrt() * 0.28;

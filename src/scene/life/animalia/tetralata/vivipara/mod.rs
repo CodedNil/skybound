@@ -1,11 +1,12 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Reproduction, Social};
+use crate::scene::life::biology::{Biology, Brood, Reproduction, Social};
 pub mod ferrilaminata;
 pub mod grandivora;
 
 pub const BIOLOGY: Biology = Biology {
     oral_pairs: 3,
     reproduction: Reproduction::LiveBirth,
+    brood: Brood::Live,
     social: Social::Herd,
     adult_mass: 12.0,
     perception: 700.0,

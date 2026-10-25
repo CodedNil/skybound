@@ -75,7 +75,8 @@ pub const LOOK: Look = Look::coat(
     vec4(0.24, 0.39, 0.19, 0.0),
     vec3(0.53, 0.61, 0.25),
     [Vec4::ZERO; 2],
-);
+)
+.skinned(vec4(1.0, 0.6, 2.0, 0.10));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

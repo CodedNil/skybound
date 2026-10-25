@@ -135,6 +135,10 @@ pub fn ribbon_distance(p: Vec3, c: &CreatureInstance, ribbon: usize) -> f32 {
     (p - ribbon_point(points, row, t, v)).length() * 0.4 - 0.012
 }
 
+#[expect(
+    clippy::needless_range_loop,
+    reason = "shader code can't iterate arrays by value"
+)]
 pub fn skin<F: Fn(Vec3, &CreatureInstance) -> Surface, const N: usize>(
     p: Vec3,
     c: &CreatureInstance,
@@ -176,6 +180,10 @@ fn closed_hits<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     [front, back]
 }
 
+#[expect(
+    clippy::needless_range_loop,
+    reason = "shader code can't iterate arrays by value"
+)]
 pub fn drift_body<
     F: Fn(Vec3, &CreatureInstance) -> Surface,
     G: Fn(Vec3, &CreatureInstance) -> Surface,

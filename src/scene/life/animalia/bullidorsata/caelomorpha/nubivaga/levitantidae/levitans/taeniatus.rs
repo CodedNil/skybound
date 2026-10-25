@@ -80,10 +80,11 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     Surface::new(distance + tissue_distance(p, 3.0), 0)
 }
 
-/// A flattened lens drawn out to a pointed leading edge, so the current
-/// presses unevenly across it and turns it to face useful air; behind, it
-/// thins to a lip along which the feeding ribbons are rooted, trailing
-/// clear of the body into the neighbouring streams.
+/// A flattened lens drawn out to a pointed leading edge.
+///
+/// The current presses unevenly across it and turns it to face useful air;
+/// behind, it thins to a lip along which the feeding ribbons are rooted,
+/// trailing clear of the body into the neighbouring streams.
 pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
     let front = (-p.z / 4.6).clamp(0.0, 1.0);
     let radii = vec3(

@@ -1,15 +1,17 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::Biology,
-    eyes, rounded,
+    animalia::tetralata::curved_tube,
+    biology::{Biology, Brood},
+    capsule, eyes, mouth,
     surface::{Ray, Surface, TraceResult},
     torso,
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    brood: Brood::Drifting,
     maturity_days: 3.0,
     lifespan_days: 35.0,
     ..super::BIOLOGY
@@ -22,16 +24,16 @@ taxon!(
     "Scintilla scintillans",
     "Sparkies",
     [
-        "Sparkies appear as moving points of intense colour as vast swarms gather algae and suspended seeds.",
-        "Two pairs of quick wings let each animal adjust to its neighbours and to small changes in the feeding current.",
+        "Sparkies appear as moving points of intense colour as vast swarms gather algae and suspended seeds, each holding two feathery filter plumes spread before it, every barb tipped with a point of light.",
+        "Drifting algae swim towards the light and the plumes, its ancestral mouth tentacles, comb them out of the air, while two pairs of long, narrow, quick wings let each animal adjust to its neighbours and to small changes in the feeding current.",
         "Their light preserves contact through dim aur phases, but also draws Shimmerays and other small-prey hunters.",
         "Fast growth allows dense swarms to appear around a brief food pulse and disperse before the current empties.",
-        "Such gatherings trouble larger animals and Næ settlements while supplying an essential link between microscopic plant life and aerial predators.",
+        "Such gatherings trouble larger animals and Næ settlements while supplying an essential link between microscopic plant life and aerial predators, and their eggs are cast loose to drift up on crowns of fine threads.",
     ],
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(1.2, 1.2, 2.4).extend(0.0);
+    c.opaque_bounds = vec3(1.2, 1.2, 2.6).extend(0.0);
 }
 
 /// A tiny flyer like a firefly: a small head with domed eyes and feathery
@@ -41,23 +43,76 @@ pub fn animate(c: &mut CreatureInstance) {
 /// along the top of its back and at the tail, facing up and back: a swarm
 /// keeps together by them through the dim phase, while a hunter rising
 /// from below sees only a dark belly against the dark sky.
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(torso(p, vec3(0.32, 0.3, 1.2), 0.2), 0);
-    hit.join(rounded(p - vec3(0.0, 0.1, 1.05), vec3(0.17, 0.13, 0.3)), 9);
-    for i in 0..3 {
-        let z = i as f32 * 0.32 - 0.6;
-        hit.join((p - vec3(0.0, 0.31 - z * 0.04, z)).length() - 0.055, 9);
+/// A living starburst. Its body is nearly a sphere, the least surface for
+/// its bulk, since so small an animal dries out fast; from it radiates a
+/// burst of fine spines that sieve drifting algae and seeds from the air as
+/// it tumbles through a swarm, and the short mouth tentacles sweep the
+/// catch from their bases into the mouth beneath. Each spine is tipped with
+/// a bead of light, so every animal reads as a scatter of bright points,
+/// which is how a swarm keeps together through the dim phase, and what
+/// draws the hunters that follow it. Tiny paddle wings make the constant
+/// small corrections a crowded swarm demands.
+/// The plumes' sweep from the mouth, out and up and forward.
+fn plume(side: f32, t: f32, c: &CreatureInstance) -> Vec3 {
+    let root = mouth(0.9, 0.16) + vec3(side * 0.05, 0.0, 0.0);
+    let sway = (c.animation.z * 1.7 + side).sin() * 0.06;
+    let control = vec3(side * 0.45, 0.35 + sway, -1.55);
+    let tip = vec3(side * (0.75 + sway), 0.62, -2.05);
+    root * (1.0 - t) * (1.0 - t) + control * 2.0 * (1.0 - t) * t + tip * t * t
+}
+
+/// A tiny swarm-feeder that fishes with light.
+///
+/// Its one pair of mouth tentacles has become two feathery filter plumes, held
+/// spread before it and tipped along every barb with points of light: the
+/// drifting algae it eats swim towards light, and the plumes comb them out of
+/// the air as they come. The same lights hold a swarm together through the dim
+/// phase, and draw the hunters that follow it. Behind the plumes the body is
+/// slim and smooth, and long, narrow wings beat fast enough to hold it steady
+/// among its neighbours.
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+    let mut hit = Surface::new(torso(p, vec3(0.2, 0.18, 0.9), 0.16), 0);
+    let side = if p.x < 0.0 { -1.0 } else { 1.0 };
+    let root = plume(side, 0.0, c);
+    hit.join(
+        curved_tube(
+            p,
+            root,
+            vec3(side * 0.45, 0.35, -1.55),
+            plume(side, 1.0, c),
+            0.03,
+        ),
+        4,
+    );
+    let mut barbs = 1e6f32;
+    let mut lights = 1e6f32;
+    for barb in 0..7 {
+        let t = 0.3 + barb as f32 * 0.1;
+        let at = plume(side, t, c);
+        let alternate = if barb % 2 == 0 { 1.0 } else { -1.0 };
+        let tip = at + vec3(side * 0.18, 0.12 * alternate, -0.08) * (1.2 - t * 0.6);
+        barbs = barbs.min(capsule(p, at, tip, 0.011));
+        lights = lights.min((p - tip).length() - 0.03);
     }
-    hit.join(eyes(p, 1.2, 0.2), 3);
+    lights = lights.min((p - plume(side, 1.0, c)).length() - 0.05);
+    hit.join(barbs, 4);
+    hit.join(lights, 9);
+    hit.join(eyes(p, 0.9, 0.16), 3);
     hit
 }
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
-    vec4(0.22, 0.71, 0.79, 0.65),
+    vec4(0.22, 0.71, 0.79, 0.25),
     vec3(0.76, 0.98, 0.42),
-    [vec4(3.0, 1.3, -0.3, 0.24), vec4(2.3, 1.0, 0.3, 0.27)],
-);
+    [vec4(2.6, 0.45, -0.15, 0.3), vec4(2.2, 0.4, 0.35, 0.3)],
+)
+.hinged([vec2(0.22, 0.06), vec2(0.2, 0.06)])
+.styled([vec4(1.2, 0.15, 0.0, 0.0), vec4(1.2, 0.15, 0.0, 0.0)])
+.framed([0.25, 0.25])
+.skinned(vec4(5.0, 0.6, 2.0, -0.1))
+.flying(vec4(8.00, 0.50, 0.25, 0.60))
+.marked(vec4(0.00, 4.00, 0.00, 0.40), vec3(0.80, 0.90, 0.50));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

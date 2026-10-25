@@ -1,12 +1,11 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{curved_tube, oral_tentacles, rig_tentacles},
+    CreatureInstance, Look, annulated,
     biology::{Biology, Feeding, Social},
-    eyes, mouth, rounded, smooth_min,
+    capsule, eyespots, rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
-    torso,
 };
-use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
+use core::f32::consts::TAU;
+use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -27,7 +26,7 @@ taxon!(
     "Candela lucens",
     "Glowgnomes",
     [
-        "Glowgnomes are tiny luminous sap feeders that inhabit sheltered burrows in Whisperwood.",
+        "Glowgnomes are tiny luminous sap feeders that inhabit sheltered burrows in Whisperwood, their soft ringed fronts trailing a swollen, translucent lamp sac hooped with ribs and laced with the sap veins that feed its light.",
         "They retain the single wing pair of their parasitic ancestors, but coordinated wing strokes now help draw the host toward favourable currents.",
         "Pheromone signals carried through six vertical sap veins recruit groups on different sides of the trunk.",
         "Their light draws visitors through nearby flowering growth during the dim aur phase, while sap and wood cavities provide food and shelter.",
@@ -36,33 +35,61 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(4.0, 4.0, 4.0).extend(0.0);
-    rig_tentacles(c, mouth(1.35, 0.4), 0.35, BIOLOGY.oral_pairs);
+    c.opaque_bounds = vec3(2.5, 2.0, 2.6).extend(0.0);
 }
 
-/// A small, round-bodied flyer carrying its light ahead of it: a glowing
-/// lure hung from a stalk arching up off the crown, like a lantern on a
-/// pole, its glow cupped in a fleshy hood.
+/// A burrow-dweller that is mostly lamp.
+///
+/// Its front is a short, soft, ringed grub with a small sucker and a fringe for
+/// sipping sap, and only faint eyespots, for it lives in the dark of the wood;
+/// its whole rear has swollen into a translucent sac lit from within, hooped by
+/// ribs and laced with the sap veins that feed the light. Stubby wings are
+/// enough to carry it between burrows and to beat in time with its neighbours,
+/// drawing the tree towards better air.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let sway = (c.animation.z * 1.1).sin() * 0.12;
-    let body = torso(p, vec3(0.8, 0.85, 1.35), 0.4);
-    let stalk = curved_tube(
+    let grub = annulated(
         p,
-        vec3(0.0, 0.75, -0.7),
-        vec3(0.0, 2.5, -0.9),
-        vec3(sway, 2.25, -2.3),
-        0.11,
+        vec3(0.0, 0.0, -1.7),
+        vec3(0.0, 0.05, 0.1),
+        vec3(0.32, 0.5, 0.42),
+        5.0,
+        0.1,
+        0.92,
     );
-    let mut hit = Surface::new(smooth_min(body, stalk, 0.2), 0);
-    let lure = p - vec3(sway, 1.85, -2.45);
-    let hood = rounded(lure - vec3(0.0, 0.28, 0.05), vec3(0.5, 0.36, 0.52));
-    hit.join(hood.max(-rounded(lure, vec3(0.42, 0.48, 0.42))), 0);
-    hit.join(rounded(lure, vec3(0.34, 0.42, 0.34)), 9);
+    let lamp = rounded(p - vec3(0.0, 0.1, 1.0), vec3(0.78, 0.72, 1.0));
+    let mut hit = Surface::new(smooth_min(grub, lamp + 0.03, 0.2), 0);
+    hit.join(lamp, 9);
+    // Ribs hooping the lamp, darker than the light between them.
+    let q = p - vec3(0.0, 0.1, 1.0);
+    for rib in 0..4 {
+        let z = rib as f32 * 0.45 - 0.68;
+        let across = (1.0 - (z / 1.0).powi(2)).max(0.05).sqrt();
+        let hoop = vec2(
+            vec2(q.x / 0.78, q.y / 0.72).length() * across * 0.75 - across * 0.75,
+            q.z - z,
+        )
+        .length()
+            - 0.04;
+        hit.join(hoop, 0);
+    }
+    let facing = vec3(0.0, -0.3, -1.0).normalize();
+    hit.join(sucker(p, vec3(0.0, -0.05, -1.75), facing, 0.28), 8);
+    let mouth = p - vec3(0.0, -0.05, -1.8);
+    let around = mouth.y.atan2(mouth.x);
+    let sector = TAU / 8.0;
+    let turn = (around / sector).round() * sector;
+    let (sine, cosine) = turn.sin_cos();
+    let sway = (c.animation.z * 1.5 + turn).sin() * 0.04;
     hit.join(
-        oral_tentacles(p, c, mouth(1.35, 0.4), 0.35, BIOLOGY.oral_pairs),
+        capsule(
+            mouth,
+            vec3(cosine * 0.25, sine * 0.25, 0.0),
+            vec3(cosine * (0.38 + sway), sine * (0.38 + sway), -0.22),
+            0.025,
+        ),
         8,
     );
-    hit.join(eyes(p, 1.35, 0.4), 3);
+    hit.join(eyespots(p, vec3(0.12, 0.3, -1.55), 0.12, 2, 0.025), 3);
     hit
 }
 
@@ -70,8 +97,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 pub const LOOK: Look = Look::coat(
     vec4(0.55, 0.32, 0.15, 0.0),
     vec3(1.0, 0.72, 0.20),
-    [vec4(3.0, 1.3, -0.3, 0.32), Vec4::ZERO],
-);
+    [vec4(2.0, 1.1, -0.6, 0.35), Vec4::ZERO],
+)
+.hinged([vec2(0.42, 0.3), Vec2::ZERO])
+.styled([vec4(0.3, 1.0, 0.0, 0.0), vec4(0.3, 1.0, 0.0, 0.0)])
+.framed([0.4, 0.4])
+.skinned(vec4(5.0, 0.8, 1.6, -0.2))
+.flying(vec4(4.00, 0.40, 0.20, 0.60))
+.marked(vec4(5.00, 4.00, 0.70, 0.40), vec3(1.00, 0.85, 0.40));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

@@ -230,12 +230,12 @@ fn extract_player(
     for (index, mut pose) in poses.into_iter().enumerate() {
         if index == 1 && !matches!(flight.mode, ControlMode::Flying) {
             for (knot, point) in pose.tail.iter_mut().zip([
-                vec3(0.0, -0.95, 0.12),
-                vec3(0.0, -1.8, 0.9),
-                vec3(0.0, -2.6, 0.8),
-                vec3(0.0, -2.7, 0.5),
-                vec3(0.0, -2.5, 0.2),
-                vec3(0.0, -2.3, 0.3),
+                vec3(0.0, -0.08, 0.38),
+                vec3(0.0, -0.6, 0.7),
+                vec3(0.0, -1.6, 0.85),
+                vec3(0.0, -2.48, 0.8),
+                vec3(0.0, -3.0, 0.62),
+                vec3(0.0, -3.2, 0.45),
             ]) {
                 *knot = point.extend(0.0).to_scene();
             }

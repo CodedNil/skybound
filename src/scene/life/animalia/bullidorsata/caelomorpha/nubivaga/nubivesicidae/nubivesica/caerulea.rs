@@ -84,6 +84,10 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
 /// A compact balloon whose packed chambers bulge through the skin as
 /// lobes, the organs slung low beneath them so the short collecting folds
 /// hang from the underside.
+#[expect(
+    clippy::needless_range_loop,
+    reason = "shader code can't iterate arrays by value"
+)]
 pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
     let mut distance = rounded(p - vec3(0.0, 0.6, 0.3), vec3(3.0, 3.0, 2.8));
     for index in 0..3 {

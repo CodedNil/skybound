@@ -2,11 +2,13 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::{Biology, Social},
-    ellipsoid, eyes, feathers, mouth, prepare_pose, rounded, smooth_min,
+    ellipsoid, louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
-    tail, torso,
+    tapered_tail,
 };
-use spirv_std::glam::{Vec3, vec3, vec4};
+use spirv_std::glam::{Vec3, vec2, vec3, vec4};
+#[cfg(target_arch = "spirv")]
+use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 730.0,
@@ -24,51 +26,97 @@ taxon!(
     "Crepusculofalx venatrix",
     "Duskslicers",
     [
-        "Duskslicers conceal muted bodies in the mineral haze while displaying a small luminous lure on the feathered tail.",
-        "Small animals approaching the apparent feeding signal enter the sweep of sharpened wing margins.",
-        "A brief banking strike captures prey without exposing the whole body in a long chase.",
-        "Mouth tentacles secure the meal, and scavenging provides food when the lure attracts little attention.",
+        "Duskslicers hang almost motionless in the mineral haze on broad, dust-furred wings, their mottled bodies lost in it, a glowing lure dangling far below on a whip of a tail.",
+        "Small animals drawn up to the lure's apparent feeding signal rise into a short banked stoop, and the iron-hardened leading edges of the forewings, curved to a scythe point, cut across them.",
+        "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dim phase.",
+        "Fringed hindwings hush the glide, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
         "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",
     ],
 );
 
+/// Where the mouth tentacles hang, below the head.
+const MOUTH: Vec3 = vec3(0.0, -0.75, -4.1);
+
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 5.0, 14.0, 0);
-    c.opaque_bounds = vec3(6.0, 5.0, 21.0).extend(0.0);
-    rig_tentacles(c, mouth(5.2, 0.8), 0.80, BIOLOGY.oral_pairs);
+    prepare_pose(c, 3.2, 18.0, 0);
+    // The tail hangs, so its lure dangles below the hunter.
+    for i in 0..6 {
+        let t = i as f32 / 5.0;
+        c.tail[i].y -= t * t * 7.0;
+        c.tail[i].z -= t * t * 4.0;
+    }
+    c.opaque_bounds = vec3(6.0, 9.0, 21.0).extend(0.0);
+    rig_tentacles(c, MOUTH, 0.8, BIOLOGY.oral_pairs);
 }
 
+/// A haze-hanging ambusher, built to be unseen until the cut.
+///
+/// A short, broad, flattened body is furred to hold the dust it hangs in,
+/// so it takes the haze's own colour; a blunt head has two great eyes on
+/// its underside, looking down for prey against the aur's glow; and a long,
+/// thin whip of a tail hangs below, ending in a lure of glowing threads.
+/// The weapon is in the wings: the forewings' leading edges are iron,
+/// curving to a scythe point.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = Surface::new(torso(p, vec3(1.6, 1.4, 5.2), 0.8), 0);
-    hit.distance = smooth_min(hit.distance, tail(p, c), 0.35);
-    hit.join(feathers(p, c, 3.0), 1);
+    let bulk = vec3(1.9, 0.95, 3.2);
+    let body = rounded(p, bulk);
+    let head = rounded(p - vec3(0.0, -0.1, -3.4), vec3(1.25, 0.85, 1.15));
+    let mut d = louvres(smooth_min(body, head, 0.7), p, bulk);
+    // A ruff of longer fur over the shoulders, breaking up its outline.
+    let ruff = ellipsoid(p - vec3(0.0, 0.35, -1.9), vec3(2.1, 0.75, 0.9))
+        + (p.x * 9.0).sin() * (p.z * 7.0).sin() * 0.06;
+    d = smooth_min(d, ruff, 0.4);
+    // A thin whip of a tail.
+    let mut whip = 1e6f32;
+    for i in 0..5 {
+        let t = (i + 1) as f32 / 5.0;
+        whip = whip.min(tapered_tail(
+            p,
+            c.tail[i].truncate(),
+            c.tail[i + 1].truncate(),
+            0.55 * (1.1 - t) + 0.05,
+            0.55 * (0.9 - t) + 0.05,
+        ));
+    }
+    let mut hit = Surface::new(smooth_min(d, whip, 0.5), 0);
+    // The lure: a bulb trailing glowing threads.
+    let end = c.tail[5].truncate();
+    let mut lure = ellipsoid(p - end, vec3(0.35, 0.45, 0.35));
+    for thread in 0..3 {
+        let f = thread as f32 - 1.0;
+        let sway = (c.animation.z * 1.7 + f * 2.0).sin() * 0.3;
+        lure = lure.min(tapered_tail(
+            p,
+            end,
+            end + vec3(f * 0.5 + sway, -1.6 + f.abs() * 0.4, 0.4),
+            0.08,
+            0.02,
+        ));
+    }
+    hit.join(lure, 9);
+    // Two great eyes beneath the head, set to look down and a little ahead.
+    let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(
-        oral_tentacles(p, c, mouth(5.2, 0.8), 0.80, BIOLOGY.oral_pairs),
-        8,
-    );
-    hit.join(
-        ellipsoid(p - c.tail[5].truncate(), vec3(0.35, 0.35, 0.65)),
-        9,
-    );
-    hit.join(eyes(p, 5.2, 0.8), 3);
-    // It hunts in the dim phase, and its downward eyes have grown huge to
-    // catch the faint glow of the aur behind its prey.
-    hit.join(
-        rounded(
-            vec3(p.x.abs(), p.y, p.z) - vec3(0.55, -0.55, -5.6),
-            vec3(0.42, 0.36, 0.5),
-        ),
+        ellipsoid(side - vec3(0.6, -0.55, -3.75), vec3(0.55, 0.5, 0.6)),
         3,
     );
+    hit.join(oral_tentacles(p, c, MOUTH, 0.8, BIOLOGY.oral_pairs), 8);
     hit
 }
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
-    vec4(0.22, 0.30, 0.20, 0.0),
-    vec3(0.79, 0.43, 0.24),
-    [vec4(13.0, 3.0, -1.3, 0.98), vec4(8.0, 2.0, 2.0, 0.98)],
-);
+    vec4(0.36, 0.32, 0.27, 0.0),
+    vec3(0.72, 0.56, 0.34),
+    [vec4(12.0, 3.6, -1.3, 0.85), vec4(7.5, 3.4, 1.9, 0.75)],
+)
+.hinged([vec2(1.7, 0.3), vec2(1.6, 0.2)])
+.styled([vec4(1.1, 0.05, 0.0, 0.0), vec4(0.2, 0.9, 0.0, 0.5)])
+.framed([1.15, 0.45])
+.edged(6)
+.skinned(vec4(3.0, 0.9, 1.8, 0.25))
+.flying(vec4(0.35, 0.25, 0.30, 1.30))
+.marked(vec4(6.00, 3.00, 0.70, 0.42), vec3(0.26, 0.22, 0.17));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

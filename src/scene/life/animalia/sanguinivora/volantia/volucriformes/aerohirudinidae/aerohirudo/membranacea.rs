@@ -1,10 +1,10 @@
 use crate::scene::life::{
     CreatureInstance, Look, annulated,
     biology::Biology,
-    eyespots, sucker,
+    eyespots, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
 };
-use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
+use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -32,36 +32,49 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(1.5, 1.4, 5.5).extend(0.0);
+    c.opaque_bounds = vec3(1.6, 2.2, 5.8).extend(0.0);
 }
 
-/// A long, ringed flying leech, flattened beneath its membranes, with a
-/// flared sucking cup for a mouth and rows of eyespots behind it.
+/// A hoverer led by its mouth.
+///
+/// The sucker is a broad cup out in front, held level by the wings while a
+/// long, narrow, ringed body hangs behind and below it like a pendulum, keeping
+/// the cup steady as a passing host moves through the current. A row of
+/// eyespots arcs over the cup's rim, and the broad wings, folds of the body
+/// wall like all its kin's, are stretched over many fine struts.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let sway = (c.animation.z * 1.2 + p.z * 0.6).sin() * 0.04 * (p.z + 4.5).max(0.0);
-    let q = p - vec3(sway, 0.0, 0.0);
-    let mut hit = Surface::new(
-        annulated(
-            q,
-            vec3(0.0, 0.0, -4.4),
-            vec3(0.0, 0.1, 4.6),
-            vec3(0.42, 0.75, 0.28),
-            24.0,
-            0.06,
-            0.72,
-        ),
-        0,
+    let sway = (c.animation.z * 1.0 + p.z * 0.5).sin() * 0.08 * (p.z + 2.6).max(0.0);
+    let droop = 0.012 * (p.z + 2.6).max(0.0).powi(2);
+    let q = p - vec3(sway, -droop, 0.0);
+    let neck = annulated(
+        p,
+        vec3(0.0, 0.0, -4.0),
+        vec3(0.0, -0.05, -2.4),
+        vec3(0.5, 0.58, 0.48),
+        5.0,
+        0.06,
+        0.9,
     );
+    let tail = annulated(
+        q,
+        vec3(0.0, -0.05, -2.5),
+        vec3(0.0, -0.1, 4.8),
+        vec3(0.48, 0.42, 0.08),
+        28.0,
+        0.06,
+        0.85,
+    );
+    let mut hit = Surface::new(smooth_min(neck, tail, 0.3), 0);
     hit.join(
         sucker(
-            q,
-            vec3(0.0, -0.05, -4.55),
-            vec3(0.0, -0.3, -1.0).normalize(),
-            0.58,
+            p,
+            vec3(0.0, 0.0, -4.25),
+            vec3(0.0, -0.1, -1.0).normalize(),
+            0.95,
         ),
         8,
     );
-    hit.join(eyespots(q, vec3(0.2, 0.24, -4.1), 0.3, 3, 0.055), 3);
+    hit.join(eyespots(p, vec3(0.45, 0.55, -4.0), 0.22, 4, 0.06), 3);
     hit
 }
 
@@ -69,8 +82,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 pub const LOOK: Look = Look::coat(
     vec4(0.29, 0.13, 0.19, 0.0),
     vec3(0.75, 0.27, 0.33),
-    [vec4(8.0, 3.2, -1.2, 0.25), Vec4::ZERO],
-);
+    [vec4(8.5, 3.6, -2.8, 0.25), Vec4::ZERO],
+)
+.hinged([vec2(0.5, 0.2), Vec2::ZERO])
+.styled([vec4(0.6, 0.95, 6.0, 0.0), vec4(0.6, 0.95, 6.0, 0.0)])
+.framed([0.25, 0.25])
+.skinned(vec4(5.0, 1.0, 1.2, -0.3))
+.flying(vec4(2.00, 0.40, 0.55, 1.00))
+.marked(vec4(3.00, 5.00, 0.80, 0.40), vec3(0.95, 0.80, 0.85));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)

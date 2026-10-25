@@ -1,7 +1,13 @@
-pub use super::{BIOLOGY, render_wings};
+pub use super::render_wings;
+use crate::scene::life::biology::{Biology, Brood};
 
 pub mod herbivolidae;
 pub mod vocigenidae;
+
+pub const BIOLOGY: Biology = Biology {
+    brood: Brood::Pouch,
+    ..super::BIOLOGY
+};
 
 taxon!(
     Order,
@@ -12,6 +18,7 @@ taxon!(
         "Broad wings and efficient respiratory folds reduce the cost of carrying a substantial body between meals.",
         "Social recognition and far-carrying calls connect companions even when a feeding group spreads beyond direct contact.",
         "Grazing branches follow algae streams or floating forests, while scavengers exploit carcasses left along the same routes.",
+        "Their young are born tiny into a pouch on the mother's back that opens forwards and upwards, so that nothing can fall from it towards the aur; half grown, they make short trips out to feed, longer each time, until they stop coming back.",
         "Prolonged care of young ties their movements to sheltered nursery currents as well as immediate food availability.",
     ],
 );
