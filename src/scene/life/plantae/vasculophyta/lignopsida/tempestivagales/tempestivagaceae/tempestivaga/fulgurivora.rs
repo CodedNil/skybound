@@ -17,6 +17,7 @@ use core::f32::consts::FRAC_PI_2;
 use spirv_std::glam::{Vec3, vec3};
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.85,
     maturity_days: 1200.0,
     lifespan_days: 60000.0,
     adult_mass: 8.0,

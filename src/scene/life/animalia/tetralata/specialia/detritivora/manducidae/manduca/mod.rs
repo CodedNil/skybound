@@ -23,21 +23,45 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Nibblers court in pairs spiralling up out of the swarm, and the young chase one another
-    //! through it.
+    //! through it. A Nibbler that sees its fellows feeding cannot help but join them, so the find
+    //! of one becomes a frenzy, the swarm pouring onto it from all sides.
 
-    use crate::scene::life::animalia::{
-        mind::{Ethology, Situation, Urges, spiral},
-        tetralata::{PLAY, specialia::detritivora::manducidae::ETHOLOGY as MANDUCID},
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, spiral},
+            tetralata::{PLAY, specialia::detritivora::manducidae::ETHOLOGY as MANDUCID},
+        },
+        behaviour::{Activity, Goal},
     };
+
+    /// One of its swarm, feeding.
+    const FEAST: Interest = Interest("feast");
+
+    /// Pouring in where the swarm feeds.
+    const FRENZY: Intent = Intent {
+        name: "frenzy",
+        act: |_, s| Goal::new(Activity::Feed, s.seen.mark(FEAST), 1.1).hovering(),
+    };
+
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (MANDUCID.notice)(glimpse, seen);
+        if !glimpse.heard && glimpse.other == glimpse.kind && glimpse.activity == Activity::Feed {
+            seen.note(FEAST, glimpse.offset);
+        }
+    }
 
     pub const ETHOLOGY: Ethology = Ethology {
         urges,
         court: |s| spiral(s, 3.0),
+        notice,
         ..MANDUCID
     };
 
     fn urges(s: &Situation, urges: &mut Urges) {
         (MANDUCID.urges)(s, urges);
+        if s.seen.mark(FEAST).is_some() {
+            urges.add(FRENZY, 0.3 + s.drives.hunger * 0.9);
+        }
         if s.drives.youth < 0.8 && s.seen.kin_count > 0 {
             urges.add(PLAY, (1.0 - s.drives.youth) * 0.5 * (1.0 - s.drives.hunger));
         }

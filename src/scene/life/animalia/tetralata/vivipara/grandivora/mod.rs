@@ -3,6 +3,7 @@ use crate::scene::life::biology::Biology;
 
 pub mod herbivolidae;
 pub mod vocigenidae;
+pub mod young;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 
@@ -27,11 +28,14 @@ taxon!(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+    use crate::scene::life::animalia::{
+        physiology::{Brood, Physiology},
+        tetralata::vivipara::grandivora::young::POUCH_YOUNG,
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         brood: Brood::Pouch,
-        form: |_, young| if young < 0.2 { 11 } else { 0 },
+        form: |_, young| if young < 0.2 { POUCH_YOUNG } else { 0 },
         ..super::super::PHYSIOLOGY
     };
 }

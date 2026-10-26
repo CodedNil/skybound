@@ -21,6 +21,7 @@ use spirv_std::glam::{FloatExt, Vec3, vec2, vec3};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    size: 1.75,
     maturity_days: 3650.0,
     lifespan_days: 146_000.0,
     adult_mass: 120.0,
@@ -170,20 +171,42 @@ pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::{
-        bullidorsata::ETHOLOGY as GAS_BAG,
-        mind::{Ethology, Situation, Urges},
-        nature::RIDE,
+    //! An Air Giant cannot fly, but it can steer by tilting: a slow lean brings its feeding folds
+    //! square to the passing current, so the air pours its algae through the arches, and when the
+    //! air is still it drifts towards the strongest rising air it can find.
+
+    use crate::scene::life::{
+        animalia::{
+            bullidorsata::ETHOLOGY as GAS_BAG,
+            mind::{Ethology, Intent, Situation, Urges},
+            nature::RIDE,
+        },
+        behaviour::{Activity, Goal},
     };
 
-    /// The great canopies drift towards the strongest rising air they can find.
-    pub const ETHOLOGY: Ethology = Ethology {
-        urges: |s: &Situation, urges: &mut Urges| {
-            (GAS_BAG.urges)(s, urges);
-            if s.seen.updraft < 0.5 {
-                urges.add(RIDE, 0.3);
-            }
+    pub const ETHOLOGY: Ethology = Ethology { urges, ..GAS_BAG };
+
+    /// Leaning the canopy so its feeding folds face into the current.
+    const TILT: Intent = Intent {
+        name: "tilt",
+        act: |_, s| {
+            Goal::new(
+                Activity::Feed,
+                Some(s.seen.wind.normalize_or_zero() * 30.0),
+                0.15,
+            )
+            .hovering()
         },
-        ..GAS_BAG
     };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (GAS_BAG.urges)(s, urges);
+        if s.seen.updraft < 0.5 {
+            urges.add(RIDE, 0.3);
+        }
+        let current = s.seen.wind.length();
+        if current > 2.0 {
+            urges.add(TILT, s.drives.hunger * 0.8 * (current / 10.0).min(1.0));
+        }
+    }
 }

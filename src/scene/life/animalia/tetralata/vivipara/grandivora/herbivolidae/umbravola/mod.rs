@@ -23,11 +23,15 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Shadowings circle high and wide on rising air for hours, sleeping on the wing, and come down
-    //! onto a carcass in slow spirals.
+    //! onto a carcass in slow spirals. They know who kills: a hungry Shadowing that sights a hunter
+    //! on the hunt follows it, high above and well behind, and is first to its leavings.
 
     use crate::scene::life::{
         animalia::{
-            mind::{Ethology, Mind, Situation, Urges, glide_asleep, orbit},
+            mind::{
+                Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
+                glide_asleep, orbit,
+            },
             nature::{RIDE, SCAVENGE},
             tetralata::vivipara::{ETHOLOGY as LIVE_BEARER, herd},
         },
@@ -38,13 +42,43 @@ mod nature {
         urges,
         sleep: glide_asleep,
         act,
+        notice,
         ..LIVE_BEARER
     };
+
+    /// A hunter at work.
+    const HUNTER: Interest = Interest("hunter");
+
+    /// High above and well behind a hunter, waiting for it to kill.
+    const TAIL: Intent = Intent {
+        name: "tail",
+        act: |_, s| {
+            let up = s.up();
+            Goal::new(
+                Activity::Drift,
+                s.seen
+                    .mark(HUNTER)
+                    .map(|hunter| hunter - hunter.normalize_or_zero() * 60.0 + up * 50.0),
+                0.6,
+            )
+        },
+    };
+
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (LIVE_BEARER.notice)(glimpse, seen);
+        let hunting = matches!(glimpse.activity, Activity::Hunt | Activity::Strike);
+        if !glimpse.heard && hunting && glimpse.other != glimpse.kind {
+            seen.note(HUNTER, glimpse.offset);
+        }
+    }
 
     fn urges(s: &Situation, urges: &mut Urges) {
         herd(s, urges);
         if s.seen.updraft < 0.5 {
             urges.add(RIDE, 0.3);
+        }
+        if s.seen.mark(HUNTER).is_some() {
+            urges.add(TAIL, s.drives.hunger * 0.9);
         }
     }
 

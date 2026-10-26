@@ -156,7 +156,7 @@ mod nature {
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, orbit},
             nature::lead,
             physiology::Physiology,
-            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
+            tetralata::vivipara::ferrilaminata::ferrispinidae::ETHOLOGY as IRON_EDGED,
         },
         behaviour::{Activity, Goal},
         organs::{Strike, Wound},
@@ -173,7 +173,7 @@ mod nature {
         court: crest,
         blow: slash,
         hunts: true,
-        ..LIVE_BEARER
+        ..IRON_EDGED
     };
 
     fn pass(_: &mut Mind, s: &Situation, prey: Sighting) -> Goal {
@@ -215,7 +215,8 @@ mod nature {
                 from: at - aim.along * aim.extent.z,
                 to: at + aim.along * aim.extent.z,
                 radius: aim.extent.y * 0.35,
-                force: 0.9,
+                // A keen crest opens the gas stores; a dull one only bruises.
+                force: 0.9 * aim.edge,
                 wound: Wound::Slash,
             },
             stun: 0.0,

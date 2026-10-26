@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use skybound::scene::{
     life,
     life::{
-        CreatureInstance, SPECIES, SPECIES_MODULES, Taxon,
+        CreatureInstance, Rank, SPECIES, SPECIES_MODULES, Taxon,
         animalia::physiology::Brood,
         surface::{Ray, tonemap},
     },
@@ -21,6 +21,7 @@ use std::{
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
@@ -34,6 +35,8 @@ struct View {
     field: f32,
     /// The sky behind the creature, across the view from zero to one.
     backdrop: fn(Vec2) -> Vec3,
+    /// How much of the view the creature fills across and up, once fitted.
+    filled: Vec2,
 }
 
 impl View {
@@ -68,6 +71,7 @@ impl View {
             center: Vec2::ZERO,
             field: 1.35,
             backdrop: background,
+            filled: Vec2::ONE,
         };
         let mut min = Vec2::ONE;
         let mut max = Vec2::ZERO;
@@ -82,7 +86,9 @@ impl View {
         }
         if max.cmpge(min).all() {
             view.center = ((min + max) * 0.5 - 0.5) * view.field;
-            view.field *= ((max - min).max_element() + 2.0 / 96.0) * 1.08;
+            let span = max - min + 2.0 / 96.0;
+            view.field *= span.max_element() * 1.08;
+            view.filled = span / (span.max_element() * 1.08);
         }
         view
     }
@@ -132,6 +138,44 @@ fn adjacent_preview(kind: usize) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/scene/life")
         .join(module)
+}
+
+/// When anything a species' previews are drawn from last changed: its own file, every module
+/// file of the taxa above it, the shared life code, the planet and this previewer.
+fn sources(kind: usize) -> SystemTime {
+    let species = adjacent_preview(kind).with_extension("rs");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let life = root.join("src/scene/life");
+    let mut files = vec![
+        species.clone(),
+        root.join("src/scene/planet.rs"),
+        root.join("examples/species_preview.rs"),
+    ];
+    for folder in species.ancestors().skip(1) {
+        if let Ok(entries) = fs::read_dir(folder) {
+            files.extend(
+                entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| path.extension().is_some_and(|extension| extension == "rs")),
+            );
+        }
+        if folder == life {
+            break;
+        }
+    }
+    files
+        .iter()
+        .filter_map(|file| fs::metadata(file).and_then(|meta| meta.modified()).ok())
+        .max()
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// Whether a preview already shows what it would be drawn from now.
+fn fresh(path: &Path, since: SystemTime) -> bool {
+    fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .is_ok_and(|drawn| drawn >= since)
 }
 
 fn slug(name: &str) -> String {
@@ -407,7 +451,8 @@ fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
     }
 }
 
-/// The taxa where the tree forks: those with more than one branch that has species below it.
+/// The taxa where the tree forks, those with more than one branch that has species below it, and
+/// every phylum, each a body plan of its own worth a sheet even if only one branch of it lives.
 fn forks() -> Vec<&'static Taxon> {
     let mut branches: Vec<(&'static Taxon, Vec<&'static str>)> = Vec::new();
     for &species in SPECIES {
@@ -426,7 +471,7 @@ fn forks() -> Vec<&'static Taxon> {
     }
     branches
         .into_iter()
-        .filter(|(_, children)| children.len() > 1)
+        .filter(|(taxon, children)| children.len() > 1 || taxon.rank == Rank::Phylum)
         .map(|(taxon, _)| taxon)
         .collect()
 }
@@ -450,11 +495,46 @@ fn taxon_folder(taxon: &Taxon) -> PathBuf {
     )
 }
 
-/// Every species below a taxon, grown, seen from the same side and drawn to one scale, packed in
-/// rows into a sheet near to square. The largest is `size` pixels across; none is drawn smaller
-/// than a few pixels, so the smallest can still be found.
-fn render_lineup(taxon: &Taxon, size: usize, seconds: f32) -> RgbImage {
-    let members: Vec<(usize, CreatureInstance, View, f32)> = SPECIES
+/// Every species below a taxon on a clear square sheet `SHEET` pixels across, drawn as large as
+/// will fit: measured once at a trial size, then drawn again at the size that fills the square.
+fn render_lineup(taxon: &Taxon, seconds: f32) -> RgbaImage {
+    const TRIAL: usize = 400;
+    let trial = render_lineup_at(taxon, TRIAL, seconds);
+    let fill = SHEET as f32 / trial.width().max(trial.height()) as f32;
+    let mut sheet = render_lineup_at(taxon, (TRIAL as f32 * fill * 0.98) as usize, seconds);
+    // Packing does not scale exactly, so the last few pixels are taken up or given back.
+    let over = sheet.width().max(sheet.height());
+    if over > SHEET {
+        let shrink = SHEET as f32 / over as f32;
+        sheet = imageops::resize(
+            &sheet,
+            ((sheet.width() as f32 * shrink) as u32).max(1),
+            ((sheet.height() as f32 * shrink) as u32).max(1),
+            imageops::FilterType::Lanczos3,
+        );
+    }
+    let mut square = RgbaImage::new(SHEET, SHEET);
+    imageops::overlay(
+        &mut square,
+        &sheet,
+        i64::from((SHEET - sheet.width()) / 2),
+        i64::from((SHEET - sheet.height()) / 2),
+    );
+    square
+}
+
+/// The side of a lineup sheet.
+const SHEET: u32 = 1024;
+
+/// Every species below a taxon, grown, seen from the same side and drawn to one scale on a clear
+/// sheet. The largest is `size` pixels across, and none is drawn smaller than a few pixels so the
+/// smallest can still be found.
+///
+/// Each creature is cut out by its own silhouette, and they are nested together largest first:
+/// each goes in the first place, scanning down the sheet and across, where its silhouette clears
+/// all those already placed by a small margin. Nothing is turned or rescaled to fit.
+fn render_lineup_at(taxon: &Taxon, size: usize, seconds: f32) -> RgbaImage {
+    let members: Vec<(CreatureInstance, View, f32)> = SPECIES
         .iter()
         .enumerate()
         .filter(|(_, species)| species.descends_from(taxon))
@@ -464,88 +544,183 @@ fn render_lineup(taxon: &Taxon, size: usize, seconds: f32) -> RgbImage {
             let mut view = View::fit(1, &c);
             // Room for wing tips and trailing tails the fit's coarse look can miss.
             view.field *= 1.2;
+            view.filled /= 1.2;
             view.backdrop = even_sky;
             // How wide the view is in metres at the creature, from how far off the camera sits.
             let across = view.field * view.origin.length();
-            (kind, c, view, across)
+            (c, view, across)
         })
         .collect();
-    let widest = members.iter().map(|m| m.3).fold(0.0f32, f32::max).max(1e-3);
-    let mut tiles: Vec<(usize, usize)> = members
-        .iter()
-        .enumerate()
-        .map(|(index, member)| (index, ((member.3 / widest * size as f32) as usize).max(12)))
-        .collect();
-    tiles.sort_by_key(|&(_, side)| Reverse(side));
-    let gap = 4;
-    let area: usize = tiles
-        .iter()
-        .map(|(_, side)| (side + gap) * (side + gap))
-        .sum();
-    let limit = (((area as f32).sqrt() * 1.15) as usize).max(tiles[0].1 + gap);
-    // Shelves, each as tall as its first and largest tile, filled up to the limit.
-    let mut rows: Vec<Vec<(usize, usize)>> = Vec::new();
-    let mut filled = 0;
-    for &tile in &tiles {
-        match rows.last_mut() {
-            Some(row) if filled + tile.1 + gap <= limit => row.push(tile),
-            _ => {
-                rows.push(vec![tile]);
-                filled = 0;
-            }
-        }
-        filled += tile.1 + gap;
-    }
-    let span = |row: &[(usize, usize)]| row.iter().map(|(_, side)| side + gap).sum::<usize>();
-    let width = rows.iter().map(|row| span(row)).max().unwrap_or(0) + gap;
-    // Each row centred across the sheet, and each tile within its row's height.
-    let mut placed = Vec::new();
-    let mut y = gap;
-    for row in &rows {
-        let height = row[0].1;
-        let mut x = gap + (width - gap - span(row)) / 2;
-        for &(index, side) in row {
-            placed.push((index, side, x, y + (height - side) / 2));
-            x += side + gap;
-        }
-        y += height + gap;
-    }
-    let height = y;
-    let rendered: Vec<(usize, usize, Vec<u8>)> = placed
+    let widest = members.iter().map(|m| m.2).fold(0.0f32, f32::max).max(1e-3);
+    let sprites: Vec<RgbaImage> = members
         .par_iter()
-        .map(|&(index, side, x, y)| {
-            let (_, c, view, _) = &members[index];
-            (
-                x,
-                y,
-                RgbImage::from_raw(side as u32, side as u32, render_tile(c, view, side, false))
-                    .expect("lineup tile")
-                    .into_raw(),
-            )
+        .map(|(c, view, metres)| {
+            let edge = ((metres / widest * size as f32) as usize).max(12);
+            let pixels = render_tile(c, view, edge, false);
+            // The sky as it was drawn, read from the corner the creature never reaches.
+            let sky = Vec3::new(
+                f32::from(pixels[0]),
+                f32::from(pixels[1]),
+                f32::from(pixels[2]),
+            );
+            // Clear where the sky shows through, and partly clear where a membrane lets it.
+            let sprite = RgbaImage::from_fn(edge as u32, edge as u32, |x, y| {
+                let at = (y as usize * edge + x as usize) * 3;
+                let rgb = [pixels[at], pixels[at + 1], pixels[at + 2]];
+                let difference = (f32::from(rgb[0]) - sky.x)
+                    .abs()
+                    .max((f32::from(rgb[1]) - sky.y).abs())
+                    .max((f32::from(rgb[2]) - sky.z).abs());
+                let alpha = ((difference - 3.0) / 14.0).clamp(0.0, 1.0);
+                image::Rgba([rgb[0], rgb[1], rgb[2], (alpha * 255.0) as u8])
+            });
+            trim(&sprite)
         })
         .collect();
-    let mut sheet = RgbImage::from_fn(width as u32, height as u32, |_, _| {
-        let shade = tonemap(even_sky(Vec2::ZERO));
-        image::Rgb([
-            (shade.x * 255.0) as u8,
-            (shade.y * 255.0) as u8,
-            (shade.z * 255.0) as u8,
-        ])
-    });
-    for ((x, y, pixels), &(_, side, _, _)) in rendered.into_iter().zip(&placed) {
-        let tile = RgbImage::from_raw(side as u32, side as u32, pixels).expect("lineup tile");
-        imageops::replace(
+    nest(&sprites)
+}
+
+/// A sprite cut down to the box around what is not clear in it.
+fn trim(sprite: &RgbaImage) -> RgbaImage {
+    let (mut low, mut high) = ((u32::MAX, u32::MAX), (0, 0));
+    for (x, y, pixel) in sprite.enumerate_pixels() {
+        if pixel[3] > 8 {
+            low = (low.0.min(x), low.1.min(y));
+            high = (high.0.max(x), high.1.max(y));
+        }
+    }
+    if low.0 > high.0 {
+        return RgbaImage::new(1, 1);
+    }
+    imageops::crop_imm(sprite, low.0, low.1, high.0 - low.0 + 1, high.1 - low.1 + 1).to_image()
+}
+
+/// Sprites nested into one clear sheet by their silhouettes, largest first, each in the first
+/// place down and across the sheet where it overlaps none already placed. The sheet's width is the
+/// one, of many tried, that leaves it nearest to square.
+fn nest(sprites: &[RgbaImage]) -> RgbaImage {
+    let shapes: Vec<Silhouette> = sprites.iter().map(Silhouette::of).collect();
+    let mut order: Vec<usize> = (0..sprites.len()).collect();
+    order.sort_by_key(|&index| Reverse(shapes[index].area()));
+    let filled: u32 = shapes.iter().map(Silhouette::area).sum();
+    let narrowest = shapes.iter().map(|shape| shape.width).max().unwrap_or(1);
+    let side = (filled as f32).sqrt();
+    let (placed, width, _) = (0..24)
+        .map(|step| narrowest.max((side * (0.9 + step as f32 * 0.05)) as u32))
+        .map(|width| {
+            let (placed, height) = pack(&shapes, &order, width);
+            (placed, width, height)
+        })
+        .min_by_key(|&(_, width, height)| width.max(height))
+        .expect("widths were tried");
+    let height = sprites
+        .iter()
+        .zip(&placed)
+        .map(|(sprite, &(_, y))| y * SILHOUETTE_CELL + sprite.height())
+        .max()
+        .unwrap_or(1);
+    let mut sheet = RgbaImage::new(
+        width * SILHOUETTE_CELL + SILHOUETTE_CELL,
+        height + SILHOUETTE_CELL,
+    );
+    for (sprite, &(x, y)) in sprites.iter().zip(&placed) {
+        imageops::overlay(
             &mut sheet,
-            &tile,
-            i64::try_from(x).expect("sheet width"),
-            i64::try_from(y).expect("sheet height"),
+            sprite,
+            i64::from(x * SILHOUETTE_CELL),
+            i64::from(y * SILHOUETTE_CELL),
         );
     }
     sheet
 }
 
+/// Silhouettes are matched on a coarse grid of cells this many pixels across, each grown by a cell
+/// so neighbours keep a margin.
+const SILHOUETTE_CELL: u32 = 3;
+
+/// The cells a sprite covers.
+struct Silhouette {
+    width: u32,
+    height: u32,
+    cells: Vec<bool>,
+}
+
+impl Silhouette {
+    fn of(sprite: &RgbaImage) -> Self {
+        let width = sprite.width().div_ceil(SILHOUETTE_CELL);
+        let height = sprite.height().div_ceil(SILHOUETTE_CELL);
+        let mut cells = vec![false; (width * height) as usize];
+        for (x, y, pixel) in sprite.enumerate_pixels() {
+            if pixel[3] > 24 {
+                let (cx, cy) = (x / SILHOUETTE_CELL, y / SILHOUETTE_CELL);
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let (gx, gy) = (cx + dx, cy + dy);
+                    if gx < width && gy < height {
+                        cells[(gy * width + gx) as usize] = true;
+                    }
+                }
+            }
+        }
+        Self {
+            width,
+            height,
+            cells,
+        }
+    }
+
+    fn area(&self) -> u32 {
+        self.cells.iter().filter(|&&filled| filled).count() as u32
+    }
+
+    fn covers(&self, x: u32, y: u32) -> bool {
+        self.cells[(y * self.width + x) as usize]
+    }
+}
+
+/// Where each silhouette goes, in cells, on a sheet `width` cells wide, and how many cells tall
+/// the sheet comes out.
+fn pack(shapes: &[Silhouette], order: &[usize], width: u32) -> (Vec<(u32, u32)>, u32) {
+    let mut taken: Vec<bool> = Vec::new();
+    let mut placed = vec![(0, 0); shapes.len()];
+    let mut height = 0;
+    for &index in order {
+        let shape = &shapes[index];
+        let fits = |taken: &[bool], x: u32, y: u32| {
+            (0..shape.height).all(|sy| {
+                (0..shape.width).all(|sx| {
+                    !shape.covers(sx, sy)
+                        || !taken
+                            .get(((y + sy) * width + x + sx) as usize)
+                            .copied()
+                            .unwrap_or(false)
+                })
+            })
+        };
+        // Below everything placed so far there is always room.
+        let clear = taken.len() as u32 / width + 1;
+        let (x, y) = (0..=clear)
+            .flat_map(|y| (0..=width - shape.width).map(move |x| (x, y)))
+            .find(|&(x, y)| fits(&taken, x, y))
+            .expect("a sheet without end has room");
+        let rows = ((y + shape.height) * width) as usize;
+        if taken.len() < rows {
+            taken.resize(rows, false);
+        }
+        for sy in 0..shape.height {
+            for sx in 0..shape.width {
+                if shape.covers(sx, sy) {
+                    taken[((y + sy) * width + x + sx) as usize] = true;
+                }
+            }
+        }
+        placed[index] = (x, y);
+        height = height.max(y + shape.height);
+    }
+    (placed, height)
+}
+
 /// A lineup beside every fork in the tree, or in `output`, for the forks `selected` names.
-fn lineups(output: Option<&str>, selected: Option<&str>, tile: usize, seconds: f32) {
+fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool) {
     for taxon in forks() {
         if selected.is_some_and(|filter| {
             !filter
@@ -565,7 +740,17 @@ fn lineups(output: Option<&str>, selected: Option<&str>, tile: usize, seconds: f
                 Path::new(output).join(format!("{name}.png"))
             },
         );
-        render_lineup(taxon, tile, seconds)
+        let since = SPECIES
+            .iter()
+            .enumerate()
+            .filter(|(_, species)| species.descends_from(taxon))
+            .map(|(kind, _)| sources(kind))
+            .max()
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        if !all && fresh(&path, since) {
+            continue;
+        }
+        render_lineup(taxon, seconds)
             .save(&path)
             .expect("save lineup");
         println!("{}: {}", taxon.name, path.display());
@@ -575,7 +760,7 @@ fn lineups(output: Option<&str>, selected: Option<&str>, tile: usize, seconds: f
 fn main() {
     if env::args().any(|arg| arg == "--help") {
         println!(
-            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle,lineup]\nBy default, writes all five assets beside each species source file, and at each fork in the tree a lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
+            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle,lineup]\nBy default, writes all five assets beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
         );
         return;
     }
@@ -589,6 +774,8 @@ fn main() {
         "tile size must be between 32 and 2048"
     );
     let output = option("--out");
+    // Only previews older than what they are drawn from are drawn again, unless all are asked for.
+    let all = env::args().any(|arg| arg == "--all");
     let selected = option("--species");
     let seconds =
         option("--time").map_or(1.0, |value| value.parse().expect("time must be a number"));
@@ -615,7 +802,7 @@ fn main() {
         })
         .collect();
     if outputs.contains(&Output::Lineup) {
-        lineups(output.as_deref(), selected.as_deref(), tile, seconds);
+        lineups(output.as_deref(), selected.as_deref(), seconds, all);
     }
     let outputs: Vec<_> = outputs
         .into_iter()
@@ -631,6 +818,7 @@ fn main() {
             continue;
         }
         count += 1;
+        let since = sources(kind);
         let base = output.as_ref().map_or_else(
             || adjacent_preview(kind),
             |output| Path::new(output).join(filename(taxon)),
@@ -649,6 +837,9 @@ fn main() {
                     .trim_end_matches("_render"),
                 output.name()
             ));
+            if !all && fresh(&path, since) {
+                continue;
+            }
             if matches!(output, Output::Idle) {
                 idle(&path, kind, tile, seconds);
             } else {

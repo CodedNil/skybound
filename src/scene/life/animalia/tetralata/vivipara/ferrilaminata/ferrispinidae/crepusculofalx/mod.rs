@@ -30,7 +30,7 @@ mod nature {
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, display_near, hang_still},
             nature::lead,
-            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
+            tetralata::vivipara::ferrilaminata::ferrispinidae::ETHOLOGY as IRON_EDGED,
         },
         behaviour::{Activity, Goal},
         organs::{Strike, Wound},
@@ -43,7 +43,7 @@ mod nature {
         wander: |_, _| hang_still(),
         blow: scythe,
         hunts: true,
-        ..LIVE_BEARER
+        ..IRON_EDGED
     };
 
     fn ambush(mind: &mut Mind, s: &Situation, prey: Sighting) -> Goal {
@@ -72,7 +72,7 @@ mod nature {
                 from: at - aim.along * aim.extent.z * 0.8,
                 to: at + aim.along * aim.extent.z * 0.8,
                 radius: aim.extent.min_element() * 0.3,
-                force: 1.0,
+                force: aim.edge,
                 wound: Wound::Slash,
             },
             stun: 0.0,

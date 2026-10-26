@@ -1,7 +1,10 @@
 pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
-use crate::scene::life::{CreatureInstance, biology::Biology, smooth_min, tapered_tail};
+use crate::scene::{
+    life::{CreatureInstance, biology::Biology, smooth_min, tapered_tail},
+    planet::GRAVITY,
+};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Quat, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -9,6 +12,7 @@ use spirv_std::num_traits::Float;
 pub mod specialia;
 pub mod vivipara;
 pub mod volitantia;
+pub mod young;
 
 /// A cistern of water, filled at Pondplants and in cloud, that carries a tetralate through dry air.
 #[cfg(not(target_arch = "spirv"))]
@@ -76,7 +80,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
     let turn = Quat::from_array(c.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -9.8, 0.0);
+    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
     // The animal flies head first, so the air streams back along it.
     let wind = vec3(0.0, 0.0, c.animation.w.max(0.0));
     for index in 0..(pairs as usize * 2).min(9) {
@@ -113,7 +117,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
                     // the pose against the load.
                     let tone = (rest(knot, time) - points[knot]) * (60.0 * (1.0 - t * 0.7));
                     let drag = (wind - velocity / STEP) * 1.5;
-                    points[knot] += velocity + (gravity * 0.35 + drag + tone) * STEP * STEP;
+                    points[knot] += velocity + (gravity + drag + tone) * STEP * STEP;
                 }
                 for _ in 0..2 {
                     for knot in 1..KNOTS {
@@ -225,6 +229,7 @@ mod nature {
             mind::{Ethology, Intent, Situation, Urges, orbit},
             nature::ROOST,
             physiology::{Brood, Light, Physiology, flow_channels, grazes},
+            tetralata::young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, LARVA, TETHERED_EGG},
         },
         behaviour::{Activity, Goal},
     };
@@ -235,12 +240,12 @@ mod nature {
         let brood = kind.animal().map_or(Brood::Tethered, |animal| animal.brood);
         match brood {
             _ if young >= 0.7 => 0,
-            Brood::Drifting if young < 0.3 => 8,
-            Brood::Strings if young < 0.3 => 9,
-            Brood::Carried if young < 0.3 => 10,
-            Brood::Tethered if young < 0.3 => 4,
+            Brood::Drifting if young < 0.3 => DRIFTING_EGG,
+            Brood::Strings if young < 0.3 => EGG_STRINGS,
+            Brood::Carried if young < 0.3 => CLUTCH,
+            Brood::Tethered if young < 0.3 => TETHERED_EGG,
             Brood::Live | Brood::Pouch => 0,
-            _ => 3,
+            _ => LARVA,
         }
     }
 

@@ -23,12 +23,23 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Grounders are too heavy to roost: they sleep riding a rising column on their saucer, and
-    //! spend their waking hours finding columns strong enough to carry them.
+    //! spend their waking hours finding columns strong enough to carry them. They are too slow to
+    //! outfly anything, and do not try: threatened, a Grounder draws in and goes stone-still,
+    //! trusting the mineral armour that Iron Spines hone their blades on.
 
-    use crate::scene::life::animalia::{
-        mind::{Ethology, Situation, Urges, glide_asleep},
-        nature::RIDE,
-        tetralata::ETHOLOGY as TETRALATE,
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent, Situation, Urges, glide_asleep},
+            nature::{FLEE, RIDE},
+            tetralata::ETHOLOGY as TETRALATE,
+        },
+        behaviour::{Activity, Goal},
+    };
+
+    /// Drawn in and still, armour turned to the threat.
+    const HUNKER: Intent = Intent {
+        name: "hunker",
+        act: |_, _| Goal::new(Activity::Rest, None, 0.0).folded(1.0).hovering(),
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
@@ -43,5 +54,7 @@ mod nature {
         if s.seen.updraft < 0.5 {
             urges.add(RIDE, 0.3);
         }
+        urges.scale(FLEE, 0.15);
+        urges.add(HUNKER, s.fear * 1.3);
     }
 }

@@ -26,15 +26,24 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Mistings court spiralling up together like a pair of falling petals reversed, and come to
-    //! look at anything new.
+    //! look at anything new. Too small to cross the dry air between Pondplants, they drink what
+    //! the cloud gives: a thirsty Misting in wet air hangs still and sips the beads of dew that
+    //! gather on its wings.
 
     use crate::scene::life::{
         animalia::{
-            mind::{Ethology, Situation, Urges, spiral},
+            mind::{Ethology, Intent, Situation, Urges, spiral},
             physiology::Physiology,
             tetralata::{ETHOLOGY as TETRALATE, INVESTIGATE},
         },
+        behaviour::{Activity, Goal},
         plantae::physiology::Propagation,
+    };
+
+    /// Hanging still in wet air, sipping the dew from its wings.
+    const SIP_DEW: Intent = Intent {
+        name: "sip dew",
+        act: |_, _| Goal::new(Activity::Drink, None, 0.0).folded(0.4).hovering(),
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
@@ -57,6 +66,9 @@ mod nature {
         (TETRALATE.urges)(s, urges);
         if s.seen.player.is_some() {
             urges.add(INVESTIGATE, s.temper.curiosity * 0.6);
+        }
+        if s.seen.humidity > 0.7 {
+            urges.add(SIP_DEW, s.drives.thirst * 1.3);
         }
     }
 }

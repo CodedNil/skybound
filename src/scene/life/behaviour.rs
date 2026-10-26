@@ -42,6 +42,8 @@ pub enum Activity {
     Play,
     /// Grooming or greeting one of its fellows, close alongside.
     Groom,
+    /// Drawing a blade along something hard to keep its edge.
+    Hone,
     /// Speaking in mist-script, as the voiceless Næ do: breathing out glyphs of vapour lit from
     /// within by its aur sacs, toned by the colour of its crest.
     Sign,

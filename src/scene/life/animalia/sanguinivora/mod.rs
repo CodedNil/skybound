@@ -2,6 +2,7 @@ pub use super::render_wings;
 use crate::scene::life::biology::Biology;
 pub mod errantia;
 pub mod volantia;
+pub mod young;
 
 pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.05,
@@ -9,7 +10,7 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::{ETHOLOGY, PHYSIOLOGY, hosts};
+pub use nature::{ETHOLOGY, HOST, PHYSIOLOGY, WATERHOLE, hosts};
 
 taxon!(
     Phylum,
@@ -33,11 +34,15 @@ mod nature {
         Kind,
         animalia::{
             ETHOLOGY as ANIMAL,
-            mind::{Ethology, Hold, Mind, Sighting, Situation, Snare},
+            mind::{
+                Ethology, Glimpse, Hold, Interest, Mind, Perception, Sighting, Situation, Snare,
+            },
             nature::lead,
             physiology::{Physiology, flow_channels, plant},
+            sanguinivora::young::LARVA,
         },
         behaviour::{Activity, Goal},
+        organs::Function,
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
@@ -45,7 +50,7 @@ mod nature {
         parasite: true,
         breathe: flow_channels,
         digestion: 0.004,
-        form: |_, young| if young < 0.7 { 2 } else { 0 },
+        form: |_, young| if young < 0.7 { LARVA } else { 0 },
         ..super::super::PHYSIOLOGY
     };
 
@@ -57,9 +62,29 @@ mod nature {
     pub const ETHOLOGY: Ethology = Ethology {
         hunt: approach,
         snare: latch,
+        notice,
         hunts: true,
         ..ANIMAL
     };
+
+    /// A host, wherever one is in sight.
+    pub const HOST: Interest = Interest("host");
+    /// A plant animals come to drink at, where hosts crowd.
+    pub const WATERHOLE: Interest = Interest("waterhole");
+
+    /// Every blood-feeder watches for hosts, and for the places they gather to drink.
+    pub fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (ANIMAL.notice)(glimpse, seen);
+        if glimpse.heard {
+            return;
+        }
+        if hosts(glimpse.kind, glimpse.other) {
+            seen.note(HOST, glimpse.offset);
+        }
+        if plant(glimpse.other) && glimpse.other.organs().has(Function::Water) {
+            seen.note(WATERHOLE, glimpse.offset);
+        }
+    }
 
     /// Closing on a host to fasten on.
     fn approach(_: &mut Mind, s: &Situation, host: Sighting) -> Goal {

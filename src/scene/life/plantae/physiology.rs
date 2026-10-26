@@ -10,6 +10,7 @@ use crate::scene::{
     life::{
         Kind,
         organs::{Function, Organ},
+        plantae::young::{BUD, SPORE, SPROUT},
         vitals::{Vitals, Waste},
     },
 };
@@ -85,9 +86,9 @@ fn form(kind: Kind, young: f32) -> u32 {
         return 0;
     }
     match kind.plant().map(|plant| plant.propagation) {
-        Some(Propagation::Division) => 7,
-        Some(Propagation::Spores | Propagation::Pollination) if young < 0.2 => 5,
-        _ => 6,
+        Some(Propagation::Division) => BUD,
+        Some(Propagation::Spores | Propagation::Pollination) if young < 0.2 => SPORE,
+        _ => SPROUT,
     }
 }
 

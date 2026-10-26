@@ -1,15 +1,20 @@
-use crate::scene::life::{
-    animalia::{
-        bullidorsata::caelomorpha::{
-            aerogigantiformes::aerogigantidae::aerogigas::auratus,
-            gel,
-            nubivaga::{levitantidae::levitans::taeniatus, nubivesicidae::nubivesica::caerulea},
+use crate::scene::{
+    life::{
+        animalia::{
+            bullidorsata::caelomorpha::{
+                aerogigantiformes::aerogigantidae::aerogigas::auratus,
+                gel,
+                nubivaga::{
+                    levitantidae::levitans::taeniatus, nubivesicidae::nubivesica::caerulea,
+                },
+            },
+            tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
+            visit_wings, with_wings,
         },
-        tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
-        visit_wings, with_wings,
+        plantae::plant_material,
+        surface::{Hit, Ray, Surface, TraceResult, coat, trace_material},
     },
-    plantae::plant_material,
-    surface::{Hit, Ray, Surface, TraceResult, coat, trace_material},
+    planet::GRAVITY,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Quat, UVec4, Vec2, Vec3, Vec4, vec2, vec3};
@@ -119,8 +124,10 @@ impl CreatureInstance {
                 .extend(0.0);
         }
         c.previous_tail = c.tail;
-        c.position.w = c.position.w.max(c.opaque_bounds.truncate().length());
-        c.position.w *= development::scale(&c).max_element().max(1.0);
+        // The bounds are laid out in the design's frame, and the body drawn at its species' size.
+        let size = KINDS[kind as usize].biology().size;
+        let design = (c.position.w / size).max(c.opaque_bounds.truncate().length());
+        c.position.w = design * development::scale(&c).max_element().max(size);
         c
     }
 }
@@ -131,10 +138,12 @@ impl CreatureInstance {
 fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
     let size = body.max_element();
     match form {
-        1 => vec3(size, size * 0.7, size),
-        2 | 3 => vec3(size * 0.45, size * 0.4, size),
-        9 => vec3(size * 0.6, size * 0.6, size * 1.5),
-        5..=7 => body,
+        animalia::bullidorsata::young::POLYP => vec3(size, size * 0.7, size),
+        animalia::sanguinivora::young::LARVA | animalia::tetralata::young::LARVA => {
+            vec3(size * 0.45, size * 0.4, size)
+        }
+        animalia::tetralata::young::EGG_STRINGS => vec3(size * 0.6, size * 0.6, size * 1.5),
+        plantae::young::SPORE | plantae::young::SPROUT | plantae::young::BUD => body,
         _ => Vec3::splat(size * 0.6),
     }
 }
@@ -304,7 +313,7 @@ macro_rules! species {
         pub const KINDS: &[Kind] = &[$(Kind::$id),*];
         impl Kind {
             pub const fn render_radius(self) -> f32 {
-                match self { $(Self::$id => $($path)::+::RENDER_RADIUS,)* }
+                match self { $(Self::$id => $($path)::+::RENDER_RADIUS * $($path)::+::BIOLOGY.size,)* }
             }
             pub const fn biology(self) -> biology::Biology {
                 match self { $(Self::$id => $($path)::+::BIOLOGY,)* }
@@ -945,7 +954,7 @@ pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: 
     const STEP: f32 = 1.0 / 120.0;
     const SETTLE: f32 = 2.0;
     let turn = Quat::from_array(c.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -9.8, 0.0);
+    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
     let flow = vec3(0.0, 0.0, c.animation.w.max(2.0));
     let end = c.animation.z.max(0.0);
     let segment = length / 5.0;
@@ -972,7 +981,7 @@ pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: 
                         0.0,
                     ) * 2.0;
                     let drag = (flow + gust - velocity / STEP) * 0.8;
-                    points[knot] += velocity + (gravity * 0.3 + drag) * STEP * STEP;
+                    points[knot] += velocity + (gravity + drag) * STEP * STEP;
                 }
                 for _ in 0..2 {
                     for knot in 1..6 {

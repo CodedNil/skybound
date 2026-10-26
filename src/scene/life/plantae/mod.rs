@@ -12,6 +12,7 @@ pub mod chlorophyta;
 pub mod physiology;
 pub mod pneumatophyta;
 pub mod vasculophyta;
+pub mod young;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 

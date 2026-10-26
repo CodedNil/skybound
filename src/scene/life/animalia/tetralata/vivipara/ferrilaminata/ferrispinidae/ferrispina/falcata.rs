@@ -22,6 +22,7 @@ use crate::scene::life::{
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.2,
     maturity_days: 1800.0,
     lifespan_days: 30000.0,
     ..super::BIOLOGY

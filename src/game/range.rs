@@ -30,18 +30,26 @@ use std::{
 
 /// Regions along each edge of each of the six faces of the cube the sphere is divided as, each
 /// about 25 km across.
-const FACE: usize = 96;
+const FACE: usize = 48;
 
 const REGIONS: usize = 6 * FACE * FACE;
 
-/// How near the player a group must range to be lived out in full, and how far one of its members
-/// may stray before it is folded back into its region.
-const NEAR: f64 = 4000.0;
+/// How near the player a group of a kind must range to be lived out in full: out to where one of
+/// them would still cover a pixel, so giants are met from far off and the smallest only close by.
+/// One that strays half as far again is folded back into its region.
+fn near(kind: Kind) -> f64 {
+    (f64::from(kind.render_radius()) / 0.0015).clamp(1500.0, NEAREST_GIANT)
+}
 
-const FAR: f64 = 6500.0;
+fn far(kind: Kind) -> f64 {
+    near(kind) * 1.5
+}
+
+/// The furthest any group is lived out.
+const NEAREST_GIANT: f64 = 25_000.0;
 
 /// The most organisms lived out in full at once.
-const LIVING_LIMIT: usize = 900;
+const LIVING_LIMIT: usize = 1500;
 
 /// Seconds between steps of the planet-wide counts, and between looking for groups to live out or
 /// fold back.
@@ -316,7 +324,7 @@ fn gather(
     let mut members: HashMap<Band, usize> = HashMap::new();
     let mut living = 0;
     for (entity, species, body, position, band) in &lived {
-        if position.position.distance(centre) > FAR {
+        if position.position.distance(centre) > far(species.0) {
             if body.0.health > 0.0 {
                 let at = region_of(position.position) * kinds + species.0 as usize;
                 range.counts[at] += 1.0;
@@ -340,38 +348,44 @@ fn gather(
         range.resting.insert(band, now + REST);
     }
     range.resting.retain(|_, until| *until > now);
+    // Every group ranging within reach, nearest first for its kind's reach, so when there is room
+    // for only some the nearest come into being.
+    let mut ranging_near = Vec::new();
     for region in near_regions(centre) {
         for (kind_index, &kind) in KINDS.iter().enumerate() {
             let at = region * kinds + kind_index;
-            let mut index = 0u16;
-            loop {
+            let mut remaining = range.counts[at];
+            for index in 0..48u16 {
                 let band = Band {
                     region: region as u32,
                     kind: kind_index as u16,
                     index,
                 };
-                let seed = band_seed(band);
-                let size = group(kind, seed);
-                if range.counts[at] < size as f32 || index >= 48 {
+                let size = group(kind, band_seed(band));
+                if remaining < size as f32 {
                     break;
                 }
-                index += 1;
-                if living + size > LIVING_LIMIT
-                    || range.active.contains(&band)
-                    || range.resting.contains_key(&band)
-                {
+                remaining -= size as f32;
+                if range.active.contains(&band) || range.resting.contains_key(&band) {
                     continue;
                 }
                 let anchor = ranging(band, kind, now);
-                if anchor.distance(centre) > NEAR {
-                    continue;
+                let nearness = anchor.distance(centre) / near(kind);
+                if nearness <= 1.0 {
+                    ranging_near.push((nearness, band, kind, anchor, size, at));
                 }
-                range.counts[at] -= size as f32;
-                range.active.insert(band);
-                living += size;
-                live_out(&mut commands, &world, band, kind, anchor, size);
             }
         }
+    }
+    ranging_near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for (_, band, kind, anchor, size, at) in ranging_near {
+        if living + size > LIVING_LIMIT || range.counts[at] < size as f32 {
+            continue;
+        }
+        range.counts[at] -= size as f32;
+        range.active.insert(band);
+        living += size;
+        live_out(&mut commands, &world, band, kind, anchor, size);
     }
 }
 
@@ -429,15 +443,16 @@ fn ranging(band: Band, kind: Kind, now: f32) -> DVec3 {
     up * f64::from(PLANET_RADIUS + altitude)
 }
 
-/// The regions any group within reach of the player could range in.
+/// The regions any group within reach of the player could range in, sampled closer together than
+/// a region is wide so none is missed.
 fn near_regions(centre: DVec3) -> Vec<usize> {
     let up = centre.normalize();
     let east = DVec3::Z.cross(up).try_normalize().unwrap_or(DVec3::X);
     let north = up.cross(east);
-    let reach = NEAR + 1000.0;
-    let mut regions: Vec<usize> = (-1..=1)
-        .flat_map(|x| (-1..=1).map(move |y| (x, y)))
-        .map(|(x, y)| region_of(centre + (east * f64::from(x) + north * f64::from(y)) * reach))
+    let step = (NEAREST_GIANT + 1000.0) / 3.0;
+    let mut regions: Vec<usize> = (-3..=3)
+        .flat_map(|x| (-3..=3).map(move |y| (x, y)))
+        .map(|(x, y)| region_of(centre + (east * f64::from(x) + north * f64::from(y)) * step))
         .collect();
     regions.sort_unstable();
     regions.dedup();
@@ -512,7 +527,7 @@ mod tests {
     #[test]
     fn every_region_round_trips_through_its_centre() {
         for region in (0..REGIONS).step_by(97) {
-            assert_eq!(region_of(centre(region) * 1.5e6), region);
+            assert_eq!(region_of(centre(region) * f64::from(PLANET_RADIUS)), region);
         }
     }
 

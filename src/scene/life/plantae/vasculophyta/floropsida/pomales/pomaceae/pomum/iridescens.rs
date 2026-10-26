@@ -19,6 +19,7 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.67,
     maturity_days: 120.0,
     lifespan_days: 3000.0,
     adult_mass: 4.0,

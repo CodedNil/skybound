@@ -24,10 +24,12 @@ taxon!(
 mod nature {
     //! Weavers hunt by waiting. They keep a web strung from a home plant, hang still beside it,
     //! hold fast anything that blunders in, and only then leave it to deliver a venomous bite.
+    //! Wind and struggling prey tear a web, so a Weaver's idle hours alternate with mending: it
+    //! works slowly round the strands, paying out fresh silk, then hangs still again.
 
     use crate::scene::life::{
         animalia::{
-            mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still},
+            mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still, orbit},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
         behaviour::{Activity, Goal},
@@ -37,7 +39,19 @@ mod nature {
 
     pub const ETHOLOGY: Ethology = Ethology {
         hunt: |_, s, prey| wait(s.seen.home, prey),
-        wander: |_, _| hang_still(),
+        wander: |_, s| {
+            // A third of its idle hours go to mending, at its own turn of the clock.
+            let mending = (s.now / 90.0 + s.wobble()).fract() < 0.33;
+            match s.seen.home {
+                Some(web) if mending => Goal::new(
+                    Activity::Weave,
+                    Some(web + orbit(s.up(), web, 4.0, s.now * 0.3)),
+                    0.2,
+                )
+                .hovering(),
+                _ => hang_still(),
+            }
+        },
         blow: bite,
         snare: web,
         hunts: true,

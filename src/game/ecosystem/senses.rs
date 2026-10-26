@@ -15,6 +15,7 @@ use bevy::prelude::*;
 use skybound::scene::{
     climate::Climate,
     life::{
+        Kind,
         animalia::{
             mind::{Drives, Glimpse, Mind, Perception, Sighting},
             physiology::{Take, plant},
@@ -102,9 +103,11 @@ pub(super) fn perceive(
             senses.food = Some((world.local(location) - position).to_scene());
         }
     }
+    // An animal whose aur sacs run low skims the mists above the aur to fill them, high enough
+    // that its dive cannot carry it into the aur itself.
     let target_altitude = if kind.animal().is_some_and(|animal| animal.aur > 0.0) && body.aur < 0.15
     {
-        25.0
+        40.0
     } else {
         climate
             .altitude
@@ -159,6 +162,11 @@ pub(super) fn orient(
         around.now,
         world,
     );
+    // The player and their mount go where the player steers, not where their bodies would take
+    // them.
+    if !free {
+        senses.habitat = None;
+    }
     let stage = nurture(agent, relations, index, around.now);
     let targets = if free && stage.forages() {
         think(agent, relations, &mut senses, around)
@@ -273,7 +281,13 @@ pub(super) fn sense(
         let fair = other.vitals.mass < agent.vitals.mass * 0.8
             && (!other.kind.takes(Take::Prey) || agent.vitals.energy < 0.2);
         let fair = fair || kind.animal().is_some_and(|animal| animal.parasite);
-        if hunts && animal && fair && kind.eats(other.kind) && distance < nearest[1] {
+        if hunts
+            && animal
+            && fair
+            && !other.protected
+            && kind.eats(other.kind)
+            && distance < nearest[1]
+        {
             nearest[1] = distance;
             seen.prey = Some(sighting);
             targets.prey = Some(*other);
@@ -303,16 +317,7 @@ pub(super) fn sense(
                 targets.mate = Some(*other);
             }
         }
-        (ethology.notice)(
-            &Glimpse {
-                kind,
-                other: other.kind,
-                offset: to,
-                grown: other.grown(),
-                heard: false,
-            },
-            &mut seen,
-        );
+        (ethology.notice)(&glimpse(kind, other, to), &mut seen);
         if !animal && other.kind.biology().adult_mass >= 1.0 && distance < nearest[5] {
             nearest[5] = distance;
             targets.roost = Some(other.entity);
@@ -324,6 +329,18 @@ pub(super) fn sense(
     }
     sense_far(agent, relations, around, &mut seen);
     (seen, targets)
+}
+
+/// Another organism as it comes to an animal's notice, `to` away.
+fn glimpse(kind: Kind, other: &Agent, to: SceneVec3) -> Glimpse {
+    Glimpse {
+        kind,
+        other: other.kind,
+        offset: to,
+        grown: other.grown(),
+        heard: false,
+        activity: other.activity,
+    }
 }
 
 /// What an animal knows before it looks about: the air, the aur's phase, and what its older senses
@@ -339,6 +356,7 @@ pub(super) fn first_sight(senses: &Senses, climate: Climate) -> Perception {
         light: climate.light,
         sunward: climate.sunward,
         updraft: climate.wind.dot(senses.up.normalize_or_zero()),
+        humidity: climate.humidity,
         ..Perception::default()
     }
 }
@@ -375,6 +393,7 @@ pub(super) fn sense_far(
                 offset: to,
                 grown: 1.0,
                 heard: true,
+                activity: Activity::Display,
             };
             notice(&heard, seen);
         }

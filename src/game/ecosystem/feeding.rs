@@ -123,6 +123,7 @@ pub(super) fn forage(
         .iter()
         .find(|other| {
             other.entity != entity
+                && !other.protected
                 && edible_now(kind, other)
                 && other.position.distance_squared(position) < reach * reach
         })
@@ -138,8 +139,8 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
     for meal in meals {
         let Ok(
             [
-                (_, eater_kind, mut eater, mut visitor, _, _, _, _),
-                (_, food_kind, mut food, mut flower, _, _, _, _),
+                (_, eater_kind, mut eater, mut visitor, ..),
+                (_, food_kind, mut food, mut flower, ..),
             ],
         ) = organisms.get_many_mut([meal.eater, meal.food])
         else {

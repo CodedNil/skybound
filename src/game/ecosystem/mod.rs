@@ -7,10 +7,12 @@ use crate::{
     math::{ToEngine, ToScene},
 };
 use bevy::{
+    ecs::system::ParallelCommands,
     math::DVec3,
     prelude::*,
     render::{RenderApp, extract_resource::ExtractResource},
     transform::TransformSystems,
+    utils::Parallel,
 };
 use skybound::scene::{
     PLANET_RADIUS,
@@ -24,7 +26,11 @@ use skybound::scene::{
         vitals::Vitals,
     },
 };
-use std::{collections::HashMap, mem};
+use std::{
+    collections::HashMap,
+    mem,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 mod breeding;
 mod conduct;
@@ -37,7 +43,7 @@ use self::{
     breeding::{bear, decompose, reproduce},
     conduct::{Conduct, conduct, land},
     drawing::{census, gather_herd},
-    feeding::{forage, transfer_meals},
+    feeding::{Meal, forage, transfer_meals},
     movement::{Move, moving, relocate},
     senses::{Surroundings, orient},
 };
@@ -48,7 +54,7 @@ const CELL: f32 = 300.0;
 /// hunters cannot pass through their prey between steps, and drawn smoothly between them.
 const STEP: f32 = 0.05;
 
-const POPULATION_LIMIT: usize = 1000;
+const POPULATION_LIMIT: usize = 1600;
 
 /// A call given this step: whose voice gave it, where, and how far it carries.
 #[derive(Clone, Copy)]
@@ -139,6 +145,9 @@ struct Agent {
     velocity: Vec3,
     rotation: Quat,
     activity: Activity,
+    /// Whether it is the player or their mount, which nothing hunts or eats: the game has no death
+    /// for them yet.
+    protected: bool,
 }
 
 impl Agent {
@@ -151,6 +160,7 @@ impl Agent {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Pool {
     nutrients: f32,
     detritus: f32,
@@ -159,6 +169,14 @@ struct Pool {
 }
 
 impl Pool {
+    /// Nothing at all, from which changes are summed.
+    const NONE: Self = Self {
+        nutrients: 0.0,
+        detritus: 0.0,
+        bound_aur: 0.0,
+        recycled_at: 0.0,
+    };
+
     /// Detritus breaking down into nutrients since it was last recycled.
     fn recycle(&mut self, now: f32) {
         let recycled = self.detritus * (1.0 - (-(now - self.recycled_at) * 0.001).exp());
@@ -232,6 +250,20 @@ type Organisms<'a> = (
     &'a mut EcologicalMotion,
     Has<Player>,
     Has<Mount>,
+    Option<&'a mut PlanetPosition>,
+);
+
+/// One organism as the step finds it.
+type Organism<'a> = (
+    Entity,
+    &'a Species,
+    Mut<'a, Physiology>,
+    Mut<'a, Relations>,
+    Mut<'a, Transform>,
+    Mut<'a, EcologicalMotion>,
+    bool,
+    bool,
+    Option<Mut<'a, PlanetPosition>>,
 );
 
 /// A blow dealt this step, landed once every organism has moved.
@@ -245,7 +277,7 @@ struct Attack {
 }
 
 pub fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle {
-    let mut vitals = Vitals::new(kind.biology());
+    let mut vitals = Vitals::born(kind);
     vitals.mass *= mass_fraction;
     if mass_fraction < 0.5 {
         vitals.age_days = 0.0;
@@ -280,7 +312,7 @@ fn attach_players(
         let kind = if player { Kind::Nae } else { Kind::Naetu };
         commands.entity(entity).insert((
             Species(kind),
-            Physiology(Vitals::new(kind.biology())),
+            Physiology(Vitals::born(kind)),
             EcologicalMotion::default(),
             Relations::default(),
         ));
@@ -315,18 +347,41 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     climate
 }
 
+/// What one thread's share of a step changed beyond the organisms themselves: the meals, blows,
+/// calls and seeds to settle, what the air about them gained or lost, and the births and deaths.
+#[derive(Default)]
+struct Outcome {
+    meals: Vec<Meal>,
+    attacks: Vec<Attack>,
+    calls: Vec<Call>,
+    seedlings: Vec<(Kind, Vec3)>,
+    patches: HashMap<IVec3, Pool>,
+    births: u64,
+    deaths: u64,
+}
+
+impl Outcome {
+    /// Gather what the air of a patch gained and lost from one organism's step.
+    fn exchange(&mut self, cell: IVec3, before: Pool, after: Pool) {
+        let change = self.patches.entry(cell).or_insert(Pool::NONE);
+        change.nutrients += after.nutrients - before.nutrients;
+        change.detritus += after.detritus - before.detritus;
+        change.bound_aur += after.bound_aur - before.bound_aur;
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the ecosystem step reads the whole world"
 )]
 fn simulate(
-    mut commands: Commands,
+    commands: ParallelCommands,
     clock: Res<Time<Fixed>>,
     time: Res<Time>,
     world: Res<WorldData>,
     clouds: Res<CloudField>,
     mut ecosystem: ResMut<Ecosystem>,
-    (mut organisms, mut coordinates): (Query<Organisms>, Query<&mut PlanetPosition>),
+    mut organisms: Query<Organisms>,
     mut accumulated: Local<f32>,
 ) {
     *accumulated += clock.delta_secs();
@@ -338,95 +393,199 @@ fn simulate(
     let agents = snapshot(&organisms);
     let index: HashMap<_, _> = agents.iter().map(|agent| (agent.entity, *agent)).collect();
     let grid = grid(&agents);
-    let (mut meals, mut attacks, mut seedlings) = (Vec::new(), Vec::new(), Vec::new());
     let calls = mem::take(&mut ecosystem.calls);
     let players = players(&organisms);
     ecosystem.living = agents.iter().filter(|agent| agent.alive()).count();
-    for (entity, species, mut body, mut relations, mut transform, mut motion, player, mount) in
-        &mut organisms
-    {
-        let biology = species.0.biology();
-        let climate = climate_at(&world, &clouds, transform.translation, now);
-        let patch = ecosystem.patch(world.position(transform.translation), now);
-        if body.0.health <= 0.0 {
-            if decompose(&mut body.0, patch, dt, biology) && !player && !mount {
-                commands.entity(entity).despawn();
-            }
-            continue;
-        }
-        let neighbours = neighbours(transform.translation, species.0.senses(), &grid);
-        let agent = index[&entity];
-        let (senses, stage, targets) = orient(
-            agent,
-            &mut relations,
-            !player && !mount,
-            &Surroundings {
-                climate,
-                neighbours: &neighbours,
-                players: &players,
-                calls: &calls,
-                now,
-            },
-            (&index, &world),
-        );
-        let mut movement = moving(motion.0, transform.rotation);
-        let controls = movement.advance(species.0, &senses, dt);
-        relations.activity = controls.activity;
-        let effort = (movement.velocity - climate.wind).length() / species.0.speed().max(1.0);
-        if !live(&mut body.0, species.0, climate, effort.min(2.0), patch, dt) {
-            ecosystem.deaths += 1;
-            continue;
-        }
-        meals.extend(if stage.forages() {
-            forage(agent, &mut body.0, &relations, &neighbours, patch, dt)
-        } else {
-            stage.provide(entity, &mut body.0, dt)
-        });
-        conduct(
-            agent,
-            &mut body.0,
-            &mut relations,
-            &targets,
-            &index,
-            Conduct {
-                now,
-                dt,
-                attacks: &mut attacks,
-                calls: &mut ecosystem.calls,
-            },
-        );
-        seedlings.extend(pass_seed(&mut relations, now, transform.translation));
-        if !player && !mount {
-            relocate(
-                agent,
-                stage,
-                &mut relations,
-                (&mut transform, &mut motion),
-                &movement,
-                &index,
-                Move {
-                    coordinates: &mut coordinates,
-                    world: &world,
-                    wind: climate.wind.to_engine(),
-                    dt,
-                    now,
-                },
-            );
-        }
-        if ecosystem.living < POPULATION_LIMIT
-            && reproduce(agent, &mut body.0, &mut relations, &neighbours, now)
-        {
-            bear(&mut commands, agent, &neighbours, transform.translation);
-            ecosystem.born();
+    // The air about each organism as the step begins, which each works on a copy of; what they
+    // all changed is settled afterwards.
+    for agent in &agents {
+        ecosystem.patch(world.position(agent.position), now);
+    }
+    let living = AtomicUsize::new(ecosystem.living);
+    let mut outcomes: Parallel<Outcome> = Parallel::default();
+    let shared = Shared {
+        world: &world,
+        clouds: &clouds,
+        index: &index,
+        grid: &grid,
+        players: &players,
+        calls: &calls,
+        patches: &ecosystem.patches,
+        living: &living,
+        commands: &commands,
+        now,
+        dt,
+    };
+    organisms
+        .par_iter_mut()
+        .for_each(|organism| live_out(organism, &shared, &mut outcomes.borrow_local_mut()));
+    let mut outcome = Outcome::default();
+    for part in outcomes.iter_mut() {
+        let mut part = mem::take(part);
+        outcome.meals.append(&mut part.meals);
+        outcome.attacks.append(&mut part.attacks);
+        outcome.calls.append(&mut part.calls);
+        outcome.seedlings.append(&mut part.seedlings);
+        outcome.births += part.births;
+        outcome.deaths += part.deaths;
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "the changes are summed, so their order does not matter"
+        )]
+        for (cell, change) in part.patches {
+            let patch = ecosystem.patches.entry(cell).or_default();
+            patch.nutrients = (patch.nutrients + change.nutrients).max(0.0);
+            patch.detritus = (patch.detritus + change.detritus).max(0.0);
+            patch.bound_aur = (patch.bound_aur + change.bound_aur).max(0.0);
         }
     }
-    ecosystem.deaths += transfer_meals(&mut organisms, &meals, now);
-    ecosystem.deaths += land(&mut organisms, &attacks);
-    for (kind, position) in seedlings {
-        if ecosystem.living < POPULATION_LIMIT {
-            commands.spawn(population(kind, position, 0.1));
-            ecosystem.born();
+    ecosystem.calls = outcome.calls;
+    ecosystem.births += outcome.births;
+    ecosystem.living += outcome.births as usize;
+    ecosystem.deaths += outcome.deaths;
+    ecosystem.deaths += transfer_meals(&mut organisms, &outcome.meals, now);
+    ecosystem.deaths += land(&mut organisms, &outcome.attacks);
+    commands.command_scope(|mut commands| {
+        for (kind, position) in outcome.seedlings {
+            if ecosystem.living < POPULATION_LIMIT {
+                commands.spawn(population(kind, position, 0.1));
+                ecosystem.born();
+            }
         }
+    });
+}
+
+/// What every organism's step reads of the world, shared across the threads.
+struct Shared<'a> {
+    world: &'a WorldData,
+    clouds: &'a CloudField,
+    index: &'a HashMap<Entity, Agent>,
+    grid: &'a HashMap<IVec3, Vec<Agent>>,
+    players: &'a [Vec3],
+    calls: &'a [Call],
+    patches: &'a HashMap<IVec3, Pool>,
+    /// How many are alive, counting the births so far this step.
+    living: &'a AtomicUsize,
+    commands: &'a ParallelCommands<'a, 'a>,
+    now: f32,
+    dt: f32,
+}
+
+/// One organism's step: it senses and decides, lives a step of its body's life, eats, acts, moves
+/// and perhaps gives birth, changing only itself and noting the rest in `outcome`.
+fn live_out(
+    (
+        entity,
+        species,
+        mut body,
+        mut relations,
+        mut transform,
+        mut motion,
+        player,
+        mount,
+        coordinate,
+    ): Organism,
+    shared: &Shared,
+    outcome: &mut Outcome,
+) {
+    let Shared {
+        world,
+        clouds,
+        index,
+        grid,
+        players,
+        calls,
+        patches,
+        living,
+        commands,
+        now,
+        dt,
+    } = *shared;
+    let kind = species.0;
+    let climate = climate_at(world, clouds, transform.translation, now);
+    let cell = cell(world.position(transform.translation).as_vec3());
+    let before = patches.get(&cell).copied().unwrap_or_default();
+    let mut patch = before;
+    if body.0.health <= 0.0 {
+        if decompose(&mut body.0, &mut patch, dt, kind.biology()) && !player && !mount {
+            commands.command_scope(|mut commands| commands.entity(entity).despawn());
+        }
+        outcome.exchange(cell, before, patch);
+        return;
+    }
+    let neighbours = neighbours(transform.translation, kind.senses(), grid);
+    let agent = index[&entity];
+    let (senses, stage, targets) = orient(
+        agent,
+        &mut relations,
+        !player && !mount,
+        &Surroundings {
+            climate,
+            neighbours: &neighbours,
+            players,
+            calls,
+            now,
+        },
+        (index, world),
+    );
+    let mut movement = moving(motion.0, transform.rotation);
+    let controls = movement.advance(kind, &senses, dt);
+    relations.activity = controls.activity;
+    let effort = (movement.velocity - climate.wind).length() / kind.speed().max(1.0);
+    let alive = live(&mut body.0, kind, climate, effort.min(2.0), &mut patch, dt);
+    if !alive {
+        outcome.deaths += 1;
+        outcome.exchange(cell, before, patch);
+        return;
+    }
+    let meal = if stage.forages() {
+        forage(agent, &mut body.0, &relations, &neighbours, &mut patch, dt)
+    } else {
+        stage.provide(entity, &mut body.0, dt)
+    };
+    outcome.exchange(cell, before, patch);
+    outcome.meals.extend(meal);
+    conduct(
+        agent,
+        &mut body.0,
+        &mut relations,
+        &targets,
+        index,
+        Conduct {
+            now,
+            dt,
+            attacks: &mut outcome.attacks,
+            calls: &mut outcome.calls,
+        },
+    );
+    outcome
+        .seedlings
+        .extend(pass_seed(&mut relations, now, transform.translation));
+    if !player && !mount {
+        relocate(
+            agent,
+            stage,
+            &mut relations,
+            (&mut transform, &mut motion),
+            &movement,
+            index,
+            Move {
+                coordinate: coordinate.map(Mut::into_inner),
+                world,
+                wind: climate.wind.to_engine(),
+                dt,
+                now,
+            },
+        );
+    }
+    if living.load(Ordering::Relaxed) < POPULATION_LIMIT
+        && reproduce(agent, &mut body.0, &mut relations, &neighbours, now)
+    {
+        living.fetch_add(1, Ordering::Relaxed);
+        commands.command_scope(|mut commands| {
+            bear(&mut commands, agent, &neighbours, transform.translation);
+        });
+        outcome.births += 1;
     }
 }
 
@@ -434,7 +593,7 @@ fn simulate(
 fn players(organisms: &Query<Organisms>) -> Vec<Vec3> {
     organisms
         .iter()
-        .filter(|(.., player, mount)| *player || *mount)
+        .filter(|(.., player, mount, _)| *player || *mount)
         .map(|(_, _, _, _, transform, ..)| transform.translation)
         .collect()
 }
@@ -472,7 +631,7 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
     organisms
         .iter()
         .map(
-            |(entity, species, body, relations, transform, motion, _, _)| Agent {
+            |(entity, species, body, relations, transform, motion, player, mount, _)| Agent {
                 entity,
                 kind: species.0,
                 vitals: body.0,
@@ -480,6 +639,7 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
                 velocity: motion.0,
                 rotation: transform.rotation,
                 activity: relations.activity,
+                protected: player || mount,
             },
         )
         .collect()
@@ -550,6 +710,7 @@ mod tests {
             velocity: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             activity: Activity::Drift,
+            protected: false,
         };
         let mut relations = Relations::default();
         assert!(
@@ -625,6 +786,7 @@ mod tests {
                 velocity: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
                 activity: Activity::Drift,
+                protected: false,
             }
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
@@ -711,6 +873,7 @@ mod tests {
             velocity: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             activity: Activity::Drift,
+            protected: false,
         };
         let mut relations = Relations {
             remembered_food: Some((

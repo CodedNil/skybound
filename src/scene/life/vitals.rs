@@ -122,6 +122,14 @@ impl Vitals {
         }
     }
 
+    /// A grown body of a kind as the world starts it: rested and fed, any aur sacs full.
+    pub fn born(kind: Kind) -> Self {
+        Self {
+            aur: kind.animal().map_or(0.0, |animal| animal.aur),
+            ..Self::new(kind.biology())
+        }
+    }
+
     pub fn ingest(&mut self, biomass: f32, bound_aur: f32) {
         self.gut += biomass.max(0.0);
         self.gut_aur += bound_aur.max(0.0);

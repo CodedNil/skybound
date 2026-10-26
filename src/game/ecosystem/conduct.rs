@@ -92,9 +92,10 @@ pub(super) fn engage(
     if activity == Activity::Strike
         && distance < reach + ethology.range
         && now >= relations.ready
-        && let Some(blow) = (ethology.blow)(&aim(agent, prey, body))
+        && let Some(blow) = (ethology.blow)(&aim(agent, prey, body, relations.mind.wear))
     {
         body.reserve = (body.reserve - blow.cost).max(0.0);
+        relations.mind.wear = (relations.mind.wear + 0.08).min(1.0);
         attacks.push(Attack {
             victim: prey.entity,
             strike: Some(blow.strike),
@@ -166,6 +167,10 @@ pub(super) fn conduct(
     if relations.senses.goal.is_some_and(|goal| goal.call) {
         call(agent, relations, index, calls);
     }
+    // Honing brings back the edge its blows wore away.
+    if activity == Activity::Hone {
+        relations.mind.wear = (relations.mind.wear - 0.05 * dt).max(0.0);
+    }
     if activity == Activity::Sign {
         write(body, dt);
     }
@@ -210,7 +215,7 @@ pub(super) fn carry(hunter: Agent, prey: Option<Agent>, activity: Activity) -> O
 /// How a hunter's blow lands, seen from inside its prey: the way the hunter is moving and where it
 /// is in the prey's frame, the prey's size, a repeatable scatter thrown wider by a fast-dodging
 /// prey, where the prey's pump lies, and the hunter's reserve.
-pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals) -> Aim {
+pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals, wear: f32) -> Aim {
     let viscera = prey.kind.organs();
     let extent = viscera.extent();
     let turn = prey.rotation.inverse();
@@ -233,6 +238,7 @@ pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals) -> Aim {
         pump: viscera.find(Function::Circulation).unwrap_or_default(),
         nerve: viscera.find(Function::Coordination).unwrap_or_default(),
         reserve: body.reserve,
+        edge: 1.0 - wear * 0.6,
     }
 }
 
@@ -240,10 +246,12 @@ pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals) -> Aim {
 pub(super) fn land(organisms: &mut Query<Organisms>, attacks: &[Attack]) -> u64 {
     let mut deaths = 0;
     for attack in attacks {
-        let Ok((_, species, mut body, mut relations, ..)) = organisms.get_mut(attack.victim) else {
+        let Ok((_, species, mut body, mut relations, _, _, player, mount, _)) =
+            organisms.get_mut(attack.victim)
+        else {
             continue;
         };
-        if body.0.health <= 0.0 {
+        if body.0.health <= 0.0 || player || mount {
             continue;
         }
         body.0.stunned = body.0.stunned.max(attack.stun);

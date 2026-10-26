@@ -4,11 +4,18 @@ use spirv_std::glam::{Mat3, Quat, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-pub const REACTION_HEIGHT: f32 = 200_000.0;
+/// The pull of the planet at the aur's surface, in metres per second squared.
+///
+/// It is about a twelfth of Earth's, from a world of rocky density only 750 km across, and it is
+/// why so much of its life lives in the sky: the gentlest updraft holds up a body that would fall
+/// like a stone on a larger world.
+pub const GRAVITY: f32 = 0.8;
+
+pub const REACTION_HEIGHT: f32 = 100_000.0;
 
 pub const REACTION_RADIUS: f32 = PLANET_RADIUS + REACTION_HEIGHT;
 
-pub const REACTION_SPREAD: f32 = 220_000.0;
+pub const REACTION_SPREAD: f32 = 110_000.0;
 
 /// The direction towards its pole light from a point in the planet.
 pub fn light_towards(point: Vec3) -> Vec3 {

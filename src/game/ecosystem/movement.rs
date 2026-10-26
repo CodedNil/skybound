@@ -15,8 +15,9 @@ use skybound::scene::life::{
 use std::collections::HashMap;
 
 /// Everything moving an organism needs from the world.
-pub(super) struct Move<'a, 'w, 's, 'q> {
-    pub(super) coordinates: &'a mut Query<'w, 's, &'q mut PlanetPosition>,
+pub(super) struct Move<'a> {
+    /// Its place on the planet, once it has one.
+    pub(super) coordinate: Option<&'a mut PlanetPosition>,
     pub(super) world: &'a WorldData,
     pub(super) wind: Vec3,
     pub(super) dt: f32,
@@ -35,7 +36,7 @@ pub(super) fn relocate(
     step: Move,
 ) {
     let Move {
-        coordinates,
+        coordinate,
         world,
         wind,
         dt,
@@ -60,12 +61,12 @@ pub(super) fn relocate(
         motion.0 = host.velocity;
     } else if stage == Stage::Egg {
         // An egg cast loose goes where the air takes it.
-        travel(agent.entity, wind * dt, transform, coordinates, world);
+        travel(wind * dt, transform, coordinate, world);
         motion.0 = wind;
     } else {
         relations.host = None;
         let offset = movement.position.to_engine();
-        travel(agent.entity, offset, transform, coordinates, world);
+        travel(offset, transform, coordinate, world);
         transform.rotation = movement.rotation.to_engine();
         motion.0 = movement.velocity.to_engine();
     }
@@ -101,7 +102,7 @@ pub(super) fn held_position(agent: Agent, host: &Agent, carried: bool, world: &W
             }
             // In the pouch, its front at the pouch's mouth.
             Some(Brood::Pouch) => {
-                let pouch = host.kind.look().brood;
+                let pouch = host.kind.look().brood * host.kind.biology().size;
                 host.position
                     + host.rotation
                         * Vec3::new(0.0, pouch.x + pouch.w * 0.3, pouch.y - pouch.z * 0.4)
@@ -126,13 +127,12 @@ pub(super) fn held_position(agent: Agent, host: &Agent, carried: bool, world: &W
 
 /// Move an organism through the world, on the planet's surface frame when it has one.
 pub(super) fn travel(
-    entity: Entity,
     offset: Vec3,
     transform: &mut Transform,
-    coordinates: &mut Query<&mut PlanetPosition>,
+    coordinate: Option<&mut PlanetPosition>,
     world: &WorldData,
 ) {
-    if let Ok(mut coordinate) = coordinates.get_mut(entity) {
+    if let Some(coordinate) = coordinate {
         coordinate.translate(offset, transform, world);
     } else {
         transform.translation += offset;

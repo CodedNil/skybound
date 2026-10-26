@@ -100,6 +100,8 @@ pub struct Perception {
     pub sunward: Vec3,
     /// How strongly the air rises here.
     pub updraft: f32,
+    /// How damp the air is, from bone dry to the wet heart of a cloud.
+    pub humidity: f32,
     /// The nearest of each thing its lineage takes notice of, beyond what every animal senses.
     pub marks: [Option<(Interest, Vec3)>; 4],
 }
@@ -150,6 +152,8 @@ pub struct Glimpse {
     pub grown: f32,
     /// Whether it was only heard: a call from far off.
     pub heard: bool,
+    /// What it is doing, as far as can be seen.
+    pub activity: Activity,
 }
 
 /// What the body asks for, each from nothing to urgent.
@@ -214,6 +218,9 @@ pub struct Mind {
     pub course: Vec3,
     /// How hungry it was when it last decided.
     pub hunger: f32,
+    /// How worn the tools it kills with are, from keen to blunt: each blow dulls an edge, a beak
+    /// or a stylet a little, and only a lineage that tends its tools gets them back.
+    pub wear: f32,
 }
 
 impl Mind {
@@ -244,6 +251,7 @@ impl Mind {
             individual,
             threat: threat(seen),
             fear: 0.0,
+            wear: self.wear,
         };
         situation.fear = (ethology.fear)(&situation, self);
         self.hunger = drives.hunger;
@@ -301,6 +309,8 @@ pub struct Situation<'a> {
     pub individual: u32,
     pub threat: f32,
     pub fear: f32,
+    /// How worn its weapons are; see [`Mind::wear`].
+    pub wear: f32,
 }
 
 impl Situation<'_> {
@@ -376,6 +386,8 @@ pub struct Aim {
     pub pump: Vec3,
     pub nerve: Vec3,
     pub reserve: f32,
+    /// How much of its edge the hunter's weapon still has, from blunted to keen.
+    pub edge: f32,
 }
 
 /// What a blow does: the wound, how long it holds the prey, how long until the hunter can strike
@@ -538,7 +550,10 @@ mod tests {
         KINDS, Kingdom,
         animalia::{
             nature::{ROOST, SEEK},
-            tetralata::{FOLLOW, vivipara::YOUNG},
+            tetralata::{
+                FOLLOW,
+                vivipara::{YOUNG, ferrilaminata::ferrispinidae::WHETSTONE},
+            },
         },
     };
 
@@ -697,6 +712,7 @@ mod tests {
             individual: 1,
             threat: 0.0,
             fear: 0.0,
+            wear: 0.0,
         };
         let mut urges = Urges::new();
         (kind.behaviour().urges)(&situation, &mut urges);
@@ -750,6 +766,44 @@ mod tests {
             "the Old Wise Ones were no more sociable than Shredders"
         );
         assert_eq!(drifter, 0, "a gas-bag played");
+    }
+
+    #[test]
+    fn a_blunted_iron_spine_hones_and_a_threatened_grounder_hunkers() {
+        let calm = Drives {
+            youth: 1.0,
+            ..Drives::default()
+        };
+        let mut seen = seen();
+        seen.light = 0.3;
+        seen.note(WHETSTONE, Vec3::X * 20.0);
+        let mut spine = Mind::new(3);
+        spine.wear = 0.9;
+        let goal = spine.decide(Kind::Ferrispina, calm, &seen, 0.0, 3);
+        assert_eq!(
+            goal.activity,
+            Activity::Hone,
+            "a blunted Iron Spine did not hone"
+        );
+        let threat = Sighting {
+            offset: Vec3::new(30.0, 0.0, 0.0),
+            velocity: Vec3::new(-20.0, 0.0, 0.0),
+            helpless: false,
+        };
+        let danger = Perception {
+            threat: Some(threat),
+            ..Perception {
+                up: Vec3::Y,
+                ..Perception::default()
+            }
+        };
+        let mut grounder = Mind::new(3);
+        let goal = grounder.decide(Kind::Lithosoma, calm, &danger, 0.0, 3);
+        assert_ne!(
+            goal.activity,
+            Activity::Flee,
+            "a Grounder tried to outfly a hunter"
+        );
     }
 
     #[test]

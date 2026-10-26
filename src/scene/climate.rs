@@ -65,11 +65,11 @@ pub fn nearest_layer(altitude: f32) -> u32 {
 }
 
 /// Weather systems in flight at once.
-pub const CLOUD_SLOTS: u32 = 8192;
+pub const CLOUD_SLOTS: u32 = 2048;
 
 /// Cloud map texels across one cube face. Each face carries a one texel border so that filtering
 /// never reads across a face edge.
-pub const CLOUD_FACE: u32 = 512;
+pub const CLOUD_FACE: u32 = 256;
 
 pub const CLOUD_MAP_WIDTH: u32 = (CLOUD_FACE + 2) * 6;
 

@@ -22,19 +22,60 @@ taxon!(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    //! Glowgnomes court with the lamps they carry, hanging together in the dark of the wood.
+    //! Glowgnomes court with the lamps they carry, hanging together in the dark of the wood. As
+    //! the light fails they come home to their Whisperwood and gather on its trunk, lamps lit, so
+    //! the tree glows to draw the visitors that feed it.
 
     use crate::scene::life::{
+        Kind,
         animalia::{
-            mind::{Ethology, Situation, display_near},
+            mind::{
+                Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, display_near,
+                orbit,
+            },
             nature::ROOST,
             sanguinivora::ETHOLOGY as BLOOD_FEEDER,
         },
-        behaviour::Goal,
+        behaviour::{Activity, Goal},
     };
+
+    /// Its Whisperwood.
+    const TREE: Interest = Interest("tree");
+
+    /// Lamp lit, on the trunk of its tree.
+    const LAMPLIGHT: Intent = Intent {
+        name: "lamplight",
+        act: |_, s| {
+            let up = s.up();
+            Goal::new(
+                Activity::Display,
+                s.seen
+                    .mark(TREE)
+                    .map(|tree| tree + orbit(up, tree, 2.5, s.wobble() * 9.0)),
+                0.4,
+            )
+            .hovering()
+        },
+    };
+
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (BLOOD_FEEDER.notice)(glimpse, seen);
+        if !glimpse.heard && glimpse.other == Kind::Susurrus {
+            seen.note(TREE, glimpse.offset);
+        }
+    }
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (BLOOD_FEEDER.urges)(s, urges);
+        if s.seen.mark(TREE).is_some() {
+            urges.add(LAMPLIGHT, ((0.2 - s.seen.light) * 4.0).max(0.0));
+        }
+    }
 
     pub const ETHOLOGY: Ethology = Ethology {
         court: glow,
+        urges,
+        notice,
         ..BLOOD_FEEDER
     };
 

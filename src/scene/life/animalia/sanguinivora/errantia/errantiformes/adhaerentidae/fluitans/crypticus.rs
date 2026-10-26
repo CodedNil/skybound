@@ -21,6 +21,7 @@ use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.04,
     maturity_days: 18.0,
     lifespan_days: 600.0,
     adult_mass: 0.02,
@@ -104,10 +105,17 @@ pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::{
-        mind::{Ethology, hang_still},
-        physiology::{Light, Physiology},
-        sanguinivora::errantia::ETHOLOGY as WANDERER,
+    //! The Floating Ones wait inside the cover of large plants, hanging still among the fronds in
+    //! the narrow ways grazers feed along, until a passing grazer brings its hide within reach.
+
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, hang_still},
+            nature::ROOST,
+            physiology::{Light, Physiology},
+            sanguinivora::errantia::ETHOLOGY as WANDERER,
+        },
+        behaviour::{Activity, Goal},
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
@@ -115,9 +123,16 @@ mod nature {
         ..super::super::PHYSIOLOGY
     };
 
-    /// The Floating Ones hang motionless, waiting for a host to pass.
     pub const ETHOLOGY: Ethology = Ethology {
-        wander: |_, _| hang_still(),
+        wander: |_, s| {
+            // Into the fronds first, then still.
+            s.seen
+                .mark(ROOST)
+                .filter(|cover| cover.length() > 4.0)
+                .map_or_else(hang_still, |cover| {
+                    Goal::new(Activity::Drift, Some(cover), 0.3).hovering()
+                })
+        },
         ..WANDERER
     };
 }

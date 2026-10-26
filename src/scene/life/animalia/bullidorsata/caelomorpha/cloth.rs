@@ -1,4 +1,4 @@
-use crate::scene::life::CreatureInstance;
+use crate::scene::{life::CreatureInstance, planet::GRAVITY};
 use core::array::from_fn;
 use spirv_std::glam::{Vec3, vec3};
 
@@ -80,8 +80,8 @@ impl Cloth {
                     let wind = vec3(4.0 * gust.sin(), 0.6 + 6.0 * (gust * 1.3).cos(), 7.0)
                         - velocity / STEP;
                     let pressure = normal * wind.dot(normal) * wind.dot(normal).abs() * 0.12;
-                    self.points[i] +=
-                        velocity + (vec3(0.0, -3.0, 0.0) + pressure + wind * 0.08) * STEP * STEP;
+                    self.points[i] += velocity
+                        + (vec3(0.0, -GRAVITY, 0.0) + pressure + wind * 0.08) * STEP * STEP;
                 }
             }
             for &(a, b, length, compliance) in &self.constraints {

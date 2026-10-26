@@ -23,6 +23,7 @@ pub use nature::{ETHOLOGY, PHYSIOLOGY};
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.25,
     maturity_days: 2200.0,
     lifespan_days: 42000.0,
     ..super::BIOLOGY

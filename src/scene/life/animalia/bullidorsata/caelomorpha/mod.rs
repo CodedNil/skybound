@@ -398,7 +398,7 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::life::Kind;
+    use crate::scene::life::{Kind, development};
     use aerogigantiformes::aerogigantidae::aerogigas::auratus as aerogigas;
 
     #[test]
@@ -431,13 +431,13 @@ mod tests {
         // than through the hollow beneath it.
         for direction in [Vec3::X, Vec3::Y, Vec3::Z, -Vec3::X, -Vec3::Y, -Vec3::Z] {
             let ray = Ray {
-                origin: direction * 80.0 + Vec3::Y * 3.2,
+                origin: direction * 160.0 + Vec3::Y * 3.2 * development::scale(&c).y,
                 direction: -direction,
                 light: Vec3::Y,
                 ambient: Vec3::ONE,
                 radiance: Vec3::ONE,
                 footprint: 0.0001,
-                max_distance: 160.0,
+                max_distance: 320.0,
             };
             let [front, back] = closed_hits(ray, &c, aerogigas::envelope);
             assert!(
@@ -448,7 +448,10 @@ mod tests {
                 back.distance() > front.distance() + 1.0,
                 "missing enclosed volume"
             );
-            let midpoint = ray.origin + ray.direction * front.distance().midpoint(back.distance());
+            // The envelope is laid out in the design's frame, which the body is grown from.
+            let midpoint = (ray.origin
+                + ray.direction * front.distance().midpoint(back.distance()))
+                / development::scale(&c);
             assert!(
                 aerogigas::envelope(midpoint, &c).distance < 0.0,
                 "skin has no interior"

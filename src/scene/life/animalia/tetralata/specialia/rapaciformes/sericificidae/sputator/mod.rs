@@ -23,11 +23,13 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Spitfires hold off at range, out of reach of a struggling target, and fire the acid their
-    //! glands store, which they must wait to refill.
+    //! glands store, which they must wait to refill. Acid is slow to make, so each holds a hunting
+    //! post and drives off any other Spitfire that strays near it, with threat displays rather
+    //! than spit, for neither can spare it.
 
     use crate::scene::life::{
         animalia::{
-            mind::{Aim, Blow, Ethology, Mind, Sighting, Situation},
+            mind::{Aim, Blow, Ethology, Intent, Mind, Sighting, Situation, Urges},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
         behaviour::{Activity, Goal},
@@ -35,6 +37,7 @@ mod nature {
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
+        urges,
         hunt: snipe,
         blow: acid,
         hunts: true,
@@ -43,6 +46,19 @@ mod nature {
     };
 
     const RANGE: f32 = 12.0;
+
+    /// Driving a rival from its post: flaring at it, wings spread, without spitting.
+    const EVICT: Intent = Intent {
+        name: "evict",
+        act: |_, s| Goal::new(Activity::Guard, s.seen.kin, 0.9),
+    };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (SILK_MAKER.urges)(s, urges);
+        if s.seen.kin.is_some_and(|rival| rival.length() < 40.0) && s.drives.youth >= 1.0 {
+            urges.add(EVICT, 0.4 + s.temper.aggression * 0.5);
+        }
+    }
 
     fn snipe(_: &mut Mind, _: &Situation, prey: Sighting) -> Goal {
         let to = prey.offset;

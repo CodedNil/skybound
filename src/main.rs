@@ -10,6 +10,7 @@ mod benchmark;
 mod game;
 mod graphics;
 mod math;
+mod snapshot;
 
 /// Identifies the game to NVIDIA's DLSS runtime.
 const DLSS_PROJECT: Uuid = Uuid::from_u128(0x106e_92de_300b_4087_a6c3_92da_af7b_284c);
@@ -28,6 +29,7 @@ fn main() {
         }),
         game::GamePlugin,
         graphics::GraphicsPlugin,
+        snapshot::SnapshotPlugin,
     ));
     if env::args().any(|arg| arg == "--benchmark") {
         app.add_plugins(benchmark::BenchmarkPlugin);

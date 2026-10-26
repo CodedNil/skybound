@@ -22,15 +22,34 @@ taxon!(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    //! The Feathered Leeches glide the cloud margins on their ring of a wing, and sleep on it.
+    //! The Feathered Leeches live at the margins of cloud. They glide its broken edges, where a
+    //! passing host shows but they stay hidden, sleep on the wing, and after a meal slip back into
+    //! the vapour before the host can turn.
 
-    use crate::scene::life::animalia::{
-        mind::{Ethology, glide_asleep},
-        sanguinivora::ETHOLOGY as BLOOD_FEEDER,
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent, Situation, Urges, glide_asleep},
+            sanguinivora::ETHOLOGY as BLOOD_FEEDER,
+        },
+        behaviour::{Activity, Goal},
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
+        urges,
         sleep: glide_asleep,
         ..BLOOD_FEEDER
     };
+
+    /// Back into cover: up towards the wetter air of the cloud.
+    const RETREAT: Intent = Intent {
+        name: "retreat to cloud",
+        act: |_, s| Goal::new(Activity::Return, Some(s.up() * 80.0), 0.8),
+    };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (BLOOD_FEEDER.urges)(s, urges);
+        // Fed, or caught out in the dry, it makes for cover.
+        let exposed = (0.55 - s.seen.humidity).max(0.0) * 1.5;
+        urges.add(RETREAT, exposed + (1.0 - s.drives.hunger) * 0.3);
+    }
 }

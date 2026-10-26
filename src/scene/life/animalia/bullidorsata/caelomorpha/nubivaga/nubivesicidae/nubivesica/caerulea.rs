@@ -22,6 +22,7 @@ use spirv_std::glam::{Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.55,
     maturity_days: 120.0,
     lifespan_days: 9000.0,
     adult_mass: 3.0,
@@ -145,13 +146,20 @@ pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
+    //! Cloud Balloons live by the cloud. They sink towards the rich air near the mists when hungry
+    //! and rise when fed, but a balloon in dry air climbs into the nearest cloud, where its moist
+    //! folds can drink and its pearly skin is lost against the vapour.
+
     use crate::scene::life::{
-        animalia::{bullidorsata::ETHOLOGY as GAS_BAG, mind::Ethology},
+        animalia::{
+            bullidorsata::ETHOLOGY as GAS_BAG,
+            mind::{Ethology, Intent, Situation, Urges},
+        },
         behaviour::{Activity, Goal},
     };
 
-    /// Cloud Balloons sink towards the rich air near the mists when hungry, and rise when fed.
     pub const ETHOLOGY: Ethology = Ethology {
+        urges,
         wander: |mind, s| {
             Goal::new(
                 Activity::Drift,
@@ -161,4 +169,15 @@ mod nature {
         },
         ..GAS_BAG
     };
+
+    /// Climbing into cloud, where the air is wet.
+    const ENSHROUD: Intent = Intent {
+        name: "enshroud",
+        act: |_, s| Goal::new(Activity::Return, Some(s.up() * 120.0), 0.3),
+    };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (GAS_BAG.urges)(s, urges);
+        urges.add(ENSHROUD, (0.6 - s.seen.humidity).max(0.0) * 1.2);
+    }
 }

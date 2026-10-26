@@ -10,6 +10,7 @@ pub const ANCESTRAL: Biology = Biology {
     lifespan_days: 3000.0,
     adult_mass: 1.0,
     altitude: (50.0, 6000.0),
+    size: 1.0,
 };
 
 /// A life history.
@@ -23,6 +24,9 @@ pub struct Biology {
     pub adult_mass: f32,
     /// The band of altitudes it lives in, in metres above the aur.
     pub altitude: (f32, f32),
+    /// How much larger or smaller than its drawn design the grown body is. A species' surface and
+    /// organs are laid out in the design's own frame, and the body grows to this scale of it.
+    pub size: f32,
 }
 
 #[cfg(test)]
@@ -42,6 +46,7 @@ mod tests {
                 "invalid habitat for {kind:?}"
             );
             assert!(biology.adult_mass > 0.0, "invalid biomass for {kind:?}");
+            assert!(biology.size > 0.0, "invalid size for {kind:?}");
         }
     }
 }
