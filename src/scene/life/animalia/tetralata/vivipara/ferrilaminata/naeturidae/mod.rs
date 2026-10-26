@@ -1,16 +1,19 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Feeding, Organs, Social};
+use crate::scene::life::biology::Biology;
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::{Function, Organ};
+#[cfg(not(target_arch = "spirv"))]
+use spirv_std::glam::vec3;
 pub mod naeturus;
 
-pub const BIOLOGY: Biology = Biology {
-    organs: Organs {
-        aur_capacity: 1.0,
-        ..super::BIOLOGY.organs
-    },
-    feeding: Feeding::Omnivore,
-    social: Social::Mutualist,
-    ..super::BIOLOGY
-};
+/// A sac that holds aur safely, found only in the Nætu lineage.
+#[cfg(not(target_arch = "spirv"))]
+pub const AUR_SAC: Organ = Organ::new("aur sac", Function::AurStore, vec3(0.38, 0.85, 0.95));
+
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Family,
@@ -24,3 +27,41 @@ taxon!(
         "Their partnership depends on careful Nætu mist-skimming and mutual care, rather than general immunity to the lethal ocean below.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! The Nætu lineage is curious and playful: the young chase one another, and anything new is
+    //! worth a closer look.
+
+    use crate::scene::life::animalia::{
+        mind::{Ethology, Situation, Urges},
+        physiology::{Physiology, Take, omnivore},
+        tetralata::{
+            INVESTIGATE,
+            vivipara::{ETHOLOGY as LIVE_BEARER, sociable},
+        },
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: omnivore,
+        takes: Take::Living,
+        aur: 1.0,
+        flocks: false,
+        partner: |kind, other| other != kind && other.taxon().descends_from(&super::TAXON),
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges,
+        ..LIVE_BEARER
+    };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (LIVE_BEARER.urges)(s, urges);
+        if s.seen.player.is_some() {
+            urges.add(INVESTIGATE, s.temper.curiosity * 0.9);
+        }
+        // The cleverest of all, and the most playful and sociable.
+        sociable(s, urges, 1.5);
+    }
+}

@@ -7,6 +7,14 @@ use crate::scene::life::{
     ellipsoid, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    organs::{Viscera, pair, site},
+};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -16,10 +24,14 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 5400.0,
     adult_mass: 0.3,
     altitude: (800.0, 7000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 25.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -30,7 +42,7 @@ taxon!(
         "Several rounded gas chambers surround a darker cluster of organs, keeping the pointed front poised in the updraft.",
         "The ribbons curl through adjacent currents and collect algae and plant fragments on their sticky margins.",
         "Gentle changes in orientation regulate collection, while folded ribbons reduce strain when the animal crosses a faster stream.",
-        "Their broad altitude range lets them follow suspended food upward during bright aur phases and settle toward richer air as the cycle dims.",
+        "Their broad altitude range lets them follow suspended food upward and settle toward richer air when it thins.",
     ],
 );
 
@@ -82,9 +94,9 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
 
 /// A flattened lens drawn out to a pointed leading edge.
 ///
-/// The current presses unevenly across it and turns it to face useful air;
-/// behind, it thins to a lip along which the feeding ribbons are rooted,
-/// trailing clear of the body into the neighbouring streams.
+/// The current presses unevenly across it and turns it to face useful air; behind, it thins to a
+/// lip along which the feeding ribbons are rooted, trailing clear of the body into the
+/// neighbouring streams.
 pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
     let front = (-p.z / 4.6).clamp(0.0, 1.0);
     let radii = vec3(
@@ -96,6 +108,16 @@ pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
     let lip = rounded(p - vec3(0.0, -0.45, 3.9), vec3(3.6, 0.35, 0.9));
     Surface::new(smooth_min(lens, lip, 0.6), 0)
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(FLOAT, vec3(0.00, -0.36, 0.14), vec3(0.29, 0.29, 0.29)),
+    pair(FLOAT, vec3(1.02, -0.43, 0.28), vec3(0.19, 0.19, 0.19)),
+    site(CROP, vec3(0.00, -0.64, -0.42), vec3(0.23, 0.23, 0.23)),
+    pair(BREATHER, vec3(1.21, -0.71, -0.28), vec3(0.29, 0.15, 0.29)),
+    site(BROOD, vec3(0.00, -0.78, 0.42), vec3(0.20, 0.12, 0.20)),
+]);
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);

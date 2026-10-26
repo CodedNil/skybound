@@ -2,6 +2,11 @@ pub use super::BIOLOGY;
 
 pub mod auratus;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Genus,
     "Aerogigas",

@@ -102,8 +102,8 @@ pub fn ejection_lookup(
 fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     let view = &frame.view;
     let origin = view.world_position.xyz();
-    // The bright veil below lights everything above it from beneath, fading
-    // with height as it does into the haze.
+    // The bright veil below lights everything above it from beneath, fading with height as it does
+    // into the haze.
     let veil =
         vec3(0.30, 0.26, 0.40) * view.sky_horizon.y * (-view.altitude().max(0.0) / 3000.0).exp();
     Ray {
@@ -117,8 +117,7 @@ fn scene_ray(uv: Vec2, frame: &FrameUniform, jittered: bool) -> Ray {
     }
 }
 
-/// Whether a ray passes within a creature's bounding sphere before the
-/// nearest hit so far.
+/// Whether a ray passes within a creature's bounding sphere before the nearest hit so far.
 fn reaches(ray: Ray, c: &CreatureInstance, before: f32) -> bool {
     let bounds = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
     c.position.w > 0.0 && bounds.x <= bounds.y && bounds.y > 0.0 && bounds.x < before
@@ -257,8 +256,8 @@ fn atmosphere(
             .sample_by_lod(*sampler, sky_uv(direction, light, horizon), 0.0)
             .xyz()
     };
-    // Air in front of the ocean scatters horizon light and the aur glow
-    // rising beneath it, never the sky behind the planet.
+    // Air in front of the ocean scatters horizon light and the aur glow rising beneath it, never
+    // the sky behind the planet.
     let level = direction
         .with_z(direction.z.max(horizon + 0.03))
         .normalize();
@@ -277,9 +276,8 @@ fn screen(clip_from_world: Mat4, point: Vec3) -> Vec3 {
     (clip.xy() / clip.w.max(1.0e-6) * vec2(0.5, -0.5) + 0.5).extend(clip.w)
 }
 
-/// How far a point has moved across the screen since last frame, from where
-/// it was then. Both are projected without jitter: upscalers expect motion
-/// to hold only movement.
+/// How far a point has moved across the screen since last frame, from where it was then. Both are
+/// projected without jitter: upscalers expect motion to hold only movement.
 fn motion(position: Vec3, previous: Vec3, frame: &FrameUniform) -> Vec2 {
     let now = screen(frame.view.unjittered_clip_from_world, position);
     let then = screen(frame.view.prev_clip_from_world, previous);
@@ -329,8 +327,8 @@ pub fn opaque(
     *out_depth = depth;
 }
 
-/// The clouds along every pixel's ray, marched apart from the rest of the
-/// volume so that each shader stays small.
+/// The clouds along every pixel's ray, marched apart from the rest of the volume so that each
+/// shader stays small.
 #[spirv(fragment(entry_point_name = "clouds"))]
 pub fn clouds(
     #[spirv(frag_coord)] fragment: Vec4,
@@ -375,10 +373,9 @@ pub fn clouds(
         cached: true,
         sampler,
     };
-    // A phase for the cloud steps: interleaved gradient noise across the
-    // screen, so neighbouring pixels sample different depths, advanced by
-    // the golden ratio each frame, so every pixel visits its phases evenly
-    // and the upscaler's history averages them without leaving speckle.
+    // A phase for the cloud steps: interleaved gradient noise across the screen, so neighbouring
+    // pixels sample different depths, advanced by the golden ratio each frame, so every pixel
+    // visits its phases evenly and the upscaler's history averages them without leaving speckle.
     let pixel = fragment.xy().floor();
     let gradient =
         (52.982_918 * (0.067_110_56 * pixel.x + 0.005_837_15 * pixel.y).fract_gl()).fract_gl();
@@ -397,10 +394,9 @@ pub fn clouds(
     *out_front = slab.depths;
 }
 
-/// Lay the volume over the scene and slot the thin layers in front of it;
-/// all three are drawn at every pixel. The view's motion follows whichever
-/// the pixel mostly shows: an upscaler given the solids' motion beneath a
-/// cloud smears the cloud.
+/// Lay the volume over the scene and slot the thin layers in front of it; all three are drawn at
+/// every pixel. The view's motion follows whichever the pixel mostly shows: an upscaler given the
+/// solids' motion beneath a cloud smears the cloud.
 #[spirv(fragment(entry_point_name = "volume_composite"))]
 pub fn volume_composite(
     #[spirv(location = 0)] uv: Vec2,
@@ -439,8 +435,8 @@ pub fn volume_composite(
         return;
     }
     let transmission = thin_transmission.fetch(pixel).xyz();
-    // The thin layers lie in front of the volume's leading part, which is
-    // taken out of it so it is not counted twice.
+    // The thin layers lie in front of the volume's leading part, which is taken out of it so it is
+    // not counted twice.
     let prefix: Vec4 = thin_prefix.fetch(pixel);
     let opening = prefix.w.max(0.0001);
     let remainder = (fog.xyz() - prefix.xyz()).max(Vec3::ZERO) / opening;
@@ -448,9 +444,8 @@ pub fn volume_composite(
     *out_color = (thin.xyz() + transmission * (remainder + through * background)).extend(1.0);
 }
 
-/// The aur, its arcs and the pole lights, with the clouds slotted in: along
-/// the same jittered ray as the solids at every pixel, so an upscaler is
-/// given the whole scene alike.
+/// The aur, its arcs and the pole lights, with the clouds slotted in: along the same jittered ray
+/// as the solids at every pixel, so an upscaler is given the whole scene alike.
 #[spirv(fragment(entry_point_name = "volume"))]
 pub fn volume(
     #[spirv(location = 0)] uv: Vec2,

@@ -17,8 +17,8 @@ use skybound::scene::{
 use spirv_std::glam::{FloatExt, Vec3, Vec4, Vec4Swizzles, vec2, vec3, vec4};
 use std::sync::{Arc, OnceLock};
 
-/// Seconds between rebuilds of the parcel index. Systems are listed with
-/// enough margin to cover how far they move and grow in that time.
+/// Seconds between rebuilds of the parcel index. Systems are listed with enough margin to cover how
+/// far they move and grow in that time.
 const INDEX_PERIOD: f32 = 60.0;
 
 const INDEX_MARGIN: f32 = 14_000.0;
@@ -32,16 +32,16 @@ const CLEARANCE_LIMIT: f32 = 400_000.0;
 /// How deep inside the veil a discharge is rooted.
 const ROOT_DEPTH: f32 = 112.5;
 
-/// Every weather system in flight, and an index of the systems over each
-/// cube-face cell of the planet.
+/// Every weather system in flight, and an index of the systems over each cube-face cell of
+/// the planet.
 #[derive(Resource, Clone, ExtractResource)]
 #[extract_app(RenderApp)]
 pub struct CloudField {
     pub parcels: Arc<[CloudParcel]>,
     /// Each cell's range of entries, then the entries: parcel ids.
     pub index: Arc<[u32]>,
-    /// Each cell's clear distance, then the bottom and top of its cloud
-    /// below the cirrus level, and the bottom of its cirrus.
+    /// Each cell's clear distance, then the bottom and top of its cloud below the cirrus level,
+    /// and the bottom of its cirrus.
     pub cells: Arc<[Vec4]>,
     /// The time the index was built at.
     pub built: f32,
@@ -102,9 +102,9 @@ impl CloudField {
 }
 
 impl Lightning {
-    /// A rising discharge rooted inside the veil. The main channel keeps
-    /// its course through a flash, but every flicker re-forks its joints a
-    /// little, so a strike crackles instead of hanging still.
+    /// A rising discharge rooted inside the veil. The main channel keeps its course through a
+    /// flash, but every flicker re-forks its joints a little, so a strike crackles instead of
+    /// hanging still.
     pub fn segments(self) -> [[Vec4; 2]; 8] {
         let basis = surface_frame(self.up);
         let root = self.up * (PLANET_RADIUS - ROOT_DEPTH);
@@ -174,8 +174,8 @@ fn angle(a: Vec3, b: Vec3) -> f32 {
     a.dot(b).clamp(-1.0, 1.0).acos()
 }
 
-/// List the systems reaching each cell, and bound how far each cell's sky
-/// is clear and which altitudes its cloud can fill.
+/// List the systems reaching each cell, and bound how far each cell's sky is clear and which
+/// altitudes its cloud can fill.
 fn build_index(parcels: &[CloudParcel]) -> (Vec<u32>, Vec<Vec4>) {
     let geometry = cell_geometry();
     let active: Vec<CloudParcel> = parcels
@@ -212,8 +212,8 @@ fn build_index(parcels: &[CloudParcel]) -> (Vec<u32>, Vec<Vec4>) {
                 })
                 .collect();
             if touching.is_empty() {
-                // Distance from anywhere in the cell to the nearest system,
-                // less what it can move before the next rebuild.
+                // Distance from anywhere in the cell to the nearest system, less what it can move
+                // before the next rebuild.
                 let horizon = (CLEARANCE_LIMIT / PLANET_RADIUS + radius).min(PI).cos();
                 let nearest = active
                     .iter()
@@ -327,8 +327,8 @@ pub fn lightning_events(time: f32) -> impl Iterator<Item = Lightning> {
         })
 }
 
-/// Choose the visible lightning for this frame: flashes light the veil and
-/// bolts are drawn as glowing segments.
+/// Choose the visible lightning for this frame: flashes light the veil and bolts are drawn as
+/// glowing segments.
 pub fn prepare_flashes(view: &mut ViewUniform) {
     view.aur_flashes = [[Vec4::ZERO; 2]; 32];
     view.aur_bolts = [[Vec4::ZERO; 2]; 32];

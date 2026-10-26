@@ -259,8 +259,8 @@ fn setup(params: BenchmarkSetup) {
     }
 }
 
-/// A camera placed by `--altitude` in world metres, looking `--yaw` degrees
-/// from the nearer pole and `--pitch` degrees above the horizon.
+/// A camera placed by `--altitude` in world metres, looking `--yaw` degrees from the nearer pole
+/// and `--pitch` degrees above the horizon.
 fn free_camera(world: &WorldData) -> Option<Transform> {
     let altitude = option("--altitude")?.parse::<f32>().expect("altitude");
     let angle = |name| option(name).map_or(0.0, |s| s.parse::<f32>().expect(name).to_radians());
@@ -275,8 +275,8 @@ fn free_camera(world: &WorldData) -> Option<Transform> {
     Some(Transform::from_translation(eye).looking_to(look, Vec3::Z))
 }
 
-/// Frame the main spire of the nearest archipelago from low over the veil,
-/// or up close where it meets the veil.
+/// Frame the main spire of the nearest archipelago from low over the veil, or up close where it
+/// meets the veil.
 fn spire_camera(world: &WorldData, mount: Vec3, close: bool) -> Transform {
     let here = spire_coordinates(world.position(mount).as_vec3().to_scene()).to_engine();
     let origin = (here.truncate() / SPIRE_CELL).floor();
@@ -293,8 +293,7 @@ fn spire_camera(world: &WorldData, mount: Vec3, close: bool) -> Transform {
             .as_dvec3()
     };
     let (eye, target) = if close {
-        // Beyond the lesser horns, looking down where the main spire's near
-        // side meets the veil.
+        // Beyond the lesser horns, looking down where the main spire's near side meets the veil.
         let away = vec2(-0.93, -0.36);
         (
             point(away * (main.radius + 650.0), 140.0),
@@ -329,8 +328,8 @@ fn cloud_camera(scene: &str, world: &WorldData, time: f32) -> Option<Transform> 
         .iter()
         // Systems nearer the poles, where their light shows their shape.
         .filter(|parcel| {
-            // Rain is staged where the pole light is low, so the storm's
-            // rain is lit and its bow stands above the horizon.
+            // Rain is staged where the pole light is low, so the storm's rain is lit and its bow
+            // stands above the horizon.
             let latitude = parcel.centre.z.abs();
             let placed = if scene == "cloud-rain" {
                 // Just inside the terminator, where the pole light skims in.
@@ -363,8 +362,8 @@ fn cloud_camera(scene: &str, world: &WorldData, time: f32) -> Option<Transform> 
     let (position, target) = match scene {
         "cloud-storm" => (at(260_000.0, -reach * 0.9), at(1250.0, 0.0)),
         "cloud-tower" => (at(middle, -core * 5.0), at(middle, 0.0)),
-        // From the sunward side, looking into the rain beneath the storm,
-        // where its bow stands opposite the light.
+        // From the sunward side, looking into the rain beneath the storm, where its bow stands
+        // opposite the light.
         "cloud-rain" => {
             let sunward = core * 3.0 * up.z.signum();
             (at(base - 187.5, sunward * 2.0), at(base - 312.5, -sunward))

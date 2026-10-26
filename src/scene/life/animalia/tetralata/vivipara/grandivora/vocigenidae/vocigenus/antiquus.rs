@@ -1,10 +1,22 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
+    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     eyespots, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -13,12 +25,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 18000.0,
     lifespan_days: 365_000.0,
-    speed: 8.0,
     adult_mass: 200.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 55.6;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -29,28 +45,27 @@ taxon!(
         "Slow wing strokes and careful use of rising air carry their immense bodies between kelp forests and Laevensails.",
         "Three pairs of mouth tentacles gather only those soft plants, giving the lineage a narrow dependence on healthy floating forests.",
         "Rich calls, shaped by a throat sac and a double rank of hollow resonating horns along the back, pass between companions long before their pale bodies become visible through the haze.",
-        "Their young develop slowly within a live-bearing social lineage whose journeys preserve access to feeding areas across many aur cycles.",
+        "Their young develop slowly within a live-bearing social lineage whose journeys preserve access to feeding areas across many generations.",
     ],
 );
 
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 12.0, 17.0, 5);
     c.opaque_bounds = vec3(10.0, 12.0, 30.0).extend(0.0);
-    rig_tentacles(c, vec3(0.0, -2.4, -15.2), 2.6, BIOLOGY.oral_pairs);
+    rig_tentacles(c, vec3(0.0, -2.4, -15.2), 2.6, ORAL_PAIRS);
     // Display streamers off the belly, flown for companions across open air.
     rig_ribbons(c, 5, vec3(0.0, -4.4, 3.0), 1.4, 18.0);
 }
 
 /// A living airship.
 ///
-/// Its long, pale body carries a chain of gas bladders swelling along the back,
-/// so a giant that lives for centuries can idle on slow strokes between distant
-/// floating forests; between them rise the hollow horns that shape its calls,
-/// carried across open sky long before the animal itself is visible. Beneath
-/// its blunt front hangs a beard of long white barbels and the throat sac it
-/// sings through, the three tentacle pairs that gather its soft plants, and
-/// rows of small eyes along each flank. Its bladders swell and its horns
-/// lengthen through its long life, so no two elders are alike.
+/// Its long, pale body carries a chain of gas bladders swelling along the back, so a giant that
+/// lives for centuries can idle on slow strokes between distant floating forests; between them
+/// rise the hollow horns that shape its calls, carried across open sky long before the animal
+/// itself is visible. Beneath its blunt front hangs a beard of long white barbels and the throat
+/// sac it sings through, the three tentacle pairs that gather its soft plants, and rows of small
+/// eyes along each flank. Its bladders swell and its horns lengthen through its long life, so no
+/// two elders are alike.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let folds = (p.z * 1.3 + (p.x * 0.6).sin()).sin() * 0.12;
     let mut body = rounded(p, vec3(5.0, 4.4, 15.0)) + folds;
@@ -97,11 +112,30 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join(eyespots(p, vec3(4.2, 0.4, -12.0), 1.1, 4, 0.32), 3);
     hit.join(ribbons(p, c, 5), 7);
     hit.join(
-        oral_tentacles(p, c, vec3(0.0, -2.4, -15.2), 2.6, BIOLOGY.oral_pairs),
+        oral_tentacles(p, c, vec3(0.0, -2.4, -15.2), 2.6, ORAL_PAIRS),
         8,
     );
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.27, -10.98), vec3(0.92, 0.85, 2.71)),
+    site(PUMP, vec3(0.00, -0.27, -5.62), vec3(1.77, 1.77, 3.09)),
+    site(CROP, vec3(0.00, -0.27, 1.88), vec3(1.91, 1.70, 4.95)),
+    pair(BREATHER, vec3(3.00, 0.54, -8.04), vec3(0.80, 0.80, 0.80)),
+    site(FLOAT, vec3(0.00, 3.52, -3.48), vec3(0.63, 0.63, 0.63)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(3.00, 1.62, -3.75),
+        vec3(0.81, 0.81, 0.81),
+    ),
+    site(CISTERN, vec3(0.00, -0.27, 7.77), vec3(1.44, 1.44, 3.09)),
+    site(BROOD, vec3(0.00, -0.27, 12.05), vec3(0.99, 0.88, 1.92)),
+    site(FLOAT, vec3(0.00, 3.52, -6.70), vec3(0.54, 0.54, 0.54)),
+    site(FLOAT, vec3(0.00, 3.52, 6.70), vec3(0.66, 0.66, 0.66)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -118,4 +152,19 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        Kind,
+        animalia::physiology::{Light, Physiology},
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Sunlit,
+        speed: 8.0,
+        eats: |_, food| matches!(food, Kind::Aerothallus | Kind::Laevivelum),
+        ..super::super::PHYSIOLOGY
+    };
 }

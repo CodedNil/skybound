@@ -1,26 +1,39 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{curved_tube, oral_tentacles, rig_tentacles},
-    biology::{Biology, Brood, Feeding, Social},
+    animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
+    biology::Biology,
     capsule, eyespots, rounded,
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Strings,
     maturity_days: 30.0,
     lifespan_days: 750.0,
-    feeding: Feeding::Cleaner,
-    social: Social::Mutualist,
-    speed: 8.0,
     adult_mass: 0.08,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 21.6;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -37,7 +50,7 @@ taxon!(
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 3.0, 5.2).extend(0.0);
-    rig_tentacles(c, MOUTH, 0.7, BIOLOGY.oral_pairs);
+    rig_tentacles(c, MOUTH, 0.7, ORAL_PAIRS);
 }
 
 /// Where the mouth tentacles hang, under the front of the sole.
@@ -45,12 +58,11 @@ const MOUTH: Vec3 = vec3(0.0, -0.45, -1.7);
 
 /// A cleaner shaped by the surfaces it works on.
 ///
-/// A low dome of a back sits over a flat sole, so it can press close along a
-/// host's skin, the sole lined with rows of stiff bristles that sweep it. Its
-/// wings rise from high on the dome, clear of the host. Two long feelers search
-/// ahead, and a row of eyes round the rim of the sole watches the skin beneath.
-/// Down the back runs a raised stripe in a signal colour, which hosts learn to
-/// tolerate.
+/// A low dome of a back sits over a flat sole, so it can press close along a host's skin, the
+/// sole lined with rows of stiff bristles that sweep it. Its wings rise from high on the dome,
+/// clear of the host. Two long feelers search ahead, and a row of eyes round the rim of the sole
+/// watches the skin beneath. Down the back runs a raised stripe in a signal colour, which hosts
+/// learn to tolerate.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let dome = rounded(p - vec3(0.0, 0.25, 0.0), vec3(1.5, 0.95, 2.1));
     let body = dome.max(-(p.y + 0.35));
@@ -84,9 +96,26 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         8,
     );
     hit.join(eyespots(p, vec3(1.25, -0.3, -1.1), 0.6, 4, 0.1), 3);
-    hit.join(oral_tentacles(p, c, MOUTH, 0.7, BIOLOGY.oral_pairs), 8);
+    hit.join(oral_tentacles(p, c, MOUTH, 0.7, ORAL_PAIRS), 8);
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.35, -1.49), vec3(0.27, 0.12, 0.39)),
+    site(PUMP, vec3(0.00, 0.13, -0.77), vec3(0.29, 0.13, 0.39)),
+    site(CROP, vec3(0.00, 0.13, 0.15), vec3(0.39, 0.26, 0.39)),
+    pair(BREATHER, vec3(0.74, 0.27, -0.92), vec3(0.31, 0.14, 0.39)),
+    site(FLOAT, vec3(0.00, 0.72, 0.05), vec3(0.32, 0.16, 0.32)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.53, 0.48, -0.31),
+        vec3(0.29, 0.15, 0.42),
+    ),
+    site(CISTERN, vec3(0.00, 0.08, 0.97), vec3(0.29, 0.13, 0.34)),
+    site(BROOD, vec3(0.00, 0.24, 1.49), vec3(0.29, 0.13, 0.42)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -103,4 +132,20 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology, Take};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Sunlit,
+        brood: Brood::Strings,
+        eats: |_, food| food.animal().is_some_and(|animal| animal.parasite),
+        takes: Take::Living,
+        gleans: false,
+        flocks: false,
+        speed: 8.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

@@ -7,6 +7,19 @@ use crate::scene::life::{
     surface::{Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material},
     torso,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
+    organs::{Viscera, pair, site},
+};
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -14,13 +27,17 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 5500.0,
     lifespan_days: 44000.0,
-    oral_pairs: 4,
-    speed: 30.0,
     adult_mass: 0.3,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 3.2;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
+
+/// Four pairs of mouth tentacles, the outer pair grown long for tools: the Næ's hands.
+const ORAL_PAIRS: u32 = 4;
 
 taxon!(
     Species,
@@ -43,18 +60,17 @@ const HEAD: f32 = 0.14;
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 0.63, 1.5, 0);
     creature.opaque_bounds = vec3(0.9, 1.2, 2.4).extend(0.0);
-    rig_tentacles(creature, mouth(LENGTH, HEAD), 0.5, BIOLOGY.oral_pairs);
+    rig_tentacles(creature, mouth(LENGTH, HEAD), 0.5, ORAL_PAIRS);
 }
 
 /// A Næ: a small tetralate laid along its flight like all its kin.
 ///
-/// Its body is pear-shaped, heavy behind where the crop sits and narrowing to
-/// the cowl, with eyes round the rim and a downward pair beneath. Under the
-/// cowl hang the four pairs of mouth tentacles that are its hands, the long
-/// outer pair for tools and the short inner ones to steady things and feed. A
-/// swept crest runs back from the cowl, aur sacs glow on its flanks, and its
-/// long gripping tail trails behind. It wears one thing it made: a woven girth
-/// strap with a bronze clasp on the back.
+/// Its body is pear-shaped, heavy behind where the crop sits and narrowing to the cowl, with eyes
+/// round the rim and a downward pair beneath. Under the cowl hang the four pairs of mouth
+/// tentacles that are its hands, the long outer pair for tools and the short inner ones to steady
+/// things and feed. A swept crest runs back from the cowl, aur sacs glow on its flanks, and its
+/// long gripping tail trails behind. It wears one thing it made: a woven girth strap with a bronze
+/// clasp on the back.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let body = torso(point, vec3(0.2, 0.17, LENGTH), HEAD);
     let crop = rounded(point - vec3(0.0, -0.03, 0.14), vec3(0.27, 0.22, 0.25));
@@ -75,13 +91,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
         7,
     );
     hit.join(
-        oral_tentacles(
-            point,
-            creature,
-            mouth(LENGTH, HEAD),
-            0.5,
-            BIOLOGY.oral_pairs,
-        ),
+        oral_tentacles(point, creature, mouth(LENGTH, HEAD), 0.5, ORAL_PAIRS),
         2,
     );
     let tail = tail_shaft(point, creature, vec3(0.20, 0.25, 1.0), 0.07);
@@ -108,8 +118,8 @@ pub fn render_opaque(ray: Ray, creature: &CreatureInstance) -> Hit {
 }
 
 fn material(point: Vec3, id: u32) -> Material {
-    // A pale cowl over a darker belly: the lineage's countershading, turned
-    // over for a world lit from below.
+    // A pale cowl over a darker belly: the lineage's countershading, turned over for a world lit
+    // from below.
     let mask = (-point.z).smoothstep(0.36, 0.5) * point.y.smoothstep(-0.03, 0.06);
     let belly = (-point.y).smoothstep(0.0, 0.2);
     let mut m = Material::skin(
@@ -167,6 +177,24 @@ fn material(point: Vec3, id: u32) -> Material {
     m
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.03, -0.41), vec3(0.04, 0.04, 0.04)),
+    site(PUMP, vec3(0.00, -0.05, -0.06), vec3(0.06, 0.05, 0.08)),
+    site(CROP, vec3(0.00, -0.01, 0.32), vec3(0.06, 0.06, 0.06)),
+    pair(BREATHER, vec3(0.14, -0.02, -0.04), vec3(0.06, 0.05, 0.06)),
+    site(FLOAT, vec3(0.00, 0.10, 0.28), vec3(0.04, 0.04, 0.04)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.11, 0.06, 0.13),
+        vec3(0.06, 0.05, 0.07),
+    ),
+    site(CISTERN, vec3(0.00, -0.03, 0.58), vec3(0.03, 0.03, 0.03)),
+    site(BROOD, vec3(0.00, -0.01, 0.49), vec3(0.04, 0.04, 0.04)),
+    pair(AUR_SAC, vec3(0.14, -0.02, 0.30), vec3(0.03, 0.03, 0.03)),
+]);
+
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;
 
@@ -202,4 +230,105 @@ pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &CreatureInstance, mut emit
         vec3(0.31, 0.34, 0.54),
         &mut emit,
     );
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! The Næ have no voice, and their tentacles are for their tools. They speak in mist-script:
+    //! the moisture-recovery folds that save every breath's water can instead let it out, a fine
+    //! plume through the louvres that the aur sacs light from within, shaped by the breath into
+    //! glyphs that hang glowing in the air. The crest flushes through its colours as they write,
+    //! carrying the tone a voice would. Every word costs water, so in dry air the Næ are sparing
+    //! speakers and in the wet heart of a cloud they talk freely; and still air keeps a glyph for a
+    //! while after its writer has gone, so a message can be left for whoever comes, until the wind
+    //! shreds it. Beyond sight they speak through their Nætu, asking them for the deep calls that
+    //! carry across the sky, and they read those calls in turn: each helps the other.
+
+    use crate::scene::life::{
+        Kind,
+        animalia::{
+            mind::{
+                Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
+                display_near,
+            },
+            physiology::Physiology,
+            tetralata::{
+                FOLLOW,
+                vivipara::{CALL, notice as hear},
+            },
+        },
+        behaviour::{Activity, Goal},
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        speed: 30.0,
+        voice: 0.0,
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges,
+        court,
+        act,
+        notice,
+        ..super::super::ETHOLOGY
+    };
+
+    /// One of its kind near enough to read its glyphs.
+    pub const SIGNER: Interest = Interest("signer");
+
+    /// Talking in mist-script with another, hovering face to face a body-length apart.
+    pub const CONVERSE: Intent = Intent {
+        name: "converse",
+        act: |_, s| {
+            Goal::new(
+                Activity::Sign,
+                s.seen
+                    .mark(SIGNER)
+                    .map(|signer| signer - signer.normalize_or_zero() * 1.5),
+                0.4,
+            )
+            .hovering()
+        },
+    };
+
+    /// A Næ reads the glyphs of any of its kind in sight, and the calls its Nætu give.
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        hear(glimpse, seen);
+        if glimpse.heard && glimpse.other == Kind::Naetu {
+            seen.note(CALL, glimpse.offset);
+        }
+        if !glimpse.heard && glimpse.other == glimpse.kind && glimpse.offset.length() < 150.0 {
+            seen.note(SIGNER, glimpse.offset);
+        }
+    }
+
+    /// The most talkative of animals when fed and unafraid, and the more so the less the words
+    /// cost: with water to spare.
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (super::super::ETHOLOGY.urges)(s, urges);
+        if s.seen.mark(SIGNER).is_some() {
+            let content = (1.0 - s.drives.hunger) * (1.0 - s.fear).max(0.0);
+            let water = 1.0 - s.drives.thirst;
+            urges.add(
+                CONVERSE,
+                (0.2 + s.temper.sociability * 0.4) * content * water,
+            );
+        }
+    }
+
+    /// Parted from its family, a Næ asks its Nætu to call for it, and makes for the answer.
+    fn act(mind: &mut Mind, s: &Situation) -> Option<Goal> {
+        let goal = (super::super::ETHOLOGY.act)(mind, s);
+        let apart = s.seen.kin.is_none_or(|kin| kin.length() > 300.0);
+        if mind.intent == FOLLOW && apart {
+            return Some(goal.unwrap_or_else(|| (FOLLOW.act)(mind, s)).calling());
+        }
+        goal
+    }
+
+    /// Courting in mist-script, close by, with no song to carry it.
+    fn court(s: &Situation) -> Goal {
+        display_near(s.seen, 1.5, s.seen.mark(CALL))
+    }
 }

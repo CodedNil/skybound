@@ -1,8 +1,20 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{curved_tube, oral_tentacles, rig_tentacles},
+    animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
     biology::Biology,
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -15,6 +27,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 26.8;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -31,24 +48,17 @@ taxon!(
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.0, 4.5, 4.0).extend(0.0);
-    rig_tentacles(
-        c,
-        head(0.0) + vec3(0.0, 0.35, 0.55),
-        0.9,
-        BIOLOGY.oral_pairs,
-    );
+    rig_tentacles(c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS);
 }
 
-/// A bark-eater armoured in banded plates, with a blunt head, small deep
-/// eyes and a pair of heavy gouging tusks.
-/// The radius of the curl, and how far round it runs either side of the
-/// top, leaving a gap below for the branch.
+/// A bark-eater armoured in banded plates, with a blunt head, small deep eyes and a pair of heavy
+/// gouging tusks. The radius of the curl, and how far round it runs either side of the top, leaving
+/// a gap below for the branch.
 const CURL: f32 = 2.2;
 
 const REACH: f32 = 2.4;
 
-/// A point on the curl at an angle from its top, `inward` towards the
-/// branch it holds.
+/// A point on the curl at an angle from its top, `inward` towards the branch it holds.
 fn on_curl(angle: f32, inward: f32) -> Vec3 {
     let radius = CURL - inward;
     vec3(0.0, radius * angle.cos(), -radius * angle.sin())
@@ -61,14 +71,13 @@ fn head(inward: f32) -> Vec3 {
 
 /// A living clamp.
 ///
-/// Its armoured body curls into a C round the branch it is eating, banded like
-/// a ring of plates, so no legs are needed to hold on: the curl itself is the
-/// grip, locked shut by a hooked claw at the tail. At the front end heavy
-/// crushing jaws face inward, onto the branch inside the curl, stripping its
-/// bark a patch at a time while the short mouth tentacles hold fast beside
-/// them. The soft underside lines the inside of the C, pressed against the
-/// wood, where only a careless turn exposes it to the Bramble's charged thorns.
-/// Its wings are compact, stiff plates set on the top of the curl.
+/// Its armoured body curls into a C round the branch it is eating, banded like a ring of plates, so
+/// no legs are needed to hold on: the curl itself is the grip, locked shut by a hooked claw at the
+/// tail. At the front end heavy crushing jaws face inward, onto the branch inside the curl,
+/// stripping its bark a patch at a time while the short mouth tentacles hold fast beside them. The
+/// soft underside lines the inside of the C, pressed against the wood, where only a careless turn
+/// exposes it to the Bramble's charged thorns. Its wings are compact, stiff plates set on the top
+/// of the curl.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let angle = (-p.z).atan2(p.y).clamp(-REACH, REACH);
     let spine = on_curl(angle, 0.0);
@@ -106,17 +115,28 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let eye = head(-0.45) + vec3(0.4, -0.1, -0.15);
     hit.join((side - eye).length() - 0.13, 3);
     hit.join(
-        oral_tentacles(
-            p,
-            c,
-            head(0.0) + vec3(0.0, 0.35, 0.55),
-            0.9,
-            BIOLOGY.oral_pairs,
-        ),
+        oral_tentacles(p, c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS),
         8,
     );
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 1.17, -2.04), vec3(0.15, 0.41, 0.48)),
+    site(PUMP, vec3(0.00, 0.60, -1.32), vec3(0.10, 0.10, 0.10)),
+    site(CROP, vec3(0.00, 1.17, 0.96), vec3(0.18, 0.18, 0.18)),
+    pair(BREATHER, vec3(0.37, 1.04, -1.21), vec3(0.11, 0.11, 0.11)),
+    site(FLOAT, vec3(0.00, 2.21, 0.11), vec3(0.19, 0.54, 0.59)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.37, 1.69, -0.50),
+        vec3(0.15, 0.26, 0.26),
+    ),
+    site(CISTERN, vec3(0.00, 0.44, 1.46), vec3(0.10, 0.10, 0.10)),
+    site(BROOD, vec3(0.00, 0.84, 1.96), vec3(0.17, 0.44, 0.53)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

@@ -3,6 +3,11 @@ pub use super::{BIOLOGY, render_wings};
 pub mod ambigena;
 pub mod candela;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Ambigenidae",

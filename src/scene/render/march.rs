@@ -16,20 +16,20 @@ use spirv_std::{
 
 const VEIL_STEP: f32 = 14.0;
 
-/// Extinction of the mist in which light shafts show, per metre at the aur,
-/// and how much path it is gathered over at once.
+/// Extinction of the mist in which light shafts show, per metre at the aur, and how much path it is
+/// gathered over at once.
 const MIST: f32 = 0.000_032;
 
 const MIST_STRIDE: f32 = 500.0;
 
 const MIST_SAMPLES: f32 = 6.0;
 
-/// The narrowest a parcel index cell can be, so its layer bounds hold for
-/// at least this far across it.
+/// The narrowest a parcel index cell can be, so its layer bounds hold for at least this far
+/// across it.
 const CLOUD_CELL_REACH: f32 = 30_000.0;
 
-/// The longest horizontal stride between cloud layers: well under a cloud
-/// map texel, so the layers cannot change much across it.
+/// The longest horizontal stride between cloud layers: well under a cloud map texel, so the layers
+/// cannot change much across it.
 const LAYER_STRIDE: f32 = 3000.0;
 
 #[derive(Default)]
@@ -64,16 +64,14 @@ impl RaymarchResult {
     }
 }
 
-/// The cloud half of the march: how far each step may go without skipping
-/// cloud, and the extinction and light of the cloud a step crosses.
-/// Textures and buffers are passed to each call: shader resources cannot be
-/// held in a struct.
+/// The cloud half of the march: how far each step may go without skipping cloud, and the extinction
+/// and light of the cloud a step crosses. Textures and buffers are passed to each call: shader
+/// resources cannot be held in a struct.
 struct CloudMarch {
     jitter: f32,
     direction: Vec3,
     forced: bool,
-    /// Empty samples in a row: strides lengthen through the gaps between
-    /// clouds.
+    /// Empty samples in a row: strides lengthen through the gaps between clouds.
     misses: f32,
     /// Samples in a row that found cloud.
     depth: f32,
@@ -83,12 +81,10 @@ struct CloudMarch {
     phased: bool,
 }
 
-/// The clouds along a pixel's ray, marched by their own pass: their light,
-/// their transmittance, and where along the ray they lie, as the mean
-/// distance of each quarter of opacity they gather. The rest of the volume
-/// interleaves with them at those four depths, so fog in front of distant
-/// cloud covers it, and a wisp in front does not pull the whole slab
-/// forward.
+/// The clouds along a pixel's ray, marched by their own pass: their light, their transmittance, and
+/// where along the ray they lie, as the mean distance of each quarter of opacity they gather. The
+/// rest of the volume interleaves with them at those four depths, so fog in front of distant cloud
+/// covers it, and a wisp in front does not pull the whole slab forward.
 #[derive(Clone, Copy)]
 pub struct CloudSlab {
     pub radiance: Vec3,
@@ -99,15 +95,13 @@ pub struct CloudSlab {
 /// Transmittance at the top of each quarter of the slab's opacity.
 const QUARTERS: Vec4 = Vec4::new(1.0, 0.75, 0.5, 0.25);
 
-/// The cloud march's result, with where along the ray it gathers each
-/// quarter of its opacity.
+/// The cloud march's result, with where along the ray it gathers each quarter of its opacity.
 struct Gathered {
     result: RaymarchResult,
     sums: Vec4,
     weights: Vec4,
-    /// Where the mist's share of the opacity is placed: as far as the ray
-    /// reaches, as before the slab was split, so the mist never draws over
-    /// the veil it lies within.
+    /// Where the mist's share of the opacity is placed: as far as the ray reaches, as before the
+    /// slab was split, so the mist never draws over the veil it lies within.
     far: f32,
 }
 
@@ -160,9 +154,8 @@ impl CloudMarch {
             self.phased = false;
             return (gap.max(footprint), false, clouds::CloudColumn::CLEAR);
         }
-        // Between this column's layers the ray runs on to the next one, in
-        // strides short enough that neighbouring columns cannot hide a cloud
-        // the stride would skip.
+        // Between this column's layers the ray runs on to the next one, in strides short enough
+        // that neighbouring columns cannot hide a cloud the stride would skip.
         let overhead = clouds::cloud_column(point, view, textures);
         let (room, rise) = overhead.room(point, rd);
         let up = point.normalize();
@@ -176,15 +169,14 @@ impl CloudMarch {
                 overhead,
             );
         }
-        // Gaps between clouds are crossed in lengthening strides, but never
-        // so steep that a thin deck slips between two samples.
+        // Gaps between clouds are crossed in lengthening strides, but never so steep that a thin
+        // deck slips between two samples.
         let climb = rd.dot(up).abs().max(0.02);
-        // Within cloud, never climb more than a fraction of a small heap in
-        // one step, or steep rays alias the heaps into hatching.
-        // Steps enter cloud short and lengthen only through its solid body,
-        // so its surface is found finely without crawling through it.
-        // Far away, clouds are small on screen and strides lengthen with
-        // distance: the upscaler's history averages their jittered phases.
+        // Within cloud, never climb more than a fraction of a small heap in one step, or steep rays
+        // alias the heaps into hatching. Steps enter cloud short and lengthen only through its
+        // solid body, so its surface is found finely without crawling through it. Far away, clouds
+        // are small on screen and strides lengthen with distance: the upscaler's history averages
+        // their jittered phases.
         let stride = if self.depth > 0.0 {
             (footprint * 1.2).max(10.0) * (1.0 + self.depth * 0.6)
         } else {
@@ -196,8 +188,8 @@ impl CloudMarch {
             step = self.free;
         }
         self.free = 0.0;
-        // Each pixel steps through cloud at its own phases, so solid
-        // surfaces are not sliced into contour rings.
+        // Each pixel steps through cloud at its own phases, so solid surfaces are not sliced into
+        // contour rings.
         self.jitter = hash(self.jitter * 7919.0 + 0.618_034);
         if !self.phased {
             step *= 0.15 + 0.85 * self.jitter;
@@ -222,10 +214,9 @@ impl CloudMarch {
             scattering: Vec3::ZERO,
             retry: false,
         };
-        // Crossing a gap, a cheap probe that can only overstate the cloud
-        // decides whether the step needs the detailed density at all. On
-        // finding cloud after a long stride, step back and enter it finely,
-        // or its crown would be sliced into terraces.
+        // Crossing a gap, a cheap probe that can only overstate the cloud decides whether the step
+        // needs the detailed density at all. On finding cloud after a long stride, step back and
+        // enter it finely, or its crown would be sliced into terraces.
         if self.misses > 0.0 {
             let probe = overhead.sample(point, footprint, textures, clouds::Detail::Probe);
             if probe.density + probe.rain <= 0.0 {
@@ -252,10 +243,9 @@ impl CloudMarch {
         self.misses = 0.0;
         self.depth = (self.depth + 1.0).min(8.0);
         let light = light_towards(point);
-        // Taps towards the light, through the shapes of the clouds alone,
-        // stand for the sample's own cloud out to the light volume: closely
-        // spaced near the sample, where its own lobes shade it, and further
-        // apart beyond.
+        // Taps towards the light, through the shapes of the clouds alone, stand for the sample's
+        // own cloud out to the light volume: closely spaced near the sample, where its own lobes
+        // shade it, and further apart beyond.
         let mut shadow = 0.0;
         for tap in 0..3 {
             let (middle, length) = match tap {
@@ -272,11 +262,11 @@ impl CloudMarch {
             );
             shadow += (nearby.density + nearby.rain) * reach;
         }
-        // The clouds of the layers above cast their own shadows, patchy as
-        // they are, where the coarse light volume holds only their mean.
+        // The clouds of the layers above cast their own shadows, patchy as they are, where the
+        // coarse light volume holds only their mean.
         shadow += clouds::shadow_above(point, light, view, textures);
-        // And two taps straight up, for how much of the sky the cloud heaped
-        // over the sample hides from it.
+        // And two taps straight up, for how much of the sky the cloud heaped over the sample hides
+        // from it.
         let up = point.normalize();
         let mut hidden = 0.0;
         for tap in 0..2 {
@@ -304,8 +294,8 @@ impl CloudMarch {
             open,
         );
         let mut scattering = droplets * cloud.density + rain * cloud.rain;
-        // The ocean's light reaches cloud bases as a drifting caustic net;
-        // too fine to resolve far away, where it averages out.
+        // The ocean's light reaches cloud bases as a drifting caustic net; too fine to resolve far
+        // away, where it averages out.
         let altitude = point.length() - PLANET_RADIUS;
         let resolve = (-footprint / 187.5).exp() * (-altitude / 1125.0).exp();
         if resolve > 0.01 {
@@ -331,8 +321,8 @@ impl CloudSlab {
         }
     }
 
-    /// Join one quarter of the slab's opacity to the march at its depth,
-    /// with the slab's mean light.
+    /// Join one quarter of the slab's opacity to the march at its depth, with the slab's
+    /// mean light.
     fn join(&self, quarter: u32, result: &mut RaymarchResult) {
         let opacity = 1.0 - self.transmittance;
         let top = 1.0 - quarter as f32 * 0.25;
@@ -348,8 +338,8 @@ impl CloudSlab {
     }
 }
 
-/// March the clouds alone along a ray, from its entry into the cloud shell
-/// to the opaque scene or the aur's body.
+/// March the clouds alone along a ray, from its entry into the cloud shell to the opaque scene or
+/// the aur's body.
 pub fn march_clouds(
     jitter: f32,
     origin: Vec3,
@@ -374,19 +364,18 @@ pub fn march_clouds(
         return slab;
     }
     let shell = ray_shell_intersect(ro, rd, PLANET_RADIUS, CLOUD_BOTTOM, CLOUD_TOP);
-    // Nothing beneath the aur's surface can be seen; its thin upper veil
-    // is no bound, or clouds beyond the horizon would be cut off there.
+    // Nothing beneath the aur's surface can be seen; its thin upper veil is no bound, or clouds
+    // beyond the horizon would be cut off there.
     let surface = intersect_sphere(ro, rd, PLANET_RADIUS - 25.0);
     let limit = if surface.x <= surface.y && surface.x > 0.0 {
         limit.min(surface.x)
     } else {
         limit
     };
-    // A ray that dips into the veil's band does not come out of it: past
-    // its lowest point it would only climb back through the clouds beyond
-    // the horizon, which would show through the veil as a mirror image of
-    // the sky above it. The deeper it dips the less of that cloud remains,
-    // fading rather than cut so no seam runs along the veil.
+    // A ray that dips into the veil's band does not come out of it: past its lowest point it would
+    // only climb back through the clouds beyond the horizon, which would show through the veil as a
+    // mirror image of the sky above it. The deeper it dips the less of that cloud remains, fading
+    // rather than cut so no seam runs along the veil.
     let lowest = -ro.dot(rd);
     let bottom = (ro + rd * lowest.max(0.0)).length() - PLANET_RADIUS;
     let beyond = bottom.smoothstep(ocean::BODY_TOP_HEIGHT * 0.4, ocean::BODY_TOP_HEIGHT);
@@ -405,8 +394,8 @@ pub fn march_clouds(
         weights: Vec4::ZERO,
         far: limit,
     };
-    // A handful of mist samples spans the ray's crossing of the shell, each
-    // pixel gathering at its own phase so their seams never line up.
+    // A handful of mist samples spans the ray's crossing of the shell, each pixel gathering at its
+    // own phase so their seams never line up.
     let crossing = (shell.y - shell.x).max(0.0) + (shell.w - shell.z).max(0.0);
     let mist_stride =
         (crossing.min(limit) / MIST_SAMPLES).max(MIST_STRIDE) * (0.6 + 0.8 * hash(jitter + 0.31));
@@ -469,9 +458,8 @@ pub fn march_clouds(
         }
         t += step;
     }
-    // Whatever path is left since the last gather counts too, or the mist
-    // would step wherever rays leave the shell after a different number of
-    // strides.
+    // Whatever path is left since the last gather counts too, or the mist would step wherever rays
+    // leave the shell after a different number of strides.
     mist.gather(&mut result, ro, rd, view, textures);
     slab.radiance = result.result.color.xyz();
     slab.transmittance = result.result.color.w;
@@ -495,9 +483,9 @@ struct Mist {
 }
 
 impl Mist {
-    /// A faint mist through the cloud shell carries their shadows as shafts:
-    /// of the pole light, and of the aur's glow rising. Shafts are broad, so
-    /// the light is found once, mid-way along each stretch of path.
+    /// A faint mist through the cloud shell carries their shadows as shafts: of the pole light, and
+    /// of the aur's glow rising. Shafts are broad, so the light is found once, mid-way along each
+    /// stretch of path.
     fn gather(
         &mut self,
         result: &mut Gathered,
@@ -521,8 +509,8 @@ impl Mist {
         let depth = textures.light_depth(point);
         let light = light_towards(point);
         let up = point / (altitude + PLANET_RADIUS);
-        // Light scattered on through the cloud softens the edges of shadows
-        // that the coarse light volume would otherwise draw hard.
+        // Light scattered on through the cloud softens the edges of shadows that the coarse light
+        // volume would otherwise draw hard.
         let lit = |depth: f32| (-depth).exp() * 0.8 + (-depth * 0.2).exp() * 0.2;
         let sun = textures.pole_light(point, light_position(point))
             * henyey_greenstein(rd.dot(light), 0.7)
@@ -541,8 +529,8 @@ impl Mist {
     }
 }
 
-/// How far a ray may run through the cloud shell before it could meet any
-/// cloud, from the parcel index; zero where it must sample.
+/// How far a ray may run through the cloud shell before it could meet any cloud, from the parcel
+/// index; zero where it must sample.
 fn cloud_gap(point: Vec3, rd: Vec3, cells: &[Vec4]) -> f32 {
     let radius = point.length();
     let up = point / radius;
@@ -551,8 +539,8 @@ fn cloud_gap(point: Vec3, rd: Vec3, cells: &[Vec4]) -> f32 {
     if cell.x > 0.0 {
         return cell.x;
     }
-    // Within reach of a system, but perhaps between its layers: run on to
-    // the next layer in the ray's direction, within this cell's reach.
+    // Within reach of a system, but perhaps between its layers: run on to the next layer in the
+    // ray's direction, within this cell's reach.
     let low = cell.y <= cell.z;
     if (low && altitude > cell.y - 25.0 && altitude < cell.z + 25.0) || altitude > cell.w - 25.0 {
         return 0.0;
@@ -624,8 +612,8 @@ pub fn integrate(
     } else {
         absent
     };
-    // The body is bounded far below the arcs. Entering its shell exactly
-    // replaces a geometric crawl down towards it from the arc ceiling.
+    // The body is bounded far below the arcs. Entering its shell exactly replaces a geometric crawl
+    // down towards it from the arc ceiling.
     let body = if profile & 4 == 0 {
         intersect_sphere(ro, rd, PLANET_RADIUS + ocean::BODY_TOP_HEIGHT)
     } else {
@@ -651,8 +639,8 @@ pub fn integrate(
         let inside_ocean = t + 0.03 >= ocean.x && t < ocean.y;
         let inside_body = t + 0.03 >= body.x && t < body.y;
         let inside_poles = t + 0.03 >= polar.x && t < polar.y;
-        // The clouds join the march in quarters where each lies; they and
-        // the aur interleave too rarely to march together.
+        // The clouds join the march in quarters where each lies; they and the aur interleave too
+        // rarely to march together.
         while joined < 4 && t + 0.03 >= slab.depth(joined) {
             slab.join(joined, &mut result);
             joined += 1;
@@ -677,25 +665,25 @@ pub fn integrate(
         if inside_ocean && profile & 128 == 0 && t < arc_free {
             step = step.min(arc_free - t);
         } else if inside_ocean && profile & 128 == 0 {
-            // The face grid stretches towards the faces' edges, so distances
-            // on it overstate those in the world by up to this factor.
+            // The face grid stretches towards the faces' edges, so distances on it overstate those
+            // in the world by up to this factor.
             let metric = SPIRE_METRIC;
             let clearance = textures.ejection_clearance(view.place(start + rd * t)) * metric;
-            // The veil heaves and glows around a loop's feet out to about
-            // twice its reach; only skip lookups where that has faded too.
+            // The veil heaves and glows around a loop's feet out to about twice its reach; only
+            // skip lookups where that has faded too.
             if clearance > EJECTION_WIDTH * 4.0 {
                 arc_free = t + clearance - EJECTION_WIDTH * 3.0;
                 step = step.min(clearance);
             } else {
-                // The arc field bounds the distance on the face grid.
-                // Probe ahead by half of a step through an arc, so the same
-                // query also serves the sample at the middle of that step.
+                // The arc field bounds the distance on the face grid. Probe ahead by half of a
+                // step through an arc, so the same query also serves the sample at the middle of
+                // that step.
                 let reach = EJECTION_WIDTH * 3.0;
                 let inner = (EJECTION_WIDTH * 0.12).max(footprint * 0.75);
                 let probe = inner * 0.5;
                 (curve, arc) = textures.ejection_field(view.place(start + rd * (t + probe)));
-                // The field searches the neighbouring cells; loops beyond them
-                // are at least a cell, less their extent, away.
+                // The field searches the neighbouring cells; loops beyond them are at least a cell,
+                // less their extent, away.
                 let free = (curve.x - reach).min(EJECTION_CELL - EJECTION_EXTENT) * metric - probe;
                 if free > inner {
                     arc_free = t + free - EJECTION_WIDTH * 3.0;
@@ -722,17 +710,16 @@ pub fn integrate(
                 // The veil climbs any spire it meets; step against that.
                 height -= ocean::wrap(point, start + rd * t, view, footprint).lift;
             }
-            // Above the veil, a cone bound on the wave slope gives a safe
-            // step. Inside it, steps grow with depth as the medium saturates
-            // and with distance as the footprint widens.
+            // Above the veil, a cone bound on the wave slope gives a safe step. Inside it, steps
+            // grow with depth as the medium saturates and with distance as the footprint widens.
             let body_step = if height > 56.25 {
                 (height - 40.0) * 0.8 / ((-rd.dot(up)).max(0.0) + 0.35)
             } else {
                 VEIL_STEP + (-height).max(0.0) * 0.49 + height.max(0.0) * 0.6
             };
             step = step.min(body_step.max(footprint * 0.75));
-            // A cone step lies wholly above the veil by construction; its far
-            // end is too distant to extrapolate the wave to, so skip it.
+            // A cone step lies wholly above the veil by construction; its far end is too distant to
+            // extrapolate the wave to, so skip it.
             if height > 56.25 && step >= body_step {
                 ocean_height = 1.0e10;
             }
@@ -760,8 +747,8 @@ pub fn integrate(
         }
         if ocean_height < 1.0e9 {
             let altitude = sample_point.length() - PLANET_RADIUS;
-            // The cached height gradient extrapolates the wave across this
-            // short segment instead of fetching it again at the midpoint.
+            // The cached height gradient extrapolates the wave across this short segment instead of
+            // fetching it again at the midpoint.
             let up = point.normalize();
             let normal = if ocean_shape.yzw().length_squared() > 0.25 {
                 ocean_shape.yzw().normalize()
@@ -781,8 +768,8 @@ pub fn integrate(
             wave += wrap.lift + 56.25 * (-square(curve.x / (EJECTION_WIDTH * 2.2))).exp() * curve.z;
             let height = altitude - wave;
             if altitude <= ocean::BODY_TOP_HEIGHT && height - span < 56.25 {
-                // Evaluated afresh: kept across steps, it would hold registers
-                // through the whole march and cost more than it saves.
+                // Evaluated afresh: kept across steps, it would hold registers through the whole
+                // march and cost more than it saves.
                 let column = ocean::column(sample_point, view, textures);
                 let body = ocean::sample_body(
                     sample_point,

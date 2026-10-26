@@ -1,13 +1,17 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Feeding};
+use crate::scene::life::biology::Biology;
 pub mod detritivora;
 pub mod rapaciformes;
 
 pub const BIOLOGY: Biology = Biology {
-    feeding: Feeding::Scavenger,
     adult_mass: 0.2,
     ..super::BIOLOGY
 };
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Class,
@@ -21,3 +25,15 @@ taxon!(
         "Their ecological roles connect floating plants and larger animals through nutrient recovery, close contact and the construction of living networks.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Physiology, Take};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: |_, _| false,
+        takes: Take::Carrion,
+        gleans: true,
+        ..super::super::PHYSIOLOGY
+    };
+}

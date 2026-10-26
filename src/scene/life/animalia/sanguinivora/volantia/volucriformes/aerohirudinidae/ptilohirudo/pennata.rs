@@ -4,6 +4,15 @@ use crate::scene::life::{
     rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::sanguinivora::volantia::WING_MUSCLE,
+    organs::{Viscera, pair, site},
+};
 use spirv_std::glam::{Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -11,12 +20,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 21.0,
     lifespan_days: 480.0,
-    speed: 24.0,
     adult_mass: 0.01,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 30.4;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -37,10 +50,9 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A glider of the cloud margins whose one wing pair has grown right round it.
 ///
-/// A single finely fringed disc encircles a compact body, rippling as it
-/// steers, so it slips along the mist edge in any direction. Two large eyes
-/// flank the sucker, built for the weak aur-lit contrasts by which it finds
-/// hosts hidden in cloud.
+/// A single finely fringed disc encircles a compact body, rippling as it steers, so it slips along
+/// the mist edge in any direction. Two large eyes flank the sucker, built for the weak aur-lit
+/// contrasts by which it finds hosts hidden in cloud.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = rounded(p, vec3(0.6, 0.5, 0.95));
     let radial = vec2(p.x, p.z).length();
@@ -76,6 +88,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.01, -1.00), vec3(0.05, 0.05, 0.05)),
+    site(PUMP, vec3(0.00, -0.04, -0.55), vec3(0.14, 0.08, 0.26)),
+    site(CROP, vec3(0.00, 0.01, 0.35), vec3(0.36, 0.20, 0.40)),
+    pair(WING_MUSCLE, vec3(0.32, 0.09, -0.19), vec3(0.14, 0.08, 0.17)),
+    site(BROOD, vec3(0.00, -0.04, 0.93), vec3(0.06, 0.06, 0.06)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.25, 0.32, 0.42, 0.0),
@@ -87,4 +109,14 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::Physiology;
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        speed: 24.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

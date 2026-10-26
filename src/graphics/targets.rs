@@ -14,11 +14,10 @@ use bevy::{
 pub struct SceneTargets(pub Option<Targets>);
 
 pub struct Targets {
-    /// The resolution the scene renders at, below the window's under an
-    /// upscaler.
+    /// The resolution the scene renders at, below the window's under an upscaler.
     pub size: UVec2,
-    /// The aur's fog, arcs and pole beams, with the clouds slotted in, and
-    /// their motion: traced at every pixel, every frame.
+    /// The aur's fog, arcs and pole beams, with the clouds slotted in, and their motion: traced at
+    /// every pixel, every frame.
     pub color: TextureView,
     pub motion: TextureView,
     /// The clouds' light and transmittance, and the depth of the first.
@@ -27,16 +26,14 @@ pub struct Targets {
     pub thin_color: TextureView,
     pub thin_transmission: TextureView,
     pub thin_prefix: TextureView,
-    /// The solids' motion, before the composite lays the volumes' over it
-    /// into the view's motion vectors. Drawn with the view's own targets,
-    /// so at its full size.
+    /// The solids' motion, before the composite lays the volumes' over it into the view's motion
+    /// vectors. Drawn with the view's own targets, so at its full size.
     pub scene_motion: TextureView,
 }
 
 impl SceneTargets {
-    /// Fetch this frame's targets from the texture cache, each by its own
-    /// label. `size` is the resolution the scene renders at, below the
-    /// view's `display` one under an upscaler.
+    /// Fetch this frame's targets from the texture cache, each by its own label. `size` is the
+    /// resolution the scene renders at, below the view's `display` one under an upscaler.
     pub fn resize(
         &mut self,
         device: &RenderDevice,

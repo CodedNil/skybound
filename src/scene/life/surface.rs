@@ -130,8 +130,8 @@ pub struct Material {
     pub transmission: Vec3,
     pub ior: f32,
     pub translucency: f32,
-    /// How deeply the surface is worked into relief, which kind of relief
-    /// (see [`relief`]) and how fine it is.
+    /// How deeply the surface is worked into relief, which kind of relief (see [`relief`]) and how
+    /// fine it is.
     pub relief: f32,
     pub texture: u32,
     pub grain: f32,
@@ -201,8 +201,8 @@ impl Material {
         let halfway = normalize(light + view);
         let nl = normal.dot(light).max(0.0);
         let backlight = (-normal.dot(light)).max(0.0);
-        // Light wraps a little past the terminator, as it does through skin
-        // and soft tissue, scaled so the lobe still carries the same energy.
+        // Light wraps a little past the terminator, as it does through skin and soft tissue, scaled
+        // so the lobe still carries the same energy.
         let wrap = 0.4 * (1.0 - self.metal);
         let wrapped = ((normal.dot(light) + wrap) / (1.0 + wrap)).max(0.0) / (1.0 + wrap);
         let nv = normal.dot(view).abs().max(0.0001);
@@ -236,9 +236,9 @@ impl Material {
 }
 
 #[derive(Clone, Copy)]
-/// A curved membrane, hinged at `root`: turned about the body's long axis
-/// by `stroke` (now and last frame), and curling away from the stroke
-/// towards its tip by `bend`, so its root never leaves the body.
+/// A curved membrane, hinged at `root`: turned about the body's long axis by `stroke` (now and
+/// last frame), and curling away from the stroke towards its tip by `bend`, so its root never
+/// leaves the body.
 pub struct Sheet {
     pub center: Vec3,
     pub previous_center: Vec3,
@@ -246,26 +246,25 @@ pub struct Sheet {
     pub stroke: Vec2,
     pub radii: Vec2,
     pub bend: Vec2,
-    /// How far the membrane arches between its edges, as a share of its
-    /// chord: an aerofoil's camber.
+    /// How far the membrane arches between its edges, as a share of its chord: an
+    /// aerofoil's camber.
     pub camber: f32,
     pub style: Vec4,
-    /// How far out along the span the wrist joint lies, and how far the hand
-    /// beyond it is turned about it, now and last frame.
+    /// How far out along the span the wrist joint lies, and how far the hand beyond it is turned
+    /// about it, now and last frame.
     pub wrist: f32,
     pub fold: Vec2,
-    /// The membrane's markings: their kind, how dense, how strong, and the
-    /// second colour they are drawn in; see [`marking`].
+    /// The membrane's markings: their kind, how dense, how strong, and the second colour they are
+    /// drawn in; see [`marking`].
     pub pattern: Vec4,
     pub second: Vec3,
     pub side: f32,
 }
 
-/// A membrane's markings at a point of it, out along the span and back
-/// across the chord, seen at a cosine: bands across the span, an eyespot
-/// near the tip, clear windows between the veins (as a negative mark, which
-/// thins the membrane), a dark leading edge, a sheen that shifts towards
-/// the second colour at a glancing view, or a camouflage mottle.
+/// A membrane's markings at a point of it, out along the span and back across the chord, seen at a
+/// cosine: bands across the span, an eyespot near the tip, clear windows between the veins (as a
+/// negative mark, which thins the membrane), a dark leading edge, a sheen that shifts towards the
+/// second colour at a glancing view, or a camouflage mottle.
 fn marking(pattern: Vec4, along: f32, chord: f32, cosine: f32) -> f32 {
     match pattern.x as u32 {
         1 => (along * pattern.y * PI).sin().smoothstep(0.2, 0.5),
@@ -292,13 +291,12 @@ fn roll(v: Vec3, angle: f32) -> Vec3 {
     vec3(v.x * cosine - v.y * sine, v.x * sine + v.y * cosine, v.z)
 }
 
-/// A wing's style: how far its tip sweeps back, how rounded or pointed
-/// its tip is, how many fingers or slotted feathers split its trailing
-/// edge, and how finely that edge frays into fringe.
+/// A wing's style: how far its tip sweeps back, how rounded or pointed its tip is, how many fingers
+/// or slotted feathers split its trailing edge, and how finely that edge frays into fringe.
 pub const PLAIN_WING: Vec4 = Vec4::new(1.0, 0.5, 4.0, 0.0);
 
-/// How far ahead of a wing's chord line its leading edge lies, in chords,
-/// a share of the way out along it.
+/// How far ahead of a wing's chord line its leading edge lies, in chords, a share of the way out
+/// along it.
 fn leading(along: f32, style: Vec4) -> f32 {
     let tip = (1.0 - along.clamp(0.0, 1.0).powf(2.0 + style.y * 10.0))
         .max(0.0)
@@ -306,8 +304,8 @@ fn leading(along: f32, style: Vec4) -> f32 {
     0.62 * tip
 }
 
-/// How far behind the chord line its trailing edge lies: tapering from the
-/// root to the tip, notched between its fingers and frayed into fringe.
+/// How far behind the chord line its trailing edge lies: tapering from the root to the tip, notched
+/// between its fingers and frayed into fringe.
 fn trailing(along: f32, style: Vec4, feathered: bool) -> f32 {
     let along = along.clamp(0.0, 1.0);
     let tip = (1.0 - along.powf(2.0 + style.y * 10.0)).max(0.0).sqrt();
@@ -322,8 +320,8 @@ fn trailing(along: f32, style: Vec4, feathered: bool) -> f32 {
     (root + (1.15 - root) * (1.0 - along).sqrt()) * tip * slots * fringe
 }
 
-/// How far inside a wing's outline a point of it lies, in chords, from its
-/// coordinates: positive within.
+/// How far inside a wing's outline a point of it lies, in chords, from its coordinates:
+/// positive within.
 fn planform(uv: Vec2, side: f32, feathered: bool, style: Vec4) -> f32 {
     let along = uv.x.mul_add(side * 0.5, 0.5);
     (uv.y + leading(along, style))
@@ -380,9 +378,8 @@ fn fbm(p: Vec3) -> f32 {
 
 /// Living pigment over a body.
 ///
-/// Irregular blotches are drawn out along it, the countershading turned over
-/// for a world lit from below, and it is mottled at two finer scales so no
-/// surface reads as flat paint.
+/// Irregular blotches are drawn out along it, the countershading turned over for a world lit from
+/// below, and it is mottled at two finer scales so no surface reads as flat paint.
 pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     let pigment = look.pigment;
     let accent = look.accent;
@@ -393,13 +390,12 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     let dorsal = (p.y * 0.30 + 0.5).saturate();
     let markings = blotches.smoothstep(0.5, 0.64) * dorsal.smoothstep(0.25, 0.75);
     let base = pigment.truncate().lerp(accent, markings * 0.7);
-    // Countershading turned over, for a world lit from below: the back
-    // pale, lost against the bright veil to anything looking down on it, and
-    // the belly dark, lost against the dim sky to anything looking up.
+    // Countershading turned over, for a world lit from below: the back pale, lost against the
+    // bright veil to anything looking down on it, and the belly dark, lost against the dim sky to
+    // anything looking up.
     let back = (base * 1.25 + vec3(0.05, 0.05, 0.06)).min(Vec3::ONE);
     let belly = base * 0.55;
-    // Pulsatile nutrient channels show faintly through the skin, branching
-    // back from the crop.
+    // Pulsatile nutrient channels show faintly through the skin, branching back from the crop.
     let channel = fbm(vec3(p.x * 1.4, p.y * 1.4, p.z * 0.5) + warp * 1.5);
     let vein = 1.0 - (channel - 0.5).abs().smoothstep(0.0, 0.035);
     let mut m = Material::skin(
@@ -411,8 +407,8 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
         0.55 + mottle * 0.18,
     );
     m.emission = pigment.w;
-    // The body's own skin, as the species wears it: its kind of relief, how
-    // deep and how fine, and how much duller or glossier than plain skin.
+    // The body's own skin, as the species wears it: its kind of relief, how deep and how fine, and
+    // how much duller or glossier than plain skin.
     let skin = look.skin;
     m.texture = if skin.x > 0.5 {
         skin.x as u32
@@ -425,8 +421,8 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     tissue(m, p, id, look, vec3(blotches, mottle, grain))
 }
 
-/// A coat's skin turned to another of the body's tissues by its material
-/// id, from the coat's own blotches, mottle and grain.
+/// A coat's skin turned to another of the body's tissues by its material id, from the coat's own
+/// blotches, mottle and grain.
 fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Material {
     let pigment = look.pigment;
     let accent = look.accent;
@@ -444,8 +440,8 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.transmission = Vec3::splat(0.35);
         }
         3 => {
-            // Eyes: glassy lenses over a deep, faintly green-gold eye cup,
-            // dark but catching every highlight.
+            // Eyes: glassy lenses over a deep, faintly green-gold eye cup, dark but catching
+            // every highlight.
             m.color = vec3(0.07, 0.085, 0.06) * (0.8 + grain * 0.4);
             m.roughness = 0.04;
             m.emission = 0.0;
@@ -465,8 +461,8 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.grain = look.skin.z * 0.8;
         }
         6 => {
-            // Iron-hardened blades and crystal: bright only along worn
-            // edges, dull and pitted elsewhere.
+            // Iron-hardened blades and crystal: bright only along worn edges, dull and
+            // pitted elsewhere.
             m.color = vec3(0.50, 0.58, 0.62) * (0.8 + mottle * 0.3);
             m.metal = 0.6;
             m.roughness = 0.42 + grain * 0.15;
@@ -501,8 +497,8 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.roughness = 0.85;
         }
         11 => {
-            // Display blades: dark iron, banded towards the tip in the
-            // species' colours, and polished, for they are shown off.
+            // Display blades: dark iron, banded towards the tip in the species' colours, and
+            // polished, for they are shown off.
             let band = ((p.y * 16.0 + p.z * 3.0).sin() * 0.5 + 0.5).smoothstep(0.3, 0.7);
             let tip = p.y.smoothstep(0.2, 0.6);
             m.color = vec3(0.16, 0.17, 0.19).lerp(accent * 1.15, band * tip * 0.85)
@@ -602,19 +598,17 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     let scale = development::scale(c).min_element();
     let surface = |point, c: &CreatureInstance| {
         let mut hit = surface(development::body_point(point, c), c);
-        // Allowing for the stretch that young and individual builds put on
-        // the body.
+        // Allowing for the stretch that young and individual builds put on the body.
         hit.distance *= (1.0 - (1.0 - c.life.y) * 0.2) * 0.85;
         hit
     };
     let bounds = c.opaque_bounds.truncate();
     let (mut distance, end) = span_in_bounds(local, bounds, ray.max_distance);
-    // March, then take the normal, the occlusion and the shadow, all in one
-    // loop with one evaluation of the surface: on the GPU every evaluation
-    // is inlined whole, and a creature's surface may switch over every
-    // species, so a single call keeps the shader small enough to build.
-    // Phase 0 marches; 1 to 4 tap the gradient; 5 to 9 the occlusion; 10
-    // marches the shadow towards the light.
+    // March, then take the normal, the occlusion and the shadow, all in one loop with one
+    // evaluation of the surface: on the GPU every evaluation is inlined whole, and a creature's
+    // surface may switch over every species, so a single call keeps the shader small enough to
+    // build. Phase 0 marches; 1 to 4 tap the gradient; 5 to 9 the occlusion; 10 marches the shadow
+    // towards the light.
     let towards = normalize(local.light / development::scale(c));
     let reach = bounds.length() * 2.0;
     let ambient_scale = (c.position.w * 0.06).max(0.025);
@@ -677,8 +671,8 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
                 travel = epsilon * 3.0 + reach * 0.003;
             }
         } else {
-            // The body's own shadow: soft-edged, so limbs, wings and folds
-            // shade what lies beneath them.
+            // The body's own shadow: soft-edged, so limbs, wings and folds shade what lies
+            // beneath them.
             lit = lit.min(8.0 * sample.distance / travel);
             travel += sample.distance.clamp(reach * 0.004, reach * 0.08);
         }
@@ -707,8 +701,8 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     )
 }
 
-/// Where a ray enters and leaves a creature's bounding box, in its own
-/// frame, clipped to the ray's reach.
+/// Where a ray enters and leaves a creature's bounding box, in its own frame, clipped to the
+/// ray's reach.
 fn span_in_bounds(local: Ray, bounds: Vec3, max_distance: f32) -> (f32, f32) {
     let nonzero = |value: f32| if value.abs() < 1e-8 { 1e-8 } else { value };
     let safe = vec3(
@@ -725,8 +719,8 @@ fn span_in_bounds(local: Ray, bounds: Vec3, max_distance: f32) -> (f32, f32) {
     )
 }
 
-/// Where a point of the body was last frame, for motion vectors: the tail
-/// swings on its own, so a point along it moves with its posed chain.
+/// Where a point of the body was last frame, for motion vectors: the tail swings on its own, so a
+/// point along it moves with its posed chain.
 fn previous_point(point: Vec3, c: &CreatureInstance) -> Vec3 {
     let tail_length = c.tail[5].z - c.tail[0].z;
     if point.z <= c.tail[0].z || tail_length <= 0.01 {
@@ -746,9 +740,8 @@ fn previous_point(point: Vec3, c: &CreatureInstance) -> Vec3 {
     point + delta.truncate() * scale
 }
 
-/// A normal tilted by the surface's fine relief, from the slope of its
-/// height field about the point; the relief fades out where a pixel, of
-/// this `footprint`, spans many of its features.
+/// A normal tilted by the surface's fine relief, from the slope of its height field about the
+/// point; the relief fades out where a pixel, of this `footprint`, spans many of its features.
 fn relieved(
     normal: Vec3,
     point: Vec3,
@@ -792,59 +785,68 @@ impl Sheet {
         -self.camber / self.radii.y
     }
 
-    /// The wrist joint, in the wing's own frame about its root.
-    fn hinge(self) -> Vec3 {
+    /// Where the wrist lies across the span, in the wing's own frame about its root.
+    fn wrist_x(self) -> f32 {
         let offset = self.center - self.root;
-        let wrist_x = offset.x + (2.0 * self.wrist - 1.0) * self.radii.x * self.side;
-        vec3(wrist_x, self.curvature() * wrist_x * wrist_x, 0.0)
+        offset.x + (2.0 * self.wrist - 1.0) * self.radii.x * self.side
     }
 
-    /// The membrane's normal at a point of it, in the wing's frame with the
-    /// stroke undone, the hand's turned about the wrist.
-    fn normal_at(self, point: Vec3, hand: bool) -> Vec3 {
+    /// How sharply the hand curls beyond the wrist, for a hand turned `fold` from the arm's line by
+    /// the time it reaches the tip. The curl starts flat at the wrist, so the membrane bends
+    /// smoothly through the joint rather than creasing at it.
+    fn curl(self, fold: f32) -> f32 {
+        let hand = ((1.0 - self.wrist) * 2.0 * self.radii.x).max(1e-3);
+        fold.clamp(-1.2, 1.2).tan() / (2.0 * hand)
+    }
+
+    /// The membrane's height above the wing's plane at `x` and `z`, with this curvature along the
+    /// span and this curl beyond the wrist.
+    fn height(self, x: f32, z: f32, curvature: f32, curl: f32) -> f32 {
+        let beyond = ((x - self.wrist_x()) * self.side).max(0.0);
+        let across = z - (self.center.z - self.root.z);
+        curvature * x * x + curl * beyond * beyond + self.arch() * across * across
+    }
+
+    /// The membrane's normal at a point of it, in the wing's frame with the stroke undone.
+    fn normal_at(self, point: Vec3) -> Vec3 {
         let offset = self.center - self.root;
-        roll(
-            vec3(
-                -2.0 * self.curvature() * point.x,
-                1.0,
-                -2.0 * self.arch() * (point.z - offset.z),
-            )
-            .normalize(),
-            if hand { self.fold.x * self.side } else { 0.0 },
+        let beyond = ((point.x - self.wrist_x()) * self.side).max(0.0);
+        vec3(
+            -2.0 * self.curvature() * point.x - 2.0 * self.curl(self.fold.x) * beyond * self.side,
+            1.0,
+            -2.0 * self.arch() * (point.z - offset.z),
         )
+        .normalize()
     }
 
-    /// The nearest point where a ray in the wing's frame crosses the
-    /// membrane within `limit`: how far along, whether on the hand, and
-    /// where. The wing is two panels, the arm out to the wrist and the hand
-    /// beyond it turned about the wrist joint; each is found in its own
-    /// frame, in which it lies on the same curved surface.
-    fn crossing(
-        self,
-        origin: Vec3,
-        direction: Vec3,
-        limit: f32,
-        feathered: bool,
-    ) -> (f32, bool, Vec3) {
+    /// The nearest point where a ray in the wing's frame crosses the membrane within `limit`: how
+    /// far along, and where. The surface is quadratic in two pieces, the arm out to the wrist and
+    /// the hand curled beyond it, each solved exactly.
+    fn crossing(self, origin: Vec3, direction: Vec3, limit: f32, feathered: bool) -> (f32, Vec3) {
         let offset = self.center - self.root;
         let curvature = self.curvature();
         let arch = self.arch();
-        let hinge = self.hinge();
-        let fold = self.fold.x * self.side;
+        let wrist_x = self.wrist_x();
         let mut distance = limit;
-        let mut hand = false;
         let mut point = Vec3::ZERO;
         for panel in 0..2 {
-            let (from, towards) = if panel == 0 {
-                (origin, direction)
+            let curl = if panel == 0 {
+                0.0
             } else {
-                (roll(origin - hinge, -fold) + hinge, roll(direction, -fold))
+                self.curl(self.fold.x)
             };
+            let (from, towards) = (origin, direction);
             let across = from.z - offset.z;
-            let quadratic = curvature * towards.x * towards.x + arch * towards.z * towards.z;
-            let linear =
-                2.0 * curvature * from.x * towards.x + 2.0 * arch * across * towards.z - towards.y;
-            let constant = curvature * from.x * from.x + arch * across * across - from.y;
+            let out = from.x - wrist_x;
+            let quadratic = curvature * towards.x * towards.x
+                + curl * towards.x * towards.x
+                + arch * towards.z * towards.z;
+            let linear = 2.0 * curvature * from.x * towards.x
+                + 2.0 * curl * out * towards.x
+                + 2.0 * arch * across * towards.z
+                - towards.y;
+            let constant =
+                curvature * from.x * from.x + curl * out * out + arch * across * across - from.y;
             let discriminant = linear * linear - 4.0 * quadratic * constant;
             if discriminant < 0.0 {
                 continue;
@@ -873,25 +875,23 @@ impl Sheet {
                 };
                 if on_panel && planform(uv, self.side, feathered, self.style) >= 0.0 {
                     distance = candidate;
-                    hand = panel == 1;
                     point = at;
                 }
             }
         }
-        (distance, hand, point)
+        (distance, point)
     }
 
-    /// The membrane's material at wing coordinates `uv`, seen at `facing`
-    /// with a pixel `footprint` wide in chords, and how much of the pixel
-    /// it covers at its outline.
+    /// The membrane's material at wing coordinates `uv`, seen at `facing` with a pixel `footprint`
+    /// wide in chords, and how much of the pixel it covers at its outline.
     fn membrane(self, uv: Vec2, pigment: Vec4, facing: f32, footprint: f32) -> (Material, f32) {
         let tint = pigment.truncate();
         let opacity = pigment.w;
         let feathered = opacity > 0.9;
         let along = uv.x.mul_add(self.side * 0.5, 0.5);
-        // Spars fan out from the root across the chord, a thick one along the
-        // leading edge, with faint cross veins between them; feathers instead
-        // lie in overlapping vanes slanting back towards the trailing edge.
+        // Spars fan out from the root across the chord, a thick one along the leading edge, with
+        // faint cross veins between them; feathers instead lie in overlapping vanes slanting back
+        // towards the trailing edge.
         let chord = ((uv.y + 0.62) / 1.4).clamp(0.0, 1.0);
         let spars = ((chord * 5.0 + along * 0.8) * PI).sin().abs();
         let cross = (along * 26.0 + chord * 3.0).sin().abs();
@@ -903,8 +903,8 @@ impl Sheet {
         };
         let vein_width = footprint.max(0.012);
         let rib = (1.0 - vein.smoothstep(vein_width, vein_width * 2.5)).max(edge);
-        // Darker towards the leading edge and the root, where the wing is
-        // thickest; paler and clearer towards the trailing edge.
+        // Darker towards the leading edge and the root, where the wing is thickest; paler and
+        // clearer towards the trailing edge.
         let thickness = (1.0 - chord) * 0.6 + (1.0 - along) * 0.4;
         let colour = if feathered {
             tint.lerp(
@@ -935,12 +935,11 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
     let origin = roll(local.origin - shape.root, -shape.stroke.x);
     let direction = roll(local.direction, -shape.stroke.x);
     let offset = shape.center - shape.root;
-    let (distance, hand, point) =
-        shape.crossing(origin, direction, ray.max_distance, pigment.w > 0.9);
+    let (distance, point) = shape.crossing(origin, direction, ray.max_distance, pigment.w > 0.9);
     if distance >= ray.max_distance {
         return Hit::MISS;
     }
-    let surface_normal = shape.normal_at(point, hand);
+    let surface_normal = shape.normal_at(point);
     let footprint = ray.footprint * distance / shape.radii.min_element();
     let (material, coverage) = shape.membrane(
         shape.coordinates(point - offset),
@@ -949,22 +948,19 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
         footprint,
     );
     let normal = roll(surface_normal, shape.stroke.x);
-    let unfolded = vec3(
+    // Where this point of the membrane was last frame, bent and curled as it was then.
+    let earlier = vec3(
         point.x,
-        shape.bend.y * point.x * point.x / (shape.radii.x * shape.radii.x),
+        shape.height(
+            point.x,
+            point.z,
+            shape.bend.y / (shape.radii.x * shape.radii.x),
+            shape.curl(shape.fold.y),
+        ),
         point.z,
     );
-    let hinge = shape.hinge();
-    let previous = shape.root
-        + (shape.previous_center - shape.center)
-        + roll(
-            if hand {
-                roll(unfolded - hinge, shape.fold.y * shape.side) + hinge
-            } else {
-                unfolded
-            },
-            shape.stroke.y,
-        );
+    let previous =
+        shape.root + (shape.previous_center - shape.center) + roll(earlier, shape.stroke.y);
     let mut hit = make_hit(
         ray,
         c,
@@ -983,19 +979,17 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
     hit
 }
 
-/// One wing of a pair, hinged at its shoulder and beaten through the species'
-/// own stroke.
+/// One wing of a pair, hinged at its shoulder and beaten through the species' own stroke.
 ///
-/// The arm turns at the shoulder, and the hand beyond the wrist follows a
-/// little behind, so the tip trails the stroke, folds in on the upstroke and
-/// flings out on the down. Each species beats at its own rate and depth, each
-/// individual a little out of step with the rest.
+/// The arm turns at the shoulder, and the hand beyond the wrist follows a little behind, so the tip
+/// trails the stroke, folds in on the upstroke and flings out on the down. Each species beats at
+/// its own rate and depth, each individual a little out of step with the rest.
 pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> Sheet {
     let wing = look.wings[index];
     let shoulder = look.hinges[index].extend(wing.z);
     let root = vec3(shoulder.x * side, shoulder.y, shoulder.z);
-    // No two individuals' wings quite alike: a little longer or shorter,
-    // held a little higher or lower at rest.
+    // No two individuals' wings quite alike: a little longer or shorter, held a little higher or
+    // lower at rest.
     let individual = c.identity - 0.5;
     let dimensions =
         wing.truncate().truncate() * vec2(1.0 + individual.x * 0.16, 1.0 + individual.y * 0.1);
@@ -1009,11 +1003,11 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
     let reach = dimensions.x * development * (1.0 - c.animation.y * 0.65);
     let old_reach = dimensions.x * development * (1.0 - c.previous_animation.y * 0.65);
     let motion = look.flight;
-    // The membrane is no board: the air it drives bows it along the span
-    // against the stroke, tips curling up on the downstroke and down on
-    // the up, and fills it deeper across the chord on the downstroke.
+    // The membrane is no board: the air it drives bows it along the span against the stroke, tips
+    // curling up on the downstroke and down on the up, and fills it deeper across the chord on
+    // the downstroke.
     let beat = |time: f32, folded: f32| {
-        let phase = time * motion.x * TAU + individual.w * TAU + index as f32 * 0.6;
+        let phase = time * motion.x * TAU + index as f32 * 0.6;
         let effort = 1.0 - folded.clamp(0.0, 1.0);
         let push = -phase.cos() * effort;
         (
@@ -1058,10 +1052,9 @@ pub fn visit_paired_sheets<F: FnMut(Hit)>(
 
 /// The frame a membrane wing is stretched over, in the creature's own frame.
 ///
-/// A thick arm runs from a fleshy root out to the wrist, a long finger on along
-/// the leading edge to the tip, and fingers fan back from the wrist to the
-/// points of the trailing edge between its scallops. A feathered wing has the
-/// arm and leading finger alone; its feathers carry the rest.
+/// A thick arm runs from a fleshy root out to the wrist, a long finger on along the leading edge to
+/// the tip, and fingers fan back from the wrist to the points of the trailing edge between its
+/// scallops. A feathered wing has the arm and leading finger alone; its feathers carry the rest.
 pub fn wing_bones(p: Vec3, c: &CreatureInstance, look: Look, index: usize) -> f32 {
     let style = look.styles[index];
     let weight = look.frames[index];
@@ -1074,11 +1067,11 @@ pub fn wing_bones(p: Vec3, c: &CreatureInstance, look: Look, index: usize) -> f3
         let chord = shape.radii.y;
         let offset = shape.center - shape.root;
         let curvature = shape.bend.x / (rx * rx);
-        let arch = -shape.camber / chord;
+        let curl = shape.curl(shape.fold.x);
         // Far from this wing, its bounding sphere is distance enough.
         let middle = shape.root + roll(offset, shape.stroke.x);
-        // Stopping a chord short of the sphere, so its own surface is never
-        // mistaken for the wing's.
+        // Stopping a chord short of the sphere, so its own surface is never mistaken for
+        // the wing's.
         let bound = (p - middle).length() - (rx * 1.35 + chord);
         if bound > chord {
             distance = distance.min(bound);
@@ -1089,16 +1082,7 @@ pub fn wing_bones(p: Vec3, c: &CreatureInstance, look: Look, index: usize) -> f3
             let z = offset.z
                 + (along * along - 0.25) * rx * 0.55 * style.x
                 + v * chord * (1.0 - 0.55 * along);
-            let across = z - offset.z;
-            let flat = vec3(x, curvature * x * x + arch * across * across, z);
-            // The hand beyond the wrist, turned about the joint.
-            let wrist_x = offset.x + (2.0 * shape.wrist - 1.0) * rx * side;
-            let hinge = vec3(wrist_x, curvature * wrist_x * wrist_x, 0.0);
-            let placed = if along > shape.wrist {
-                roll(flat - hinge, shape.fold.x * side) + hinge
-            } else {
-                flat
-            };
+            let placed = vec3(x, shape.height(x, z, curvature, curl), z);
             shape.root + roll(placed, shape.stroke.x)
         };
         let lead = |along: f32| -leading(along, style) * 0.9;

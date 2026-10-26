@@ -1,10 +1,22 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
+    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     eyespots, feathers, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
@@ -14,12 +26,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 1460.0,
     lifespan_days: 40000.0,
-    speed: 12.0,
     adult_mass: 35.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 49.8;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -37,21 +53,19 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 9.0, 14.0, 0);
     c.opaque_bounds = vec3(7.0, 7.0, 24.0).extend(0.0);
-    rig_tentacles(c, RIM, 2.3, BIOLOGY.oral_pairs);
+    rig_tentacles(c, RIM, 2.3, ORAL_PAIRS);
 }
 /// The low point of the funnel's rim, where the tentacles hang.
 const RIM: Vec3 = vec3(0.0, -3.4, -14.0);
 
 /// A living trawl with no head at all.
 ///
-/// Its front has become one great flared funnel, lined inside with comb plates,
-/// held open as it flies through an algae stream so the food is strained out of
-/// the air it swallows; the three pairs of tentacles hang about the rim to
-/// scrape the combs clean. Behind the funnel lies a barrel of a body, swollen
-/// with a gas store over the back that cuts the cost of carrying it between
-/// streams, and its eyes run in rows along the lower flanks, watching the
-/// neighbours a herd keeps its spacing by. Each animal's funnel and store are
-/// its own size.
+/// Its front has become one great flared funnel, lined inside with comb plates, held open as it
+/// flies through an algae stream so the food is strained out of the air it swallows; the three
+/// pairs of tentacles hang about the rim to scrape the combs clean. Behind the funnel lies a barrel
+/// of a body, swollen with a gas store over the back that cuts the cost of carrying it between
+/// streams, and its eyes run in rows along the lower flanks, watching the neighbours a herd keeps
+/// its spacing by. Each animal's funnel and store are its own size.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let flare = 0.85 + c.identity.y * 0.35;
     let barrel = rounded(p - vec3(0.0, 0.0, 1.0), vec3(3.4, 3.1, 10.0));
@@ -84,9 +98,26 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join(comb, 7);
     hit.join(feathers(p, c, 4.0), 1);
     hit.join(eyespots(p, vec3(2.9, -1.5, -6.5), 1.4, 4, 0.24), 3);
-    hit.join(oral_tentacles(p, c, RIM, 2.3, BIOLOGY.oral_pairs), 8);
+    hit.join(oral_tentacles(p, c, RIM, 2.3, ORAL_PAIRS), 8);
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.62, -6.21), vec3(0.61, 0.57, 1.32)),
+    site(PUMP, vec3(0.00, -0.09, -2.36), vec3(1.36, 1.36, 1.99)),
+    site(CROP, vec3(0.00, -0.09, 1.93), vec3(1.42, 1.42, 3.83)),
+    pair(BREATHER, vec3(2.26, 0.89, -3.00), vec3(0.44, 0.44, 0.44)),
+    site(FLOAT, vec3(0.00, 3.30, -1.07), vec3(0.45, 0.45, 0.45)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(2.26, 1.61, -1.29),
+        vec3(0.37, 0.37, 0.37),
+    ),
+    site(CISTERN, vec3(0.00, -0.09, 6.64), vec3(0.91, 0.91, 1.99)),
+    site(BROOD, vec3(0.00, 0.45, 9.21), vec3(0.66, 0.62, 1.00)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -103,4 +134,15 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Sunlit,
+        speed: 12.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

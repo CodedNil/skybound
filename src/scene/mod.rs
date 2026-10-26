@@ -22,8 +22,8 @@ pub const PLANET_RADIUS: f32 = 1_500_000.0;
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewUniform {
     pub clip_from_world: Mat4,
-    /// The projection without this frame's jitter, which motion is measured
-    /// in, as upscalers expect.
+    /// The projection without this frame's jitter, which motion is measured in, as
+    /// upscalers expect.
     pub unjittered_clip_from_world: Mat4,
     pub world_from_clip: Mat4,
     pub prev_clip_from_world: Mat4,
@@ -42,8 +42,7 @@ pub struct ViewUniform {
     pub cache_origin: Vec4,
     pub cache_east: Vec4,
     pub cache_north: Vec4,
-    /// The camera's spire cells and offsets on each face, from
-    /// `aur::spire_origins`.
+    /// The camera's spire cells and offsets on each face, from `aur::spire_origins`.
     pub spire_origins: [Vec4; 6],
     pub aur_flashes: [[Vec4; 2]; 32],
     pub aur_bolts: [[Vec4; 2]; 32],
@@ -125,9 +124,8 @@ impl ViewUniform {
         self.camera_position.z
     }
 
-    /// The place of a point given by its offset from the camera along the
-    /// planet's axes: how everything placed on the face grid is found near
-    /// the camera.
+    /// The place of a point given by its offset from the camera along the planet's axes: how
+    /// everything placed on the face grid is found near the camera.
     pub fn place(&self, offset: Vec3) -> aur::Place {
         aur::place_near(&self.spire_origins, self.camera(), self.altitude(), offset)
     }

@@ -1,10 +1,22 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
-    biology::{Biology, Social},
+    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+    biology::Biology,
     ellipsoid, louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -13,13 +25,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 730.0,
     lifespan_days: 14600.0,
-    speed: 45.0,
-    social: Social::Solitary,
     adult_mass: 5.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -28,7 +43,7 @@ taxon!(
     [
         "Duskslicers hang almost motionless in the mineral haze on broad, dust-furred wings, their mottled bodies lost in it, a glowing lure dangling far below on a whip of a tail.",
         "Small animals drawn up to the lure's apparent feeding signal rise into a short banked stoop, and the iron-hardened leading edges of the forewings, curved to a scythe point, cut across them.",
-        "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dim phase.",
+        "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dimmest equatorial skies, where they live.",
         "Fringed hindwings hush the glide, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
         "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",
     ],
@@ -46,17 +61,15 @@ pub fn animate(c: &mut CreatureInstance) {
         c.tail[i].z -= t * t * 4.0;
     }
     c.opaque_bounds = vec3(6.0, 9.0, 21.0).extend(0.0);
-    rig_tentacles(c, MOUTH, 0.8, BIOLOGY.oral_pairs);
+    rig_tentacles(c, MOUTH, 0.8, ORAL_PAIRS);
 }
 
 /// A haze-hanging ambusher, built to be unseen until the cut.
 ///
-/// A short, broad, flattened body is furred to hold the dust it hangs in,
-/// so it takes the haze's own colour; a blunt head has two great eyes on
-/// its underside, looking down for prey against the aur's glow; and a long,
-/// thin whip of a tail hangs below, ending in a lure of glowing threads.
-/// The weapon is in the wings: the forewings' leading edges are iron,
-/// curving to a scythe point.
+/// A short, broad, flattened body is furred to hold the dust it hangs in, so it takes the haze's
+/// own colour; a blunt head has two great eyes on its underside, looking down for prey against the
+/// aur's glow; and a long, thin whip of a tail hangs below, ending in a lure of glowing threads.
+/// The weapon is in the wings: the forewings' leading edges are iron, curving to a scythe point.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let bulk = vec3(1.9, 0.95, 3.2);
     let body = rounded(p, bulk);
@@ -100,9 +113,31 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ellipsoid(side - vec3(0.6, -0.55, -3.75), vec3(0.55, 0.5, 0.6)),
         3,
     );
-    hit.join(oral_tentacles(p, c, MOUTH, 0.8, BIOLOGY.oral_pairs), 8);
+    hit.join(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8);
     hit
 }
+
+/// The lure gland, whose store is spent on each use and slowly made again.
+#[cfg(not(target_arch = "spirv"))]
+const LURE: Organ = Organ::new("lure gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.08, -3.56), vec3(0.33, 0.16, 0.46)),
+    site(PUMP, vec3(0.00, -0.08, -2.06), vec3(0.35, 0.22, 0.70)),
+    site(CROP, vec3(0.00, -0.24, -0.19), vec3(0.49, 0.34, 0.49)),
+    pair(BREATHER, vec3(0.80, 0.16, -2.62), vec3(0.22, 0.19, 0.22)),
+    site(FLOAT, vec3(0.00, 0.40, -0.56), vec3(0.38, 0.22, 0.38)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.80, 0.16, -1.12),
+        vec3(0.22, 0.18, 0.22),
+    ),
+    site(CISTERN, vec3(0.00, -0.08, 1.31), vec3(0.35, 0.33, 0.80)),
+    site(BROOD, vec3(0.00, -0.08, 2.44), vec3(0.35, 0.18, 0.53)),
+    site(LURE, vec3(0.00, -4.90, 13.69), vec3(0.05, 0.05, 0.05)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -120,4 +155,16 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Aurlit,
+        speed: 45.0,
+        flocks: false,
+        ..super::super::PHYSIOLOGY
+    };
 }

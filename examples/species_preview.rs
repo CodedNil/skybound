@@ -8,12 +8,13 @@ use skybound::scene::{
     life,
     life::{
         CreatureInstance, SPECIES, SPECIES_MODULES, Taxon,
-        biology::Brood,
+        animalia::physiology::Brood,
         surface::{Ray, tonemap},
     },
 };
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
 use std::{
+    cmp::Reverse,
     env,
     f32::consts::{PI, TAU},
     fs,
@@ -31,6 +32,8 @@ struct View {
     up: Vec3,
     center: Vec2,
     field: f32,
+    /// The sky behind the creature, across the view from zero to one.
+    backdrop: fn(Vec2) -> Vec3,
 }
 
 impl View {
@@ -64,6 +67,7 @@ impl View {
             up: right.cross(forward),
             center: Vec2::ZERO,
             field: 1.35,
+            backdrop: background,
         };
         let mut min = Vec2::ONE;
         let mut max = Vec2::ZERO;
@@ -90,13 +94,21 @@ struct Sample {
     distance: f32,
 }
 
+/// The sheets the preview can render for a species.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Output {
+    /// The adult from nine angles.
     Render,
+    /// The adult cut away to show its organs, from nine angles.
     Anatomy,
+    /// One individual from egg or birth to old age.
     Lifecycle,
+    /// Nine individuals, to show how they differ.
     Variation,
+    /// A looping animation of the adult.
     Idle,
+    /// At every fork in the tree, every species below it side by side at their true sizes.
+    Lineup,
 }
 
 impl Output {
@@ -107,6 +119,7 @@ impl Output {
             Self::Lifecycle => "lifecycle",
             Self::Variation => "variation",
             Self::Idle => "idle",
+            Self::Lineup => "lineup",
         }
     }
 }
@@ -148,6 +161,11 @@ fn background(uv: Vec2) -> Vec3 {
     vec3(0.025, 0.12, 0.32).lerp(vec3(0.10, 0.22, 0.34), uv.y)
 }
 
+/// One even sky behind a whole lineup, so its creatures stand together rather than in boxes.
+fn even_sky(_: Vec2) -> Vec3 {
+    background(Vec2::splat(0.5))
+}
+
 fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: bool) -> Sample {
     let mut ray = view.ray(vec2(uv.x, 1.0 - uv.y));
     ray.footprint = view.field / tile as f32;
@@ -157,7 +175,7 @@ fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: boo
         life::render(ray, c)
     };
     Sample {
-        color: hit.composite(background(uv)),
+        color: hit.composite((view.backdrop)(uv)),
         distance: hit.distance(),
     }
 }
@@ -297,18 +315,29 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
             };
             let seed = if output == Output::Variation { seed } else { 0 };
             let mut c = specimen(kind, age, seed, seconds);
-            // The first grown panel of a lifecycle shows a parent with its
-            // brood, where its lineage carries one.
+            // The first grown panel of a lifecycle shows a parent with its brood, where its lineage
+            // carries one.
             let brooding = output == Output::Lifecycle && panel == 6;
             if brooding {
-                match biology.brood {
-                    Brood::Carried => c.kind.z = life::CLUTCH,
-                    Brood::Pouch => c.kind.z = life::FULL_POUCH,
+                match life::KINDS[kind].animal().map(|animal| animal.brood) {
+                    Some(Brood::Carried) => c.kind.z = life::CLUTCH,
+                    Some(Brood::Pouch) => c.kind.z = life::FULL_POUCH,
                     _ => {}
                 }
             }
-            let angled =
-                matches!(output, Output::Render | Output::Anatomy).then(|| View::fit(panel, &c));
+            // A lifecycle keeps the adult's view, but closes in on the young so their forms show,
+            // up to three times nearer.
+            let angled = match output {
+                Output::Render | Output::Anatomy => Some(View::fit(panel, &c)),
+                Output::Lifecycle => {
+                    let own = View::fit(1, &c);
+                    (own.field < fixed.field).then(|| View {
+                        field: (own.field * 1.2).max(fixed.field / 3.0),
+                        ..own
+                    })
+                }
+                Output::Variation | Output::Idle | Output::Lineup => None,
+            };
             let view = angled.as_ref().unwrap_or(&fixed);
             let mut pixels = render_tile(&c, view, size, output == Output::Anatomy);
             if output == Output::Lifecycle {
@@ -341,9 +370,9 @@ fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbIma
     grid
 }
 
-/// The idle animation, at half the stills' size: a GIF's palette discards
-/// more detail than the halved resolution does. Frames render all at once,
-/// so the cores stay busy through each frame's ragged end.
+/// The idle animation, at half the stills' size: a GIF's palette discards more detail than the
+/// halved resolution does. Frames render all at once, so the cores stay busy through each frame's
+/// ragged end.
 fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
     let size = (size / 2).max(64);
     let age = life::KINDS[kind].biology().maturity_days * 1.25;
@@ -378,10 +407,175 @@ fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
     }
 }
 
+/// The taxa where the tree forks: those with more than one branch that has species below it.
+fn forks() -> Vec<&'static Taxon> {
+    let mut branches: Vec<(&'static Taxon, Vec<&'static str>)> = Vec::new();
+    for &species in SPECIES {
+        let mut child: &'static Taxon = species;
+        while let Some(parent) = child.parent {
+            match branches
+                .iter_mut()
+                .find(|(taxon, _)| taxon.name == parent.name)
+            {
+                Some((_, children)) if !children.contains(&child.name) => children.push(child.name),
+                Some(_) => {}
+                None => branches.push((parent, vec![child.name])),
+            }
+            child = parent;
+        }
+    }
+    branches
+        .into_iter()
+        .filter(|(_, children)| children.len() > 1)
+        .map(|(taxon, _)| taxon)
+        .collect()
+}
+
+/// Where a taxon's own sheets live: its module's folder, beside its `mod.rs`.
+fn taxon_folder(taxon: &Taxon) -> PathBuf {
+    let mut depth = 0;
+    let mut ancestor = taxon;
+    while let Some(parent) = ancestor.parent {
+        depth += 1;
+        ancestor = parent;
+    }
+    let kind = SPECIES
+        .iter()
+        .position(|species| species.descends_from(taxon))
+        .expect("a fork has species below it");
+    let module = SPECIES_MODULES[kind].split_whitespace().collect::<String>();
+    module.split("::").take(depth).fold(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/scene/life"),
+        |path, part| path.join(part),
+    )
+}
+
+/// Every species below a taxon, grown, seen from the same side and drawn to one scale, packed in
+/// rows into a sheet near to square. The largest is `size` pixels across; none is drawn smaller
+/// than a few pixels, so the smallest can still be found.
+fn render_lineup(taxon: &Taxon, size: usize, seconds: f32) -> RgbImage {
+    let members: Vec<(usize, CreatureInstance, View, f32)> = SPECIES
+        .iter()
+        .enumerate()
+        .filter(|(_, species)| species.descends_from(taxon))
+        .map(|(kind, _)| {
+            let days = life::KINDS[kind].biology().maturity_days * 1.25;
+            let c = specimen(kind, days, 0, seconds);
+            let mut view = View::fit(1, &c);
+            // Room for wing tips and trailing tails the fit's coarse look can miss.
+            view.field *= 1.2;
+            view.backdrop = even_sky;
+            // How wide the view is in metres at the creature, from how far off the camera sits.
+            let across = view.field * view.origin.length();
+            (kind, c, view, across)
+        })
+        .collect();
+    let widest = members.iter().map(|m| m.3).fold(0.0f32, f32::max).max(1e-3);
+    let mut tiles: Vec<(usize, usize)> = members
+        .iter()
+        .enumerate()
+        .map(|(index, member)| (index, ((member.3 / widest * size as f32) as usize).max(12)))
+        .collect();
+    tiles.sort_by_key(|&(_, side)| Reverse(side));
+    let gap = 4;
+    let area: usize = tiles
+        .iter()
+        .map(|(_, side)| (side + gap) * (side + gap))
+        .sum();
+    let limit = (((area as f32).sqrt() * 1.15) as usize).max(tiles[0].1 + gap);
+    // Shelves, each as tall as its first and largest tile, filled up to the limit.
+    let mut rows: Vec<Vec<(usize, usize)>> = Vec::new();
+    let mut filled = 0;
+    for &tile in &tiles {
+        match rows.last_mut() {
+            Some(row) if filled + tile.1 + gap <= limit => row.push(tile),
+            _ => {
+                rows.push(vec![tile]);
+                filled = 0;
+            }
+        }
+        filled += tile.1 + gap;
+    }
+    let span = |row: &[(usize, usize)]| row.iter().map(|(_, side)| side + gap).sum::<usize>();
+    let width = rows.iter().map(|row| span(row)).max().unwrap_or(0) + gap;
+    // Each row centred across the sheet, and each tile within its row's height.
+    let mut placed = Vec::new();
+    let mut y = gap;
+    for row in &rows {
+        let height = row[0].1;
+        let mut x = gap + (width - gap - span(row)) / 2;
+        for &(index, side) in row {
+            placed.push((index, side, x, y + (height - side) / 2));
+            x += side + gap;
+        }
+        y += height + gap;
+    }
+    let height = y;
+    let rendered: Vec<(usize, usize, Vec<u8>)> = placed
+        .par_iter()
+        .map(|&(index, side, x, y)| {
+            let (_, c, view, _) = &members[index];
+            (
+                x,
+                y,
+                RgbImage::from_raw(side as u32, side as u32, render_tile(c, view, side, false))
+                    .expect("lineup tile")
+                    .into_raw(),
+            )
+        })
+        .collect();
+    let mut sheet = RgbImage::from_fn(width as u32, height as u32, |_, _| {
+        let shade = tonemap(even_sky(Vec2::ZERO));
+        image::Rgb([
+            (shade.x * 255.0) as u8,
+            (shade.y * 255.0) as u8,
+            (shade.z * 255.0) as u8,
+        ])
+    });
+    for ((x, y, pixels), &(_, side, _, _)) in rendered.into_iter().zip(&placed) {
+        let tile = RgbImage::from_raw(side as u32, side as u32, pixels).expect("lineup tile");
+        imageops::replace(
+            &mut sheet,
+            &tile,
+            i64::try_from(x).expect("sheet width"),
+            i64::try_from(y).expect("sheet height"),
+        );
+    }
+    sheet
+}
+
+/// A lineup beside every fork in the tree, or in `output`, for the forks `selected` names.
+fn lineups(output: Option<&str>, selected: Option<&str>, tile: usize, seconds: f32) {
+    for taxon in forks() {
+        if selected.is_some_and(|filter| {
+            !filter
+                .split(',')
+                .any(|name| slug(taxon.name).contains(name))
+        }) {
+            continue;
+        }
+        let path = output.map_or_else(
+            || taxon_folder(taxon).join(format!("{}.png", slug(taxon.name))),
+            |output| {
+                let name = if taxon.parent.is_some() {
+                    filename(taxon)
+                } else {
+                    slug(taxon.name)
+                };
+                Path::new(output).join(format!("{name}.png"))
+            },
+        );
+        render_lineup(taxon, tile, seconds)
+            .save(&path)
+            .expect("save lineup");
+        println!("{}: {}", taxon.name, path.display());
+    }
+}
+
 fn main() {
     if env::args().any(|arg| arg == "--help") {
         println!(
-            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle]\nBy default, writes all five assets beside each species source file. --anatomy selects anatomy only."
+            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle,lineup]\nBy default, writes all five assets beside each species source file, and at each fork in the tree a lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
         );
         return;
     }
@@ -405,7 +599,7 @@ fn main() {
         if env::args().any(|arg| arg == "--anatomy") {
             "anatomy".into()
         } else {
-            "render,anatomy,lifecycle,variation,idle".into()
+            "render,anatomy,lifecycle,variation,idle,lineup".into()
         }
     });
     let outputs: Vec<_> = requested
@@ -416,8 +610,16 @@ fn main() {
             "lifecycle" => Output::Lifecycle,
             "variation" => Output::Variation,
             "idle" => Output::Idle,
+            "lineup" => Output::Lineup,
             _ => panic!("unknown output: {name}"),
         })
+        .collect();
+    if outputs.contains(&Output::Lineup) {
+        lineups(output.as_deref(), selected.as_deref(), tile, seconds);
+    }
+    let outputs: Vec<_> = outputs
+        .into_iter()
+        .filter(|&output| output != Output::Lineup)
         .collect();
     let mut count = 0;
     for (kind, taxon) in SPECIES.iter().enumerate() {
@@ -457,5 +659,8 @@ fn main() {
             println!("{}: {}", taxon.name, path.display());
         }
     }
-    assert!(count > 0, "no species matched the filter");
+    assert!(
+        count > 0 || outputs.is_empty(),
+        "no species matched the filter"
+    );
 }

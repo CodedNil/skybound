@@ -22,30 +22,28 @@ use spirv_std::{
     spirv,
 };
 
-/// Seconds between restarts of the noise carried along by the wind. Two
-/// copies half a period apart crossfade, so detail never stretches far.
+/// Seconds between restarts of the noise carried along by the wind. Two copies half a period apart
+/// crossfade, so detail never stretches far.
 const FLOW_PERIOD: f32 = 900.0;
 
-/// The spacing of cumulus heaps, about a kilometre and a half apart, and
-/// the scale of the clusters they gather into.
+/// The spacing of cumulus heaps, about a kilometre and a half apart, and the scale of the clusters
+/// they gather into.
 const CUMULUS_CELL: f32 = 1500.0;
 
 const CLUSTER_SCALE: f32 = 6250.0;
 
-/// How far past its dome a heap's lobes can bulge, as a share of its
-/// height: the lobes in `heap` add at most 0.55 to a dome of height one.
+/// How far past its dome a heap's lobes can bulge, as a share of its height: the lobes in `heap`
+/// add at most 0.55 to a dome of height one.
 const CROWN_BULGE: f32 = 1.3;
 
 /// How far a cumulus base sags below its level in places.
 const BASE_SAG: f32 = 70.0;
 
-/// The furthest the lobes in `heap` raise a profile, so a profile below
-/// this holds no cloud at all.
+/// The furthest the lobes in `heap` raise a profile, so a profile below this holds no cloud at all.
 const LOBE_REACH: f32 = 0.6;
 
-/// The size of the broad swells on which every layer rises and falls
-/// together, and how far they lift or lower it; and how far each cloud's
-/// own base strays from the swell.
+/// The size of the broad swells on which every layer rises and falls together, and how far they
+/// lift or lower it; and how far each cloud's own base strays from the swell.
 const SWELL_SCALE: f32 = 15_000.0;
 
 const SWELL: f32 = LAYER_DRIFT * 0.7;
@@ -57,26 +55,25 @@ const CLOUD_TEXEL: f32 = PLANET_RADIUS * FRAC_PI_2 / CLOUD_FACE as f32;
 
 const RAIN_EXTINCTION: f32 = 0.0024;
 
-/// The share of a layer's peak extinction that shadows are traced through,
-/// where the noise is not evaluated. Light threads the gaps between clouds,
-/// so a patchy layer passes far more than its mean density would.
+/// The share of a layer's peak extinction that shadows are traced through, where the noise is not
+/// evaluated. Light threads the gaps between clouds, so a patchy layer passes far more than its
+/// mean density would.
 const MEAN_FILL: f32 = 0.15;
 
-/// Each march sample traces its own shadow this far towards the light; the
-/// light volume supplies the rest of the path.
+/// Each march sample traces its own shadow this far towards the light; the light volume supplies
+/// the rest of the path.
 pub const NEAR_SHADOW: f32 = 300.0;
 
-/// Cloud droplet diameter in micrometres, which sets the shape of the
-/// forward peak, the fogbow and the glory.
+/// Cloud droplet diameter in micrometres, which sets the shape of the forward peak, the fogbow and
+/// the glory.
 const DROPLET: f32 = 16.0;
 
 /// Wavelengths of the red, green and blue channels, in nanometres.
 const WAVELENGTH: Vec3 = vec3(650.0, 550.0, 450.0);
 
-/// Peak extinction of each layer's cloud, per metre: dense heaps of
-/// cumulus, through thinner middle cloud, to ice crystals that barely veil
-/// the sky. Low enough that light reaches tens of metres in, so edges read
-/// as soft and translucent rather than as a hard skin.
+/// Peak extinction of each layer's cloud, per metre: dense heaps of cumulus, through thinner middle
+/// cloud, to ice crystals that barely veil the sky. Low enough that light reaches tens of metres
+/// in, so edges read as soft and translucent rather than as a hard skin.
 fn extinction(layer: u32) -> f32 {
     match layer {
         0 => 0.07,
@@ -89,10 +86,9 @@ fn extinction(layer: u32) -> f32 {
     }
 }
 
-/// How a layer's genus is shaped. Cells are its clouds' spacing; streaks
-/// smear them out along the wind; a lens rounds their bases as well as
-/// their tops; puffs heap lobes on them and erosion frays them; ripples lay
-/// billows across the wind.
+/// How a layer's genus is shaped. Cells are its clouds' spacing; streaks smear them out along the
+/// wind; a lens rounds their bases as well as their tops; puffs heap lobes on them and erosion
+/// frays them; ripples lay billows across the wind.
 #[derive(Clone, Copy)]
 struct Genus {
     cell: f32,
@@ -128,19 +124,22 @@ fn genus(layer: u32) -> Genus {
     }
 }
 
-/// How finely a density is evaluated: in full; as a cheap probe that may
-/// only overstate the cloud, to decide whether a step needs the full
-/// density at all; or as a cheap estimate of it, for shadows.
+/// How finely a density is evaluated: in full; as a cheap probe that may only overstate the
+/// cloud, to decide whether a step needs the full density at all; or as a cheap estimate of it,
+/// for shadows.
 #[derive(Clone, Copy)]
 #[repr(u32)]
 pub enum Detail {
+    /// The full density.
     Full,
+    /// A cheap probe that may only overstate it.
     Probe,
+    /// A cheap estimate, for shadows.
     Shadow,
 }
 
-/// Cloud at a point: droplet and rain extinction, and how far up its cloud
-/// the point sits, from a dark base at 0 to a sunlit crown at 1.
+/// Cloud at a point: droplet and rain extinction, and how far up its cloud the point sits, from a
+/// dark base at 0 to a sunlit crown at 1.
 pub struct CloudSample {
     pub density: f32,
     pub rain: f32,
@@ -149,8 +148,8 @@ pub struct CloudSample {
     pub free: f32,
 }
 
-/// What a march step needs to know about the cloud over one column, read
-/// once and shared by every density it evaluates nearby.
+/// What a march step needs to know about the cloud over one column, read once and shared by every
+/// density it evaluates nearby.
 ///
 /// Every member is four wide, so a march can keep one in its state.
 #[derive(Clone, Copy)]
@@ -158,23 +157,22 @@ pub struct CloudColumn {
     /// The cover of layers 0 to 3, then of 4 to 6 and the convective top.
     lower: Vec4,
     upper: Vec4,
-    /// Which layers hold cloud anywhere near, as bits; then the highest
-    /// convective top and the most convective cover near.
+    /// Which layers hold cloud anywhere near, as bits; then the highest convective top and the
+    /// most convective cover near.
     bounds: Vec4,
-    /// The storm tower over this column, if any: its centre scaled by its
-    /// top altitude, and its column radius.
+    /// The storm tower over this column, if any: its centre scaled by its top altitude, and its
+    /// column radius.
     tower: Vec4,
-    /// Offsets placing a point in the two drifting copies of the noise, and
-    /// how much the nearer copy counts in the crossfade.
+    /// Offsets placing a point in the two drifting copies of the noise, and how much the nearer
+    /// copy counts in the crossfade.
     near: Vec4,
     far: Vec4,
     /// Direction of the wind, along which rain leans and towers lean.
     along: Vec4,
 }
 
-/// The noise one density evaluation reads: positions are taken in the
-/// planet and carried into the two drifting copies of the noise, crossfaded
-/// for the large shapes where they meet.
+/// The noise one density evaluation reads: positions are taken in the planet and carried into the
+/// two drifting copies of the noise, crossfaded for the large shapes where they meet.
 struct Drift<'a, 'b> {
     textures: &'a Textures<'b>,
     point: Vec3,
@@ -193,9 +191,8 @@ impl Drift<'_, '_> {
             .shapes_filtered(p / scale, self.footprint / scale)
     }
 
-    /// A smooth field varying over features of about `size`: the noise's
-    /// coarse octaves alone, read from a mip that has blurred the fine ones
-    /// away.
+    /// A smooth field varying over features of about `size`: the noise's coarse octaves alone, read
+    /// from a mip that has blurred the fine ones away.
     fn smooth(&self, p: Vec3, size: f32) -> Vec4 {
         let scale = size * 8.0;
         let footprint = self.footprint.max(scale / 32.0);
@@ -218,14 +215,11 @@ impl Drift<'_, '_> {
             .lerp(self.sample(p + self.far, scale), 1.0 - self.weight)
     }
 
-    /// Cells of cloud: Worley cells, warped, and for the most prominent
-    /// clouds a second rotated copy, so that no grid shows through their
-    /// outlines. Their field changes by at most about five per cell
-    /// crossed, which bounds how far a point outside them is from one.
-    /// Squared distances round
-    /// each cell's crown where plain ones would peak in a cusp; and the
-    /// result is spread over the whole range by its measured 5th and 95th
-    /// percentiles.
+    /// Cells of cloud: Worley cells, warped, and for the most prominent clouds a second rotated
+    /// copy, so that no grid shows through their outlines. Their field changes by at most about
+    /// five per cell crossed, which bounds how far a point outside them is from one. Squared
+    /// distances round each cell's crown where plain ones would peak in a cusp; and the result is
+    /// spread over the whole range by its measured 5th and 95th percentiles.
     fn cells(&self, column: Vec3, scale: f32, twice: bool) -> f32 {
         let tile = scale * 8.0;
         let warp = self.smooth(column * 0.37, scale * 2.7);
@@ -243,8 +237,8 @@ impl Drift<'_, '_> {
         remap(nearest * (2.0 - nearest), 0.56, 0.97)
     }
 
-    /// Structure about a position with features of about `size`, from the
-    /// leading copy alone; the cells repeat eight times across the texture.
+    /// Structure about a position with features of about `size`, from the leading copy alone; the
+    /// cells repeat eight times across the texture.
     fn detail(&self, p: Vec3, size: f32) -> Vec4 {
         self.sample(p + self.lead, size * 8.0)
     }
@@ -280,14 +274,13 @@ impl CloudColumn {
 
     /// Altitudes the cloud of a layer near this column can fill.
     fn band(&self, layer: u32) -> Vec2 {
-        // The lowest and highest the swell lifts the layers near here, and
-        // how far any cloud's own base strays from it.
+        // The lowest and highest the swell lifts the layers near here, and how far any cloud's own
+        // base strays from it.
         let low = self.bounds.z - STRAY;
         let high = self.bounds.w + STRAY;
         let base = layer_altitude(layer);
         if layer == 0 {
-            // Cumulus bases wander half as far; the tallest crowns bulge a
-            // little past their dome.
+            // Cumulus bases wander half as far; the tallest crowns bulge a little past their dome.
             let floor = if self.raining() {
                 base - RAIN_DEPTH
             } else {
@@ -308,9 +301,9 @@ impl CloudColumn {
         storm(self.lower, self.upper) > 0.0 || self.tower.w > 0.0
     }
 
-    /// How far a ray can run from a point before it could enter any of
-    /// this column's layers, zero within one; and how far it may climb in
-    /// one step without slipping past the thinnest cloud there.
+    /// How far a ray can run from a point before it could enter any of this column's layers,
+    /// zero within one; and how far it may climb in one step without slipping past the thinnest
+    /// cloud there.
     pub fn room(&self, point: Vec3, direction: Vec3) -> (f32, f32) {
         let mask = self.bounds.x as u32;
         if mask == 0 {
@@ -395,8 +388,8 @@ impl CloudColumn {
             let band = self.band(layer);
             let outside = (band.x - altitude).max(altitude - band.y);
             if outside > 0.0 {
-                // Clear of this layer by a known height, which a level ray
-                // keeps for about half a cloud map texel.
+                // Clear of this layer by a known height, which a level ray keeps for about half a
+                // cloud map texel.
                 sample.free = sample.free.min(outside.min(CLOUD_TEXEL * 0.5));
                 continue;
             }
@@ -412,8 +405,8 @@ impl CloudColumn {
             } else {
                 stratiform(&drift, layer, up, altitude, cover)
             };
-            // Outside every footprint, the field's bounded slope says how
-            // far the nearest cloud of this layer is.
+            // Outside every footprint, the field's bounded slope says how far the nearest cloud of
+            // this layer is.
             sample.free = sample
                 .free
                 .min(if found.x > 0.0 { 0.0 } else { found.z.max(0.0) });
@@ -428,8 +421,8 @@ impl CloudColumn {
         let deep = storm(self.lower, self.upper).max(if self.tower.w > 0.0 { 0.6 } else { 0.0 });
         let base = layer_altitude(0);
         if deep > 0.0 && altitude < base && altitude > base - RAIN_DEPTH {
-            // Rain hangs below deep storms in shafts that thin on their way
-            // down and lean with the wind.
+            // Rain hangs below deep storms in shafts that thin on their way down and lean with
+            // the wind.
             let fall = (base - altitude) / RAIN_DEPTH;
             let leaning = self.along.xyz() * ((base - altitude) * 0.4);
             let shafts = match detail {
@@ -443,32 +436,30 @@ impl CloudColumn {
         sample
     }
 
-    /// Cumulus and storm towers: heaps on a flat base, each as tall as its
-    /// column's convection lets it grow, cauliflowered at the crown.
-    /// The density, how far up its cloud the point sits, and how far any
-    /// cloud of this layer certainly is: as for every layer's density.
+    /// Cumulus and storm towers: heaps on a flat base, each as tall as its column's convection lets
+    /// it grow, cauliflowered at the crown. The density, how far up its cloud the point sits, and
+    /// how far any cloud of this layer certainly is: as for every layer's density.
     fn convective(&self, drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
         let nominal = layer_altitude(0);
-        // The column level with the layer's base, leaning downwind with
-        // height as the wind strengthens aloft.
+        // The column level with the layer's base, leaning downwind with height as the wind
+        // strengthens aloft.
         let rise = altitude - nominal;
         let column = drift.point - up * rise - self.along.xyz() * (rise.max(0.0) * 0.25);
         // Footprints first: most samples between heaps end here.
         let clusters = drift.smooth(column * 0.7, CLUSTER_SCALE);
         let grouped = remap(clusters.w, 0.42, 0.66);
         let cells = drift.cells(column, CUMULUS_CELL, true);
-        // Clusters raise both how many footprints break the surface and how
-        // tall they grow; cover sets the share of the sky they fill. The
-        // footprint rises all the way to each heap's heart rather than
-        // levelling off, so heaps crown in domes, not flat-topped mesas.
+        // Clusters raise both how many footprints break the surface and how tall they grow; cover
+        // sets the share of the sky they fill. The footprint rises all the way to each heap's heart
+        // rather than levelling off, so heaps crown in domes, not flat-topped mesas.
         let field = cells * 0.75 + grouped * 0.25 + slack(drift.detail);
         let footprint = remap(field, 1.0 - cover, 1.75 - cover);
         let towering = self.tower.w > 0.0;
         if footprint <= 0.0 && !towering {
             return vec3(0.0, 0.5, (1.0 - cover - field) * CUMULUS_CELL * 0.2);
         }
-        // Cumulus bases sit near the condensation level: they wander less.
-        // A probe allows for any wander instead of reading it.
+        // Cumulus bases sit near the condensation level: they wander less. A probe allows for any
+        // wander instead of reading it.
         let probe = matches!(drift.detail, Detail::Probe);
         let base = if matches!(drift.detail, Detail::Full) {
             nominal + wander(drift, column, CUMULUS_CELL, 0.0) * 0.5
@@ -478,9 +469,8 @@ impl CloudColumn {
             nominal
         };
         let rise = altitude - base;
-        // Each heap's own height: flat humilis, heaped mediocris, and in the
-        // clusters congestus towering over their neighbours, as far as the
-        // column's convection reaches.
+        // Each heap's own height: flat humilis, heaped mediocris, and in the clusters congestus
+        // towering over their neighbours, as far as the column's convection reaches.
         let development = (self.upper.w - base).max(312.5);
         let own = remap(
             drift.smooth(column * 1.13, CUMULUS_CELL * 1.1).w,
@@ -491,8 +481,8 @@ impl CloudColumn {
             .min(development)
             .max(250.0);
         if probe && !towering {
-            // Above or below every heap here; heaps' heights vary slowly
-            // enough that half the gap is clear all round.
+            // Above or below every heap here; heaps' heights vary slowly enough that half the gap
+            // is clear all round.
             let gap = (-BASE_SAG - rise).max(rise - tallest * CROWN_BULGE - STRAY);
             return if gap > 0.0 {
                 vec3(0.0, 0.5, gap * 0.45)
@@ -522,9 +512,9 @@ impl CloudColumn {
                 scale = self.tower.w;
             }
         }
-        // A base that reads flat from afar but up close sags and lifts in
-        // broad lumps, and thickens over its lowest tens of metres rather
-        // than starting at full density on a razor-flat plane.
+        // A base that reads flat from afar but up close sags and lifts in broad lumps, and
+        // thickens over its lowest tens of metres rather than starting at full density on a
+        // razor-flat plane.
         let sag = if matches!(drift.detail, Detail::Full) && rise < 250.0 {
             ((drift.detail(column + Vec3::splat(311.0), 300.0).w - 0.5) * 4.0).clamp(-1.0, 1.0)
                 * BASE_SAG
@@ -536,8 +526,8 @@ impl CloudColumn {
     }
 }
 
-/// How much further a probe reaches than the cloud: the full density blends
-/// two drifting copies of the noise where a probe reads only one.
+/// How much further a probe reaches than the cloud: the full density blends two drifting copies of
+/// the noise where a probe reads only one.
 fn slack(detail: Detail) -> f32 {
     if matches!(detail, Detail::Probe) {
         0.12
@@ -546,8 +536,8 @@ fn slack(detail: Detail) -> f32 {
     }
 }
 
-/// How far a cloud's base sits above or below its layer's at a column:
-/// the broad swell, and each cloud's own stray from it.
+/// How far a cloud's base sits above or below its layer's at a column: the broad swell, and each
+/// cloud's own stray from it.
 fn wander(drift: &Drift, column: Vec3, cell: f32, layer: f32) -> f32 {
     let offset = Vec3::splat(layer * 3.7 * cell);
     let own = drift.smooth(column * 0.91 + offset, cell * 1.2).w;
@@ -555,19 +545,17 @@ fn wander(drift: &Drift, column: Vec3, cell: f32, layer: f32) -> f32 {
         + ((own - 0.5) * 3.2).clamp(-1.0, 1.0) * STRAY
 }
 
-/// The broad swell on which every layer's clouds rise and fall together,
-/// in metres. It stays put rather than drifting with the clouds, so the
-/// bounds pass can bound it over each column.
+/// The broad swell on which every layer's clouds rise and fall together, in metres. It stays put
+/// rather than drifting with the clouds, so the bounds pass can bound it over each column.
 fn swell(shapes: &Image!(3D, type=f32, sampled=true), sampler: &Sampler, point: Vec3) -> f32 {
     let at = point.normalize() * (PLANET_RADIUS / (SWELL_SCALE * 8.0));
     let value: Vec4 = shapes.sample_by_lod(*sampler, at, 2.0);
     ((value.w - 0.5) * 3.2).clamp(-1.0, 1.0) * SWELL
 }
 
-/// Erode a heap's dimensional profile into cloud. Lobes at a fraction of
-/// the heap's size bulge its crown into cauliflower; finer billows crown
-/// its tops and wisps fray its base, both stronger towards its edge and
-/// faded out where they are smaller than a pixel.
+/// Erode a heap's dimensional profile into cloud. Lobes at a fraction of the heap's size bulge its
+/// crown into cauliflower; finer billows crown its tops and wisps fray its base, both stronger
+/// towards its edge and faded out where they are smaller than a pixel.
 fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
     if profile <= -LOBE_REACH {
         return 0.0;
@@ -577,9 +565,9 @@ fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
         Detail::Probe => return (profile + LOBE_REACH).clamp(0.0, 1.0),
         Detail::Shadow => return (profile * 2.0).clamp(0.0, 0.7),
     }
-    // Cauliflower in two generations: lobes a third of the heap across,
-    // and buds a third of that on them, bulging from the crown and flanks
-    // but barely from the flat base. Together they add at most LOBE_REACH.
+    // Cauliflower in two generations: lobes a third of the heap across, and buds a third of that on
+    // them, bulging from the crown and flanks but barely from the flat base. Together they add at
+    // most LOBE_REACH.
     let crown = fraction.smoothstep(0.03, 0.3);
     let mut shape = profile;
     let lobe = scale * 0.33;
@@ -598,9 +586,8 @@ fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
         );
         shape += (buds - 0.5) * 0.4 * crown * resolve;
     }
-    // Fine erosion only where the cloud is thin: billowing puffs on the
-    // crown, torn wisps about the base, eating into the edge and leaving
-    // the core whole.
+    // Fine erosion only where the cloud is thin: billowing puffs on the crown, torn wisps about the
+    // base, eating into the edge and leaving the core whole.
     let resolve = drift.resolve(50.0);
     if resolve > 0.01 && shape > 0.0 && shape < EDGE {
         let fine = drift
@@ -613,19 +600,17 @@ fn heap(profile: f32, fraction: f32, scale: f32, drift: &Drift) -> f32 {
     soften(shape, EDGE + drift.footprint / scale)
 }
 
-/// How deep into a profile its density ramps up to full: wide enough that
-/// a heap's outer tens of metres are thin and light passes into them.
+/// How deep into a profile its density ramps up to full: wide enough that a heap's outer tens of
+/// metres are thin and light passes into them.
 const EDGE: f32 = 0.35;
 
-/// Density from a profile: nothing outside, rising smoothly through the
-/// edge to full in the core.
+/// Density from a profile: nothing outside, rising smoothly through the edge to full in the core.
 fn soften(shape: f32, edge: f32) -> f32 {
     let x = (shape / edge).clamp(0.0, 1.0);
     x * x * (3.0 - 2.0 * x)
 }
 
-/// The cloud of one of the layers above the cumulus at a point, and how
-/// far up it the point sits.
+/// The cloud of one of the layers above the cumulus at a point, and how far up it the point sits.
 fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     let genus = genus(layer);
     let nominal = layer_altitude(layer);
@@ -640,8 +625,8 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     let patches = remap(drift.smooth(level * 0.61, genus.cell * 4.0).w, 0.32, 0.68);
     let mut field = cells * 0.6 + patches * 0.4 + slack(drift.detail);
     if genus.ripples > 0.0 {
-        // Billows laid in rows, bending where the noise does, across one of
-        // the fixed axes for the same reason streaks are drawn along them.
+        // Billows laid in rows, bending where the noise does, across one of the fixed axes for the
+        // same reason streaks are drawn along them.
         let bend = drift.smooth(level * 0.5, genus.cell * 1.5).z;
         let weights = streak_axes(up);
         let along = if weights.x > weights.y {
@@ -653,8 +638,8 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         let rows = ((phase * TAU).sin() * 0.5 - 0.1) * (weights.x - weights.y).abs();
         field += rows * genus.ripples * drift.resolve(genus.cell);
     }
-    // Ramping up all the way to each cloud's heart, so it is rounded and
-    // thickest in its middle rather than a flat-topped slab.
+    // Ramping up all the way to each cloud's heart, so it is rounded and thickest in its middle
+    // rather than a flat-topped slab.
     let footprint = remap(field, 1.0 - cover, 1.6 - cover);
     if footprint <= 0.0 {
         return vec3(0.0, 0.5, (1.0 - cover - field) * genus.cell * 0.2);
@@ -669,9 +654,8 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     let own = remap(drift.smooth(level * 1.07, genus.cell * 1.3).w, 0.32, 0.68);
     let depth = layer_depth(layer) * (0.3 + 0.7 * cover) * (0.45 + 1.1 * own);
     if matches!(drift.detail, Detail::Probe) {
-        // Allowing for any stray of the base from the swell. The swell, the
-        // stray and the depth all vary slowly enough that well under half
-        // the gap to the layer is clear all round.
+        // Allowing for any stray of the base from the swell. The swell, the stray and the depth all
+        // vary slowly enough that well under half the gap to the layer is clear all round.
         let rise = altitude - base;
         let gap = (-STRAY - 0.2 * depth - rise).max(rise - STRAY - 1.2 * depth);
         return if gap > 0.0 {
@@ -742,10 +726,9 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     )
 }
 
-/// How much each of the two fixed axes along which streaks are drawn out
-/// lies level at a column. A coordinate along a fixed axis runs straight
-/// through the noise, where the wind's own direction, turning from column to
-/// column, would give none; and no single direction can lie level all over a
+/// How much each of the two fixed axes along which streaks are drawn out lies level at a column. A
+/// coordinate along a fixed axis runs straight through the noise, where the wind's own direction,
+/// turning from column to column, would give none; and no single direction can lie level all over a
 /// sphere, so two blend, crossing where neither lies level.
 fn streak_axes(up: Vec3) -> Vec2 {
     let level = vec2(1.0 - up.x * up.x, 1.0 - up.z * up.z);
@@ -753,14 +736,12 @@ fn streak_axes(up: Vec3) -> Vec2 {
     weights / (weights.x + weights.y).max(0.0001)
 }
 
-/// A position squeezed along a fixed axis, so noise sampled there draws out
-/// that way.
+/// A position squeezed along a fixed axis, so noise sampled there draws out that way.
 fn squeezed(p: Vec3, axis: Vec3, stretch: f32) -> Vec3 {
     p - axis * (p.dot(axis) * (1.0 - 1.0 / stretch))
 }
 
-/// A field drawn out into streaks along the fixed axes, bending as it goes
-/// into fibres and hooks.
+/// A field drawn out into streaks along the fixed axes, bending as it goes into fibres and hooks.
 fn streaks(drift: &Drift, level: Vec3, up: Vec3, genus: Genus, layer: u32) -> f32 {
     let weights = streak_axes(up);
     // Hooks: the streaks bend with a slow warp.
@@ -785,17 +766,17 @@ fn streaks(drift: &Drift, level: Vec3, up: Vec3, genus: Genus, layer: u32) -> f3
     sum
 }
 
-/// Cirrus: a thin veil of ice. Bands of it lie across the sky with open sky
-/// between, each combed into fine fibres along the fixed axes and bent into
-/// hooks, sagging into fall streaks where it is thickest.
+/// Cirrus: a thin veil of ice. Bands of it lie across the sky with open sky between, each combed
+/// into fine fibres along the fixed axes and bent into hooks, sagging into fall streaks where it
+/// is thickest.
 fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     let nominal = layer_altitude(6);
     let level = drift.point - up * (altitude - nominal);
     let weights = streak_axes(up);
     let warp = drift.smooth(level * 0.53, 2500.0);
     let bent = level + (warp.yzw() - 0.5) * 3000.0;
-    // Fibres are far finer than the bands that hold them; where a pixel
-    // cannot resolve them they fade to their mean.
+    // Fibres are far finer than the bands that hold them; where a pixel cannot resolve them they
+    // fade to their mean.
     let resolve = drift.resolve(40.0);
     let mut bands = 0.0;
     let mut fibres = 0.0;
@@ -845,9 +826,9 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     vec3(density * density, h.clamp(0.0, 1.0), 0.0)
 }
 
-/// The dimensional profile of a storm tower about a point relative to its
-/// foot, and how far up it the point sits: a flaring base drawing in air, a
-/// column narrowing as it climbs, and an anvil spreading downwind.
+/// The dimensional profile of a storm tower about a point relative to its foot, and how far up it
+/// the point sits: a flaring base drawing in air, a column narrowing as it climbs, and an anvil
+/// spreading downwind.
 fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
     let along = (q.z / height).clamp(0.0, 1.0);
     if q.z < 0.0 {
@@ -871,9 +852,8 @@ fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
     (column.min(top * 4.0).max(anvil * 0.8), along)
 }
 
-/// The furthest a step may climb through a layer's band: a fraction of its
-/// thinnest clouds, or steep rays would slice them into terraces or step
-/// clean over them.
+/// The furthest a step may climb through a layer's band: a fraction of its thinnest clouds, or
+/// steep rays would slice them into terraces or step clean over them.
 fn climb(layer: u32) -> f32 {
     match layer {
         0 => 125.0,
@@ -902,8 +882,8 @@ fn fill(layer: u32) -> f32 {
     }
 }
 
-/// Mean extinction of a layer's cloud over a column, without its noise:
-/// what shadows are traced through.
+/// Mean extinction of a layer's cloud over a column, without its noise: what shadows are
+/// traced through.
 fn mean_density(layer: u32, cover: f32) -> f32 {
     cover * cover * extinction(layer) * fill(layer) * MEAN_FILL
 }
@@ -921,8 +901,8 @@ fn layer_cover(lower: Vec4, upper: Vec4, layer: u32) -> f32 {
     }
 }
 
-/// The altitudes a layer's cloud fills on average over a column. Most
-/// cumulus stops far short of the convection's top; only storms reach it.
+/// The altitudes a layer's cloud fills on average over a column. Most cumulus stops far short of
+/// the convection's top; only storms reach it.
 fn mean_band(layer: u32, lower: Vec4, upper: Vec4) -> Vec2 {
     let base = layer_altitude(layer);
     if layer == 0 {
@@ -933,8 +913,8 @@ fn mean_band(layer: u32, lower: Vec4, upper: Vec4) -> Vec2 {
     vec2(base, base + layer_depth(layer))
 }
 
-/// How a layer's mean density varies up through its band: cumulus thins
-/// towards the crowns that only its tallest heaps reach.
+/// How a layer's mean density varies up through its band: cumulus thins towards the crowns that
+/// only its tallest heaps reach.
 fn taper(layer: u32, band: Vec2, altitude: f32) -> f32 {
     if layer > 0 {
         return 1.0;
@@ -950,8 +930,8 @@ fn depth_below(lower: Vec4, upper: Vec4, altitude: f32) -> f32 {
         let cover = layer_cover(lower, upper, layer);
         if cover > 0.001 {
             let band = mean_band(layer, lower, upper);
-            // The taper averages to one over the band; beneath an altitude
-            // within it, the lower part holds more than its share.
+            // The taper averages to one over the band; beneath an altitude within it, the lower
+            // part holds more than its share.
             let share = ((altitude - band.x) / (band.y - band.x).max(0.125)).clamp(0.0, 1.0);
             let share = if layer == 0 {
                 share * (2.0 - share)
@@ -970,20 +950,20 @@ fn depth_below(lower: Vec4, upper: Vec4, altitude: f32) -> f32 {
             * (altitude.min(base) - (base - RAIN_DEPTH)).max(0.0)
 }
 
-/// Optical depth towards the light through the clouds of the layers above
-/// a point, each read once where the light's ray crosses the middle of its
-/// band and taken through the depth of its clouds there.
+/// Optical depth towards the light through the clouds of the layers above a point, each read
+/// once where the light's ray crosses the middle of its band and taken through the depth of its
+/// clouds there.
 pub fn shadow_above(point: Vec3, light: Vec3, view: &ViewUniform, textures: &Textures) -> f32 {
     let radius = point.length();
     let altitude = radius - PLANET_RADIUS;
-    // A light on the horizon never climbs into the layers above; a low one
-    // crosses them far off, out past where one sample can stand for them.
+    // A light on the horizon never climbs into the layers above; a low one crosses them far off,
+    // out past where one sample can stand for them.
     let cosine = (point / radius).dot(light);
     if cosine < 0.015 {
         return 0.0;
     }
-    // The two nearest layers above that hold cloud cast nearly all the
-    // shadow worth tracing; further ones only deepen it a little.
+    // The two nearest layers above that hold cloud cast nearly all the shadow worth tracing;
+    // further ones only deepen it a little.
     let mut depth = 0.0;
     let mut found = 0;
     for layer in 1..LAYERS {
@@ -1012,8 +992,8 @@ pub fn forced_weather(view: &ViewUniform) -> bool {
     view.weather.x >= 0.0
 }
 
-/// Distance along a ray from a point to where it enters a layer spanning
-/// `low` to `high` altitude: zero within it, and far when it never will.
+/// Distance along a ray from a point to where it enters a layer spanning `low` to `high` altitude:
+/// zero within it, and far when it never will.
 fn approach(point: Vec3, direction: Vec3, altitude: f32, low: f32, high: f32) -> f32 {
     if altitude >= low && altitude <= high {
         return 0.0;
@@ -1029,9 +1009,9 @@ fn approach(point: Vec3, direction: Vec3, altitude: f32, low: f32, high: f32) ->
     }
 }
 
-/// Where a ray from an altitude, at a cosine to the vertical, crosses
-/// another altitude: both distances, nearer first, or an empty range. Kept
-/// in altitudes so the planet's radius never cancels in single precision.
+/// Where a ray from an altitude, at a cosine to the vertical, crosses another altitude: both
+/// distances, nearer first, or an empty range. Kept in altitudes so the planet's radius never
+/// cancels in single precision.
 fn crossing(altitude: f32, cosine: f32, target: f32) -> Vec2 {
     let b = (PLANET_RADIUS + altitude) * cosine;
     let c = (altitude - target) * (2.0 * PLANET_RADIUS + altitude + target);
@@ -1048,9 +1028,9 @@ fn crossing(altitude: f32, cosine: f32, target: f32) -> Vec2 {
     vec2(a.min(b), a.max(b))
 }
 
-/// The stretches of a ray from an altitude, at a cosine to the vertical,
-/// that lie within the band between two altitudes: one, or two where the
-/// ray dips through the band and below it before rising out again.
+/// The stretches of a ray from an altitude, at a cosine to the vertical, that lie within the band
+/// between two altitudes: one, or two where the ray dips through the band and below it before
+/// rising out again.
 fn within(altitude: f32, cosine: f32, band: Vec2) -> Vec4 {
     let empty = vec4(0.0, 0.0, 0.0, 0.0);
     let top = crossing(altitude, cosine, band.y);
@@ -1074,8 +1054,8 @@ pub fn cloud_column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Clo
     let up = point.normalize();
     let [lower, upper, bounds, tower] = textures.cloud_column(up);
     let time = view.time();
-    // Carry the noise with the large-scale flow, restarting each copy
-    // before the converging wind can stretch it out of shape.
+    // Carry the noise with the large-scale flow, restarting each copy before the converging wind
+    // can stretch it out of shape.
     let wind = cloud_wind(up);
     let phase = time / FLOW_PERIOD - (time / FLOW_PERIOD).floor();
     let later = phase + 0.5 - (phase + 0.5).floor();
@@ -1084,8 +1064,8 @@ pub fn cloud_column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Clo
         upper,
         bounds,
         tower,
-        // A slow rise through the noise keeps every cloud evolving. Each
-        // copy holds alone for most of its life; they blend briefly.
+        // A slow rise through the noise keeps every cloud evolving. Each copy holds alone for most
+        // of its life; they blend briefly.
         near: (Vec3::Z * (time * 0.0625) - wind * (phase * FLOW_PERIOD))
             .extend((1.0 - (1.0 - phase * 2.0).abs()).smoothstep(0.45, 0.55)),
         far: (Vec3::Z * (time * 0.0625) - wind * (later * FLOW_PERIOD)).extend(0.0),
@@ -1093,18 +1073,18 @@ pub fn cloud_column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Clo
     }
 }
 
-/// Draine's phase function, which adds the side and back lobes of real
-/// droplets to Henyey-Greenstein.
+/// Draine's phase function, which adds the side and back lobes of real droplets
+/// to Henyey-Greenstein.
 fn draine(cosine: f32, g: f32, alpha: f32) -> f32 {
     henyey_greenstein(cosine, g) * (1.0 + alpha * cosine * cosine)
         / (1.0 + alpha * (1.0 + 2.0 * g * g) / 3.0)
 }
 
-/// Approximate Mie scattering by water droplets of a diameter in
-/// micrometres (Jendersie and d'Eon, 2023), valid from 5 to 50.
+/// Approximate Mie scattering by water droplets of a diameter in micrometres (Jendersie and d'Eon,
+/// 2023), valid from 5 to 50.
 fn droplet_mie(cosine: f32, diameter: f32) -> f32 {
-    // The diffraction peak is narrower than any pixel; keep its energy in a
-    // lobe a little wider so thin cloud glows around the light.
+    // The diffraction peak is narrower than any pixel; keep its energy in a lobe a little wider so
+    // thin cloud glows around the light.
     let g_forward = (-0.099_056_7 / (diameter - 1.671_54)).exp().min(0.82);
     let g_draine = (-2.206_79 / (diameter + 3.910_29) - 0.428_934).exp();
     let alpha = (3.624_89 - 8.292_88 / (diameter + 5.528_25)).exp();
@@ -1112,12 +1092,11 @@ fn droplet_mie(cosine: f32, diameter: f32) -> f32 {
     henyey_greenstein(cosine, g_forward) * (1.0 - blend) + draine(cosine, g_draine, alpha) * blend
 }
 
-/// Scattering by cloud droplets per colour: approximate Mie, with the fogbow
-/// and the glory, the rings round the shadow of anyone looking down on
-/// sunlit cloud, both spaced in proportion to wavelength.
+/// Scattering by cloud droplets per colour: approximate Mie, with the fogbow and the glory,
+/// the rings round the shadow of anyone looking down on sunlit cloud, both spaced in
+/// proportion to wavelength.
 pub fn droplet_phase(cosine: f32) -> Vec3 {
-    // The broad lobes barely differ between channels; the colour lies in
-    // the rings and bows.
+    // The broad lobes barely differ between channels; the colour lies in the rings and bows.
     let mie = Vec3::splat(droplet_mie(cosine, DROPLET));
     // Angle from the antisolar point.
     let back = (-cosine).clamp(-1.0, 1.0).acos();
@@ -1129,10 +1108,9 @@ pub fn droplet_phase(cosine: f32) -> Vec3 {
     mie + (glory * ((-back / 0.05).exp() * 0.5) + fogbow * 0.035) / (4.0 * PI)
 }
 
-/// Scattering by raindrops, large enough for geometric optics: the primary
-/// bow near 42 degrees from the antisolar point with red outside, the
-/// fainter secondary near 51 with its colours reversed, more light inside
-/// the primary, and Alexander's dark band between the two.
+/// Scattering by raindrops, large enough for geometric optics: the primary bow near 42 degrees from
+/// the antisolar point with red outside, the fainter secondary near 51 with its colours reversed,
+/// more light inside the primary, and Alexander's dark band between the two.
 pub fn rain_phase(cosine: f32) -> Vec3 {
     let back = Vec3::splat((-cosine).clamp(-1.0, 1.0).acos());
     let lobe = |angle: Vec3, width: f32| {
@@ -1146,13 +1124,12 @@ pub fn rain_phase(cosine: f32) -> Vec3 {
     forward * 0.7 + (primary * 0.9 + secondary + inside * 0.06) / (4.0 * PI)
 }
 
-/// What a ray's cloud lighting shares along its length: the pole lights are
-/// so far off that the scattering angle barely changes along a ray, and the
-/// aur's glow changes only over thousands of kilometres.
+/// What a ray's cloud lighting shares along its length: the pole lights are so far off that the
+/// scattering angle barely changes along a ray, and the aur's glow changes only over thousands
+/// of kilometres.
 ///
-/// Every member is four wide: nested in a march's state, three-wide
-/// members would be laid out differently by the shader compiler and the
-/// graphics driver's validator.
+/// Every member is four wide: nested in a march's state, three-wide members would be laid out
+/// differently by the shader compiler and the graphics driver's validator.
 pub struct CloudOptics {
     droplets: Vec4,
     rain: Vec4,
@@ -1183,8 +1160,7 @@ pub fn cloud_optics(
             0.0,
             0.0,
         ),
-        // The aur below glows up into cloud bases: warmer in calm seas,
-        // brighter over storms.
+        // The aur below glows up into cloud bases: warmer in calm seas, brighter over storms.
         glow: (vec3(0.42, 0.34, 0.58).lerp(vec3(0.55, 0.36, 0.44), climate.y * 0.5)
             * climate.w
             * view.sky_horizon.y)
@@ -1192,10 +1168,9 @@ pub fn cloud_optics(
     }
 }
 
-/// Light scattered towards the eye by cloud droplets and by rain at a
-/// point, per unit of each one's extinction. `shadow` is the optical depth
-/// the sample traced towards the light itself, `height` how far up its
-/// cloud it sits, and `open` how much of the sky above it its own cloud
+/// Light scattered towards the eye by cloud droplets and by rain at a point, per unit of each
+/// one's extinction. `shadow` is the optical depth the sample traced towards the light itself,
+/// `height` how far up its cloud it sits, and `open` how much of the sky above it its own cloud
 /// leaves unhidden.
 pub fn cloud_light(
     point: Vec3,
@@ -1208,30 +1183,27 @@ pub fn cloud_light(
 ) -> (Vec3, Vec3) {
     let depth = textures.light_depth(point);
     let optical = depth.x + shadow;
-    // Light scattered again and again: each order reaches deeper into the
-    // cloud, less attenuated and less forward (Wrenninge's octaves). Many
-    // scatterings redden what survives a long path a little, so the heart
-    // of a cloud glows warmer than its rim.
+    // Light scattered again and again: each order reaches deeper into the cloud, less attenuated
+    // and less forward (Wrenninge's octaves). Many scatterings redden what survives a long path a
+    // little, so the heart of a cloud glows warmer than its rim.
     let direct = (-optical).exp();
     let deep = -optical * SCATTER_TINT;
     let orders = Vec3::splat(optics.spread.x) * (deep * 0.5).exp() * 0.5
         + Vec3::splat(optics.spread.y) * (deep * 0.25).exp() * 0.25;
-    // Deep inside, light that has scattered many times keeps the interior
-    // from going black.
+    // Deep inside, light that has scattered many times keeps the interior from going black.
     let diffuse = (deep * 0.25).exp() * 0.055 + (deep * 0.08).exp() * 0.03 + orders;
     // Thin edges facing the light hold too few droplets to brighten much.
     let powder = 1.0 - (-shadow * 2.0 - 0.15).exp();
     let sun = textures.pole_light(point, light_position(point)) * view.sky_horizon.y * 1.5;
-    // Seen from above at night, clouds over the aur glow with its light
-    // diffused up through them.
+    // Seen from above at night, clouds over the aur glow with its light diffused up through them.
     let altitude = point.length() - PLANET_RADIUS;
     // A cloud's own body hides the glow from all but its base.
     let upward = optics.glow.xyz()
         * (-altitude.max(0.0) / 2750.0).exp()
         * ((-depth.z).exp() * 0.6 + (-depth.z * 0.15).exp() * 0.4)
         * (1.0 - 0.75 * height);
-    // Skylight, cool against the warm sunlit body: rims and crowns see the
-    // open sky, while the cloud heaped above a point hides it.
+    // Skylight, cool against the warm sunlit body: rims and crowns see the open sky, while the
+    // cloud heaped above a point hides it.
     let sky = (view.ambient_color.xyz() * 0.7 + vec3(0.03, 0.04, 0.065))
         * vec3(0.9, 0.97, 1.1)
         * ((0.15 + 0.85 * open) * (0.6 + 0.4 * height));
@@ -1241,8 +1213,8 @@ pub fn cloud_light(
     )
 }
 
-/// How much more strongly each channel is lost over many scatterings:
-/// blue a little faster than red, which is what tints deep cloud warm.
+/// How much more strongly each channel is lost over many scatterings: blue a little faster than
+/// red, which is what tints deep cloud warm.
 const SCATTER_TINT: Vec3 = vec3(0.88, 1.0, 1.15);
 
 pub fn short_volume(
@@ -1288,8 +1260,8 @@ pub fn short_volume(
     }
 }
 
-/// Splat the weather systems over each column of the planet: the cover of
-/// each layer and the top of the convection.
+/// Splat the weather systems over each column of the planet: the cover of each layer and the top of
+/// the convection.
 #[spirv(fragment(entry_point_name = "cloud_map"))]
 pub fn cloud_map(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -1311,8 +1283,8 @@ pub fn cloud_map(
     let later = phase + 0.5 - (phase + 0.5).floor();
     let weight = 1.0 - (1.0 - phase * 2.0).abs();
     let wind = cloud_wind(up);
-    // Mesoscale weather within each system: clusters, open cells and gaps
-    // that ride the wind with it, different in every layer.
+    // Mesoscale weather within each system: clusters, open cells and gaps that ride the wind with
+    // it, different in every layer.
     let noise = |offset: f32, scale: f32| {
         base.sample_by_lod(
             *sampler,
@@ -1324,8 +1296,7 @@ pub fn cloud_map(
     let fine = noise(phase, 37_000.0).lerp(noise(later, 37_000.0), 1.0 - weight);
     let breaks = |value: f32, floor: f32| (value * (1.4 - floor) + floor).min(1.0);
     let (mut lower, mut upper) = if forced_weather(view) {
-        // Cover of the cumulus, how deep it grows, the high cloud and the
-        // middle layers.
+        // Cover of the cumulus, how deep it grows, the high cloud and the middle layers.
         let weather = view.weather;
         (
             vec4(weather.x, weather.w, weather.w * 0.8, weather.w * 0.6),
@@ -1339,14 +1310,14 @@ pub fn cloud_map(
     } else {
         let cell = cloud_cell(up);
         let mut cover = CloudCover::default();
-        // The nearest storm tower whose anvil reaches this texel, by how far
-        // inside its reach the texel lies.
+        // The nearest storm tower whose anvil reaches this texel, by how far inside its reach the
+        // texel lies.
         let mut nearest = 0.0f32;
         for offset in index[cell]..index[cell + 1] {
             let parcel = parcels[index[offset as usize] as usize];
             cover.add(parcel, up);
-            // Only the strongest, deepest systems build a full thunderhead;
-            // the rest are fields of towering cumulus.
+            // Only the strongest, deepest systems build a full thunderhead; the rest are fields of
+            // towering cumulus.
             if parcel.kind() == TOWER && parcel.shape.y > 0.6 && parcel.shape.w > 7750.0 {
                 let centre = parcel.centre.xyz();
                 let distance = (up - centre).length() * PLANET_RADIUS;
@@ -1373,9 +1344,8 @@ pub fn cloud_map(
     *out_upper = upper;
 }
 
-/// Which layers hold cloud near each column, the highest any convection
-/// near it climbs, and the lowest and highest the swell lifts the layers
-/// there.
+/// Which layers hold cloud near each column, the highest any convection near it climbs, and the
+/// lowest and highest the swell lifts the layers there.
 #[spirv(fragment(entry_point_name = "cloud_bounds"))]
 pub fn cloud_bounds(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -1402,8 +1372,7 @@ pub fn cloud_bounds(
             }
         }
         if lower.x > 0.001 {
-            // Only storms build to the convection's top; fair cumulus stops
-            // at the tallest heap.
+            // Only storms build to the convection's top; fair cumulus stops at the tallest heap.
             let base = layer_altitude(0);
             let heaps = base + (upper.w - base).min(CUMULUS_CELL * 0.95);
             top = top.max(if storm(lower, upper) > 0.0 {
@@ -1430,10 +1399,9 @@ pub fn cloud_bounds(
     *out_bounds = vec4(mask as f32, top, swells.x - margin, swells.y + margin);
 }
 
-/// Trace the cloud's shadow through every texel of the light volume: its
-/// optical depth towards the pole light beyond each sample's own near
-/// shadow and in full, and down to the aur. Each layer's stretch of the ray
-/// is integrated whole, so shadows are smooth however low the light.
+/// Trace the cloud's shadow through every texel of the light volume: its optical depth towards the
+/// pole light beyond each sample's own near shadow and in full, and down to the aur. Each layer's
+/// stretch of the ray is integrated whole, so shadows are smooth however low the light.
 #[spirv(compute(threads(8, 8, 1), entry_point_name = "cloud_light"))]
 pub fn cloud_shadow(
     #[spirv(global_invocation_id)] id: UVec3,
@@ -1465,8 +1433,8 @@ pub fn cloud_shadow(
     let below = depth_below(lower, upper, altitude);
     let mut far = 0.0;
     let mut near = 0.0;
-    // The convective top varies from column to column; bound it by the
-    // highest it reaches here or where the light leaves the cloud.
+    // The convective top varies from column to column; bound it by the highest it reaches here or
+    // where the light leaves the cloud.
     let (ahead, beyond) = column(start + light * 7500.0);
     let reach = mean_band(0, lower, upper)
         .y
@@ -1487,8 +1455,8 @@ pub fn cloud_shadow(
             if stretch.y <= stretch.x {
                 continue;
             }
-            // Two samples of the cover across the stretch, which may run for
-            // hundreds of kilometres where the light skims the layer.
+            // Two samples of the cover across the stretch, which may run for hundreds of kilometres
+            // where the light skims the layer.
             let length = stretch.y - stretch.x;
             let mut depth = 0.0;
             for tap in 0..2 {

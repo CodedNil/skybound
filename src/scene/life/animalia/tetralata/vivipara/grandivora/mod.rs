@@ -1,13 +1,15 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Brood};
+use crate::scene::life::biology::Biology;
 
 pub mod herbivolidae;
 pub mod vocigenidae;
 
-pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Pouch,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Order,
@@ -22,3 +24,14 @@ taxon!(
         "Prolonged care of young ties their movements to sheltered nursery currents as well as immediate food availability.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        brood: Brood::Pouch,
+        form: |_, young| if young < 0.2 { 11 } else { 0 },
+        ..super::super::PHYSIOLOGY
+    };
+}

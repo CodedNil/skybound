@@ -2,6 +2,9 @@ pub use super::{BIOLOGY, render};
 
 pub mod aerothallus;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Aerothallaceae",
@@ -11,6 +14,6 @@ taxon!(
         "Lift remains distributed along the plant, allowing great length without a single heavy support organ.",
         "Flexible connections accommodate the different forces acting on neighbouring portions of a strand.",
         "Interwoven colonies turn open air into sheltered passages that retain humidity and suspended food.",
-        "Their forests depend on continued rising air, so damage and weaker aur phases favour gradual rearrangement rather than a rigid, permanent canopy.",
+        "Their forests depend on continued rising air, so damage and weaker updraft favour gradual rearrangement rather than a rigid, permanent canopy.",
     ],
 );

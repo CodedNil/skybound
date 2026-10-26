@@ -4,6 +4,9 @@ pub mod lignoradicales;
 pub mod susurrales;
 pub mod tempestivagales;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Class,
     "Lignopsida",

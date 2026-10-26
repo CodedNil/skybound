@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod aurocorallum;
 pub mod chromacorallum;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Chromacorallaceae",
@@ -15,3 +18,15 @@ taxon!(
         "The different hosts alter the cost of attachment and shading, but both branches retain the same fan-bearing growth pattern.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::{Physiology, epiphyte};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        attaches: true,
+        partner: epiphyte,
+        floats: false,
+        ..super::super::PHYSIOLOGY
+    };
+}

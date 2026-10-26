@@ -8,8 +8,8 @@ use spirv_std::glam::{Vec2, Vec3, Vec4Swizzles, vec2};
 use spirv_std::num_traits::Float;
 
 pub const SIZE: u32 = 512;
-/// Each level doubles the spacing. A factor of four left the texel up to
-/// eight times the pixel footprint just past every level boundary.
+/// Each level doubles the spacing. A factor of four left the texel up to eight times the pixel
+/// footprint just past every level boundary.
 pub const CASCADES: u32 = 10;
 const FINEST: f32 = 4.0;
 
@@ -22,8 +22,8 @@ pub const fn spacing(cascade: u32) -> f32 {
 
 impl ViewUniform {
     pub fn prepare_cache(&mut self) {
-        // Fixed to a planet grid, so a moving camera does not resample the
-        // waves at shifting texel positions and set distant fog shimmering.
+        // Fixed to a planet grid, so a moving camera does not resample the waves at shifting texel
+        // positions and set distant fog shimmering.
         let camera = spire_coordinates(self.camera());
         let snapped = (camera.truncate() / SNAP).round() * SNAP;
         let up = spire_point(snapped.extend(0.0)).normalize();
@@ -66,8 +66,8 @@ pub fn cascade(coordinates: Vec2) -> u32 {
     level
 }
 
-/// Screen footprints must also choose the filter scale. Otherwise an orbital
-/// camera sees an unfiltered high-detail disc directly below itself.
+/// Screen footprints must also choose the filter scale. Otherwise an orbital camera sees an
+/// unfiltered high-detail disc directly below itself.
 pub fn filter_level(footprint: f32) -> f32 {
     (footprint.max(FINEST) / FINEST).log2()
 }

@@ -1,13 +1,14 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Feeding};
+use crate::scene::life::biology::Biology;
 pub mod nebulaphora;
 
 pub const BIOLOGY: Biology = Biology {
-    feeding: Feeding::Nectar,
     adult_mass: 0.1,
-    speed: 5.0,
     ..super::BIOLOGY
 };
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Family,
@@ -21,3 +22,41 @@ taxon!(
         "Their journeys connect isolated flowers across gaps that pollen alone would rarely cross.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! Mistings court spiralling up together like a pair of falling petals reversed, and come to
+    //! look at anything new.
+
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Situation, Urges, spiral},
+            physiology::Physiology,
+            tetralata::{ETHOLOGY as TETRALATE, INVESTIGATE},
+        },
+        plantae::physiology::Propagation,
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: |_, food| {
+            food.plant()
+                .is_some_and(|plant| plant.propagation == Propagation::Pollination)
+        },
+        pollinates: true,
+        speed: 5.0,
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges,
+        court: |s| spiral(s, 2.0),
+        ..TETRALATE
+    };
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (TETRALATE.urges)(s, urges);
+        if s.seen.player.is_some() {
+            urges.add(INVESTIGATE, s.temper.curiosity * 0.6);
+        }
+    }
+}

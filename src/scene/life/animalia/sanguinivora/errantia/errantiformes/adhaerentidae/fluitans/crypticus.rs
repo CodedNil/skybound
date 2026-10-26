@@ -5,6 +5,17 @@ use crate::scene::life::{
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::GANGLION,
+    animalia::physiology::MUSCLE,
+    animalia::physiology::PUMP,
+    organs::{Viscera, pair, site},
+};
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -34,13 +45,12 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 4.5, 9.0, 2);
     c.opaque_bounds = vec3(3.0, 3.0, 18.0).extend(0.0);
-    // Tendrils off the end of the stalk, finishing the mimicry of a torn-off
-    // leaf.
+    // Tendrils off the end of the stalk, finishing the mimicry of a torn-off leaf.
     rig_ribbons(c, 2, vec3(0.0, 0.1, 4.4), 0.5, 9.0);
 }
 
-/// A leaf: a cupped, lance-shaped blade with a raised midrib and paired
-/// side veins, its margin lobed like the leaflets it hides among.
+/// A leaf: a cupped, lance-shaped blade with a raised midrib and paired side veins, its margin
+/// lobed like the leaflets it hides among.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let along = (p.z / 4.2).clamp(-1.0, 1.0);
     let lobes = 1.0 + 0.14 * (p.z * 3.1).sin();
@@ -70,6 +80,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.09, -1.12), vec3(0.06, 0.06, 0.06)),
+    site(PUMP, vec3(0.00, 0.09, 1.45), vec3(0.02, 0.02, 0.02)),
+    site(CROP, vec3(0.00, 0.28, 4.02), vec3(0.06, 0.06, 0.06)),
+    pair(MUSCLE, vec3(0.56, 0.19, 2.89), vec3(0.02, 0.02, 0.02)),
+    site(BROOD, vec3(0.00, 0.28, 4.34), vec3(0.03, 0.03, 0.03)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.24, 0.39, 0.19, 0.0),
@@ -80,4 +100,24 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::{
+        mind::{Ethology, hang_still},
+        physiology::{Light, Physiology},
+        sanguinivora::errantia::ETHOLOGY as WANDERER,
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Aurlit,
+        ..super::super::PHYSIOLOGY
+    };
+
+    /// The Floating Ones hang motionless, waiting for a host to pass.
+    pub const ETHOLOGY: Ethology = Ethology {
+        wander: |_, _| hang_still(),
+        ..WANDERER
+    };
 }

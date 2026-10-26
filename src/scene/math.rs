@@ -27,9 +27,8 @@ pub fn intersect_sphere(ro: Vec3, rd: Vec3, radius: f32) -> Vec2 {
     vec2(-b - sqrt_disc, -b + sqrt_disc) / (2.0 * a)
 }
 
-/// Where a ray crosses a shell between two altitudes over a sphere of
-/// `radius` at the origin: in and out through the top, then through the
-/// bottom, if it reaches that.
+/// Where a ray crosses a shell between two altitudes over a sphere of `radius` at the origin: in
+/// and out through the top, then through the bottom, if it reaches that.
 pub fn ray_shell_intersect(
     ro: Vec3,
     rd: Vec3,
@@ -53,8 +52,8 @@ pub fn ray_shell_intersect(
     )
 }
 
-/// Close an optically opaque ray with its last source value. Dropping a
-/// different residual at the cutoff draws contours between marching steps.
+/// Close an optically opaque ray with its last source value. Dropping a different residual at the
+/// cutoff draws contours between marching steps.
 pub fn finish_opaque(color: Vec4, source: Vec3) -> Vec4 {
     if color.w < 0.005 {
         (color.truncate() + source * color.w).extend(0.0)
@@ -79,8 +78,8 @@ pub fn simpson(a: f32, midpoint: f32, b: f32, length: f32) -> f32 {
     (a + midpoint * 4.0 + b).max(0.0) * (length / 6.0)
 }
 
-/// Exact mean of a clamped cubic transition over a linear density segment.
-/// Filtering the transition itself removes marching contours without dither.
+/// Exact mean of a clamped cubic transition over a linear density segment. Filtering the transition
+/// itself removes marching contours without dither.
 pub fn smoothstep_mean(a: f32, b: f32) -> f32 {
     let low = a.min(b);
     let high = a.max(b);
@@ -180,8 +179,8 @@ pub fn fbm(position: Vec3, period: i32, seed: u32) -> f32 {
     ((value / 1.875 - 0.5) * 2.0 + 0.5).clamp(0.0, 1.0)
 }
 
-/// Pack a non-negative value as half-precision bits, for compute passes
-/// that write textures through buffers.
+/// Pack a non-negative value as half-precision bits, for compute passes that write textures
+/// through buffers.
 pub fn half(value: f32) -> u32 {
     if value <= 0.0 {
         return 0;

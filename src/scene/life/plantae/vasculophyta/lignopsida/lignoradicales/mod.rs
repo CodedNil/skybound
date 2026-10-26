@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod spinivineaceae;
 pub mod stelloradicaceae;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Order,
     "Lignoradicales",

@@ -14,6 +14,11 @@ use spirv_std::num_traits::Float;
 pub mod nae;
 pub mod naetu;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Genus,
     "Naeturus",

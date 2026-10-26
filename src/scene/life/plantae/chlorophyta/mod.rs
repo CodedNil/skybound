@@ -1,16 +1,11 @@
 pub use super::render;
-use crate::scene::life::biology::{Biology, Energy, Lift, Organs, Reproduction};
+use crate::scene::life::biology::Biology;
 pub mod muscopsida;
 
-pub const BIOLOGY: Biology = Biology {
-    organs: Organs {
-        lift: Lift::Attached,
-        ..super::BIOLOGY.organs
-    },
-    energy: Energy::Light,
-    reproduction: Reproduction::Fragmentation,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Phylum,
@@ -24,3 +19,17 @@ taxon!(
         "Dependence on light distinguishes them from plants that collect dispersed aur directly, making heavy mineral haze a limit even where nutrients are abundant.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::{Physiology, Propagation, epiphyte};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        powered: |climate| climate.light,
+        propagation: Propagation::Fragmentation,
+        attaches: true,
+        partner: epiphyte,
+        floats: false,
+        ..super::super::PHYSIOLOGY
+    };
+}

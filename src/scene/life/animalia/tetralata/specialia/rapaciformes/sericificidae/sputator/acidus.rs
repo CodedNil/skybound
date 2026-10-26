@@ -1,26 +1,40 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
-    biology::{Biology, Brood, Social},
+    animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
+    biology::Biology,
     capsule, ellipsoid, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Carried,
     maturity_days: 75.0,
     lifespan_days: 1500.0,
-    speed: 10.0,
-    social: Social::Solitary,
     adult_mass: 0.12,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 24.7;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -37,7 +51,7 @@ taxon!(
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.6, 3.2, 4.6).extend(0.0);
-    rig_tentacles(c, MOUTH, 0.75, BIOLOGY.oral_pairs);
+    rig_tentacles(c, MOUTH, 0.75, ORAL_PAIRS);
 }
 
 /// Where the gripping tentacles hang, behind the spout.
@@ -45,11 +59,10 @@ const MOUTH: Vec3 = vec3(0.0, -0.55, -1.5);
 
 /// A sniper in armour.
 ///
-/// A short, wedge-shaped body lies under overlapping plates, each riding over
-/// the next, broad at the shoulders where the two acid glands lie and showing
-/// through windows in the plates. The spout juts forward under the blunt head,
-/// and above it a pair of eyes looks straight ahead along the line of fire,
-/// with a second pair looking down.
+/// A short, wedge-shaped body lies under overlapping plates, each riding over the next, broad at
+/// the shoulders where the two acid glands lie and showing through windows in the plates. The spout
+/// juts forward under the blunt head, and above it a pair of eyes looks straight ahead along the
+/// line of fire, with a second pair looking down.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut body = 1e6f32;
     for plate in 0..4 {
@@ -78,9 +91,31 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join(spout.max(-bore), 7);
     hit.join((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 3);
     hit.join((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 3);
-    hit.join(oral_tentacles(p, c, MOUTH, 0.75, BIOLOGY.oral_pairs), 8);
+    hit.join(oral_tentacles(p, c, MOUTH, 0.75, ORAL_PAIRS), 8);
     hit
 }
+
+/// The acid gland, whose store is spent on each use and slowly made again.
+#[cfg(not(target_arch = "spirv"))]
+const ACID: Organ = Organ::new("acid gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.03, -1.59), vec3(0.18, 0.10, 0.20)),
+    site(PUMP, vec3(0.00, -0.14, -1.01), vec3(0.20, 0.11, 0.27)),
+    site(CROP, vec3(0.00, -0.14, -0.24), vec3(0.24, 0.21, 0.24)),
+    pair(BREATHER, vec3(0.51, 0.06, -1.06), vec3(0.21, 0.12, 0.35)),
+    site(FLOAT, vec3(0.00, 0.31, -0.34), vec3(0.16, 0.14, 0.16)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.31, 0.29, -0.68),
+        vec3(0.06, 0.06, 0.06),
+    ),
+    site(CISTERN, vec3(0.00, -0.14, 0.34), vec3(0.20, 0.11, 0.23)),
+    site(BROOD, vec3(0.00, -0.03, 0.72), vec3(0.15, 0.11, 0.15)),
+    pair(ACID, vec3(0.72, -0.06, -0.48), vec3(0.22, 0.22, 0.22)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -99,4 +134,15 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        brood: Brood::Carried,
+        speed: 10.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

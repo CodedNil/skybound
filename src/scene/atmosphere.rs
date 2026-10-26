@@ -269,8 +269,8 @@ pub fn air_density(altitude: f32) -> f32 {
     AIR_EXTINCTION * (-altitude.max(0.0) / AIR_SCALE_HEIGHT).exp()
 }
 
-// Integrate an exponential height profile along a linear approximation to altitude.
-// Unlike a midpoint sample this also resolves thin air near the end of a very long ray.
+// Integrate an exponential height profile along a linear approximation to altitude. Unlike a
+// midpoint sample this also resolves thin air near the end of a very long ray.
 fn air_panel(origin: Vec3, direction: Vec3, start: f32, end: f32) -> f32 {
     let a = ((origin + direction * start).length() - PLANET_RADIUS).max(0.0);
     let b = ((origin + direction * end).length() - PLANET_RADIUS).max(0.0);
@@ -288,8 +288,8 @@ pub fn air_optical_depth(origin: Vec3, direction: Vec3, length: f32) -> f32 {
         let altitude = (origin + direction * (length * 0.5)).length() - PLANET_RADIUS;
         return air_density(altitude) * length.max(0.0);
     }
-    // Above twelve scale heights the remaining air_density is negligible. Clip first so
-    // orbital rays spend the same fixed work on the air as rays close to the planet.
+    // Above twelve scale heights the remaining air_density is negligible. Clip first so orbital
+    // rays spend the same fixed work on the air as rays close to the planet.
     let shell = intersect_sphere(origin, direction, PLANET_RADIUS + AIR_SCALE_HEIGHT * 12.0);
     let start = shell.x.max(0.0);
     let end = shell.y.min(length);
@@ -337,8 +337,8 @@ pub fn cached_air_transmittance(
     }
     let a = origin + direction * start;
     let b = origin + direction * end;
-    // Use the outward orientation to avoid subtracting large, nearly equal
-    // columns through the planet when the visible segment is descending.
+    // Use the outward orientation to avoid subtracting large, nearly equal columns through the
+    // planet when the visible segment is descending.
     let depth = if (a + b).dot(direction) >= 0.0 {
         lookup(a, direction) - lookup(b, direction)
     } else {

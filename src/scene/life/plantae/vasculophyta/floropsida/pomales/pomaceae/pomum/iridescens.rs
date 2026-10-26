@@ -5,6 +5,15 @@ use crate::scene::life::{
     plantae::rosette,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    organs::{Viscera, pair, site},
+    plantae::physiology::BLADDER,
+    plantae::physiology::FROND,
+    plantae::physiology::ROOT,
+    plantae::physiology::STEM,
+    plantae::vasculophyta::floropsida::pomales::FRUIT,
+};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -17,6 +26,9 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 10.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -66,6 +78,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     }
     shape
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(STEM, vec3(0.00, 0.38, -0.04), vec3(0.79, 1.02, 0.87)),
+    site(BLADDER, vec3(0.00, 2.52, 0.04), vec3(0.78, 0.78, 0.78)),
+    pair(FROND, vec3(2.05, 1.18, -0.09), vec3(0.60, 0.60, 0.60)),
+    site(ROOT, vec3(0.00, -2.20, 0.04), vec3(0.63, 0.82, 0.69)),
+    pair(FRUIT, vec3(2.05, -0.75, -0.09), vec3(0.70, 0.70, 0.70)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.82, 0.24, 0.055), vec3(0.95, 0.65, 0.15));

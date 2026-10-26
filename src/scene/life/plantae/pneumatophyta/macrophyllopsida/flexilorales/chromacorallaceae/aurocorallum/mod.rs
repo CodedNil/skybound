@@ -2,6 +2,9 @@ pub use super::{BIOLOGY, render};
 
 pub mod aureum;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Genus,
     "Aurocorallum",

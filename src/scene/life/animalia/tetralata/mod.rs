@@ -1,9 +1,7 @@
 pub use super::render_wings;
-use crate::scene::life::{
-    CreatureInstance,
-    biology::{Anatomy, Biology, Feeding, Organs},
-    smooth_min, tapered_tail,
-};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::{Function, Organ};
+use crate::scene::life::{CreatureInstance, biology::Biology, smooth_min, tapered_tail};
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Quat, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -12,15 +10,22 @@ pub mod specialia;
 pub mod vivipara;
 pub mod volitantia;
 
-pub const BIOLOGY: Biology = Biology {
-    organs: Organs::ANIMAL,
-    anatomy: Anatomy::Tetralate,
-    wing_pairs: 2,
-    oral_pairs: 1,
-    feeding: Feeding::Grazer,
-    speed: 12.0,
-    ..super::BIOLOGY
-};
+/// A cistern of water, filled at Pondplants and in cloud, that carries a tetralate through dry air.
+#[cfg(not(target_arch = "spirv"))]
+pub const CISTERN: Organ = Organ::new("water cistern", Function::Water, vec3(0.22, 0.46, 0.80));
+/// The flight muscles at the roots of the four wings.
+#[cfg(not(target_arch = "spirv"))]
+pub const FLIGHT_MUSCLE: Organ =
+    Organ::new("flight muscle", Function::Flight, vec3(0.52, 0.16, 0.20));
+
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, FOLLOW, INVESTIGATE, PHYSIOLOGY, PLAY, roost, shade};
+
+/// The pair of mouth tentacles the tetralates inherited, for handling food against a moving
+/// body.
+pub const ORAL_PAIRS: u32 = 1;
 
 taxon!(
     Phylum,
@@ -41,14 +46,14 @@ const KNOTS: usize = 12;
 /// How long a tentacle is settled for before it is drawn.
 const SETTLE: f32 = 1.5;
 
-/// Where tentacle `index` keeps its knots: the instance's cloth slots,
-/// which no four-winged animal uses for cloth.
+/// Where tentacle `index` keeps its knots: the instance's cloth slots, which no four-winged animal
+/// uses for cloth.
 const fn slot(index: usize) -> (usize, usize) {
     (index / 3, index % 3)
 }
 
-/// The roots of a creature's mouth tentacles, a pair to each lane, set
-/// around the mouth, and how far each reaches.
+/// The roots of a creature's mouth tentacles, a pair to each lane, set around the mouth, and how
+/// far each reaches.
 fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
     let lane = (index / 2) as f32;
     let side = if index.is_multiple_of(2) { -1.0 } else { 1.0 };
@@ -63,11 +68,10 @@ fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
 
 /// Pose the mouth tentacles by simulating them.
 ///
-/// Each is a chain of knots held at the mouth, pulled by its own muscle towards
-/// a pose reaching forward and in beneath the face, but given to gravity in the
-/// animal's own frame and to the air streaming past as it flies, and writhing
-/// slowly as muscle waves run down it. Settled from that pose over the last
-/// second and a half, which is all the damping remembers.
+/// Each is a chain of knots held at the mouth, pulled by its own muscle towards a pose reaching
+/// forward and in beneath the face, but given to gravity in the animal's own frame and to the air
+/// streaming past as it flies, and writhing slowly as muscle waves run down it. Settled from that
+/// pose over the last second and a half, which is all the damping remembers.
 pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
@@ -105,8 +109,8 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
                 for knot in 1..KNOTS {
                     let t = knot as f32 / (KNOTS - 1) as f32;
                     let velocity = (points[knot] - last[knot]) * 0.985;
-                    // Muscle tone, strongest near the root where the tentacle
-                    // is thickest, holds the pose against the load.
+                    // Muscle tone, strongest near the root where the tentacle is thickest, holds
+                    // the pose against the load.
                     let tone = (rest(knot, time) - points[knot]) * (60.0 * (1.0 - t * 0.7));
                     let drag = (wind - velocity / STEP) * 1.5;
                     points[knot] += velocity + (gravity * 0.35 + drag + tone) * STEP * STEP;
@@ -127,8 +131,8 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
             }
             points
         };
-        // Settled from two starts on a fixed grid, crossfaded, so the pose
-        // moves smoothly from one frame to the next.
+        // Settled from two starts on a fixed grid, crossfaded, so the pose moves smoothly from one
+        // frame to the next.
         let grid = (end / SETTLE).floor();
         let weight = end / SETTLE - grid;
         let earlier = settle((grid - 1.0) * SETTLE);
@@ -147,8 +151,8 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
     }
 }
 
-/// The mouth tentacles posed by [`rig_tentacles`]: tubes tapering
-/// smoothly through their knots, faintly ringed with muscle.
+/// The mouth tentacles posed by [`rig_tentacles`]: tubes tapering smoothly through their knots,
+/// faintly ringed with muscle.
 pub fn oral_tentacles(
     point: Vec3,
     creature: &CreatureInstance,
@@ -207,4 +211,138 @@ pub fn curved_tube(point: Vec3, root: Vec3, control: Vec3, tip: Vec3, radius: f3
         radius,
         radius * 0.92,
     )) * 0.7
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! The four-winged animals sleep clinging to plants, wings folded, and where they choose to
+    //! follows the light they live in. Their young play.
+
+    use crate::scene::life::{
+        Kind,
+        animalia::{
+            ETHOLOGY as ANIMAL,
+            mind::{Ethology, Intent, Situation, Urges, orbit},
+            nature::ROOST,
+            physiology::{Brood, Light, Physiology, flow_channels, grazes},
+        },
+        behaviour::{Activity, Goal},
+    };
+
+    /// A tetralate's young: eggs, kept as the lineage keeps them, then a larva; the young of those
+    /// born live take their parents' shape from the first.
+    fn young(kind: Kind, young: f32) -> u32 {
+        let brood = kind.animal().map_or(Brood::Tethered, |animal| animal.brood);
+        match brood {
+            _ if young >= 0.7 => 0,
+            Brood::Drifting if young < 0.3 => 8,
+            Brood::Strings if young < 0.3 => 9,
+            Brood::Carried if young < 0.3 => 10,
+            Brood::Tethered if young < 0.3 => 4,
+            Brood::Live | Brood::Pouch => 0,
+            _ => 3,
+        }
+    }
+
+    use spirv_std::glam::Vec3;
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: grazes,
+        breathe: flow_channels,
+        digestion: 0.004,
+        speed: 12.0,
+        form: young,
+        hatches: true,
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges,
+        sleep: roost,
+        clings: true,
+        ..ANIMAL
+    };
+
+    /// The young of every tetralate play a little, chasing their fellows.
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (ANIMAL.urges)(s, urges);
+        if s.drives.youth < 0.8 && s.seen.kin_count > 0 {
+            urges.add(
+                PLAY,
+                (1.0 - s.drives.youth) * 0.25 * (1.0 - s.drives.hunger),
+            );
+        }
+    }
+
+    /// Chasing its fellows, mock-fighting and showing off, as tetralate young do and the
+    /// live-bearers keep doing all their lives.
+    pub const PLAY: Intent = Intent {
+        name: "play",
+        act: |_, s| {
+            let up = s.up();
+            Goal::new(
+                Activity::Play,
+                s.seen
+                    .kin
+                    .map(|kin| kin + orbit(up, kin, 4.0, s.now * 2.0 + s.wobble())),
+                1.0,
+            )
+        },
+    };
+
+    /// Coming to look at something strange, the player among them: close enough to look, and no
+    /// closer.
+    pub const INVESTIGATE: Intent = Intent {
+        name: "investigate",
+        act: |_, s| {
+            Goal::new(
+                Activity::Investigate,
+                s.seen
+                    .player
+                    .map(|player| player - player.normalize_or_zero() * 25.0),
+                0.5,
+            )
+            .hovering()
+        },
+    };
+
+    /// Keeping with its herd or swarm, matching their heading; taken up separately in several
+    /// tetralate lineages.
+    pub const FOLLOW: Intent = Intent {
+        name: "follow",
+        act: |_, s| {
+            Goal::new(
+                Activity::Drift,
+                s.seen.kin.map(|kin| kin + s.seen.heading * 4.0),
+                0.5,
+            )
+        },
+    };
+
+    /// Going to roost on a plant.
+    ///
+    /// Sunlit animals sleep in the shade beneath it, out of the drying glare; aur-lit ones climb
+    /// into the darker air above, away from the glow; and twilight animals slip across into the
+    /// dim side of the sunset band first.
+    pub fn roost(s: &Situation) -> Goal {
+        let shift = shade(s);
+        Goal::new(
+            Activity::Sleep,
+            Some(s.seen.mark(ROOST).unwrap_or(Vec3::ZERO) + shift),
+            0.35,
+        )
+        .folded(0.9)
+        .hovering()
+    }
+
+    /// Where a sleeper moves to keep out of light it does not live in.
+    pub fn shade(s: &Situation) -> Vec3 {
+        let up = s.up();
+        match s.kind.light() {
+            Light::Sunlit => -up * 4.0,
+            Light::Aurlit => up * 80.0,
+            Light::Twilight => -s.seen.sunward * 150.0,
+            Light::Anywhere => Vec3::ZERO,
+        }
+    }
 }

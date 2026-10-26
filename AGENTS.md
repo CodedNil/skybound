@@ -4,7 +4,7 @@ A flight game over an alien sky world. A Bevy host (`src/graphics`, `src/game`) 
 
 ## The world
 
-There is no ground. Life drifts or flies above the aur, a glowing, lethal ocean that lights the sky from below and drives the updraft everything depends on. Water is scarce, food drifts in the air, and the taxon descriptions in `src/scene/life` hold each lineage's lore.
+There is no ground. Life drifts or flies above the aur, a glowing, lethal ocean that lights the sky from below and drives the updraft everything depends on. Light is a matter of place, not time: a sunburst lights each pole, a sunset band lies round it, and the equator is lit only by the aur's glow from below. Water is scarce, food drifts in the air, and the taxon descriptions in `src/scene/life` hold each lineage's lore.
 
 Design creatures from this world, not Earth's. No ground means no legs; light and danger come from below, so tetralates have inverted countershading (pale back, dark belly) and downward-looking eyes; scarce water means louvred breathing vents that recover moisture. Every feature should have a reason that follows from the lore, and related species should still differ in ways their niches explain.
 
@@ -18,12 +18,15 @@ Design creatures from this world, not Earth's. No ground means no legs; light an
 ## Looking at the result
 
 - The benchmark mode renders offscreen and saves a screenshot: `SKYBOUND_SCREENSHOT=/path/out.png target/debug/skybound --benchmark --scene <scene> --warmup 6 --duration 2`. Scenes are listed in `src/benchmark.rs`; `--altitude`, `--pitch` and `--yaw` give a free camera, and `--live` lets time run. It prints frame times.
-- Creature previews render on the CPU: `cargo build --example species_preview`, then `target/debug/examples/species_preview --size 384 --outputs render --out <dir>`. With no `--out` it regenerates the assets committed beside each species file.
+- Creature previews render on the CPU: `cargo build --example species_preview`, then `target/debug/examples/species_preview --size 384 --outputs render --out <dir>`. With no `--out` it regenerates the assets committed beside each species file, and, beside every taxon where the tree forks, a sheet named for it (`plantae/plantae.png`; `--outputs lineup`) showing every species below it at true scale.
 
 ## Layout
 
 - `src/scene/life`: each species is a short file with a `surface` built from shared primitives in `life/mod.rs` and a `LOOK` (colours and wings). Shading is in `life/surface.rs`.
-- `src/game/ecosystem.rs`: the simulated population, its needs and behaviour, and which creatures are drawn each frame.
+- Only what all life shares sits at the root: `BIOLOGY` (life history and habitat, `life/biology.rs`), `life/vitals.rs` (a body's state and the rules every body lives by), and `life/organs.rs` (organ placement and wounds). Everything else splits by kingdom: `life/animalia/physiology.rs` and `life/plantae/physiology.rs` each define a `PHYSIOLOGY` that every taxon refines with `..super::PHYSIOLOGY`, and animals alone have a mind (`life/animalia/mind.rs`).
+- Declare things in the taxon where they arose, never in a list for all life. Organs are named values with the need they meet (`Function`): the pump at the root of the animals, flight muscles separately in the tetralates and the winged blood-feeders, the aur sac in the Nætu lineage, fruit in the fruiting plants, glands in the species that have them. Generic code asks how well a need is met, not for a particular organ. Each species places its organs in `ORGANS`, inside its body (a test checks); they drive its physiology, take the damage from strikes, and show in the anatomy previews.
+- Behaviour descends the tree the same way: each animal taxon has an `ETHOLOGY`, taking its parent's with `..super::ETHOLOGY` (or re-exporting it) and overriding how its lineage feels urges, notices things, hunts, courts, sleeps and acts. Intents (`Intent`) and things worth noticing (`Interest`) are declared where they arose, the intent carrying its lineage's way of carrying it out: play and following in the tetralates, calls, the young and grooming in the live-bearers, mobbing in the swarming Manducidae. Put behaviour in a `mod nature` section at the end of that taxon's `mod.rs` or species file, gated out of the shader build. `Perception` holds only what every animal senses; the rest is marks a lineage's `notice` records.
+- `src/game/ecosystem/`: the organisms lived out in full near the player, stepped twenty times a second: `senses.rs` (what each perceives and wants), `conduct.rs` (strikes, courtship, calls), `feeding.rs`, `breeding.rs`, `movement.rs`, and `drawing.rs` (which are drawn each frame, smoothed between steps). Ask a `Kind` for its habits (`eats`, `takes`, `attaches`, `partners`, `senses`, `voice`) rather than naming species there. `src/game/range.rs`: the whole planet's population as counts per region, limited by each kind's habitat, which comes into being in groups near the player and folds back as the player leaves.
 - `src/scene/render`: clouds (`clouds.rs`, `march.rs`), the aur ocean, and the passes that draw everything.
 
 ## Style

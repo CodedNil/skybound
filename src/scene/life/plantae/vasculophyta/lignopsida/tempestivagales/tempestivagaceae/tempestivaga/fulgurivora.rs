@@ -1,9 +1,17 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::{Biology, Energy},
+    biology::Biology,
     capsule, ellipsoid, plantae,
     plantae::{leaf, rotate},
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    organs::{Viscera, pair, site},
+    plantae::physiology::BLADDER,
+    plantae::physiology::FROND,
+    plantae::physiology::ROOT,
+    plantae::physiology::STEM,
 };
 use core::f32::consts::FRAC_PI_2;
 use spirv_std::glam::{Vec3, vec3};
@@ -11,12 +19,14 @@ use spirv_std::glam::{Vec3, vec3};
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 1200.0,
     lifespan_days: 60000.0,
-    energy: Energy::Lightning,
     adult_mass: 8.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 20.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -54,9 +64,28 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     shape
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(STEM, vec3(0.00, -1.82, 0.09), vec3(0.42, 0.42, 0.42)),
+    site(BLADDER, vec3(0.00, -2.46, -0.62), vec3(0.42, 0.42, 0.42)),
+    pair(FROND, vec3(0.54, -3.21, -0.18), vec3(0.46, 0.46, 0.46)),
+    site(ROOT, vec3(0.00, -4.18, 0.09), vec3(0.41, 0.41, 0.41)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.16, 0.22, 0.46), vec3(0.55, 0.7, 1.0));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::Physiology;
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        powered: |climate| climate.storm * 8.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

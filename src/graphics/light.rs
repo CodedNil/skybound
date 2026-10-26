@@ -14,8 +14,8 @@ use bevy::{
 };
 use skybound::scene::climate::{LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH};
 
-/// The cloud's shadow from the pole lights and the aur at every altitude,
-/// traced by a compute pass into a buffer and copied into a 3D texture.
+/// The cloud's shadow from the pole lights and the aur at every altitude, traced by a compute pass
+/// into a buffer and copied into a 3D texture.
 pub struct LightVolume {
     pub view: TextureView,
     texture: Texture,

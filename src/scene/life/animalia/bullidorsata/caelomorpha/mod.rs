@@ -11,6 +11,11 @@ pub mod aerogigantiformes;
 pub mod cloth;
 pub mod nubivaga;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Class,
     "Caelomorpha",
@@ -422,8 +427,8 @@ mod tests {
             Vec4::ZERO,
             Kind::Aerogigas as u32,
         );
-        // The canopy is a vaulted dome, so rays from the sides are cast
-        // through its crown rather than through the hollow beneath it.
+        // The canopy is a vaulted dome, so rays from the sides are cast through its crown rather
+        // than through the hollow beneath it.
         for direction in [Vec3::X, Vec3::Y, Vec3::Z, -Vec3::X, -Vec3::Y, -Vec3::Z] {
             let ray = Ray {
                 origin: direction * 80.0 + Vec3::Y * 3.2,

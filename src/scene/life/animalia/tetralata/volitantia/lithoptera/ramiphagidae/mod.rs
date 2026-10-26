@@ -3,10 +3,14 @@ use crate::scene::life::biology::Biology;
 pub mod ramiphaga;
 
 pub const BIOLOGY: Biology = Biology {
-    speed: 3.0,
     adult_mass: 2.0,
     ..super::BIOLOGY
 };
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Family,
@@ -20,3 +24,14 @@ taxon!(
         "Dependence on woody vegetation makes dense Bramble communities more suitable than open columns of suspended algae.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{Kind, animalia::physiology::Physiology, organs::Function};
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        crops: Function::Sap,
+        speed: 3.0,
+        eats: |_, food| food == Kind::Spinivinea,
+        ..super::super::PHYSIOLOGY
+    };
+}

@@ -3,6 +3,11 @@ pub use super::{BIOLOGY, render_wings};
 pub mod aerohirudo;
 pub mod ptilohirudo;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Aerohirudinidae",
@@ -15,3 +20,14 @@ taxon!(
         "Their ranges follow cover, moisture and host traffic rather than the longest available uninterrupted currents.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::Physiology;
+
+    /// Air leeches make brief visits, letting go of their host once fed.
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        lets_go: true,
+        ..super::super::PHYSIOLOGY
+    };
+}

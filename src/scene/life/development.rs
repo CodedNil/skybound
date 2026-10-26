@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::biology::{Anatomy, Brood, Reproduction};
+use crate::scene::life::KINDS;
 use crate::scene::life::{
     CreatureInstance, PLANT,
     biology::Biology,
     ellipsoid, look_of, plantae, smooth_min,
-    surface::{Material, Ray, Surface, TraceResult, coat, trace_material},
+    surface::{Material, Ray, SMOOTH, Surface, TraceResult, coat, trace_material},
 };
 use core::f32::consts::{PI, TAU};
 #[cfg(not(target_arch = "spirv"))]
@@ -40,34 +40,12 @@ pub fn prepare(c: &mut CreatureInstance, biology: Biology, age_days: f32, seed: 
     let age = age_days.max(0.0);
     let young = (age / biology.maturity_days).clamp(0.0, 1.0);
     let old = age.smoothstep(biology.lifespan_days * 0.72, biology.lifespan_days);
-    let stage = if young >= 0.7 {
-        0.0
-    } else {
-        match (biology.anatomy, biology.reproduction) {
-            (Anatomy::Porous, _) => 1.0,
-            (Anatomy::Suctorial, _) => 2.0,
-            // An egg first, laid as the lineage keeps them, then a larva.
-            (Anatomy::Tetralate, Reproduction::Eggs) if young < 0.3 => match biology.brood {
-                Brood::Drifting => 8.0,
-                Brood::Strings => 9.0,
-                Brood::Carried => 10.0,
-                _ => 4.0,
-            },
-            (Anatomy::Tetralate, Reproduction::Eggs) => 3.0,
-            // Pouch young are born long before they are formed.
-            (Anatomy::Tetralate, _) if biology.brood == Brood::Pouch && young < 0.2 => 11.0,
-            (Anatomy::Plant, Reproduction::Division) => 7.0,
-            (Anatomy::Plant, Reproduction::Spores | Reproduction::Pollination) if young < 0.2 => {
-                5.0
-            }
-            (Anatomy::Plant, _) => 6.0,
-            _ => 0.0,
-        }
-    };
+    // Each kingdom, and each lineage within it, has its own young forms.
+    let kind = KINDS[c.kind.x as usize];
+    let stage = kind.young_form(young) as f32;
     c.kind.y = seed;
     c.life = vec4(age, young, old, stage);
     c.identity = vec4(random(1), random(2), random(3), random(4));
-    c.animation.z += (random(5) - 0.5) * TAU;
     let growth = (0.25 + young * 0.75) * (1.0 - old * 0.08);
     let variation = (c.identity.xyz() - 0.5) * 0.35 + 1.0;
     c.proportions = (variation
@@ -99,8 +77,8 @@ pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
     let front = (-point.z / c.opaque_bounds.z.max(0.01)).smoothstep(0.25, 0.8);
     point.x *= 1.0 - infant * front * 0.15;
     point.y *= 1.0 - infant * front * 0.12;
-    // Individuals differ in build as well as size: some heavier in the
-    // head, some lighter, some with a gentle arch to the back, some a sag.
+    // Individuals differ in build as well as size: some heavier in the head, some lighter, some
+    // with a gentle arch to the back, some a sag.
     let individual = c.identity - 0.5;
     let reach = point.z / c.opaque_bounds.z.max(0.01);
     let head = (-reach).smoothstep(0.2, 0.8);
@@ -134,12 +112,20 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
 /// The body of a young organism in one of its early forms, by
 /// [`CreatureInstance::life`]'s developmental form, scaled to its bounds.
 pub fn juvenile_surface(point: Vec3, c: &CreatureInstance) -> Surface {
-    let extent = c.opaque_bounds.xyz() * 0.85;
+    // Most forms are drawn to scale in their bounds; a plant's young and a string of eggs are
+    // stretched to fill theirs.
+    let form = c.life.w as u32;
+    let bounds = c.opaque_bounds.xyz() * 0.85;
+    let extent = if matches!(form, 5..=7 | 9) {
+        bounds
+    } else {
+        Vec3::splat(bounds.max_element())
+    };
     let mut p = point / extent;
     let time = c.animation.z;
     let age = c.life.y;
     p.x -= (p.z * 4.0 - time * 2.0).sin() * 0.08 * p.z;
-    let mut hit = match c.life.w as u32 {
+    let mut hit = match form {
         1 => polyp(p, age, time),
         2 => leech_larva(p, age),
         3 => larva(p, age),
@@ -156,8 +142,8 @@ pub fn juvenile_surface(point: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
-/// A porous animal's first form: a soft dome fringed at its rim, its gas
-/// chambers swelling as it grows.
+/// A porous animal's first form: a soft dome fringed at its rim, its gas chambers swelling as
+/// it grows.
 fn polyp(p: Vec3, age: f32, time: f32) -> Surface {
     let mut body = ellipsoid(p, vec3(0.7, 0.4 + age * 0.3, 0.75));
     let fringe = (vec2(vec2(p.x, p.z).length() - 0.64, p.y + 0.2).length()
@@ -175,8 +161,7 @@ fn polyp(p: Vec3, age: f32, time: f32) -> Surface {
     Surface::new(body, 0)
 }
 
-/// A young blood-feeder: a ringed body led by its sucker, its fins
-/// growing out along its flanks.
+/// A young blood-feeder: a ringed body led by its sucker, its fins growing out along its flanks.
 fn leech_larva(p: Vec3, age: f32) -> Surface {
     let mut body = 1e6f32;
     for index in 0..7 {
@@ -204,58 +189,69 @@ fn leech_larva(p: Vec3, age: f32) -> Surface {
     Surface::new(body, 0)
 }
 
-/// The larva recalls the lineage's limbless ancestors: a long, ringed body
-/// wriggling through the vegetation it hatched in, the cowl only a bud at
-/// its front, the wing pairs small buds on its flanks and the mouth
-/// tentacles short stubs, all growing towards the adult's as it nears its
-/// change.
+/// The larva recalls the lineage's limbless ancestors: a plump, ringed grub wriggling through the
+/// vegetation it hatched in, the cowl only a bud over its blunt head, the wing pairs rounded buds
+/// folded along its back and the mouth tentacles short stubs, all growing towards the adult's as it
+/// nears its change. Two dark eyes already look down.
 fn larva(p: Vec3, age: f32) -> Surface {
     let grow = ((age - 0.3) / 0.4).clamp(0.0, 1.0);
     let mut body = 1e6f32;
     for index in 0..9 {
         let along = index as f32 / 8.0;
-        let radius = 0.15 + (along * PI).sin() * 0.06 - along * 0.04;
+        let radius = 0.13 + (along * PI).sin().powf(0.6) * 0.1 - along * 0.03;
         body = smooth_min(
             body,
             ellipsoid(
-                p - vec3(0.0, 0.0, (along - 0.45) * 1.7),
-                vec3(radius, radius * 0.9, 0.13),
+                p - vec3(0.0, 0.0, (along - 0.45) * 1.4),
+                vec3(radius, radius * 0.92, 0.12),
             ),
-            0.05,
+            0.035,
         );
     }
+    let head = p - vec3(0.0, 0.02, -0.68);
+    body = smooth_min(body, ellipsoid(head, vec3(0.17, 0.15, 0.14)), 0.05);
     let cowl = ellipsoid(
-        p - vec3(0.0, 0.05, -0.85),
-        vec3(0.18 + grow * 0.2, 0.08, 0.16 + grow * 0.12),
+        head - vec3(0.0, 0.08, -0.04),
+        vec3(0.14 + grow * 0.12, 0.04, 0.12 + grow * 0.06),
     );
-    body = smooth_min(body, cowl, 0.06);
-    let mut buds = 1e6f32;
-    for pair in 0..2 {
-        let flank = vec3(p.x.abs() - 0.17, p.y - 0.06, p.z + 0.35 - pair as f32 * 0.4);
-        buds = buds.min(ellipsoid(
-            flank,
-            vec3(0.07 + grow * 0.35, 0.022, 0.1 + grow * 0.08),
-        ));
+    body = smooth_min(body, cowl, 0.04);
+    let flank = vec3(p.x.abs(), p.y, p.z);
+    for stub in 0..2 {
+        let root = vec3(0.05 + stub as f32 * 0.05, -0.1, -0.76);
+        body = smooth_min(
+            body,
+            (flank - root - vec3(0.02, -0.05, -0.06) * ((root.z - flank.z) / 0.06).clamp(0.0, 1.0))
+                .length()
+                - 0.014,
+            0.02,
+        );
     }
-    let stub = vec3(p.x.abs(), p.y, p.z);
-    buds = buds.min(
-        (stub
-            - vec3(0.07, -0.08, -0.95)
-            - vec3(0.03, -0.05, -0.12) * (stub.z + 0.95).min(0.0).abs())
-        .length()
-            - 0.03,
-    );
     let mut hit = Surface::new(body, 0);
-    hit.join(buds, 1);
+    // Wing buds, rounded lobes lying back along the upper flanks.
+    for pair in 0..2 {
+        let lobe = flank - vec3(0.14 + grow * 0.04, 0.13, -0.32 + pair as f32 * 0.32);
+        let (sine, cosine) = 0.5f32.sin_cos();
+        let tilted = vec3(
+            lobe.x * cosine + lobe.y * sine,
+            lobe.y * cosine - lobe.x * sine,
+            lobe.z,
+        );
+        hit.join(
+            ellipsoid(tilted, vec3(0.05 + grow * 0.14, 0.04, 0.07 + grow * 0.05)),
+            2,
+        );
+    }
+    hit.join(
+        ellipsoid(flank - vec3(0.09, -0.08, -0.79), vec3(0.04, 0.035, 0.035)),
+        3,
+    );
     hit
 }
 
-/// An egg, laid as most of the lineage lays them: tethered to living
-/// vegetation, safe from the long fall to the aur, in a leathery, ridged
-/// case.
+/// An egg, laid as most of the lineage lays them: tethered to living vegetation, safe from the long
+/// fall to the aur, in a leathery, ridged case.
 fn tethered_egg(p: Vec3) -> Surface {
-    let ridges = (p.z * 60.0 + p.x.atan2(p.y) * 4.0).sin() * 0.009;
-    let mut hit = Surface::new(ellipsoid(p, vec3(0.46, 0.4, 0.85)) + ridges, 1);
+    let mut hit = Surface::new(ellipsoid(p, vec3(0.46, 0.4, 0.85)), 1);
     let tether = ((p - vec3(0.0, 0.36, -0.55))
         - vec3(0.0, 0.55, -0.4) * ((p.y - 0.36) / 0.55).clamp(0.0, 1.0))
     .length()
@@ -300,8 +296,8 @@ fn bud(p: Vec3, age: f32) -> Surface {
     Surface::new(body, 3)
 }
 
-/// An egg cast loose on the updraft, held up by a crown of fine threads
-/// that the rising air catches, as down holds up a seed.
+/// An egg cast loose on the updraft, held up by a crown of fine threads that the rising air
+/// catches, as down holds up a seed.
 fn drifting_egg(p: Vec3, time: f32) -> Surface {
     let rise = p - vec3(0.0, -0.3, 0.0);
     let shell = ellipsoid(rise, vec3(0.26, 0.3, 0.26))
@@ -326,8 +322,8 @@ fn drifting_egg(p: Vec3, time: f32) -> Surface {
     hit
 }
 
-/// Strings of eggs paid out behind the parent, dozens to a string at no
-/// even spacing, each string sagging and swaying its own way in the wake.
+/// Strings of eggs paid out behind the parent, dozens to a string at no even spacing, each string
+/// sagging and swaying its own way in the wake.
 fn egg_strings(p: Vec3, time: f32) -> Surface {
     let mut hit = Surface::new(1e6, 1);
     let behind = ((p.z + 0.9) / 1.85).clamp(0.0, 1.0);
@@ -377,9 +373,8 @@ fn clutch(p: Vec3) -> Surface {
     Surface::new(eggs, 1)
 }
 
-/// Born long before it is formed, to finish growing in the pouch: a
-/// curled, translucent body, the great dark eyes not yet open, the wings
-/// and mouth tentacles only nubs.
+/// Born long before it is formed, to finish growing in the pouch: a curled, translucent body, the
+/// great dark eyes not yet open, the wings and mouth tentacles only nubs.
 fn pouch_young(p: Vec3, age: f32) -> Surface {
     let grow = age / 0.2;
     let mut body = 1e6f32;
@@ -420,12 +415,19 @@ pub fn render_juvenile(ray: Ray, c: &CreatureInstance) -> TraceResult {
                 point / (c.position.w * 0.15).max(0.7),
                 match id {
                     1 => 7,
+                    2 => 1,
                     3 => 3,
                     _ => 0,
                 },
                 look,
             );
             material.translucency = 0.35;
+            // Eggshell is smooth and leathery, and the young's skin finer than the adult's.
+            material.relief *= if id == 1 { 0.1 } else { 0.5 };
+            if id == 1 {
+                material.texture = SMOOTH;
+                material.translucency = 0.5;
+            }
             return material;
         }
         let color = match id {

@@ -55,8 +55,8 @@ pub struct SceneBuffer {
     parcels: RawBufferVec<CloudParcel>,
     cloud_index: RawBufferVec<u32>,
     cloud_cells: RawBufferVec<Vec4>,
-    /// The world's creatures drawn this frame, always `HERD` long so the
-    /// buffer, and the bind groups that hold it, never change.
+    /// The world's creatures drawn this frame, always `HERD` long so the buffer, and the bind
+    /// groups that hold it, never change.
     creatures: RawBufferVec<CreatureInstance>,
     /// When the uploaded cloud index was built.
     cloud_built: f32,
@@ -86,8 +86,8 @@ type ViewQuery = (
     Option<&'static MainPassResolutionOverride>,
 );
 
-/// The part of a view the scene renders into: all of it, or under an
-/// upscaler, a smaller rectangle at its corner.
+/// The part of a view the scene renders into: all of it, or under an upscaler, a smaller rectangle
+/// at its corner.
 pub fn render_viewport(
     view: &ExtractedView,
     resolution: Option<&MainPassResolutionOverride>,
@@ -435,8 +435,8 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     let mut opaque_binds = common().into_iter().collect::<Vec<_>>();
     opaque_binds.push(Bind::Storage(creatures.clone()));
     let opaque = pipeline.opaque.group(&binder, &opaque_binds);
-    // The cloud, thin-surface and volume passes all read the whole scene;
-    // the volume pass also reads the clouds rebuilt before it.
+    // The cloud, thin-surface and volume passes all read the whole scene; the volume pass also
+    // reads the clouds rebuilt before it.
     let scene = |slab: bool| {
         let mut binds = common().into_iter().collect::<Vec<_>>();
         binds.extend([

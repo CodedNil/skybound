@@ -1,17 +1,15 @@
 pub use super::render;
-use crate::scene::life::biology::{Biology, Lift, Organs, Reproduction};
+use crate::scene::life::biology::Biology;
 pub mod auracoccales;
 pub mod luminiflorales;
 
 pub const BIOLOGY: Biology = Biology {
-    organs: Organs {
-        lift: Lift::Aerosol,
-        ..super::BIOLOGY.organs
-    },
     adult_mass: 0.002,
-    reproduction: Reproduction::Division,
     ..super::BIOLOGY
 };
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Class,
@@ -25,3 +23,14 @@ taxon!(
         "Their abundance turns fleeting favourable currents and living surfaces into food for a much larger aerial ecosystem.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::{Physiology, Propagation};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        floats: false,
+        propagation: Propagation::Division,
+        ..super::super::PHYSIOLOGY
+    };
+}

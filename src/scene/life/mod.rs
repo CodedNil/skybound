@@ -73,10 +73,15 @@ impl CreatureInstance {
         c.previous_proportions = c.proportions;
         c.previous_animation = c.animation;
         prepare_instance(&mut c);
-        // The bounds must hold the wings' frames at full stretch and stroke,
-        // or tracing clips them.
         let look = KINDS[kind as usize].look();
-        if look.family == COAT {
+        if c.life.w > 0.0 {
+            // The young have forms of their own, sized from the body alone and not the
+            // adult's wingspan.
+            c.opaque_bounds =
+                juvenile_bounds(c.life.w as u32, c.opaque_bounds.truncate()).extend(0.0);
+        } else if look.family == COAT {
+            // The bounds must hold the wings' frames at full stretch and stroke, or tracing
+            // clips them.
             for index in 0..2 {
                 let wing = look.wings[index];
                 if wing.x > 0.0 {
@@ -92,22 +97,15 @@ impl CreatureInstance {
                 }
             }
         }
-        // Eggs and newborns are round, whatever shape the adult's bounds,
-        // and a string of eggs trails out long behind.
-        let form = c.life.w as u32;
-        if form >= 4 && form != 5 && form != 6 && form != 7 {
-            let mean = c.opaque_bounds.truncate().element_sum() / 3.0;
-            let length = if form == 9 {
-                c.opaque_bounds.z.max(mean) * 1.5
-            } else {
-                mean
-            };
-            c.opaque_bounds = vec3(mean, mean, length).extend(0.0);
-        }
-        // A pouch is part of a grown parent's body, empty or not; and its
-        // brood, wherever it is carried, must lie within its bounds.
+        // A pouch is part of a grown parent's body, empty or not; and its brood, wherever it is
+        // carried, must lie within its bounds.
         if look.brood.w > 0.0 && c.life.w <= 0.0 {
-            if KINDS[kind as usize].biology().brood == biology::Brood::Pouch && c.kind.z == 0 {
+            #[cfg(not(target_arch = "spirv"))]
+            if KINDS[kind as usize]
+                .animal()
+                .is_some_and(|animal| animal.brood == animalia::physiology::Brood::Pouch)
+                && c.kind.z == 0
+            {
                 c.kind.z = EMPTY_POUCH;
             }
             c.opaque_bounds = c
@@ -124,6 +122,20 @@ impl CreatureInstance {
         c.position.w = c.position.w.max(c.opaque_bounds.truncate().length());
         c.position.w *= development::scale(&c).max_element().max(1.0);
         c
+    }
+}
+
+/// The bounds of a young form, from the half extents of the adult's body: a larva long and slender,
+/// a polyp broad and low, a string of eggs trailing far behind, and an egg or a newborn round.
+/// Plants' young keep the plant's bounds.
+fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
+    let size = body.max_element();
+    match form {
+        1 => vec3(size, size * 0.7, size),
+        2 | 3 => vec3(size * 0.45, size * 0.4, size),
+        9 => vec3(size * 0.6, size * 0.6, size * 1.5),
+        5..=7 => body,
+        _ => Vec3::splat(size * 0.6),
     }
 }
 
@@ -153,15 +165,24 @@ fn prepare_pose(c: &mut CreatureInstance, length: f32, tail: f32, ribbons: usize
     }
 }
 
+/// A taxon's rank in the tree of life, from all life at the root down to a single species.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Rank {
+    /// All life.
     Root,
+    /// Animals or plants.
     Kingdom,
+    /// A body plan.
     Phylum,
+    /// A major branch of a body plan.
     Class,
+    /// A way of life within a class.
     Order,
+    /// Close kin sharing a way of life.
     Family,
+    /// Closer kin still, near enough to share a name.
     Genus,
+    /// One kind of organism, which breeds with its own.
     Species,
 }
 
@@ -174,9 +195,22 @@ pub struct Taxon {
     pub parent: Option<&'static Self>,
 }
 
-/// Taxonomic modules inherit their parent from the enclosing module.
-/// Write each description sentence as a separate string; they are joined with
-/// single spaces at compile time.
+impl Taxon {
+    /// Whether this taxon is `ancestor` or descends from it.
+    pub fn descends_from(&self, ancestor: &Self) -> bool {
+        let mut taxon = Some(self);
+        while let Some(current) = taxon {
+            if current.name == ancestor.name {
+                return true;
+            }
+            taxon = current.parent;
+        }
+        false
+    }
+}
+
+/// Taxonomic modules inherit their parent from the enclosing module. Write each description
+/// sentence as a separate string; they are joined with single spaces at compile time.
 macro_rules! taxon {
     ($rank:ident, $name:expr, $english:expr, [$first:literal $(, $rest:literal)* $(,)?] $(,)?) => {
         taxon!($rank, $name, $english, concat!($first $(, " ", $rest)*));
@@ -194,14 +228,19 @@ macro_rules! taxon {
     (@parent $rank:ident) => { Some(&super::TAXON) };
 }
 
+#[cfg(not(target_arch = "spirv"))]
 pub mod anatomy;
 pub mod animalia;
+#[cfg(not(target_arch = "spirv"))]
 pub mod behaviour;
 pub mod biology;
 pub mod development;
-pub mod physiology;
+#[cfg(not(target_arch = "spirv"))]
+pub mod organs;
 pub mod plantae;
 pub mod surface;
+#[cfg(not(target_arch = "spirv"))]
+pub mod vitals;
 
 pub const BIOLOGY: biology::Biology = biology::ANCESTRAL;
 
@@ -212,14 +251,53 @@ taxon!(
     [
         "Life above the aur ocean depends on energy and moisture rising through a world without solid ground.",
         "Plants gather dispersed aur, its scattered light, wind deformation or electrical discharges, while animals obtain food from the resulting living tissues.",
-        "Buoyancy, drag, powered flight and attachment keep organisms within usable air as the forty-minute aur cycle changes light and lift.",
+        "Buoyancy, drag, powered flight and attachment keep organisms within usable air from the sunburst-lit poles, through the sunset band, to the equator lit only by the aur's glow from below.",
         "Water and minerals arrive in dangerous geyser-fed currents, making the edges of those plumes valuable habitats even when the jets themselves are lethal.",
         "Evolution repeatedly favours water conservation, secure living attachments and ways to avoid losing nutrients or young into the ocean below.",
     ],
 );
 
 macro_rules! species {
-    ($($id:ident: $($path:ident)::+;)*) => {
+    (
+        animals { $($animal:ident: $($animal_path:ident)::+;)* }
+        plants { $($plant:ident: $($plant_path:ident)::+;)* }
+    ) => {
+        species!(@all $($animal: $($animal_path)::+;)* $($plant: $($plant_path)::+;)*);
+        impl Kind {
+            /// The kingdom the species belongs to.
+            pub const fn kingdom(self) -> Kingdom {
+                match self {
+                    $(Self::$animal => Kingdom::Animalia,)*
+                    $(Self::$plant => Kingdom::Plantae,)*
+                }
+            }
+            /// How an animal behaves, as it inherits it down the tree of life; plants have none.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn ethology(self) -> Option<animalia::mind::Ethology> {
+                match self {
+                    $(Self::$animal => Some($($animal_path)::+::ETHOLOGY),)*
+                    $(Self::$plant => None,)*
+                }
+            }
+            /// How an animal's body works, as it inherits it down the tree of life.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn animal(self) -> Option<animalia::physiology::Physiology> {
+                match self {
+                    $(Self::$animal => Some($($animal_path)::+::PHYSIOLOGY),)*
+                    $(Self::$plant => None,)*
+                }
+            }
+            /// How a plant's body works, as it inherits it down the tree of life.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn plant(self) -> Option<plantae::physiology::Physiology> {
+                match self {
+                    $(Self::$animal => None,)*
+                    $(Self::$plant => Some($($plant_path)::+::PHYSIOLOGY),)*
+                }
+            }
+        }
+    };
+    (@all $($id:ident: $($path:ident)::+;)*) => {
         #[repr(u32)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum Kind { $($id),* }
@@ -234,13 +312,23 @@ macro_rules! species {
             pub const fn look(self) -> Look {
                 match self { $(Self::$id => $($path)::+::LOOK,)* }
             }
+            /// Where the species' organs lie in its body.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn organs(self) -> organs::Viscera {
+                match self { $(Self::$id => $($path)::+::ORGANS,)* }
+            }
+            /// The species' place in the tree of life.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn taxon(self) -> &'static Taxon {
+                match self { $(Self::$id => &$($path)::+::TAXON,)* }
+            }
         }
         /// The look of a species by its index.
         pub const fn look_of(kind: u32) -> Look {
             match kind { $(kind if kind == Kind::$id as u32 => $($path)::+::LOOK,)* _ => Look::OWN }
         }
-        /// The body of any creature: one distance function switching on its
-        /// species, so the world's tracer is compiled once for all of them.
+        /// The body of any creature: one distance function switching on its species, so the world's
+        /// tracer is compiled once for all of them.
         pub fn any_surface(point: Vec3, c: &CreatureInstance) -> Surface {
             if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
             match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => Surface::new(1e6, 0) }
@@ -249,8 +337,9 @@ macro_rules! species {
         pub const SPECIES: &[&Taxon] = &[$(&$($path)::+::TAXON),*];
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES_MODULES: &[&str] = &[$(stringify!($($path)::+)),*];
+        #[cfg(not(target_arch = "spirv"))]
         pub fn behave(kind: Kind, senses: &behaviour::Senses) -> behaviour::Controls {
-            behaviour::organism(senses, kind.biology())
+            behaviour::organism(senses, kind)
         }
         pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
             if c.life.w > 0.0 { return development::render_juvenile(ray, c); }
@@ -267,95 +356,107 @@ macro_rules! species {
         }
     };
 }
+
+/// The two kingdoms of life, which part at the root of the tree: animals, which eat and move and
+/// decide, and plants, which make their own food and drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kingdom {
+    /// Animals, which eat what other life makes.
+    Animalia,
+    /// Plants, which make their own food from light, aur, wind or lightning.
+    Plantae,
+}
+
 species! {
-    Lucerna: animalia::tetralata::specialia::detritivora::lucernidae::lucerna::undulata;
-    Manduca: animalia::tetralata::specialia::detritivora::manducidae::manduca::gregaria;
-    Sericifex: animalia::tetralata::specialia::rapaciformes::sericificidae::sericifex::textor;
-    Scintilla: animalia::tetralata::volitantia::parvivolantia::scintillidae::scintilla::scintillans;
-    Nebulaphora: animalia::tetralata::volitantia::parvivolantia::nebulaphoridae::nebulaphora::vitrea;
-    Ramiphaga: animalia::tetralata::volitantia::lithoptera::ramiphagidae::ramiphaga::corticivora;
-    Lithosoma: animalia::tetralata::volitantia::lithoptera::lithosomatidae::lithosoma::grave;
-    Aerogigas: animalia::bullidorsata::caelomorpha::aerogigantiformes::aerogigantidae::aerogigas::auratus;
-    Levitans: animalia::bullidorsata::caelomorpha::nubivaga::levitantidae::levitans::taeniatus;
-    Nubivesica: animalia::bullidorsata::caelomorpha::nubivaga::nubivesicidae::nubivesica::caerulea;
-    Haematozoon: animalia::sanguinivora::errantia::errantiformes::haematozoidae::haematozoon::invasor;
-    Adhaerens: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::adhaerens::tenax;
-    Fluitans: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::fluitans::crypticus;
-    Ambigena: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::ambigena::fallax;
-    Aerohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::aerohirudo::membranacea;
-    Ptilohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::ptilohirudo::pennata;
-    Purgator: animalia::tetralata::specialia::detritivora::manducidae::purgator::mutualis;
-    Sputator: animalia::tetralata::specialia::rapaciformes::sericificidae::sputator::acidus;
-    Aculeorhynchus: animalia::tetralata::vivipara::ferrilaminata::aculeorhynchidae::aculeorhynchus::acuminatus;
-    Crepusculofalx: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::crepusculofalx::venatrix;
-    Ferrispina: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::falcata;
-    Herbivolus: animalia::tetralata::vivipara::grandivora::herbivolidae::herbivolus::migratorius;
-    Umbravola: animalia::tetralata::vivipara::grandivora::herbivolidae::umbravola::tacita;
-    Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
-    Custos: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::custos;
-    Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu;
-    Antiquus: animalia::tetralata::vivipara::grandivora::vocigenidae::vocigenus::antiquus;
-    Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae;
-    Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus::communis;
-    Luminiflora: plantae::pneumatophyta::micrococcopsida::luminiflorales::luminifloraceae::luminiflora::symbiotica;
-    Aerothallus: plantae::pneumatophyta::macrophyllopsida::aerothallales::aerothallaceae::aerothallus::vittatus;
-    Laevivelum: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::laevivelum::laeve;
-    Lacufolium: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::concavum;
-    Flexilora: plantae::pneumatophyta::macrophyllopsida::flexilorales::flexiloraceae::flexilora::spiralis;
-    Chromacorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::chromacorallum::versicolor;
-    Aurocorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::aurocorallum::aureum;
-    Spinivinea: plantae::vasculophyta::lignopsida::lignoradicales::spinivineaceae::spinivinea::volitans;
-    Stelloradix: plantae::vasculophyta::lignopsida::lignoradicales::stelloradicaceae::stelloradix::pendula;
-    Susurrus: plantae::vasculophyta::lignopsida::susurrales::susurraceae::susurrus::tubulatus;
-    Tempestivaga: plantae::vasculophyta::lignopsida::tempestivagales::tempestivagaceae::tempestivaga::fulgurivora;
-    Polliniflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::polliniflora::nectarifera;
-    Gigantiflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::gigantiflora::gigantea;
-    Pomum: plantae::vasculophyta::floropsida::pomales::pomaceae::pomum::iridescens;
-    Aeromuscus: plantae::chlorophyta::muscopsida::aeromuscales::aeromuscaceae::aeromuscus::velutinus;
+    animals {
+        Lucerna: animalia::tetralata::specialia::detritivora::lucernidae::lucerna::undulata;
+        Manduca: animalia::tetralata::specialia::detritivora::manducidae::manduca::gregaria;
+        Sericifex: animalia::tetralata::specialia::rapaciformes::sericificidae::sericifex::textor;
+        Scintilla: animalia::tetralata::volitantia::parvivolantia::scintillidae::scintilla::scintillans;
+        Nebulaphora: animalia::tetralata::volitantia::parvivolantia::nebulaphoridae::nebulaphora::vitrea;
+        Ramiphaga: animalia::tetralata::volitantia::lithoptera::ramiphagidae::ramiphaga::corticivora;
+        Lithosoma: animalia::tetralata::volitantia::lithoptera::lithosomatidae::lithosoma::grave;
+        Aerogigas: animalia::bullidorsata::caelomorpha::aerogigantiformes::aerogigantidae::aerogigas::auratus;
+        Levitans: animalia::bullidorsata::caelomorpha::nubivaga::levitantidae::levitans::taeniatus;
+        Nubivesica: animalia::bullidorsata::caelomorpha::nubivaga::nubivesicidae::nubivesica::caerulea;
+        Haematozoon: animalia::sanguinivora::errantia::errantiformes::haematozoidae::haematozoon::invasor;
+        Adhaerens: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::adhaerens::tenax;
+        Fluitans: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::fluitans::crypticus;
+        Ambigena: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::ambigena::fallax;
+        Aerohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::aerohirudo::membranacea;
+        Ptilohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::ptilohirudo::pennata;
+        Purgator: animalia::tetralata::specialia::detritivora::manducidae::purgator::mutualis;
+        Sputator: animalia::tetralata::specialia::rapaciformes::sericificidae::sputator::acidus;
+        Aculeorhynchus: animalia::tetralata::vivipara::ferrilaminata::aculeorhynchidae::aculeorhynchus::acuminatus;
+        Crepusculofalx: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::crepusculofalx::venatrix;
+        Ferrispina: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::falcata;
+        Herbivolus: animalia::tetralata::vivipara::grandivora::herbivolidae::herbivolus::migratorius;
+        Umbravola: animalia::tetralata::vivipara::grandivora::herbivolidae::umbravola::tacita;
+        Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
+        Custos: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::custos;
+        Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu;
+        Antiquus: animalia::tetralata::vivipara::grandivora::vocigenidae::vocigenus::antiquus;
+        Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae;
+    }
+    plants {
+        Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus::communis;
+        Luminiflora: plantae::pneumatophyta::micrococcopsida::luminiflorales::luminifloraceae::luminiflora::symbiotica;
+        Aerothallus: plantae::pneumatophyta::macrophyllopsida::aerothallales::aerothallaceae::aerothallus::vittatus;
+        Laevivelum: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::laevivelum::laeve;
+        Lacufolium: plantae::pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::concavum;
+        Flexilora: plantae::pneumatophyta::macrophyllopsida::flexilorales::flexiloraceae::flexilora::spiralis;
+        Chromacorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::chromacorallum::versicolor;
+        Aurocorallum: plantae::pneumatophyta::macrophyllopsida::flexilorales::chromacorallaceae::aurocorallum::aureum;
+        Spinivinea: plantae::vasculophyta::lignopsida::lignoradicales::spinivineaceae::spinivinea::volitans;
+        Stelloradix: plantae::vasculophyta::lignopsida::lignoradicales::stelloradicaceae::stelloradix::pendula;
+        Susurrus: plantae::vasculophyta::lignopsida::susurrales::susurraceae::susurrus::tubulatus;
+        Tempestivaga: plantae::vasculophyta::lignopsida::tempestivagales::tempestivagaceae::tempestivaga::fulgurivora;
+        Polliniflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::polliniflora::nectarifera;
+        Gigantiflora: plantae::vasculophyta::floropsida::polliniflorales::pollinifloraceae::gigantiflora::gigantea;
+        Pomum: plantae::vasculophyta::floropsida::pomales::pomaceae::pomum::iridescens;
+        Aeromuscus: plantae::chlorophyta::muscopsida::aeromuscales::aeromuscaceae::aeromuscus::velutinus;
+    }
 }
 
 /// How a species is coloured and what thin surfaces it carries.
 ///
-/// It is read by both its preview and the world renderer: a family of
-/// materials, a base pigment (with its glow), an accent, and up to two wing
-/// pairs.
+/// It is read by both its preview and the world renderer: a family of materials, a base pigment
+/// (with its glow), an accent, and up to two wing pairs.
 #[derive(Clone, Copy)]
 pub struct Look {
     pub family: u32,
     pub pigment: Vec4,
     pub accent: Vec3,
     pub wings: [Vec4; 2],
-    /// Where each wing pair's shoulder is: out on the flank and up it, so
-    /// the wing turns there rather than about the body's midline.
+    /// Where each wing pair's shoulder is: out on the flank and up it, so the wing turns there
+    /// rather than about the body's midline.
     pub hinges: [Vec2; 2],
     /// Each wing pair's style; see [`surface::PLAIN_WING`].
     pub styles: [Vec4; 2],
-    /// How heavy each wing pair's frame of bones is: one for a working
-    /// flyer, much less for wings carried on fine veins alone.
+    /// How heavy each wing pair's frame of bones is: one for a working flyer, much less for wings
+    /// carried on fine veins alone.
     pub frames: [f32; 2],
-    /// The body's skin: its kind of relief (zero for plain wrinkled skin),
-    /// how deep and how fine that relief is, and how much duller (positive)
-    /// or glossier than plain skin.
+    /// The body's skin: its kind of relief (zero for plain wrinkled skin), how deep and how fine
+    /// that relief is, and how much duller (positive) or glossier than plain skin.
     pub skin: Vec4,
-    /// How the wings beat: strokes a second, how deep, how far the hand
-    /// flexes at the wrist and how far its motion lags the arm's.
+    /// How the wings beat: strokes a second, how deep, how far the hand flexes at the wrist and
+    /// how far its motion lags the arm's.
     pub flight: Vec4,
-    /// The membranes' markings (kind, density, strength) and how far out
-    /// along the span the wrist lies; and the markings' second colour.
+    /// The membranes' markings (kind, density, strength) and how far out along the span the wrist
+    /// lies; and the markings' second colour.
     pub pattern: Vec4,
     pub second: Vec3,
-    /// Where a parent carries its brood, in its own frame: the height and
-    /// station along the body of the band of eggs glued round it, or of the
-    /// pouch on its back, and that band's or pouch's half width and half
-    /// height.
+    /// Where a parent carries its brood, in its own frame: the height and station along the body
+    /// of the band of eggs glued round it, or of the pouch on its back, and that band's or
+    /// pouch's half width and half height.
     pub brood: Vec4,
-    /// What the wings' frames are made of: bone (1), or iron (6) for
-    /// hunters that cut with their wing edges.
+    /// What the wings' frames are made of: bone (1), or iron (6) for hunters that cut with their
+    /// wing edges.
     pub edge: u32,
 }
 
-/// What a parent is carrying, in `kind.z`: a clutch of eggs glued round
-/// its body, young in its pouch, or a pouch with no young in it.
+/// What a parent is carrying, in `kind.z`: a clutch of eggs glued round its body, young in its
+/// pouch, or a pouch with no young in it.
 pub const CLUTCH: u32 = 1;
 pub const FULL_POUCH: u32 = 2;
 pub const EMPTY_POUCH: u32 = 3;
@@ -411,8 +512,8 @@ impl Look {
         Self { flight, ..self }
     }
 
-    /// The same look, with its membranes marked this way in this second
-    /// colour; see [`Look::pattern`].
+    /// The same look, with its membranes marked this way in this second colour;
+    /// see [`Look::pattern`].
     pub const fn marked(self, pattern: Vec4, second: Vec3) -> Self {
         Self {
             pattern,
@@ -490,8 +591,8 @@ impl Look {
     };
 }
 
-/// How many of the world's creatures are drawn at once, besides the
-/// player and their mount: those that cover the most of the screen.
+/// How many of the world's creatures are drawn at once, besides the player and their mount: those
+/// that cover the most of the screen.
 pub const HERD: usize = 24;
 
 /// The clear envelope of a drifting gas-bag, for the world renderer.
@@ -509,9 +610,8 @@ fn any_envelope(point: Vec3, c: &CreatureInstance) -> Surface {
 
 /// The solid surface of a creature along a ray, for the world's opaque pass.
 ///
-/// The player and their mount are drawn by their own tracers; every other
-/// species by one tracer over [`any_surface`], in its family's materials: the
-/// same shapes and colours as its preview.
+/// The player and their mount are drawn by their own tracers; every other species by one tracer
+/// over [`any_surface`], in its family's materials: the same shapes and colours as its preview.
 pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     let look = look_of(c.kind.x);
     if look.family == OWN && c.life.w <= 0.0 {
@@ -543,8 +643,8 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     hit
 }
 
-/// The thin, see-through surfaces of a creature along a ray, such as wing
-/// membranes and gas envelopes, for the transparent pass.
+/// The thin, see-through surfaces of a creature along a ray, such as wing membranes and gas
+/// envelopes, for the transparent pass.
 pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, mut emit: F) {
     let look = look_of(c.kind.x);
     if look.family == OWN && c.life.w <= 0.0 {
@@ -584,10 +684,9 @@ pub fn ellipsoid(p: Vec3, radius: Vec3) -> f32 {
 
 /// A rounded ellipsoid whose distance stays smooth all around it.
 ///
-/// It is for parts blended into one another: `ellipsoid` switches to a box
-/// bound away from the surface, whose corners blending and soft shadows pick up
-/// as facets. Slightly overstated near the ends of long ones, so it is scaled
-/// back.
+/// It is for parts blended into one another: `ellipsoid` switches to a box bound away from the
+/// surface, whose corners blending and soft shadows pick up as facets. Slightly overstated near the
+/// ends of long ones, so it is scaled back.
 pub fn rounded(p: Vec3, radius: Vec3) -> f32 {
     let k0 = (p / radius).length();
     let k1 = (p / (radius * radius)).length();
@@ -610,11 +709,10 @@ pub fn tapered_tail(p: Vec3, a: Vec3, b: Vec3, start: f32, end: f32) -> f32 {
 
 /// A ringed body along an axis from `a` to `b`.
 ///
-/// Its radius swells from `start` to its broadest, `middle`, a third of the way
-/// along, then narrows to `end`; it is ringed by `rings` shallow grooves
-/// `groove` deep as a share of the radius, as worms, leeches and the abdomens
-/// of small flyers are. Its cross-section is squashed to `flat` of its width
-/// vertically.
+/// Its radius swells from `start` to its broadest, `middle`, a third of the way along, then narrows
+/// to `end`; it is ringed by `rings` shallow grooves `groove` deep as a share of the radius, as
+/// worms, leeches and the abdomens of small flyers are. Its cross-section is squashed to `flat` of
+/// its width vertically.
 pub fn annulated(
     p: Vec3,
     a: Vec3,
@@ -640,8 +738,7 @@ pub fn annulated(
     (squashed.length() - radius) * flat.min(1.0) * 0.8
 }
 
-/// A sucking disc facing along `facing` from `centre`: a thick rim around a
-/// shallow cup.
+/// A sucking disc facing along `facing` from `centre`: a thick rim around a shallow cup.
 pub fn sucker(p: Vec3, centre: Vec3, facing: Vec3, radius: f32) -> f32 {
     let q = p - centre;
     let along = q.dot(facing);
@@ -658,8 +755,8 @@ pub fn sucker(p: Vec3, centre: Vec3, facing: Vec3, radius: f32) -> f32 {
     smooth_min(rim, disc.max(-cup), radius * 0.15)
 }
 
-/// Small domed eyes, a pair to each of `rows` along the head, as leeches
-/// and many-eyed grazers carry them.
+/// Small domed eyes, a pair to each of `rows` along the head, as leeches and many-eyed grazers
+/// carry them.
 pub fn eyespots(p: Vec3, first: Vec3, spacing: f32, rows: u32, radius: f32) -> f32 {
     let q = vec3(p.x.abs(), p.y, p.z);
     let mut d = 1e6f32;
@@ -678,16 +775,14 @@ pub fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
     b.lerp(a, h) - k * h * (1.0 - h)
 }
 
-/// A tetralate body, shaped by a life spent gliding in updrafts with no ground
-/// to stand on.
+/// A tetralate body, shaped by a life spent gliding in updrafts with no ground to stand on.
 ///
-/// A lifting body, flattened and widest at the wing roots, is drawn out towards
-/// the tail, with gas stored in a soft ridge along the spine, clear of the
-/// breathing passages. There is no neck or skull: the forebody spreads into a
-/// broad, thin cowl whose rim cleaves the oncoming air and whose underside
-/// funnels drifting food back to a slit mouth beneath it. Behind the cowl,
-/// slanted louvres open onto the pleated breathing passages, ventilated by
-/// flight itself and wringing the water back out of every breath.
+/// A lifting body, flattened and widest at the wing roots, is drawn out towards the tail, with gas
+/// stored in a soft ridge along the spine, clear of the breathing passages. There is no neck or
+/// skull: the forebody spreads into a broad, thin cowl whose rim cleaves the oncoming air and whose
+/// underside funnels drifting food back to a slit mouth beneath it. Behind the cowl, slanted
+/// louvres open onto the pleated breathing passages, ventilated by flight itself and wringing the
+/// water back out of every breath.
 pub fn torso(p: Vec3, size: Vec3, head: f32) -> f32 {
     let along = (p.z / size.z).clamp(-1.0, 1.0);
     let girth = 1.0 + 0.12 * (1.0 - (along + 0.3).abs() * 1.6).max(-0.6);
@@ -706,8 +801,8 @@ pub fn torso(p: Vec3, size: Vec3, head: f32) -> f32 {
     louvres(slit(d, p, size.z, head), p, size)
 }
 
-/// The cowl ahead of a tetralate body `length` long: broad and thin, its
-/// rim lifting towards the edges, a little dihedral for stability.
+/// The cowl ahead of a tetralate body `length` long: broad and thin, its rim lifting towards the
+/// edges, a little dihedral for stability.
 pub fn cowl(p: Vec3, length: f32, head: f32) -> f32 {
     let q = p - cowl_centre(length, head);
     let lift = q.x * q.x / (2.2 * head).powi(2) * 0.35 * head;
@@ -723,8 +818,8 @@ pub fn slit(body: f32, p: Vec3, length: f32, head: f32) -> f32 {
     body.max(-slit)
 }
 
-/// A body with slanted louvres cut into its flanks behind the cowl, over
-/// the pleated breathing passages.
+/// A body with slanted louvres cut into its flanks behind the cowl, over the pleated
+/// breathing passages.
 pub fn louvres(body: f32, p: Vec3, size: Vec3) -> f32 {
     let mut d = body;
     let flank = vec3(p.x.abs(), p.y, p.z);
@@ -744,8 +839,7 @@ fn cowl_centre(length: f32, head: f32) -> Vec3 {
     vec3(0.0, 0.25 * head, -length - 0.9 * head)
 }
 
-/// Where a tetralate's slit mouth opens beneath its cowl, and its mouth
-/// tentacles with it.
+/// Where a tetralate's slit mouth opens beneath its cowl, and its mouth tentacles with it.
 pub fn mouth(length: f32, head: f32) -> Vec3 {
     cowl_centre(length, head) + vec3(0.0, -0.55 * head, 0.25 * head)
 }
@@ -784,9 +878,8 @@ pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
             point.y,
             point.x * 0.6 + point.z * 0.8,
         );
-        // A shaft along its length, thinning to the tip; a vane either side
-        // of it, widest at the middle and arched across its width; and the
-        // tip curling down under the air's load.
+        // A shaft along its length, thinning to the tip; a vane either side of it, widest at the
+        // middle and arched across its width; and the tip curling down under the air's load.
         let t = ((swept.z + 4.5) / 9.0).clamp(0.0, 1.0);
         let half = reach * 0.32 * (t * (1.0 - t) * 4.0).sqrt().max(0.08);
         let droop = swept.y + 0.35 * t * t;
@@ -803,9 +896,9 @@ pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
 
 /// Eyes for open air lit from below.
 ///
-/// A row of small eyes around the cowl's rim watches every bearing at once, for
-/// in open sky a threat can come from anywhere; a larger pair beneath looks
-/// down at the glowing aur, where both the light and the deadliest danger lie.
+/// A row of small eyes around the cowl's rim watches every bearing at once, for in open sky a
+/// threat can come from anywhere; a larger pair beneath looks down at the glowing aur, where both
+/// the light and the deadliest danger lie.
 pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     let q = vec3(p.x.abs(), p.y, p.z);
     let centre = cowl_centre(length, head);
@@ -813,8 +906,7 @@ pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     for i in 0..3 {
         let angle = 0.55 + i as f32 * 0.38;
         let x = angle.sin() * 2.05 * head;
-        // On the rim's edge, bulging out past it, so each sees level and
-        // down as well as up.
+        // On the rim's edge, bulging out past it, so each sees level and down as well as up.
         let rim = centre
             + vec3(
                 x * 1.0,
@@ -845,11 +937,10 @@ pub fn gills(p: Vec3, length: f32, pairs: u32) -> f32 {
 
 /// Pose trailing strands by simulating them.
 ///
-/// `count` chains hang side by side from `root`, `spacing` apart and `length`
-/// long, passive but for a little stiffness, swinging under gravity in the
-/// animal's own frame and streaming back in the air it flies through. Settled
-/// from two starts on a fixed grid and crossfaded, so the pose moves smoothly
-/// frame to frame.
+/// `count` chains hang side by side from `root`, `spacing` apart and `length` long, passive but for
+/// a little stiffness, swinging under gravity in the animal's own frame and streaming back in the
+/// air it flies through. Settled from two starts on a fixed grid and crossfaded, so the pose moves
+/// smoothly frame to frame.
 pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: f32, length: f32) {
     const STEP: f32 = 1.0 / 120.0;
     const SETTLE: f32 = 2.0;
@@ -916,8 +1007,8 @@ pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: 
         .extend(0.0);
 }
 
-/// Trailing strands posed by [`rig_ribbons`]: smooth, tapering, a little
-/// flattened, blended through their knots.
+/// Trailing strands posed by [`rig_ribbons`]: smooth, tapering, a little flattened, blended through
+/// their knots.
 pub fn ribbons(p: Vec3, c: &CreatureInstance, count: usize) -> f32 {
     let flatten = vec3(1.0, 1.6, 1.0);
     let mut distance = 1e6f32;

@@ -17,10 +17,9 @@ fn field(view: &ViewUniform, offset: Vec3) -> f32 {
 
 /// Trace the spires along a ray.
 ///
-/// Positions are kept as offsets from the camera: absolute ones this far
-/// from the planet's centre round to an eighth of a metre, and spire
-/// coordinates laid across six cube faces to a metre or more, which shows
-/// as stepped, shimmering surfaces up close.
+/// Positions are kept as offsets from the camera: absolute ones this far from the planet's centre
+/// round to an eighth of a metre, and spire coordinates laid across six cube faces to a metre or
+/// more, which shows as stepped, shimmering surfaces up close.
 pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angle: f32) -> Hit {
     let ro = view.to_planet(origin);
     let rd = view.planet_rotation.conjugate() * direction;
@@ -39,9 +38,9 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
         let place = view.place(offset);
         let epsilon = (t * angle * 0.5).max(0.01);
         if aur::spire_count(place.cell) == 0 {
-            // Cross open ocean one cell at a time: step straight to the
-            // cell's far edge using the ray's velocity in spire coordinates.
-            // Coordinates jump across a face edge, where the step stays short.
+            // Cross open ocean one cell at a time: step straight to the cell's far edge using the
+            // ray's velocity in spire coordinates. Coordinates jump across a face edge, where the
+            // step stays short.
             let point = ro + rd * t;
             let (first, second) = spire_axes(point);
             let velocity = vec2(first.dot(rd), second.dot(rd))
@@ -63,8 +62,8 @@ pub fn trace(origin: Vec3, direction: Vec3, view: &ViewUniform, limit: f32, angl
             previous = 0.0;
             continue;
         }
-        // Over-relaxed sphere tracing: stride further while consecutive
-        // spheres overlap, and fall back to the plain step when they do not.
+        // Over-relaxed sphere tracing: stride further while consecutive spheres overlap, and fall
+        // back to the plain step when they do not.
         let distance = aur::spire_field_at(place) * SPIRE_METRIC;
         if relaxed > 1.0 && distance + previous < stride {
             t += stride * (1.0 - relaxed) / relaxed;
@@ -121,8 +120,8 @@ fn shade(
     let pole = view.pole_color.xyz().min(Vec3::splat(1.5));
     let ambient = view.ambient_color.xyz().min(Vec3::splat(0.8));
 
-    // Obsidian-dark glass: little diffuse, a sharp sheen and a sky fresnel.
-    // A thin-film tint drifts from violet to teal with the viewing angle.
+    // Obsidian-dark glass: little diffuse, a sharp sheen and a sky fresnel. A thin-film tint drifts
+    // from violet to teal with the viewing angle.
     let film = (1.0 - (-rd).dot(normal).abs()).powi(2);
     let albedo = vec3(0.035, 0.03, 0.05).lerp(vec3(0.02, 0.06, 0.07), film);
     let reflected = rd - normal * (2.0 * rd.dot(normal));
@@ -134,8 +133,8 @@ fn shade(
         * (0.4 + 0.6 * reflected.dot(up).max(0.0))
         * fresnel;
 
-    // The ocean below is the brightest thing in the sky. Faces turned down
-    // and outward catch it, strongest near the waterline.
+    // The ocean below is the brightest thing in the sky. Faces turned down and outward catch it,
+    // strongest near the waterline.
     let waterline = (-altitude.max(0.0) / 225.0).exp();
     let facing_sea = 0.35 + 0.65 * (0.5 - 0.5 * normal.dot(up));
     let net = caustics(
@@ -168,8 +167,8 @@ fn shade(
     let emission = charge * vein * view.sky_horizon.y * 2.2 * (0.3 + waterline);
 
     let color = diffuse + sheen + sky + (sea + rim) * (albedo * 6.0 + fresnel) + emission;
-    // Far off, a spire dissolves into the glow of the aur it rises from
-    // rather than standing as a dark speck against it.
+    // Far off, a spire dissolves into the glow of the aur it rises from rather than standing as a
+    // dark speck against it.
     let glow = vec3(0.42, 0.38, 0.58) * view.sky_horizon.y + view.ambient_color.xyz() * 0.3;
     let color = color.lerp(glow, 1.0 - (-t / 32_500.0).exp());
     Hit {

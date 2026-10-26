@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod macrophyllopsida;
 pub mod micrococcopsida;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Phylum,
     "Pneumatophyta",

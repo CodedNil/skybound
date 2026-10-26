@@ -5,6 +5,18 @@ use crate::scene::life::{
     surface::{Ray, Surface, TraceResult},
     tapered_tail, torso,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
+};
 use core::f32::consts::{PI, TAU};
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -17,6 +29,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 19.8;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -37,13 +54,12 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A hovering flower.
 ///
-/// Its four wings are huge, round and translucent, the front pair swept forward
-/// and the rear pair back, so together they open into a near disc that reads as
-/// a bloom in its own right, fine veins carrying the scattered aur light across
-/// them. Between them the body is a slight thread, balanced in its hover by a
-/// long trailing streamer. Its feeding tube is kept coiled tight as a spring
-/// beneath the cowl until a flower is reached, and a fuzzy collar behind the
-/// head gathers the pollen it carries from one bloom to the next.
+/// Its four wings are huge, round and translucent, the front pair swept forward and the rear pair
+/// back, so together they open into a near disc that reads as a bloom in its own right, fine veins
+/// carrying the scattered aur light across them. Between them the body is a slight thread, balanced
+/// in its hover by a long trailing streamer. Its feeding tube is kept coiled tight as a spring
+/// beneath the cowl until a flower is reached, and a fuzzy collar behind the head gathers the
+/// pollen it carries from one bloom to the next.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = torso(p, vec3(0.3, 0.3, 1.6), 0.28);
     let sway = (c.animation.z * 1.1 + p.z * 0.6).sin() * 0.15 * (p.z - 1.4).max(0.0) / 3.6;
@@ -67,6 +83,23 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.03, -1.45), vec3(0.06, 0.05, 0.10)),
+    site(PUMP, vec3(0.00, -0.03, -0.94), vec3(0.07, 0.06, 0.13)),
+    site(CROP, vec3(0.00, -0.03, -0.09), vec3(0.13, 0.11, 0.17)),
+    pair(BREATHER, vec3(0.15, 0.07, -0.85), vec3(0.04, 0.04, 0.04)),
+    site(FLOAT, vec3(0.00, 0.17, -0.26), vec3(0.07, 0.07, 0.07)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.15, 0.07, -0.51),
+        vec3(0.05, 0.05, 0.05),
+    ),
+    site(CISTERN, vec3(0.00, 0.03, 0.43), vec3(0.11, 0.11, 0.31)),
+    site(BROOD, vec3(0.00, 0.03, 0.94), vec3(0.14, 0.14, 0.31)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.25, 0.28, 0.36, 0.0),
@@ -83,4 +116,14 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Sunlit,
+        ..super::super::PHYSIOLOGY
+    };
 }

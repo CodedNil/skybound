@@ -4,6 +4,7 @@ pub mod camera;
 pub mod ecosystem;
 pub mod flight;
 mod hud;
+pub mod range;
 pub mod weather;
 pub mod world;
 
@@ -17,6 +18,7 @@ impl Plugin for GamePlugin {
             camera::CameraPlugin,
             hud::HudPlugin,
             ecosystem::EcosystemPlugin,
+            range::RangePlugin,
         ));
     }
 }

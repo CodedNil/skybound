@@ -1,9 +1,21 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
-    biology::{Biology, Brood},
+    animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
+    biology::Biology,
     capsule, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Vec3, Vec4, vec2, vec3, vec4};
@@ -11,13 +23,17 @@ use spirv_std::glam::{FloatExt, Vec3, Vec4, vec2, vec3, vec4};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Carried,
     maturity_days: 1800.0,
     lifespan_days: 60000.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 46.8;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -34,32 +50,28 @@ taxon!(
 
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(15.0, 10.0, 15.0).extend(0.0);
-    rig_tentacles(c, MOUTH, 3.2, BIOLOGY.oral_pairs);
+    rig_tentacles(c, MOUTH, 3.2, ORAL_PAIRS);
 }
 
-/// A heavy, stone-backed flyer: a broad, ringed body roofed by
-/// overlapping plates like a woodlouse, a blunt armoured head with deep-set
-/// eyes, and thick mouth tentacles beneath.
-/// Where the rasp meets the plant, and the gripping tentacles beside it.
+/// A heavy, stone-backed flyer: a broad, ringed body roofed by overlapping plates like a woodlouse,
+/// a blunt armoured head with deep-set eyes, and thick mouth tentacles beneath. Where the rasp
+/// meets the plant, and the gripping tentacles beside it.
 const MOUTH: Vec3 = vec3(0.0, 2.2, -11.0);
 
 /// A living drogue, riding level beneath a saucer of fused wings.
 ///
-/// Both wing pairs have fused into one broad, rigid,
-/// upturned saucer that the strong lower updrafts press against, braking
-/// its descent where lighter animals would flap; beneath it a dense body
-/// hangs like a pendulum, so the whole animal rides level through rough
-/// columns. The mineral currents have crusted it into cracked plates and
-/// grown clusters of crystal on its upper face. A rasp boss rises from the
-/// saucer's leading edge, facing up and forward, to grind Root-Star tissue
-/// from below while short, thick tentacles hold the plant against it, and
-/// a ring of eyes round the underside of the rim watches the mist it must
-/// never sink into.
+/// Both wing pairs have fused into one broad, rigid, upturned saucer that the strong lower updrafts
+/// press against, braking its descent where lighter animals would flap; beneath it a dense body
+/// hangs like a pendulum, so the whole animal rides level through rough columns. The mineral
+/// currents have crusted it into cracked plates and grown clusters of crystal on its upper face. A
+/// rasp boss rises from the saucer's leading edge, facing up and forward, to grind Root-Star tissue
+/// from below while short, thick tentacles hold the plant against it, and a ring of eyes round the
+/// underside of the rim watches the mist it must never sink into.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
-    // Every Grounder's saucer is its own: broader or narrower, with more or
-    // fewer scallops, more or less upturned at the rim.
+    // Every Grounder's saucer is its own: broader or narrower, with more or fewer scallops, more or
+    // less upturned at the rim.
     let own = c.identity;
     let span = 13.0 * (0.85 + own.x * 0.3);
     let scallops = 5.0 + (own.y * 5.0).floor();
@@ -130,9 +142,26 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         sine * eye_out,
     );
     hit.join((p - eye).length() - 0.32, 3);
-    hit.join(oral_tentacles(p, c, MOUTH, 3.2, BIOLOGY.oral_pairs), 8);
+    hit.join(oral_tentacles(p, c, MOUTH, 3.2, ORAL_PAIRS), 8);
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, -2.23, -2.28), vec3(0.61, 0.51, 0.71)),
+    site(PUMP, vec3(0.00, -3.12, -0.94), vec3(0.69, 0.69, 0.77)),
+    site(CROP, vec3(0.00, -3.30, 0.94), vec3(1.28, 1.06, 1.49)),
+    pair(BREATHER, vec3(1.88, -2.68, -0.80), vec3(0.71, 0.60, 0.83)),
+    site(FLOAT, vec3(0.00, -0.98, 0.67), vec3(0.82, 0.68, 0.95)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(1.34, -1.25, -0.27),
+        vec3(0.66, 0.55, 0.77),
+    ),
+    site(CISTERN, vec3(0.00, -3.48, 3.08), vec3(0.66, 0.55, 0.77)),
+    site(BROOD, vec3(0.00, -2.05, 3.08), vec3(0.66, 0.55, 0.77)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -146,4 +175,14 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        brood: Brood::Carried,
+        ..super::super::PHYSIOLOGY
+    };
 }

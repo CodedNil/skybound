@@ -18,7 +18,10 @@ use bevy::{
     transform::TransformSystems,
 };
 use skybound::scene::PLANET_RADIUS;
-use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
+use std::{
+    f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const CAMERA_RESET_THRESHOLD: f32 = 2048.0;
 
@@ -50,6 +53,23 @@ pub struct WorldData {
 impl Default for WorldData {
     fn default() -> Self {
         Self::at(FRAC_PI_4, -FRAC_PI_2)
+    }
+}
+
+impl WorldData {
+    /// Somewhere on the planet chosen afresh each time the game starts, every place as likely as
+    /// any other.
+    pub fn anywhere() -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos() as u64);
+        let mix = |salt: u64| {
+            let mut x = nanos ^ salt.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+            x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            (x ^ (x >> 31)) as f64 / u64::MAX as f64
+        };
+        Self::at((mix(1) * 2.0 - 1.0).asin(), mix(2) * TAU - PI)
     }
 }
 
@@ -95,14 +115,16 @@ impl WorldData {
 
 pub struct WorldPlugin;
 
+/// The world's systems, for others to order themselves against.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WorldSystems {
+    /// Moving the world's origin to follow the player, so positions stay precise.
     Rebase,
 }
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WorldData>()
+        app.insert_resource(WorldData::anywhere())
             .add_systems(Startup, setup)
             .add_systems(
                 PostUpdate,
@@ -138,8 +160,8 @@ fn setup(mut commands: Commands, dlss: Option<Res<DlssSuperResolutionSupported>>
         (
             DebandDither::Enabled,
             Bloom::NATURAL,
-            // The pole lights and the aur's glow span a huge range of brightness:
-            // the eye adapts within limits, so night stays night.
+            // The pole lights and the aur's glow span a huge range of brightness: the eye adapts
+            // within limits, so night stays night.
             AutoExposure {
                 correction_range: -2.5..=0.5,
                 speed_brighten: 1.5,

@@ -20,10 +20,12 @@ use bevy::{
 use skybound::scene::FrameUniform;
 use std::num::NonZeroU64;
 
-/// One resource a scene pass binds, by the kind of binding it takes. A
-/// pass's bindings are numbered in the order they are listed.
+/// One resource a scene pass binds, by the kind of binding it takes. A pass's bindings are numbered
+/// in the order they are listed.
 pub enum Bind<'a> {
+    /// The frame's uniform: the view, the time and the world's state.
     Frame(BindingResource<'a>),
+    /// A texture sampler.
     Sampler(&'a Sampler),
     /// A filterable 2D texture.
     Float(&'a TextureView),
@@ -31,7 +33,9 @@ pub enum Bind<'a> {
     Data(&'a TextureView),
     /// A filterable 3D texture.
     Volume(&'a TextureView),
+    /// A depth texture.
     Depth(&'a TextureView),
+    /// A storage buffer the pass reads.
     Storage(BindingResource<'a>),
     /// A storage buffer the pass writes.
     Output(BindingResource<'a>),
@@ -45,8 +49,8 @@ pub struct Binder<'a> {
     pub shader: Handle<Shader>,
 }
 
-/// A fullscreen scene pass: its shader entry point and targets, and the
-/// pipeline, queued once its bindings are first known.
+/// A fullscreen scene pass: its shader entry point and targets, and the pipeline, queued once its
+/// bindings are first known.
 pub struct Pass {
     entry: &'static str,
     formats: &'static [TextureFormat],

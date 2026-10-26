@@ -78,8 +78,8 @@ impl Plugin for GraphicsPlugin {
                 Render,
                 prepare_bindings.in_set(RenderSystems::PrepareBindGroups),
             )
-            // The whole scene is composited before any post-process, so an
-            // upscaler or anti-aliasing works on all of it.
+            // The whole scene is composited before any post-process, so an upscaler or
+            // anti-aliasing works on all of it.
             .add_systems(
                 Core3d,
                 composite_pass

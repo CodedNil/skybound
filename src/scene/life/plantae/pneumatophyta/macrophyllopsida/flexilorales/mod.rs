@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod chromacorallaceae;
 pub mod flexiloraceae;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Order,
     "Flexilorales",

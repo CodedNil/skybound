@@ -4,6 +4,15 @@ use crate::scene::life::{
     eyespots, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::sanguinivora::volantia::WING_MUSCLE,
+    organs::{Viscera, pair, site},
+};
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -11,12 +20,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 60.0,
     lifespan_days: 1800.0,
-    speed: 18.0,
     adult_mass: 0.06,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 24.2;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -27,7 +40,7 @@ taxon!(
         "A narrow, flexible body hangs behind the feeding sucker, keeping the mouth steady as a passing host moves through the current.",
         "They take a brief meal of blood or sap and release before the host can turn toward the disturbance.",
         "Broad wings provide control in the sheltered air around plants but make exposed River currents difficult to cross.",
-        "During the dim aur phase, crowded drinking sites offer better feeding opportunities than searching the dark open Gardens.",
+        "In the dim equatorial skies, crowded drinking sites offer better feeding opportunities than searching the dark open Gardens.",
     ],
 );
 
@@ -37,11 +50,10 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A hoverer led by its mouth.
 ///
-/// The sucker is a broad cup out in front, held level by the wings while a
-/// long, narrow, ringed body hangs behind and below it like a pendulum, keeping
-/// the cup steady as a passing host moves through the current. A row of
-/// eyespots arcs over the cup's rim, and the broad wings, folds of the body
-/// wall like all its kin's, are stretched over many fine struts.
+/// The sucker is a broad cup out in front, held level by the wings while a long, narrow, ringed
+/// body hangs behind and below it like a pendulum, keeping the cup steady as a passing host moves
+/// through the current. A row of eyespots arcs over the cup's rim, and the broad wings, folds of
+/// the body wall like all its kin's, are stretched over many fine struts.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let sway = (c.animation.z * 1.0 + p.z * 0.5).sin() * 0.08 * (p.z + 2.6).max(0.0);
     let droop = 0.012 * (p.z + 2.6).max(0.0).powi(2);
@@ -78,6 +90,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.04, -3.19), vec3(0.10, 0.10, 0.29)),
+    site(PUMP, vec3(0.00, -0.04, -2.16), vec3(0.12, 0.12, 0.25)),
+    site(CROP, vec3(0.00, -0.04, -0.31), vec3(0.17, 0.17, 0.17)),
+    pair(WING_MUSCLE, vec3(0.18, 0.08, -1.44), vec3(0.07, 0.07, 0.07)),
+    site(BROOD, vec3(0.00, -0.19, 1.13), vec3(0.10, 0.10, 0.10)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.29, 0.13, 0.19, 0.0),
@@ -93,4 +115,15 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Aurlit,
+        speed: 18.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

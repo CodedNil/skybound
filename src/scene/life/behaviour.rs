@@ -1,24 +1,97 @@
-use crate::scene::life::{
-    Kind, behave,
-    biology::{Anatomy, Biology, Feeding, Social},
-};
+use crate::scene::life::{Kind, behave};
 use spirv_std::glam::{Mat3, Quat, Vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+/// What an organism is visibly doing this moment, which its pose and the others around it
+/// respond to.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Activity {
+    /// Going where the air and its kind take it.
     #[default]
     Drift,
+    /// Eating.
     Feed,
+    /// Running from danger.
     Flee,
+    /// Drinking at a Pondplant.
     Drink,
+    /// Resting, wings half folded.
     Rest,
+    /// Making its way back to where it belongs.
     Return,
+    /// Fastened onto a host or companion.
     Attach,
+    /// Cleaning a host of parasites.
     Clean,
+    /// Tending its web.
     Weave,
+    /// Defending the young, or harrying a predator.
     Guard,
+    /// Asleep, wings folded.
+    Sleep,
+    /// Stalking or closing on prey.
+    Hunt,
+    /// Delivering the blow: the stoop, the pass, the lunge or the shot.
+    Strike,
+    /// Courting, crest or lights or song on show.
+    Display,
+    /// Looking over something strange.
+    Investigate,
+    /// Chasing its fellows in play.
+    Play,
+    /// Grooming or greeting one of its fellows, close alongside.
+    Groom,
+    /// Speaking in mist-script, as the voiceless Næ do: breathing out glyphs of vapour lit from
+    /// within by its aur sacs, toned by the colour of its crest.
+    Sign,
+}
+
+/// What a mind has decided to do this moment, for the body to carry out.
+///
+/// It names the activity, where to go as an offset from where it is, how fast as a share of
+/// its top speed, how far to fold its wings, and whether to hold station on arrival rather
+/// than fly through.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Goal {
+    pub activity: Activity,
+    pub offset: Option<Vec3>,
+    pub speed: f32,
+    pub fold: f32,
+    pub hover: bool,
+    /// Whether it calls as it goes, a call its kin hear from far off.
+    pub call: bool,
+}
+
+impl Goal {
+    pub const fn new(activity: Activity, offset: Option<Vec3>, speed: f32) -> Self {
+        Self {
+            activity,
+            offset,
+            speed,
+            fold: 0.0,
+            hover: false,
+            call: false,
+        }
+    }
+
+    /// The same goal, calling as it goes.
+    pub const fn calling(self) -> Self {
+        Self { call: true, ..self }
+    }
+
+    /// The same goal, holding station on arrival.
+    pub const fn hovering(self) -> Self {
+        Self {
+            hover: true,
+            ..self
+        }
+    }
+
+    /// The same goal, with the wings folded this far.
+    pub const fn folded(self, fold: f32) -> Self {
+        Self { fold, ..self }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +113,12 @@ pub struct Senses {
     pub buoyancy: f32,
     pub aur: f32,
     pub time: f32,
+    /// What the animal's mind has decided, when it has one.
+    pub goal: Option<Goal>,
+    /// How hard its body can work, as a share of a whole one's.
+    pub power: f32,
+    /// How far it is pulled down by gas lost from its stores.
+    pub sinking: f32,
 }
 
 impl Default for Senses {
@@ -61,6 +140,9 @@ impl Default for Senses {
             buoyancy: 0.0,
             aur: 0.5,
             time: 0.0,
+            goal: None,
+            power: 1.0,
+            sinking: 0.0,
         }
     }
 }
@@ -111,48 +193,50 @@ pub fn drift(s: &Senses, lift: f32) -> Controls {
     }
 }
 
-pub fn organism(s: &Senses, biology: Biology) -> Controls {
-    if biology.anatomy == Anatomy::Porous {
-        return drift(s, 0.0);
+/// How an organism moves this step. A plant drifts; an animal pursues what its mind decided, or,
+/// with no mind at work (an egg, a newborn, or the player's mount), keeps with its companion.
+pub fn organism(s: &Senses, kind: Kind) -> Controls {
+    let Some(animal) = kind.animal() else {
+        return drift(s, -s.sinking);
+    };
+    if let Some(goal) = s.goal {
+        return pursue(s, animal.speed, goal);
     }
-    let (target, speed, activity) = match (s.danger, s.water, s.habitat) {
-        (Some(danger), _, _) => {
-            if biology.social == Social::Guardian {
-                (Some(danger), biology.speed, Activity::Guard)
-            } else {
-                (Some(-danger), biology.speed * 1.2, Activity::Flee)
-            }
+    let mut controls = steer(s, s.companion.or(s.habitat), animal.speed * 0.4);
+    controls.velocity += s.separation * 2.0 + s.alignment * 0.2;
+    if s.companion
+        .is_some_and(|offset| offset.length_squared() < 9.0)
+    {
+        controls.velocity = s.wind + s.separation;
+    }
+    controls.wing_fold = (-controls.facing.dot(s.up)).clamp(0.0, 1.0);
+    controls
+}
+
+/// Carry out a mind's goal: fly towards its target at its pace, held back by a weakened body,
+/// slowing to hold station if it is to hover there.
+fn pursue(s: &Senses, top: f32, goal: Goal) -> Controls {
+    let speed = top * goal.speed * s.power;
+    let mut controls = steer(s, goal.offset, speed);
+    controls.velocity -= s.up.normalize_or_zero() * s.sinking;
+    if let Some(offset) = goal.offset {
+        let distance = offset.length();
+        if goal.hover && distance < 6.0 {
+            controls.velocity = s.wind + offset * 0.5 + s.separation;
         }
-        (_, Some(water), _) if s.hydration < 0.35 => {
-            (Some(water), biology.speed * 0.7, Activity::Drink)
-        }
-        (_, _, Some(habitat)) => (Some(habitat), biology.speed * 0.6, Activity::Return),
-        _ if s.fatigue > 0.8 => (None, 0.0, Activity::Rest),
-        _ if s.energy < 0.25 && s.food.is_some() => (s.food, biology.speed * 0.7, Activity::Feed),
-        _ if biology.social == Social::Mutualist && s.companion.is_some() => {
-            (s.companion, biology.speed * 0.6, Activity::Attach)
-        }
-        _ if biology.feeding == Feeding::Cleaner && s.food.is_some() => {
-            (s.food, biology.speed * 0.6, Activity::Clean)
-        }
-        _ if s.energy < 0.85 && s.food.is_some() => (s.food, biology.speed * 0.7, Activity::Feed),
-        _ if biology.social == Social::Weaver && s.companion.is_some() => {
-            (s.companion, biology.speed * 0.3, Activity::Weave)
-        }
-        _ => (s.companion, biology.speed * 0.25, Activity::Drift),
-    };
-    let mut controls = if biology.anatomy == Anatomy::Plant {
-        drift(s, 0.0)
+    } else if goal.hover {
+        controls.velocity = s.wind * 0.3 + s.separation;
+    }
+    if goal.activity != Activity::Strike {
+        controls.velocity += s.separation * 2.0;
+    }
+    controls.activity = goal.activity;
+    controls.wing_fold = goal.fold.max((-controls.facing.dot(s.up)).clamp(0.0, 1.0));
+    controls.response = if goal.activity == Activity::Strike {
+        2.5
     } else {
-        let mut controls = steer(s, target, speed);
-        controls.velocity += s.separation * 2.0 + s.alignment * 0.2;
-        if target.is_some_and(|offset| offset.length_squared() < 9.0) {
-            controls.velocity = s.wind + s.separation;
-        }
-        controls.wing_fold = (-controls.facing.dot(s.up)).clamp(0.0, 1.0);
-        controls
+        controls.response
     };
-    controls.activity = activity;
     controls
 }
 

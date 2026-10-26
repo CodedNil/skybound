@@ -16,8 +16,8 @@ use spirv_std::num_traits::Float;
 
 pub const CURRENT: Vec3 = vec3(4.375, -2.5, 0.0);
 
-/// Arc cells are three spire cells across, so the face grid that places
-/// spires near the camera places arcs too.
+/// Arc cells are three spire cells across, so the face grid that places spires near the camera
+/// places arcs too.
 pub const EJECTION_CELL: f32 = SPIRE_CELL * 3.0;
 
 pub const EJECTION_WIDTH: f32 = 131.25;
@@ -27,12 +27,12 @@ pub const EJECTION_REACH: f32 = 9000.0;
 /// How far a loop's tilt and skew can carry its apex across the surface.
 const EJECTION_LEAN: f32 = 3000.0;
 
-/// How far any part of a loop can lie from its centre across the surface:
-/// the largest loop radius, its lean and the reach of its glow.
+/// How far any part of a loop can lie from its centre across the surface: the largest loop radius,
+/// its lean and the reach of its glow.
 pub const EJECTION_EXTENT: f32 = 5000.0 + EJECTION_LEAN + EJECTION_WIDTH * 3.0;
 
-/// Stretching, tilting and skewing a loop shrinks distances along it by at
-/// most this factor, so the arc field scaled by it stays a lower bound.
+/// Stretching, tilting and skewing a loop shrinks distances along it by at most this factor, so the
+/// arc field scaled by it stays a lower bound.
 const EJECTION_METRIC: f32 = 0.65;
 
 /// Rings of cells searched around each cell for its arc clearance.
@@ -41,26 +41,24 @@ const EJECTION_SEARCH: i32 = 4;
 /// The highest a loop's apex rises: its tallest circle, stretched.
 pub const EJECTION_HEIGHT: f32 = 6000.0;
 
-/// Arc cells held in the lookup: a window this many cells across, centred
-/// on the camera.
+/// Arc cells held in the lookup: a window this many cells across, centred on the camera.
 ///
-/// It wraps, so a cell's texel is its coordinate modulo the window. Further cells alias to ones whose loops lie a window away,
-/// which read as empty.
+/// It wraps, so a cell's texel is its coordinate modulo the window. Further cells alias to ones
+/// whose loops lie a window away, which read as empty.
 pub const EJECTION_WINDOW: u32 = 384;
 
 // Crystal spires that pierce the aur ocean, in sparse archipelagos.
 //
-// Positions are spire coordinates: metres across the cube faces of the
-// planet, side by side, and altitude. Cells are the same size
-// everywhere, so spires never crowd towards the poles. Every spire stays
-// `SPIRE_MARGIN` inside its cell, so a cell's own spires and the distance to
-// its border bound the field.
+// Positions are spire coordinates: metres across the cube faces of the planet, side by side, and
+// altitude. Cells are the same size everywhere, so spires never crowd towards the poles. Every
+// spire stays `SPIRE_MARGIN` inside its cell, so a cell's own spires and the distance to its border
+// bound the field.
 pub const SPIRE_CELLS: f32 = 720.0;
 
 pub const SPIRE_CELL: f32 = PLANET_RADIUS * FRAC_PI_2 / SPIRE_CELLS;
 
-/// Distances in spire coordinates overstate world distances by at most
-/// this factor, where the cube faces stretch towards their edges.
+/// Distances in spire coordinates overstate world distances by at most this factor, where the cube
+/// faces stretch towards their edges.
 pub const SPIRE_METRIC: f32 = 0.65;
 
 /// Faces sit this far apart in spire coordinates so no cell spans two.
@@ -113,10 +111,9 @@ pub fn curl(mut pos: Vec2, time: f32) -> Vec2 {
 
 /// The planet-scale character of the aur at a surface direction.
 ///
-/// A calm, warm equatorial belt, storm tracks through the mid latitudes
-/// broken into slowly drifting regions, and charged polar seas. Analytic so the host's
-/// lightning catalogue agrees with the shaders.
-/// x: storminess, y: warmth, z: charge, w: brightness.
+/// A calm, warm equatorial belt, storm tracks through the mid latitudes broken into slowly drifting
+/// regions, and charged polar seas. Analytic so the host's lightning catalogue agrees with the
+/// shaders. x: storminess, y: warmth, z: charge, w: brightness.
 pub fn aur_climate(up: Vec3, time: f32) -> Vec4 {
     let latitude = up.z.clamp(-1.0, 1.0).asin().abs();
     let tropics = 1.0 - latitude.smoothstep(0.12, 0.42);
@@ -156,12 +153,12 @@ fn eruption_hash(cell: Vec2) -> Vec3 {
 
 /// One eruption per cell and cycle, far more often in stormy seas.
 ///
-/// The loop rises out of the veil, holds while plasma drains down its legs,
-/// then parts at the apex and fades. Every eruption draws its own size,
-/// height, orientation, stretch, tilt and skew, and a seed for its strands.
+/// The loop rises out of the veil, holds while plasma drains down its legs, then parts at the apex
+/// and fades. Every eruption draws its own size, height, orientation, stretch, tilt and skew, and a
+/// seed for its strands.
 ///
-/// The loop's centre, phase and whether it is alive; its axis, radius and
-/// how deep its circle sinks; and its stretch, tilt and seed.
+/// The loop's centre, phase and whether it is alive; its axis, radius and how deep its circle
+/// sinks; and its stretch, tilt and seed.
 pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 3] {
     let seed = eruption_hash(cell + vec2(19.7, 63.1));
     let period = 45.0 + seed.x * 60.0;
@@ -202,8 +199,8 @@ pub fn ejection(cell: Vec2, time: f32) -> [Vec4; 3] {
     ]
 }
 
-/// A lower bound on the distance from anywhere in a cell to the glow of any
-/// loop, so rays cross empty stretches of the arc layer at once.
+/// A lower bound on the distance from anywhere in a cell to the glow of any loop, so rays cross
+/// empty stretches of the arc layer at once.
 pub fn ejection_clearance(cell: Vec2, time: f32) -> f32 {
     let side = EJECTION_SEARCH * 2 + 1;
     let mut clearance = EJECTION_SEARCH as f32 * EJECTION_CELL - EJECTION_EXTENT;
@@ -232,10 +229,9 @@ pub fn ejection_fill(progress: f32, phase: f32) -> f32 {
     alive * (1.0 - phase.smoothstep(0.55, 0.85) * apex)
 }
 
-/// A point in a loop's own frame, from its offset to the corner of the
-/// loop's cell and its altitude: along its baseline, up through its circle
-/// and across it. The loop leans over by its tilt about the baseline, and
-/// stretches taller or flatter and skews to one side above the veil.
+/// A point in a loop's own frame, from its offset to the corner of the loop's cell and its
+/// altitude: along its baseline, up through its circle and across it. The loop leans over by its
+/// tilt about the baseline, and stretches taller or flatter and skews to one side above the veil.
 fn ejection_coordinates(position: Vec3, event: [Vec4; 3]) -> Vec3 {
     let delta = position.xy() - event[0].xy() * EJECTION_CELL;
     let axis = event[1].truncate().truncate();
@@ -258,12 +254,12 @@ pub fn ejection_field(cell: Vec2, position: Vec3, time: f32) -> (Vec4, f32) {
     ejection_field_with(cell, position, 511, |cell| ejection(cell, time))
 }
 
-/// Distance to the nearest loop's axis, progress along it from one foot to
-/// the other, its fill, and the angle around the axis for braided strands;
-/// and that loop's seed. The distance never overstates the true one.
+/// Distance to the nearest loop's axis, progress along it from one foot to the other, its fill, and
+/// the angle around the axis for braided strands; and that loop's seed. The distance never
+/// overstates the true one.
 ///
-/// The point is given by its arc cell and its offset to that cell's corner,
-/// with its altitude, so nothing far from the camera is ever subtracted.
+/// The point is given by its arc cell and its offset to that cell's corner, with its altitude, so
+/// nothing far from the camera is ever subtracted.
 pub(crate) fn ejection_field_with(
     cell: Vec2,
     position: Vec3,
@@ -322,8 +318,8 @@ fn spire_hash(p: Vec2) -> Vec4 {
     ((q.xxyz() + q.yzzw()) * q.zywx()).fract_gl()
 }
 
-/// Up to four spires around one jittered centre; regions of cells share an
-/// occupancy so spires gather into archipelagos with open ocean between.
+/// Up to four spires around one jittered centre; regions of cells share an occupancy so spires
+/// gather into archipelagos with open ocean between.
 pub fn spire_count(cell: Vec2) -> usize {
     let region = spire_hash((cell / 4.0).floor() + 71.3);
     let seed = spire_hash(cell);
@@ -390,9 +386,9 @@ pub fn spire_distance(spire: &Spire, local: Vec2, z: f32) -> f32 {
     let q = local - centre;
     let length = q.length();
     let smooth = spire_radius(spire, u);
-    // Taper, lean and relief all steepen the field; scale it back to a bound.
-    // Relief never grows the silhouette by more than 8%, so far away the
-    // smooth bound is enough and the angular terms can be skipped.
+    // Taper, lean and relief all steepen the field; scale it back to a bound. Relief never grows
+    // the silhouette by more than 8%, so far away the smooth bound is enough and the angular terms
+    // can be skipped.
     let side = if length > smooth * 1.3 {
         (length - smooth * 1.08) * 0.55
     } else {
@@ -434,12 +430,11 @@ pub fn spire_axes(point: Vec3) -> (Vec3, Vec3) {
     (tangent(first), tangent(second))
 }
 
-/// A point on the face grid: the spire cell holding it, its offset from
-/// that cell's centre, and its altitude.
+/// A point on the face grid: the spire cell holding it, its offset from that cell's centre, and
+/// its altitude.
 ///
-/// Kept apart, the offset stays exact
-/// where whole coordinates this far across the planet would round to
-/// metres.
+/// Kept apart, the offset stays exact where whole coordinates this far across the planet would
+/// round to metres.
 #[derive(Clone, Copy)]
 pub struct Place {
     pub cell: Vec2,
@@ -458,8 +453,8 @@ impl Place {
         }
     }
 
-    /// The arc cell holding this place, and the place's offset from that
-    /// cell's corner, with its altitude.
+    /// The arc cell holding this place, and the place's offset from that cell's corner, with
+    /// its altitude.
     pub fn arc(self) -> (Vec2, Vec3) {
         let cell = (self.cell / 3.0).floor();
         (
@@ -469,8 +464,7 @@ impl Place {
     }
 }
 
-/// A cube face's two axes across it and its outward normal, as `cube_face`
-/// projects onto them.
+/// A cube face's two axes across it and its outward normal, as `cube_face` projects onto them.
 fn face_frame(face: u32) -> (Vec3, Vec3, Vec3) {
     let sign = if face.is_multiple_of(2) { 1.0 } else { -1.0 };
     match face / 2 {
@@ -480,13 +474,12 @@ fn face_frame(face: u32) -> (Vec3, Vec3, Vec3) {
     }
 }
 
-/// Where a point sits in spire coordinates on each face it can be seen
-/// from: its whole cell, then its offset into that cell.
+/// Where a point sits in spire coordinates on each face it can be seen from: its whole cell, then
+/// its offset into that cell.
 ///
-/// Worked out in
-/// double precision, since single precision rounds positions this far from
-/// the planet's centre to whole metres, and further to several metres
-/// across the faces laid side by side.
+/// Worked out in double precision, since single precision rounds positions this far from the
+/// planet's centre to whole metres, and further to several metres across the faces laid side
+/// by side.
 #[cfg(not(target_arch = "spirv"))]
 pub fn spire_origins(point: DVec3) -> [Vec4; 6] {
     use core::f64::consts::FRAC_PI_4;
@@ -513,11 +506,11 @@ pub fn spire_origins(point: DVec3) -> [Vec4; 6] {
 
 /// The place of a point near the camera, from its offset to the camera.
 ///
-/// Only differences of nearby positions are rounded, so spires and arcs
-/// stay exact up close, where `spire_coordinates` would show metre steps.
+/// Only differences of nearby positions are rounded, so spires and arcs stay exact up close, where
+/// `spire_coordinates` would show metre steps.
 ///
-/// `origins` are the camera's from `spire_origins`, `camera` its position
-/// and `altitude` its precise height above the surface.
+/// `origins` are the camera's from `spire_origins`, `camera` its position and `altitude` its
+/// precise height above the surface.
 pub fn place_near(origins: &[Vec4; 6], camera: Vec3, altitude: f32, offset: Vec3) -> Place {
     let point = camera + offset;
     let (face, _) = cube_face(point.normalize());
@@ -541,8 +534,7 @@ pub fn place_near(origins: &[Vec4; 6], camera: Vec3, altitude: f32, offset: Vec3
     }
 }
 
-/// A lower bound on the distance from a point in the planet to any spire:
-/// for collisions.
+/// A lower bound on the distance from a point in the planet to any spire: for collisions.
 pub fn spire_clearance(point: Vec3) -> f32 {
     spire_field(spire_coordinates(point)) * SPIRE_METRIC
 }
@@ -566,8 +558,8 @@ pub fn spire_field_at(place: Place) -> f32 {
     distance
 }
 
-/// The nearest spire silhouette at this altitude: the gap to its surface and
-/// the horizontal direction away from its axis.
+/// The nearest spire silhouette at this altitude: the gap to its surface and the horizontal
+/// direction away from its axis.
 pub fn nearest_spire(p: Vec3) -> Vec3 {
     nearest_spire_at(Place::at(p))
 }
@@ -593,8 +585,8 @@ pub fn nearest_spire_at(place: Place) -> Vec3 {
     nearest
 }
 
-/// Entry and exit along a ray through the band holding the spires. Altitude
-/// is measured from the planet centre without squaring large radii.
+/// Entry and exit along a ray through the band holding the spires. Altitude is measured from the
+/// planet centre without squaring large radii.
 pub fn spire_band(altitude: f32, upward: f32, max_distance: f32) -> Vec2 {
     let radius = PLANET_RADIUS + altitude;
     let b = radius * upward;
@@ -669,8 +661,8 @@ mod tests {
             let point = up * (PLANET_RADIUS + 150.0);
             let coordinates = spire_coordinates(point);
             assert!(spire_point(coordinates).distance(point) < 2.0);
-            // Nudge within the face in every direction: the world moves at
-            // least SPIRE_METRIC as far as the coordinates.
+            // Nudge within the face in every direction: the world moves at least SPIRE_METRIC as
+            // far as the coordinates.
             for angle in 0..8 {
                 let offset = vec2((angle as f32).cos(), (angle as f32).sin()) * 50.0;
                 let moved = coordinates + offset.extend(0.0);

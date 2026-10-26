@@ -5,7 +5,17 @@ use crate::scene::life::{
     rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    organs::{Viscera, pair, site},
+};
 use core::f32::consts::{PI, TAU};
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::ETHOLOGY;
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -15,10 +25,12 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 146_000.0,
     adult_mass: 120.0,
     altitude: (50.0, 2500.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 46.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -29,12 +41,12 @@ taxon!(
         "Large gas chambers support the crown while smaller chambers keep the scalloped fringe spread through the updraft.",
         "Amber veins and pale branching ribs frame translucent tissues stippled with intercepted algae and plant fragments.",
         "Feeding folds face into the passing current, so a slow change in tilt brings fresh food through the arches without powered flight.",
-        "During the dim phase of the aur cycle, the canopy settles lower and its moist underside becomes a refuge for smaller drifters.",
+        "Where the updraft slackens, the canopy settles lower and its moist underside becomes a refuge for smaller drifters.",
     ],
 );
 
-/// The canopy's lift: a ring of chambers in the crown's thickness around a
-/// larger one at its heart, so a torn chamber costs only part of the lift.
+/// The canopy's lift: a ring of chambers in the crown's thickness around a larger one at its heart,
+/// so a torn chamber costs only part of the lift.
 #[expect(
     clippy::approx_constant,
     reason = "6.28 is where two chambers sit on the ring, not a turn"
@@ -74,8 +86,8 @@ fn rim(angle: f32) -> f32 {
     15.5 * (1.0 + (angle * 10.0).cos() * 0.045)
 }
 
-/// The canopy's upper surface and its thickness at a share of the way out
-/// to the fringe, rising and falling slowly as the chambers breathe.
+/// The canopy's upper surface and its thickness at a share of the way out to the fringe, rising and
+/// falling slowly as the chambers breathe.
 fn shell(reach: f32, c: &CreatureInstance) -> (f32, f32) {
     let breathe = (c.animation.z * 0.4).sin() * 0.15;
     let crown = 1.0 - reach * reach;
@@ -86,9 +98,8 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(17.0, 9.0, 17.0).extend(0.0);
 }
 
-/// The organs: a gelatinous mass at the heart of the crown, and amber ribs
-/// branching out through the canopy's thickness to its fringe, holding the
-/// vaults open beneath.
+/// The organs: a gelatinous mass at the heart of the crown, and amber ribs branching out through
+/// the canopy's thickness to its fringe, holding the vaults open beneath.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let angle = p.z.atan2(p.x);
     let core = rounded(p - vec3(0.0, 3.2, 0.0), vec3(3.0, 0.8, 3.0));
@@ -106,10 +117,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 
 /// The canopy: a broad, low dome of gel.
 ///
-/// It is thickest at the crown and thins to a scalloped fringe; its underside
-/// is vaulted up into arches between the ribs, each hollow sheltering a curtain
-/// of feeding folds from drying out and from sudden gusts, rippling in the air
-/// drawn through it.
+/// It is thickest at the crown and thins to a scalloped fringe; its underside is vaulted up into
+/// arches between the ribs, each hollow sheltering a curtain of feeding folds from drying out and
+/// from sudden gusts, rippling in the air drawn through it.
 pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
@@ -141,9 +151,39 @@ pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     Surface::new(smooth_min(dome, fold, 0.5) + tissue_distance(p, 12.0), 0)
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(FLOAT, vec3(0.00, 3.13, -0.46), vec3(0.85, 0.60, 0.85)),
+    pair(FLOAT, vec3(2.73, 3.05, -0.30), vec3(0.21, 0.21, 0.21)),
+    site(CROP, vec3(0.00, 3.13, 1.06), vec3(0.95, 0.43, 0.95)),
+    pair(BREATHER, vec3(2.73, 3.05, 0.30), vec3(0.17, 0.17, 0.17)),
+    site(BROOD, vec3(0.00, 3.13, 2.28), vec3(0.32, 0.20, 0.32)),
+]);
+
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.78, 0.65, 0.30), 12.0);
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     drift_body(ray, c, envelope, surface, LOOK.accent, 12.0, &CHAMBERS)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::{
+        bullidorsata::ETHOLOGY as GAS_BAG,
+        mind::{Ethology, Situation, Urges},
+        nature::RIDE,
+    };
+
+    /// The great canopies drift towards the strongest rising air they can find.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s: &Situation, urges: &mut Urges| {
+            (GAS_BAG.urges)(s, urges);
+            if s.seen.updraft < 0.5 {
+                urges.add(RIDE, 0.3);
+            }
+        },
+        ..GAS_BAG
+    };
 }

@@ -26,9 +26,8 @@ pub const BODY_TOP_HEIGHT: f32 = 462.5;
 /// Cached wave heights are stored as a fraction of this, in half precision.
 pub const WAVE_RANGE: f32 = 512.0;
 
-/// Everything about a column that varies over kilometres, not metres:
-/// lightning, sunlight reaching the veil and the regional climate. A ray
-/// reuses it across the short stretch of veil it crosses.
+/// Everything about a column that varies over kilometres, not metres: lightning, sunlight reaching
+/// the veil and the regional climate. A ray reuses it across the short stretch of veil it crosses.
 #[derive(Clone, Copy)]
 pub struct Column {
     pub flash: Vec3,
@@ -36,8 +35,8 @@ pub struct Column {
     pub climate: Vec4,
 }
 
-/// How the ocean meets a spire: the veil climbs it, the current parts
-/// around it and sheds eddies downstream, and energy gathers at the contact.
+/// How the ocean meets a spire: the veil climbs it, the current parts around it and sheds eddies
+/// downstream, and energy gathers at the contact.
 #[derive(Clone, Copy)]
 pub struct Wrap {
     pub lift: f32,
@@ -53,9 +52,9 @@ impl Wrap {
     };
 }
 
-/// Wisps are thin ridges where the detail noise crosses its mean. Filtering
-/// pulls the noise towards that mean, so a distant footprint would otherwise
-/// turn every column into a ridge and wash the ocean out to a pale glow.
+/// Wisps are thin ridges where the detail noise crosses its mean. Filtering pulls the noise towards
+/// that mean, so a distant footprint would otherwise turn every column into a ridge and wash the
+/// ocean out to a pale glow.
 fn wisp(noise: f32, footprint: f32) -> f32 {
     let resolved = cube((1.0 - noise.abs() * 2.0).max(0.0));
     let unresolved = (footprint * 0.16).max(1.0).log2().smoothstep(1.0, 3.5);
@@ -98,8 +97,8 @@ pub(crate) fn wave_detail(position: Vec3, time: f32, footprint: f32, textures: &
         * 30.0
 }
 
-/// Blend differently oriented samples so the periodic detail texture cannot
-/// impose a visible grid. Altitude stays in the coordinates: this is a volume.
+/// Blend differently oriented samples so the periodic detail texture cannot impose a visible grid.
+/// Altitude stays in the coordinates: this is a volume.
 fn ocean_detail(point: Vec3, time: f32, footprint: f32, textures: &Textures) -> Vec4 {
     let altitude = point.length() - PLANET_RADIUS;
     let coordinates = ((point - CURRENT * time) * 0.00048
@@ -110,8 +109,8 @@ fn ocean_detail(point: Vec3, time: f32, footprint: f32, textures: &Textures) -> 
         * 0.5
 }
 
-/// The net of light the rippling veil focuses onto anything above it,
-/// in units of about 75 m. Mean near 0.25, peaks of 1 along the threads.
+/// The net of light the rippling veil focuses onto anything above it, in units of about 75 m. Mean
+/// near 0.25, peaks of 1 along the threads.
 pub(crate) fn caustics(position: Vec2, time: f32) -> f32 {
     let mut point = position;
     let mut sum = 1.0;
@@ -184,8 +183,8 @@ fn material(
         + vec3(0.26, 0.40, 0.42) * wisp * energy * 2.0)
         * pulse
         * climate.w;
-    // Like the clouds, the veil also scatters the pole's light: it warms at
-    // sunset and dims a little through the night.
+    // Like the clouds, the veil also scatters the pole's light: it warms at the sunset band and
+    // dims a little beyond it, towards the equator.
     let day = (column.sun.max_element() / POLE_RADIANCE.max_element())
         .sqrt()
         .min(1.0);
@@ -204,10 +203,9 @@ fn arc_traits(seed: f32) -> Vec4 {
     (vec4(1.0, 1.618_034, 2.414_214, 3.302_776) * (seed * 97.31 + 0.13)).fract_gl()
 }
 
-/// A prominence: braided strands twisting around the loop, a sheath, and
-/// bright plasma draining from the apex down both legs. Each loop draws its
-/// own number of strands, their twist and thickness, how knotted its plasma
-/// is, its brightness and its tint, from its seed.
+/// A prominence: braided strands twisting around the loop, a sheath, and bright plasma draining
+/// from the apex down both legs. Each loop draws its own number of strands, their twist and
+/// thickness, how knotted its plasma is, its brightness and its tint, from its seed.
 pub(crate) fn ejections(
     planet_point: Vec3,
     view: &ViewUniform,
@@ -281,8 +279,7 @@ pub(crate) fn ejections(
     }
 }
 
-/// `offset` is the point's from the camera: spires are placed relative to
-/// it, as they are traced.
+/// `offset` is the point's from the camera: spires are placed relative to it, as they are traced.
 pub(crate) fn wrap(point: Vec3, offset: Vec3, view: &ViewUniform, footprint: f32) -> Wrap {
     let time = view.time();
     let nearest = nearest_spire_at(view.place(offset));
@@ -297,8 +294,8 @@ pub(crate) fn wrap(point: Vec3, offset: Vec3, view: &ViewUniform, footprint: f32
     let current = (CURRENT - frame.z_axis * CURRENT.dot(frame.z_axis)).normalize();
     let wake = away.dot(current).smoothstep(0.0, 0.9) * (-gap / 325.0).exp();
     let shedding = (gap * 0.0192 - time * 0.55 + around.dot(current) * 2.0).sin();
-    // A distant footprint cannot resolve the collar; widen it but keep the
-    // volume of fog it lifts, rather than aliasing against long steps.
+    // A distant footprint cannot resolve the collar; widen it but keep the volume of fog it lifts,
+    // rather than aliasing against long steps.
     let collar = 52.5 + footprint * 1.5;
     let contact = 20.0 + footprint;
     Wrap {
@@ -333,8 +330,8 @@ pub fn sample_body(
     let flowing = planet_point + wrap.warp;
     let detail = ocean_detail(flowing, time, footprint, textures);
     let noise = detail.w * 2.0 - 1.0;
-    // Storms and lightning churn the veil: its edge boils far deeper and
-    // plumes are thrown high above the surface.
+    // Storms and lightning churn the veil: its edge boils far deeper and plumes are thrown high
+    // above the surface.
     let foot = (-square(curve.x / (EJECTION_WIDTH * 2.5))).exp() * curve.z;
     let churn =
         1.0 + column.climate.x * 1.2 + foot * 2.0 + (column.flash.max_element() * 0.6).min(5.0);

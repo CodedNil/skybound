@@ -3,6 +3,11 @@ pub use super::{BIOLOGY, render_wings};
 pub mod adhaerens;
 pub mod fluitans;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Adhaerentidae",

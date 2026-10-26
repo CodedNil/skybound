@@ -21,8 +21,8 @@ use spirv_std::{
 pub struct AtmosphereData {
     /// Sky radiance along the pixel ray.
     pub sky: Vec3,
-    /// Light scattered into the air along the ray. Looking down, the sky
-    /// texture holds below-horizon radiance that must never show through.
+    /// Light scattered into the air along the ray. Looking down, the sky texture holds
+    /// below-horizon radiance that must never show through.
     pub haze: Vec3,
 }
 
@@ -94,8 +94,8 @@ impl Textures<'_> {
             ]
         })
     }
-    /// See [`ejection_clearance`](crate::scene::aur::ejection_clearance);
-    /// valid anywhere in the place's arc cell.
+    /// See [`ejection_clearance`](crate::scene::aur::ejection_clearance); valid anywhere in the
+    /// place's arc cell.
     pub fn ejection_clearance(&self, place: Place) -> f32 {
         let (cell, _) = place.arc();
         self.ejections
@@ -116,15 +116,15 @@ impl Textures<'_> {
             self.cloud_towers.fetch(texel.as_ivec2()),
         ]
     }
-    /// Cloud optical depth from a point towards its pole light, beyond the
-    /// near shadow each sample traces itself and in full; and down to the aur.
+    /// Cloud optical depth from a point towards its pole light, beyond the near shadow each sample
+    /// traces itself and in full; and down to the aur.
     pub fn light_depth(&self, point: Vec3) -> Vec3 {
         let mut point = point;
         let mut radius = point.length();
         if radius < PLANET_RADIUS + LIGHT_BOTTOM {
-            // Beneath every cloud the shadows only run on along the light:
-            // read them where this point's ray towards the light rises
-            // through the volume's floor, with nothing below to shade.
+            // Beneath every cloud the shadows only run on along the light: read them where this
+            // point's ray towards the light rises through the volume's floor, with nothing below
+            // to shade.
             let light = light_towards(point);
             let rise = intersect_sphere(point, light, PLANET_RADIUS + LIGHT_BOTTOM).y;
             if rise <= 0.0 {

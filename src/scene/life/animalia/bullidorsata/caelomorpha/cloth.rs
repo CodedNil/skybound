@@ -113,14 +113,13 @@ impl Cloth {
     }
 }
 
-/// How long cloth is settled for before it is drawn: damping forgets
-/// anything older, and in the world the clock runs for hours.
+/// How long cloth is settled for before it is drawn: damping forgets anything older, and in the
+/// world the clock runs for hours.
 const SETTLE: f32 = 3.0;
 
 pub fn prepare(c: &mut CreatureInstance, ribbon: usize, anchor: Vec3, length: f32, width: f32) {
-    // Settled from two starts on a fixed grid, the later fading in as the
-    // earlier ages out: smooth from one moment to the next, though each is
-    // simulated afresh.
+    // Settled from two starts on a fixed grid, the later fading in as the earlier ages out: smooth
+    // from one moment to the next, though each is simulated afresh.
     let end = 2.0 + c.animation.z.max(0.0);
     let grid = (end / SETTLE).floor();
     let weight = end / SETTLE - grid;

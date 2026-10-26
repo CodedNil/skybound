@@ -19,7 +19,6 @@ use skybound::scene::{
 use spirv_std::glam::{Vec3, vec2, vec3};
 use std::{
     env,
-    f32::consts::TAU,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
@@ -29,8 +28,7 @@ use std::{
 pub struct VolumeTextures {
     pub base: Handle<Image>,
     pub detail: Handle<Image>,
-    /// Noise for the clouds alone, at periods long enough that no field of
-    /// them repeats in view.
+    /// Noise for the clouds alone, at periods long enough that no field of them repeats in view.
     pub shapes: Handle<Image>,
     pub transmittance: Handle<Image>,
 }
@@ -61,15 +59,14 @@ impl SkyLookup {
     pub fn update(&mut self, view: &mut ViewUniform) {
         let altitude = view.altitude();
         let direction = view.pole_direction();
-        let activity = 0.10 + 0.90 * (0.5 + 0.5 * (view.time() * TAU / 2400.0).cos());
         let horizon = -(1.0 - (PLANET_RADIUS / (PLANET_RADIUS + altitude.max(0.0))).powi(2)).sqrt();
-        view.sky_horizon = vec4(horizon, activity, 0.0, 0.0).to_scene();
-        view.pole_color *= activity;
-        view.ambient_color *= activity;
+        // The aur glows steadily: the second component is its brightness, which the shaders scale
+        // its light by.
+        view.sky_horizon = vec4(horizon, 1.0, 0.0, 0.0).to_scene();
         let current = vec3(
             altitude,
             direction.dot(view.up(view.world_position.truncate())),
-            activity,
+            0.0,
         );
         let dirty = self.dirty.load(Ordering::Relaxed)
             || (current.x - self.last.x).abs() >= 0.5
@@ -245,9 +242,8 @@ pub fn prepare_volume_textures(mut commands: Commands, mut images: ResMut<Assets
             )
         },
         || {
-            // Cells for cloud footprints, cauliflower puffs from three
-            // octaves of Worley noise, Perlin-Worley billows, and Perlin
-            // noise to warp and vary them.
+            // Cells for cloud footprints, cauliflower puffs from three octaves of Worley noise,
+            // Perlin-Worley billows, and Perlin noise to warp and vary them.
             noise_texture(128, 128, TextureFormat::Rgba8Unorm, |p| {
                 let cells = cellular(p, 8, seed ^ 0x93);
                 let puffs = 1.0

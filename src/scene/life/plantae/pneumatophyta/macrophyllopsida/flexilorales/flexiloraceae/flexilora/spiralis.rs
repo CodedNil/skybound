@@ -1,8 +1,16 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::{Biology, Energy, Lift, Organs, Reproduction},
+    biology::Biology,
     plantae::{frond, rotate},
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    organs::{Viscera, site},
+    plantae::physiology::BLADDER,
+    plantae::physiology::FROND,
+    plantae::physiology::ROOT,
+    plantae::physiology::STEM,
 };
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -11,17 +19,14 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 30.0,
     lifespan_days: 4000.0,
-    organs: Organs {
-        lift: Lift::Attached,
-        ..super::BIOLOGY.organs
-    },
-    energy: Energy::Wind,
-    reproduction: Reproduction::Fragmentation,
     adult_mass: 0.3,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 12.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -54,9 +59,32 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     shape
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(STEM, vec3(0.00, -0.93, -1.25), vec3(0.06, 0.06, 0.06)),
+    site(BLADDER, vec3(0.00, 2.64, -1.39), vec3(0.08, 0.08, 0.08)),
+    site(FROND, vec3(1.36, 0.14, 0.36), vec3(0.07, 0.07, 0.07)),
+    site(ROOT, vec3(0.00, -4.36, -1.61), vec3(0.10, 0.10, 0.10)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.24, 0.44, 0.18), vec3(0.6, 0.7, 0.2));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::{Physiology, Propagation, epiphyte};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        powered: |climate| climate.wind.length_squared() * 0.03,
+        propagation: Propagation::Fragmentation,
+        attaches: true,
+        partner: epiphyte,
+        floats: false,
+        ..super::super::PHYSIOLOGY
+    };
 }

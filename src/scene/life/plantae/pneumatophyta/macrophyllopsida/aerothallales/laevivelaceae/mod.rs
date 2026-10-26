@@ -1,15 +1,12 @@
 pub use super::render;
-use crate::scene::life::biology::{Biology, Lift, Organs};
+use crate::scene::life::biology::Biology;
 pub mod lacufolium;
 pub mod laevivelum;
 
-pub const BIOLOGY: Biology = Biology {
-    organs: Organs {
-        lift: Lift::Membrane,
-        ..super::BIOLOGY.organs
-    },
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Family,

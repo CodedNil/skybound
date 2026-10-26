@@ -1,12 +1,13 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Feeding, Social};
+use crate::scene::life::biology::Biology;
 pub mod sericificidae;
 
-pub const BIOLOGY: Biology = Biology {
-    feeding: Feeding::Predator,
-    social: Social::Weaver,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Order,
@@ -20,3 +21,15 @@ taxon!(
         "Their closest shared adaptations concern secretion and prey handling, explaining the relationship between web builders and acid-projecting hunters.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Physiology, Take, hunts};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: hunts,
+        takes: Take::Prey,
+        gleans: false,
+        ..super::super::PHYSIOLOGY
+    };
+}

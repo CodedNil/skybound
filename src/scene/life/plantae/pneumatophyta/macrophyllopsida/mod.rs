@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod aerothallales;
 pub mod flexilorales;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Class,
     "Macrophyllopsida",

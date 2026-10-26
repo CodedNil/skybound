@@ -1,11 +1,10 @@
-use crate::scene::life::biology::{Biology, Feeding};
+use crate::scene::life::biology::Biology;
 pub mod caelomorpha;
 
-pub const BIOLOGY: Biology = Biology {
-    feeding: Feeding::Absorption,
-    speed: 0.0,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Phylum,
@@ -19,3 +18,42 @@ taxon!(
         "Their descendants divide the sky by arranging the same buoyant and absorptive tissues into compact balloons, trailing leaves or enormous feeding canopies.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+pub mod nature {
+    //! The gas-bags have no muscle to fly with and no nerve centre to plan with: they drift, sleep
+    //! slack, and breed by releasing spawn among their kind.
+
+    use crate::scene::life::{
+        Kind,
+        animalia::{
+            ETHOLOGY as ANIMAL,
+            mind::{Ethology, Situation},
+            physiology::Physiology,
+        },
+        behaviour::{Activity, Goal},
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: |_, food| food == Kind::Auracoccus,
+        floats: true,
+        form: |_, young| u32::from(young < 0.7),
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        court: spawn,
+        sleep: torpor,
+        ..ANIMAL
+    };
+
+    /// Spawning: drifting into the thick of its kind to release.
+    pub const fn spawn(s: &Situation) -> Goal {
+        Goal::new(Activity::Display, s.seen.kin, 0.2)
+    }
+
+    /// Torpor: going slack and letting the air carry it.
+    pub const fn torpor(_: &Situation) -> Goal {
+        Goal::new(Activity::Sleep, None, 0.0)
+    }
+}

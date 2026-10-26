@@ -4,6 +4,15 @@ use crate::scene::life::{
     capsule, eyespots, rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::sanguinivora::volantia::WING_MUSCLE,
+    organs::{Viscera, pair, site},
+};
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -12,12 +21,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 90.0,
     lifespan_days: 2400.0,
-    speed: 8.0,
     adult_mass: 0.04,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 22.6;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -36,22 +49,19 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(3.0, 3.0, 4.0).extend(0.0);
 }
 
-/// A stout flyer that passes for a harmless grazer: a deep, round-backed
-/// body and a short, soft face, until the mouth opens.
-/// The sucker, leading.
+/// A stout flyer that passes for a harmless grazer: a deep, round-backed body and a short, soft
+/// face, until the mouth opens. The sucker, leading.
 const CUP: Vec3 = vec3(0.0, -0.1, -2.0);
 
 /// A cleaner's impostor, and a blood-eater underneath.
 ///
-/// It shares nothing with the Sweepers it copies but their outline: a soft,
-/// swollen sac of a body, a soft crest of papillae along the back where theirs
-/// bristles, and a broad flared sucker ringed by a fringe of mobile filaments,
-/// which from a little way off reads as a Sweeper's brush face. Up close the
-/// fringe is what it is: delicate mouthparts that groom the host and dab
-/// antiseptic on the wound while the sucker takes its small, concealed meal. A
-/// short arc of eyespots crowns the cup. Like all blood-eaters it breathes
-/// through its glistening skin, and flies on a single pair of wings that grew
-/// from folds of the body wall.
+/// It shares nothing with the Sweepers it copies but their outline: a soft, swollen sac of a body,
+/// a soft crest of papillae along the back where theirs bristles, and a broad flared sucker ringed
+/// by a fringe of mobile filaments, which from a little way off reads as a Sweeper's brush face. Up
+/// close the fringe is what it is: delicate mouthparts that groom the host and dab antiseptic on
+/// the wound while the sucker takes its small, concealed meal. A short arc of eyespots crowns the
+/// cup. Like all blood-eaters it breathes through its glistening skin, and flies on a single pair
+/// of wings that grew from folds of the body wall.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut body = rounded(p - vec3(0.0, 0.0, 0.4), vec3(1.45, 1.25, 2.0));
     for i in 0..7 {
@@ -80,6 +90,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.08, -1.33), vec3(0.17, 0.17, 0.18)),
+    site(PUMP, vec3(0.00, -0.08, -0.48), vec3(0.23, 0.23, 0.41)),
+    site(CROP, vec3(0.00, 0.03, 0.69), vec3(0.51, 0.51, 1.02)),
+    pair(WING_MUSCLE, vec3(0.71, 0.27, -0.32), vec3(0.20, 0.20, 0.37)),
+    site(BROOD, vec3(0.00, -0.08, 1.98), vec3(0.22, 0.22, 0.28)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.67, 0.72, 0.46, 0.0),
@@ -95,4 +115,14 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::Physiology;
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        speed: 8.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

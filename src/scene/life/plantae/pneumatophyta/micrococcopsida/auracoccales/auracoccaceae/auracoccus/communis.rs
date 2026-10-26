@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::Viscera;
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
@@ -16,6 +18,9 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 0.00035;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -46,6 +51,10 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     shape.distance *= 0.0001;
     shape
 }
+
+/// It is a drifting cloud of single cells, with no organs to wound.
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::NONE;
 
 /// Its cells, for the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.16, 0.56, 0.28), vec3(0.08, 0.4, 0.12));

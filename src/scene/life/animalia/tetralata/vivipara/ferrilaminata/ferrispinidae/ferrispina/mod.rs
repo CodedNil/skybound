@@ -10,10 +10,12 @@ pub mod custos;
 pub mod falcata;
 
 pub const BIOLOGY: Biology = Biology {
-    speed: 65.0,
     adult_mass: 25.0,
     ..super::BIOLOGY
 };
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Genus,
@@ -30,10 +32,9 @@ taxon!(
 
 /// A crest blade: a flat, thin blade of iron-hardened tissue.
 ///
-/// It is broad at its root and tapers to a needle point, its midline
-/// sweeping back ever more steeply towards the tip so its whole front edge
-/// is drawn across whatever the animal rolls past. `lean` tilts it from
-/// upright towards one side, and its section is a lens, keen at both edges.
+/// It is broad at its root and tapers to a needle point, its midline sweeping back ever more
+/// steeply towards the tip so its whole front edge is drawn across whatever the animal rolls past.
+/// `lean` tilts it from upright towards one side, and its section is a lens, keen at both edges.
 pub fn blade(p: Vec3, root: Vec3, height: f32, rake: f32, width: f32, lean: f32) -> f32 {
     let q = p - root;
     let (sine, cosine) = lean.sin_cos();
@@ -50,9 +51,8 @@ pub fn blade(p: Vec3, root: Vec3, height: f32, rake: f32, width: f32, lean: f32)
     outline.max(section) * 0.8
 }
 
-/// How a Ferrispina is built: its body's length and depth, how many crest
-/// blades it raises and how tall, broad and raked back they are, and how
-/// high the display web between them reaches up them.
+/// How a Ferrispina is built: its body's length and depth, how many crest blades it raises and how
+/// tall, broad and raked back they are, and how high the display web between them reaches up them.
 #[derive(Clone, Copy)]
 pub struct Build {
     pub length: f32,
@@ -67,15 +67,13 @@ pub struct Build {
 
 /// The Iron Spine body plan, which every member of the genus shares.
 ///
-/// A long, deep and narrow body is flattened from side to side like a blade
-/// itself so it slips through the roll of a cutting pass, ending in the
-/// flexible tail that whips it through tight arcs; along the spine runs a crest
-/// of blades. The crest is as much a display as a weapon. A web of skin
-/// stretched between the blades' roots carries the animal's colours, and both
-/// are raised to their full height to court a mate or face down a rival, laid
-/// back for speed in the chase. Bigger, sounder blades win mates, so no two
-/// animals' crests are alike, and the tallest stand over the shoulders where
-/// the roll drives them hardest.
+/// A long, deep and narrow body is flattened from side to side like a blade itself so it slips
+/// through the roll of a cutting pass, ending in the flexible tail that whips it through tight
+/// arcs; along the spine runs a crest of blades. The crest is as much a display as a weapon. A web
+/// of skin stretched between the blades' roots carries the animal's colours, and both are raised to
+/// their full height to court a mate or face down a rival, laid back for speed in the chase.
+/// Bigger, sounder blades win mates, so no two animals' crests are alike, and the tallest stand
+/// over the shoulders where the roll drives them hardest.
 pub fn shredder(p: Vec3, c: &CreatureInstance, build: Build) -> Surface {
     let length = build.length;
     let narrow = vec3(p.x * 1.3, p.y, p.z);
@@ -141,9 +139,88 @@ pub fn shredder(p: Vec3, c: &CreatureInstance, build: Build) -> Surface {
     hit
 }
 
-/// A repeatable value in [0, 1) for blade `index` and trait `key` of an
-/// individual, so each blade, and each animal's set of them, grows its own
-/// way.
+/// A repeatable value in [0, 1) for blade `index` and trait `key` of an individual, so each blade,
+/// and each animal's set of them, grows its own way.
 pub fn variety(index: u32, key: f32, individual: f32) -> f32 {
     ((index as f32 * 12.9898 + key * 78.233 + individual * 311.7).sin() * 43_758.547).fract_gl()
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! The Iron Spines hunt in banked passes, coming in from the side so the crest is drawn along
+    //! the prey's back as they roll past, cutting into its gas stores. They court by circling
+    //! one another with crest and web raised, and their young hunt and play in loose groups.
+
+    use crate::scene::life::{
+        animalia::{
+            mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, orbit},
+            nature::lead,
+            physiology::Physiology,
+            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
+        },
+        behaviour::{Activity, Goal},
+        organs::{Strike, Wound},
+    };
+    use spirv_std::glam::Vec3;
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        speed: 65.0,
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        hunt: pass,
+        court: crest,
+        blow: slash,
+        hunts: true,
+        ..LIVE_BEARER
+    };
+
+    fn pass(_: &mut Mind, s: &Situation, prey: Sighting) -> Goal {
+        let distance = prey.offset.length();
+        let side = s.up().cross(prey.offset).normalize_or_zero();
+        let offset = if distance > 25.0 {
+            side * 12.0
+        } else {
+            Vec3::ZERO
+        };
+        let activity = if distance < 30.0 {
+            Activity::Strike
+        } else {
+            Activity::Hunt
+        };
+        Goal::new(activity, Some(lead(s.kind, prey) + offset), 1.3)
+    }
+
+    fn crest(s: &Situation) -> Goal {
+        let up = s.up();
+        Goal::new(
+            Activity::Display,
+            s.seen
+                .mate
+                .map(|(mate, _)| mate + orbit(up, mate, 10.0, s.now * 0.5)),
+            0.4,
+        )
+    }
+
+    /// The crest drawn along the back as it rolls past.
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "it fills the blow slot, which some hunters leave empty"
+    )]
+    fn slash(aim: &Aim) -> Option<Blow> {
+        let at = Vec3::new(aim.scatter.x * 0.5, aim.extent.y * 0.6, aim.scatter.z);
+        Some(Blow {
+            strike: Strike {
+                from: at - aim.along * aim.extent.z,
+                to: at + aim.along * aim.extent.z,
+                radius: aim.extent.y * 0.35,
+                force: 0.9,
+                wound: Wound::Slash,
+            },
+            stun: 0.0,
+            rest: 3.0,
+            cost: 0.0,
+        })
+    }
 }

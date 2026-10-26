@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::{Anatomy, Biology, Energy, Feeding, Organs, Reproduction},
+    biology::Biology,
     surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
 };
 use core::f32::consts::{PI, TAU};
@@ -8,19 +8,15 @@ use spirv_std::glam::{FloatExt, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod chlorophyta;
+#[cfg(not(target_arch = "spirv"))]
+pub mod physiology;
 pub mod pneumatophyta;
 pub mod vasculophyta;
 
-pub const BIOLOGY: Biology = Biology {
-    organs: Organs::PLANT,
-    anatomy: Anatomy::Plant,
-    wing_pairs: 0,
-    oral_pairs: 0,
-    feeding: Feeding::Producer,
-    energy: Energy::Aur,
-    reproduction: Reproduction::Spores,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Kingdom,
@@ -158,4 +154,11 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
         }
     }
     result
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::plantae::physiology::{PLANT, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = PLANT;
 }

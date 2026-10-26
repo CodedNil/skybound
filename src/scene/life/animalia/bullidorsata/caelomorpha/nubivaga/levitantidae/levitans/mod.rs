@@ -2,6 +2,11 @@ pub use super::BIOLOGY;
 
 pub mod taeniatus;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Genus,
     "Levitans",

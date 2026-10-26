@@ -43,8 +43,8 @@ pub fn reset_history((dlss, taa): (Option<Mut<Dlss>>, Option<Mut<TemporalAntiAli
     }
 }
 
-/// How far below the window's resolution the scene renders, from
-/// `SKYBOUND_UPSCALE`; Quality by default.
+/// How far below the window's resolution the scene renders, from `SKYBOUND_UPSCALE`; Quality
+/// by default.
 fn quality() -> DlssPerfQualityMode {
     match env::var("SKYBOUND_UPSCALE").as_deref() {
         Ok("native") => DlssPerfQualityMode::Dlaa,
@@ -52,8 +52,8 @@ fn quality() -> DlssPerfQualityMode {
         Ok("performance") => DlssPerfQualityMode::Performance,
         Ok("ultra") => DlssPerfQualityMode::UltraPerformance,
         Ok("auto") => DlssPerfQualityMode::Auto,
-        // Auto drops to Ultra Performance at 4K, and the volumes, traced at
-        // half the render resolution and never jittered, gain nothing back.
+        // Auto drops to Ultra Performance at 4K, and the volumes, traced at half the render
+        // resolution and never jittered, gain nothing back.
         _ => DlssPerfQualityMode::Quality,
     }
 }

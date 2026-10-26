@@ -2,23 +2,39 @@ pub use super::render_wings;
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::curved_tube,
-    biology::{Biology, Brood},
+    biology::Biology,
     louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Strings,
     maturity_days: 12.0,
     lifespan_days: 120.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 21.6;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -42,12 +58,11 @@ const MOUTH: Vec3 = vec3(0.0, -0.35, -1.05);
 
 /// A swarming scavenger, small and quick.
 ///
-/// A teardrop body, blunt in front and tapering behind, carries two pairs of
-/// short, round wings set close together so it can pivot on the spot. Its mouth
-/// tentacles have stiffened into a cage of five hooked fingers, curving
-/// forwards and down and in again, which closes round a drifting scrap and
-/// holds it while the animal feeds on the wing; two domed eyes beneath the head
-/// look down into the cage and the air below.
+/// A teardrop body, blunt in front and tapering behind, carries two pairs of short, round wings set
+/// close together so it can pivot on the spot. Its mouth tentacles have stiffened into a cage of
+/// five hooked fingers, curving forwards and down and in again, which closes round a drifting scrap
+/// and holds it while the animal feeds on the wing; two domed eyes beneath the head look down into
+/// the cage and the air below.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = tapered_tail(
         p,
@@ -83,6 +98,23 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.03, -0.67), vec3(0.10, 0.09, 0.22)),
+    site(PUMP, vec3(0.00, -0.13, -0.22), vec3(0.11, 0.10, 0.24)),
+    site(CROP, vec3(0.00, -0.13, 0.29), vec3(0.21, 0.19, 0.25)),
+    pair(BREATHER, vec3(0.32, 0.05, -0.19), vec3(0.08, 0.08, 0.08)),
+    site(FLOAT, vec3(0.00, 0.24, 0.22), vec3(0.14, 0.12, 0.18)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.19, 0.16, -0.06),
+        vec3(0.11, 0.10, 0.16),
+    ),
+    site(CISTERN, vec3(0.00, -0.13, 0.74), vec3(0.11, 0.10, 0.20)),
+    site(BROOD, vec3(0.00, -0.03, 1.06), vec3(0.11, 0.10, 0.23)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.47, 0.26, 0.18, 0.0),
@@ -98,4 +130,15 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Sunlit,
+        brood: Brood::Strings,
+        ..super::super::PHYSIOLOGY
+    };
 }

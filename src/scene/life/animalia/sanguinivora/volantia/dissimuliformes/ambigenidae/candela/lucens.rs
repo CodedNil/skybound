@@ -1,8 +1,17 @@
 use crate::scene::life::{
     CreatureInstance, Look, annulated,
-    biology::{Biology, Feeding, Social},
+    biology::Biology,
     capsule, eyespots, rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::sanguinivora::volantia::WING_MUSCLE,
+    organs::{Function, Organ, Viscera, pair, site},
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
@@ -12,14 +21,16 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 12.0,
     lifespan_days: 240.0,
-    feeding: Feeding::Grazer,
-    social: Social::Mutualist,
     adult_mass: 0.002,
-    speed: 1.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 16.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -29,7 +40,7 @@ taxon!(
         "Glowgnomes are tiny luminous sap feeders that inhabit sheltered burrows in Whisperwood, their soft ringed fronts trailing a swollen, translucent lamp sac hooped with ribs and laced with the sap veins that feed its light.",
         "They retain the single wing pair of their parasitic ancestors, but coordinated wing strokes now help draw the host toward favourable currents.",
         "Pheromone signals carried through six vertical sap veins recruit groups on different sides of the trunk.",
-        "Their light draws visitors through nearby flowering growth during the dim aur phase, while sap and wood cavities provide food and shelter.",
+        "Their light draws visitors through nearby flowering growth in the dim equatorial skies, while sap and wood cavities provide food and shelter.",
         "Limited feeding and shared movement have turned an ancestral parasitic visit into a partnership on which the drifting tree depends.",
     ],
 );
@@ -40,12 +51,11 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A burrow-dweller that is mostly lamp.
 ///
-/// Its front is a short, soft, ringed grub with a small sucker and a fringe for
-/// sipping sap, and only faint eyespots, for it lives in the dark of the wood;
-/// its whole rear has swollen into a translucent sac lit from within, hooped by
-/// ribs and laced with the sap veins that feed the light. Stubby wings are
-/// enough to carry it between burrows and to beat in time with its neighbours,
-/// drawing the tree towards better air.
+/// Its front is a short, soft, ringed grub with a small sucker and a fringe for sipping sap, and
+/// only faint eyespots, for it lives in the dark of the wood; its whole rear has swollen into a
+/// translucent sac lit from within, hooped by ribs and laced with the sap veins that feed the
+/// light. Stubby wings are enough to carry it between burrows and to beat in time with its
+/// neighbours, drawing the tree towards better air.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let grub = annulated(
         p,
@@ -93,6 +103,21 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// The lamp gland, whose store is spent on each use and slowly made again.
+#[cfg(not(target_arch = "spirv"))]
+const LAMP: Organ = Organ::new("lamp gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.09, -1.34), vec3(0.10, 0.09, 0.18)),
+    site(PUMP, vec3(0.00, -0.02, -0.63), vec3(0.12, 0.11, 0.22)),
+    site(CROP, vec3(0.00, 0.05, 0.46), vec3(0.31, 0.28, 0.31)),
+    pair(WING_MUSCLE, vec3(0.23, 0.18, -0.16), vec3(0.09, 0.09, 0.09)),
+    site(BROOD, vec3(0.00, -0.02, 1.34), vec3(0.13, 0.12, 0.39)),
+    site(LAMP, vec3(0.00, 0.52, 0.96), vec3(0.20, 0.20, 0.20)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.55, 0.32, 0.15, 0.0),
@@ -108,4 +133,23 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        Kind,
+        animalia::physiology::{Light, Physiology},
+        organs::Function,
+    };
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        crops: Function::Sap,
+        light: Light::Aurlit,
+        eats: |_, food| food == Kind::Susurrus,
+        parasite: false,
+        attaches: true,
+        partner: |_, tree| tree == Kind::Susurrus,
+        speed: 1.0,
+        ..super::super::PHYSIOLOGY
+    };
 }

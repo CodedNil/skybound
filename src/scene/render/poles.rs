@@ -9,14 +9,13 @@ use spirv_std::{
     num_traits::Float,
 };
 
-/// The marched part of the poles: the shell where each beam strikes the
-/// reaction and spreads into a corona.
+/// The marched part of the poles: the shell where each beam strikes the reaction and spreads into
+/// a corona.
 pub const POLE_WIDTH: f32 = REACTION_SPREAD * 1.6 * 1.04;
 
-/// The beams' light along a ray, integrated in closed form: each is a set
-/// of Gaussian falloffs about the polar axis, so its integral along any
-/// line is a Gaussian at the ray's closest approach times an erf window.
-/// Returns the radiance per unit of optical depth, the optical depth, and
+/// The beams' light along a ray, integrated in closed form: each is a set of Gaussian falloffs
+/// about the polar axis, so its integral along any line is a Gaussian at the ray's closest approach
+/// times an erf window. Returns the radiance per unit of optical depth, the optical depth, and
 /// where along the ray the beam lies.
 pub fn beam(ro: Vec3, rd: Vec3, limit: f32, view: &ViewUniform) -> (Vec3, f32, f32) {
     let radial_origin = ro.truncate();
@@ -30,8 +29,8 @@ pub fn beam(ro: Vec3, rd: Vec3, limit: f32, view: &ViewUniform) -> (Vec3, f32, f
     if point.z.abs() < PLANET_RADIUS * 0.9 {
         return (Vec3::ZERO, 0.0, limit);
     }
-    // Barely spreading as it climbs, and as bright per unit length all the
-    // way up, so it reads as reaching on into space.
+    // Barely spreading as it climbs, and as bright per unit length all the way up, so it reads as
+    // reaching on into space.
     let width = 1200.0 + height.sqrt() * 1.5;
     let thinning = 1200.0 / width;
     let root = a.sqrt();

@@ -52,10 +52,14 @@ pub struct PerchAnchor {
     on_mount: bool,
 }
 
+/// How the player is getting about.
 #[derive(Clone, Copy, Default)]
 pub enum ControlMode {
+    /// Flying under their own wings.
     Flying,
+    /// Clinging to a surface, on their mount or elsewhere.
     Perched(PerchAnchor),
+    /// Riding their mount, which flies them.
     #[default]
     Mounted,
 }

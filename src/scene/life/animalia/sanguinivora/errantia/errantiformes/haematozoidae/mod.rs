@@ -2,6 +2,11 @@ pub use super::{BIOLOGY, render_wings};
 
 pub mod haematozoon;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Haematozoidae",

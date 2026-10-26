@@ -1,14 +1,15 @@
 pub use super::render_wings;
-use crate::scene::life::biology::{Biology, Feeding};
+use crate::scene::life::biology::Biology;
 pub mod aculeorhynchidae;
 pub mod ferrispinidae;
 pub mod naeturidae;
 
-pub const BIOLOGY: Biology = Biology {
-    feeding: Feeding::Predator,
-    speed: 45.0,
-    ..super::BIOLOGY
-};
+pub const BIOLOGY: Biology = super::BIOLOGY;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Order,
@@ -22,3 +23,15 @@ taxon!(
         "The order therefore retains a common flight and reproductive anatomy despite large differences in diet and adult size.",
     ],
 );
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Physiology, Take, hunts};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        eats: hunts,
+        takes: Take::Prey,
+        speed: 45.0,
+        ..super::super::PHYSIOLOGY
+    };
+}

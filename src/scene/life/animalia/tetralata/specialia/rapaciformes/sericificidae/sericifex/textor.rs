@@ -8,6 +8,18 @@ use crate::scene::life::{
     surface::{Ray, Surface, TraceResult},
     torso,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Function, Organ, Viscera, pair, site},
+};
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -19,6 +31,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 36.7;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -39,12 +56,11 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A trap-builder that hunts by waiting.
 ///
-/// It looks nothing like the scavengers it shares a class with: a body thin as
-/// a stick, built to hang motionless for hours, a heavy banded silk gland slung
-/// beneath it, and its one pair of mouth tentacles grown enormously long and
-/// held spread wide, resting on the lines of its web to feel for anything
-/// caught. Combs at the tail draw out the silk, which trails behind it in pale
-/// strands.
+/// It looks nothing like the scavengers it shares a class with: a body thin as a stick, built to
+/// hang motionless for hours, a heavy banded silk gland slung beneath it, and its one pair of
+/// mouth tentacles grown enormously long and held spread wide, resting on the lines of its web
+/// to feel for anything caught. Combs at the tail draw out the silk, which trails behind it in
+/// pale strands.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = torso(p, vec3(0.32, 0.3, 2.6), 0.32);
     let gland = annulated(
@@ -94,6 +110,28 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join(eyes(p, 2.6, 0.32), 3);
     hit
 }
+
+/// The silk gland, whose store is spent on each use and slowly made again.
+#[cfg(not(target_arch = "spirv"))]
+const SILK: Organ = Organ::new("silk gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, -0.16, -1.53), vec3(0.08, 0.08, 0.08)),
+    site(PUMP, vec3(0.00, -0.16, -0.56), vec3(0.09, 0.09, 0.09)),
+    site(CROP, vec3(0.00, -0.34, 0.72), vec3(0.17, 0.19, 0.25)),
+    pair(BREATHER, vec3(0.10, -0.19, -0.80), vec3(0.06, 0.06, 0.06)),
+    site(FLOAT, vec3(0.00, 0.03, 0.72), vec3(0.23, 0.23, 0.71)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.10, -0.06, -0.16),
+        vec3(0.09, 0.10, 0.14),
+    ),
+    site(CISTERN, vec3(0.00, -0.34, 1.85), vec3(0.20, 0.20, 0.57)),
+    site(BROOD, vec3(0.00, -0.16, 2.49), vec3(0.09, 0.10, 0.29)),
+    site(SILK, vec3(0.00, -0.84, 2.49), vec3(0.17, 0.17, 0.17)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

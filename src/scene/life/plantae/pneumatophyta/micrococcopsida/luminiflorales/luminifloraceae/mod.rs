@@ -2,6 +2,9 @@ pub use super::{BIOLOGY, render};
 
 pub mod luminiflora;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Luminifloraceae",

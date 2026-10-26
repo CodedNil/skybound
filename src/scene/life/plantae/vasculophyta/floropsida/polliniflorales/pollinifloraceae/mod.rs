@@ -3,6 +3,9 @@ pub use super::{BIOLOGY, render};
 pub mod gigantiflora;
 pub mod polliniflora;
 
+#[cfg(not(target_arch = "spirv"))]
+pub use super::PHYSIOLOGY;
+
 taxon!(
     Family,
     "Pollinifloraceae",

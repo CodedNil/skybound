@@ -16,8 +16,7 @@ const DLSS_PROJECT: Uuid = Uuid::from_u128(0x106e_92de_300b_4087_a6c3_92da_af7b_
 
 fn main() {
     let mut app = App::new();
-    // DLSS sets up the renderer, so it must know the game before the
-    // default plugins start it.
+    // DLSS sets up the renderer, so it must know the game before the default plugins start it.
     app.insert_resource(DlssProjectId(DLSS_PROJECT));
     app.add_plugins((
         DefaultPlugins.set(WindowPlugin {

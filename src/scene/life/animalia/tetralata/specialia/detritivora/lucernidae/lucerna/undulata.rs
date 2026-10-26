@@ -1,22 +1,38 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::{Biology, Brood},
+    biology::Biology,
     ellipsoid, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
-    brood: Brood::Drifting,
     maturity_days: 60.0,
     lifespan_days: 900.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 40.4;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -26,7 +42,7 @@ taxon!(
         "Shimmerays are broad, flat filter feeders whose slow, rippling wingbeats carry a wide scoop of a mouth through currents of algae and drifting organic particles.",
         "A ring of small glowing lures round the scoop draws Sparkies close enough to be swept in with the feeding stream and caught on the comb plates inside.",
         "Long luminous ribbons stream from beneath the body, sampling a deeper volume of air for particles and marking each animal's place in the swarm.",
-        "During the bright aur phase they rise, then descend toward the upper edge of the Veilands as the cycle dims; concentrated aur remains dangerous to their tissues.",
+        "They drift along the sunset band, sinking toward the upper edge of the Veilands to feed and rising again once fed; concentrated aur remains dangerous to their tissues.",
         "Seen from afar, their coordinated vertical movement forms long shifting ribbons of light over the lower Gardens, and their eggs drift up from it on crowns of fine threads.",
     ],
 );
@@ -39,10 +55,9 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A living trawl: a broad, flat body like a disc, rippling as it goes.
 ///
-/// It opens in front into a wide slot of a mouth combed inside with plates
-/// that catch what the current carries in. Round the scoop's lips a ring of
-/// small glowing lures draws Sparkies into it, and from beneath the body
-/// three luminous ribbons stream far behind.
+/// It opens in front into a wide slot of a mouth combed inside with plates that catch what the
+/// current carries in. Round the scoop's lips a ring of small glowing lures draws Sparkies into it,
+/// and from beneath the body three luminous ribbons stream far behind.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let ripple = (p.x.abs() * 0.8 - c.animation.z * 1.5).sin() * 0.12 * p.x.abs();
     let rippled = p - vec3(0.0, ripple, 0.0);
@@ -72,6 +87,28 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
+/// The lure gland, whose store is spent on each use and slowly made again.
+#[cfg(not(target_arch = "spirv"))]
+const LURE: Organ = Organ::new("lure gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.15, -2.55), vec3(0.08, 0.08, 0.08)),
+    site(PUMP, vec3(0.00, -0.15, -1.38), vec3(0.40, 0.13, 0.40)),
+    site(CROP, vec3(0.00, -0.15, 0.20), vec3(0.31, 0.21, 0.31)),
+    pair(BREATHER, vec3(1.99, 0.29, -1.18), vec3(0.50, 0.16, 0.50)),
+    site(FLOAT, vec3(0.00, 0.44, 0.20), vec3(0.11, 0.11, 0.11)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(1.42, 0.29, -0.39),
+        vec3(0.42, 0.13, 0.42),
+    ),
+    site(CISTERN, vec3(0.00, -0.15, 1.77), vec3(0.62, 0.21, 0.68)),
+    site(BROOD, vec3(0.00, 0.15, 2.55), vec3(0.62, 0.23, 0.71)),
+    pair(LURE, vec3(0.85, 0.29, -2.75), vec3(0.09, 0.09, 0.09)),
+]);
+
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
     vec4(0.16, 0.26, 0.41, 0.0),
@@ -87,4 +124,15 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Twilight,
+        brood: Brood::Drifting,
+        ..super::super::PHYSIOLOGY
+    };
 }

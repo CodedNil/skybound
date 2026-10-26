@@ -2,10 +2,22 @@ pub use super::render_wings;
 use super::{Build, shredder};
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
+    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     mouth, prepare_pose,
     surface::{Ray, Surface, TraceResult},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 
@@ -16,6 +28,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use super::ETHOLOGY;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -33,13 +50,12 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 7.0, 16.0, 0);
     c.opaque_bounds = vec3(6.0, 7.0, 30.0).extend(0.0);
-    rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.0, BIOLOGY.oral_pairs);
+    rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.0, ORAL_PAIRS);
 }
 
-/// A long-range hunter of the open herd routes: a long, slim body and a
-/// crest of six tall blades raked well back, each a lance of iron drawn
-/// along its prey in the roll of a fast pass. Long, narrow, swept wings
-/// carry it fast between herds.
+/// A long-range hunter of the open herd routes: a long, slim body and a crest of six tall blades
+/// raked well back, each a lance of iron drawn along its prey in the roll of a fast pass. Long,
+/// narrow, swept wings carry it fast between herds.
 const BUILD: Build = Build {
     length: 8.5,
     depth: 1.25,
@@ -54,17 +70,28 @@ const BUILD: Build = Build {
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = shredder(p, c, BUILD);
     hit.join(
-        oral_tentacles(
-            p,
-            c,
-            mouth(BUILD.length, BUILD.head),
-            1.0,
-            BIOLOGY.oral_pairs,
-        ),
+        oral_tentacles(p, c, mouth(BUILD.length, BUILD.head), 1.0, ORAL_PAIRS),
         8,
     );
     hit
 }
+
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.06, -6.16), vec3(0.16, 0.20, 0.39)),
+    site(PUMP, vec3(0.00, -0.19, -2.95), vec3(0.18, 0.22, 0.39)),
+    site(CROP, vec3(0.00, 0.06, 1.34), vec3(0.68, 0.68, 2.19)),
+    pair(BREATHER, vec3(0.29, 0.13, -3.75), vec3(0.19, 0.20, 0.20)),
+    site(FLOAT, vec3(0.00, 0.19, -1.34), vec3(0.22, 0.27, 0.52)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(0.88, 0.13, -1.61),
+        vec3(0.12, 0.12, 0.12),
+    ),
+    site(CISTERN, vec3(0.00, 0.06, 4.02), vec3(0.51, 0.51, 1.62)),
+    site(BROOD, vec3(0.00, 0.19, 6.16), vec3(0.38, 0.38, 1.22)),
+]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
@@ -80,4 +107,14 @@ pub const LOOK: Look = Look::coat(
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        light: Light::Twilight,
+        ..super::super::PHYSIOLOGY
+    };
 }

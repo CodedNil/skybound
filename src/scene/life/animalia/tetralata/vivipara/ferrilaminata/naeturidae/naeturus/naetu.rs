@@ -1,13 +1,26 @@
 use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles},
+    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     cowl, ellipsoid, eyes, louvres, mouth, prepare_pose, rounded, slit, smooth_min,
     surface::{
         FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material, visit_shell,
     },
     tapered_tail,
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::BREATHER,
+    animalia::physiology::BROOD,
+    animalia::physiology::CROP,
+    animalia::physiology::FLOAT,
+    animalia::physiology::GANGLION,
+    animalia::physiology::PUMP,
+    animalia::tetralata::CISTERN,
+    animalia::tetralata::FLIGHT_MUSCLE,
+    animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
+    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -16,12 +29,14 @@ use spirv_std::num_traits::Float;
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 7300.0,
     lifespan_days: 180_000.0,
-    speed: 24.0,
     adult_mass: 150.0,
     ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 70.0;
+
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -44,16 +59,15 @@ const HEAD: f32 = 2.4;
 pub fn animate(creature: &mut CreatureInstance) {
     prepare_pose(creature, 20.0, 25.0, 0);
     creature.opaque_bounds = vec3(14.0, 12.0, 52.0).extend(0.0);
-    rig_tentacles(creature, mouth(LENGTH, HEAD), 3.0, BIOLOGY.oral_pairs);
+    rig_tentacles(creature, mouth(LENGTH, HEAD), 3.0, ORAL_PAIRS);
 }
 
 /// A flying island: a lifting body far broader than it is deep.
 ///
-/// Its back is flattened where the grassy fibres grow and the Næ build, and a
-/// deep keel beneath houses the great crop inside its pale, pleated folds.
-/// Redundant gas chambers bulge along the upper flanks, so no single wound can
-/// bring it down; the louvres of its breathing channels open behind the cowl,
-/// and its aur sacs glow in a row along each side, charged on its dives through
+/// Its back is flattened where the grassy fibres grow and the Næ build, and a deep keel beneath
+/// houses the great crop inside its pale, pleated folds. Redundant gas chambers bulge along the
+/// upper flanks, so no single wound can bring it down; the louvres of its breathing channels open
+/// behind the cowl, and its aur sacs glow in a row along each side, charged on its dives through
 /// the mists.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let along = (point.z / LENGTH).clamp(-1.0, 1.0);
@@ -115,9 +129,8 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     hit
 }
 
-/// The head: the eyes around the cowl, the exchange frills fanning from
-/// behind it where the air it flies through strikes them first, and the
-/// mouth tentacles beneath.
+/// The head: the eyes around the cowl, the exchange frills fanning from behind it where the air it
+/// flies through strikes them first, and the mouth tentacles beneath.
 fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     hit.join(eyes(point, LENGTH, HEAD), 3);
@@ -141,13 +154,7 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
         hit.join(smooth_min(membrane, stem, 0.10), 2);
     }
     hit.join(
-        oral_tentacles(
-            point,
-            creature,
-            mouth(LENGTH, HEAD),
-            3.0,
-            BIOLOGY.oral_pairs,
-        ),
+        oral_tentacles(point, creature, mouth(LENGTH, HEAD), 3.0, ORAL_PAIRS),
         2,
     );
     hit
@@ -221,6 +228,24 @@ fn material(point: Vec3, id: u32) -> Material {
     m
 }
 
+/// Where its organs lie in its body; see [`Viscera`].
+#[cfg(not(target_arch = "spirv"))]
+pub const ORGANS: Viscera = Viscera::new(&[
+    site(GANGLION, vec3(0.00, 0.54, -17.18), vec3(1.11, 0.92, 1.11)),
+    site(PUMP, vec3(0.00, -1.18, -8.82), vec3(1.55, 0.99, 3.00)),
+    site(CROP, vec3(0.00, -0.75, 2.32), vec3(2.98, 1.91, 4.12)),
+    pair(BREATHER, vec3(2.75, 1.50, -10.21), vec3(0.74, 0.74, 0.74)),
+    site(FLOAT, vec3(0.00, 3.54, -0.46), vec3(0.70, 0.70, 0.70)),
+    pair(
+        FLIGHT_MUSCLE,
+        vec3(2.75, 1.50, -4.64),
+        vec3(0.92, 0.92, 0.92),
+    ),
+    site(CISTERN, vec3(0.00, -0.75, 10.68), vec3(1.55, 1.34, 4.30)),
+    site(BROOD, vec3(0.00, -0.32, 16.25), vec3(1.55, 0.99, 1.69)),
+    pair(AUR_SAC, vec3(4.75, -0.21, -0.93), vec3(1.43, 0.92, 1.49)),
+]);
+
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;
 
@@ -265,4 +290,41 @@ pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &CreatureInstance, mut emit
         4.5,
         &mut emit,
     );
+}
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    //! A Nætu's voice is a call so deep it is felt more than heard, rolling through the great gas
+    //! chambers and carrying across a hundred kilometres of open sky. A herd strung out across the
+    //! clouds keeps together by it, and the Næ who live on them ask them to call for them.
+
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Mind, Situation},
+            physiology::Physiology,
+            tetralata::FOLLOW,
+        },
+        behaviour::Goal,
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        speed: 24.0,
+        voice: 20_000.0,
+        ..super::super::PHYSIOLOGY
+    };
+
+    pub const ETHOLOGY: Ethology = Ethology {
+        act,
+        ..super::super::ETHOLOGY
+    };
+
+    /// Making for the herd, a Nætu that has lost sight of it calls, and the herd answers.
+    fn act(mind: &mut Mind, s: &Situation) -> Option<Goal> {
+        let goal = (super::super::ETHOLOGY.act)(mind, s);
+        let apart = s.seen.kin.is_none_or(|kin| kin.length() > 400.0);
+        if mind.intent == FOLLOW && apart {
+            return Some(goal.unwrap_or_else(|| (FOLLOW.act)(mind, s)).calling());
+        }
+        goal
+    }
 }
