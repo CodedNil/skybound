@@ -57,6 +57,8 @@ impl ThinLayers {
     }
 }
 
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "ejection_lookup"))]
 pub fn ejection_lookup(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -289,6 +291,8 @@ fn motion(position: Vec3, previous: Vec3, frame: &FrameUniform) -> Vec2 {
 }
 
 /// Solids, with the sky behind them; every pixel writes depth and motion.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(depth_replacing, entry_point_name = "opaque"))]
 pub fn opaque(
     #[spirv(location = 0)] uv: Vec2,
@@ -329,6 +333,8 @@ pub fn opaque(
 
 /// The clouds along every pixel's ray, marched apart from the rest of the volume so that each
 /// shader stays small.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "clouds"))]
 pub fn clouds(
     #[spirv(frag_coord)] fragment: Vec4,
@@ -397,6 +403,8 @@ pub fn clouds(
 /// Lay the volume over the scene and slot the thin layers in front of it; all three are drawn at
 /// every pixel. The view's motion follows whichever the pixel mostly shows: an upscaler given the
 /// solids' motion beneath a cloud smears the cloud.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "volume_composite"))]
 pub fn volume_composite(
     #[spirv(location = 0)] uv: Vec2,
@@ -446,6 +454,8 @@ pub fn volume_composite(
 
 /// The aur, its arcs and the pole lights, with the clouds slotted in: along the same jittered ray
 /// as the solids at every pixel, so an upscaler is given the whole scene alike.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "volume"))]
 pub fn volume(
     #[spirv(location = 0)] uv: Vec2,
@@ -524,6 +534,8 @@ pub fn volume(
     *out_motion = motion(position, previous, frame).extend(0.0).extend(0.0);
 }
 
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "transparent"))]
 pub fn transparent(
     #[spirv(location = 0)] uv: Vec2,
@@ -633,6 +645,8 @@ pub fn transparent(
     *out_prefix = prefix.extend(prefix_t);
 }
 
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "sky"))]
 pub fn sky(
     #[spirv(location = 0)] uv: Vec2,

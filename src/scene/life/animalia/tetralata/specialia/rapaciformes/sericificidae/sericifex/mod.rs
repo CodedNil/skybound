@@ -29,6 +29,7 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            PATIENCE,
             mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still, orbit},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
@@ -40,8 +41,9 @@ mod nature {
     pub const ETHOLOGY: Ethology = Ethology {
         hunt: |_, s, prey| wait(s.seen.home, prey),
         wander: |_, s| {
-            // A third of its idle hours go to mending, at its own turn of the clock.
-            let mending = (s.now / 90.0 + s.wobble()).fract() < 0.33;
+            // Fed enough not to be watching for prey, it mends; the more patient the weaver,
+            // the hungrier it can be and still give its time to the web.
+            let mending = s.drives.hunger < 0.25 + s.temper(PATIENCE) * 0.4;
             match s.seen.home {
                 Some(web) if mending => Goal::new(
                     Activity::Weave,

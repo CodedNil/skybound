@@ -34,6 +34,7 @@ mod nature {
     use crate::scene::life::{
         Kind,
         animalia::{
+            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near, orbit,
@@ -98,7 +99,7 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (TETRALATE.urges)(s, urges);
         if s.seen.kin.is_some() {
-            urges.add(FOLLOW, 0.35 + s.temper.sociability * 0.3);
+            urges.add(FOLLOW, 0.35 + s.temper(SOCIABILITY) * 0.3);
         }
         if s.seen.kin_count >= 4 && s.seen.threat.is_some() {
             urges.add(DAZZLE, s.threat * 1.5);

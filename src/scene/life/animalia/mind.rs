@@ -1,7 +1,10 @@
 //! How an animal decides what to do, and how what it does descends the tree of life.
 //!
-//! Its temperament, the drives its body raises and what it has perceived are weighed into urges by
-//! the behaviour its lineage inherits, the strongest is chosen, and the lineage carries it out.
+//! Its temper, the drives its body raises and what it has perceived are weighed into urges by the
+//! behaviour its lineage inherits, the strongest is chosen, and the lineage carries it out. Its
+//! temper is no roll of dice: each trait is a gene (see [`crate::scene::life::genome`]) declared in
+//! the taxon where it arose, the more of them the more complex the lineage, and changed by what the
+//! animal has lived through ([`Experience`]).
 //!
 //! Every animal taxon has an [`Ethology`]: the ways its members feel urges, hunt, court, sleep and
 //! idle. A taxon takes its parent's with `..super::ETHOLOGY` and replaces only what its lineage
@@ -18,40 +21,46 @@
 
 use crate::scene::life::{
     Kind,
-    animalia::nature::{COURT, SLEEP, WANDER},
+    animalia::{
+        AGGRESSION, APPETITE, BOLDNESS, RESTLESSNESS, SOCIABILITY, VIGILANCE,
+        nature::{COURT, SLEEP, WANDER},
+    },
     behaviour::{Activity, Goal},
+    genome::{Gene, Genome},
     organs::Strike,
 };
+use core::f32::consts::TAU;
 use spirv_std::glam::Vec3;
 use std::fmt;
 
-/// The settled temper of one individual, fixed from its identity: how bold, how curious, how drawn
-/// to its own kind, how aggressive and how restless.
+/// What an animal has made of its life so far, which no young inherits.
+///
+/// How wary the attacks it lived through have made it, how practised it is at finding and taking
+/// food, and how used it has grown to the player.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Temperament {
-    pub boldness: f32,
-    pub curiosity: f32,
-    pub sociability: f32,
-    pub aggression: f32,
-    pub restlessness: f32,
+pub struct Experience {
+    pub wariness: f32,
+    pub skill: f32,
+    pub familiarity: f32,
 }
 
-impl Temperament {
-    pub fn of(seed: u32) -> Self {
-        let trait_of = |channel: u32| {
-            let mut value = seed ^ channel.wrapping_mul(0x9e37_79b9);
-            value ^= value >> 15;
-            value = value.wrapping_mul(0x2c1b_3c6d);
-            value ^= value >> 12;
-            value = value.wrapping_mul(0x297a_2d39);
-            ((value ^ (value >> 15)) >> 8) as f32 / 16_777_215.0
-        };
-        Self {
-            boldness: trait_of(11),
-            curiosity: trait_of(12),
-            sociability: trait_of(13),
-            aggression: trait_of(14),
-            restlessness: trait_of(15),
+impl Experience {
+    /// Having lived through an attack: warier for it, the more so the harder it was hit.
+    pub fn survived(&mut self, severity: f32) {
+        self.wariness = (self.wariness + 0.15 + severity * 0.3).min(1.0);
+    }
+
+    /// Having taken prey or found food it had to work for.
+    pub fn succeeded(&mut self) {
+        self.skill += (1.0 - self.skill) * 0.05;
+    }
+
+    /// A step of time passing: old frights fade over hours, and calm time near the player makes it
+    /// easier in their company.
+    pub fn settle(&mut self, near_player: bool, afraid: bool, dt: f32) {
+        self.wariness = (self.wariness - dt / 7200.0).max(0.0);
+        if near_player && !afraid {
+            self.familiarity = (self.familiarity + dt / 600.0).min(1.0);
         }
     }
 }
@@ -204,7 +213,6 @@ impl Default for Intent {
 /// it is, and how long it has courted.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Mind {
-    pub temperament: Temperament,
     pub intent: Intent,
     pub since: f32,
     /// A hunter's progress through its attack: climbing, then striking.
@@ -221,16 +229,10 @@ pub struct Mind {
     /// How worn the tools it kills with are, from keen to blunt: each blow dulls an edge, a beak
     /// or a stylet a little, and only a lineage that tends its tools gets them back.
     pub wear: f32,
+    pub experience: Experience,
 }
 
 impl Mind {
-    pub fn new(seed: u32) -> Self {
-        Self {
-            temperament: Temperament::of(seed),
-            ..Self::default()
-        }
-    }
-
     /// Feel the urges the lineage feels, keep to the current intent unless another clearly
     /// outweighs it, and carry the intent out in the lineage's way.
     pub fn decide(
@@ -239,16 +241,16 @@ impl Mind {
         drives: Drives,
         seen: &Perception,
         now: f32,
-        individual: u32,
+        genes: Genome,
     ) -> Goal {
         let ethology = kind.behaviour();
         let mut situation = Situation {
             kind,
             drives,
             seen,
-            temper: self.temperament,
+            genes,
+            experience: self.experience,
             now,
-            individual,
             threat: threat(seen),
             fear: 0.0,
             wear: self.wear,
@@ -256,7 +258,7 @@ impl Mind {
         situation.fear = (ethology.fear)(&situation, self);
         self.hunger = drives.hunger;
         let mut urges = Urges::new();
-        urges.add(WANDER, 0.12 + self.temperament.restlessness * 0.1);
+        urges.add(WANDER, 0.12 + situation.temper(RESTLESSNESS) * 0.1);
         (ethology.urges)(&situation, &mut urges);
         let mut best = (WANDER, f32::MIN);
         for &(intent, pull) in urges.all() {
@@ -296,17 +298,16 @@ fn threat(seen: &Perception) -> f32 {
     })
 }
 
-/// What a mind knows as it decides: its species, its body's drives, what it perceives, its
-/// temper, and how threatened and afraid it is.
+/// What a mind knows as it decides: its species, its body's drives, what it perceives, the genes
+/// its temper comes from and what it has learned, and how threatened and afraid it is.
 #[derive(Clone, Copy)]
 pub struct Situation<'a> {
     pub kind: Kind,
     pub drives: Drives,
     pub seen: &'a Perception,
-    pub temper: Temperament,
+    pub genes: Genome,
+    pub experience: Experience,
     pub now: f32,
-    /// A stable number for the individual, to set it a little apart from the rest.
-    pub individual: u32,
     pub threat: f32,
     pub fear: f32,
     /// How worn its weapons are; see [`Mind::wear`].
@@ -318,14 +319,33 @@ impl Situation<'_> {
         self.seen.up.normalize_or_zero()
     }
 
-    /// A phase of its own, so neighbours doing the same thing are not in lockstep.
-    pub fn wobble(&self) -> f32 {
-        (self.individual % 628) as f32 * 0.01
+    /// One of its traits of temper, as it was born with it and as its life has changed it: an
+    /// animal is less bold for every attack it lived through and bolder for the skill it has won,
+    /// and easier near the player the more time it has spent with them.
+    pub fn temper(&self, gene: Gene) -> f32 {
+        let born = self.genes.get(gene);
+        let learned = &self.experience;
+        let changed = if gene == BOLDNESS {
+            born - learned.wariness * 0.5 + learned.skill * 0.2 + learned.familiarity * 0.15
+        } else if gene == VIGILANCE {
+            born + learned.wariness * 0.3
+        } else {
+            born
+        };
+        changed.clamp(0.0, 1.0)
     }
 
-    /// How hungry it is, made keener in a hunter by its aggression.
+    /// Where it is in its own rhythm of circling and wheeling, as quick or slow as its temper, so
+    /// neighbours doing the same thing are not in lockstep.
+    pub fn wobble(&self) -> f32 {
+        (self.genes.get(RESTLESSNESS) * 3.7 + self.genes.get(SOCIABILITY) * 2.9) * TAU
+    }
+
+    /// How hungry it is, made keener by its appetite, and in a hunter by its aggression.
     pub fn hunger(&self, hunter: bool) -> f32 {
-        self.drives.hunger * (1.0 + self.temper.aggression * 0.3 * f32::from(hunter))
+        self.drives.hunger
+            * (0.8 + self.temper(APPETITE) * 0.4)
+            * (1.0 + self.temper(AGGRESSION) * 0.3 * f32::from(hunter))
     }
 }
 
@@ -575,22 +595,22 @@ mod tests {
             threat: Some(threat),
             ..seen()
         };
-        let mut grazer = Mind::new(7);
-        grazer.temperament.boldness = 0.1;
-        let goal = grazer.decide(Kind::Herbivolus, Drives::default(), &perception, 0.0, 7);
+        let mut grazer = Mind::default();
+        let timid = Genome::TYPICAL.with(BOLDNESS, 0.1);
+        let goal = grazer.decide(Kind::Herbivolus, Drives::default(), &perception, 0.0, timid);
         assert_eq!(goal.activity, Activity::Flee);
         assert!(
             goal.offset.expect("a way out").x < 0.0,
             "fled towards the threat"
         );
-        let mut guardian = Mind::new(7);
+        let mut guardian = Mind::default();
         let mut perception = perception;
         perception.note(YOUNG, Vec3::new(-5.0, 0.0, 0.0));
         let drives = Drives {
             youth: 1.0,
             ..Drives::default()
         };
-        let goal = guardian.decide(Kind::Custos, drives, &perception, 0.0, 7);
+        let goal = guardian.decide(Kind::Custos, drives, &perception, 0.0, Genome::TYPICAL);
         assert_eq!(
             goal.activity,
             Activity::Guard,
@@ -614,8 +634,14 @@ mod tests {
             youth: 1.0,
             ..Drives::default()
         };
-        let mut hunter = Mind::new(3);
-        let climb = hunter.decide(Kind::Aculeorhynchus, hungry, &perception, 0.0, 3);
+        let mut hunter = Mind::default();
+        let climb = hunter.decide(
+            Kind::Aculeorhynchus,
+            hungry,
+            &perception,
+            0.0,
+            Genome::wild(3),
+        );
         assert_eq!(climb.activity, Activity::Hunt);
         assert!(
             climb.offset.expect("a climb").y > 30.0,
@@ -628,7 +654,7 @@ mod tests {
             }),
             ..perception
         };
-        let stoop = hunter.decide(Kind::Aculeorhynchus, hungry, &below, 1.0, 3);
+        let stoop = hunter.decide(Kind::Aculeorhynchus, hungry, &below, 1.0, Genome::wild(3));
         assert_eq!(stoop.activity, Activity::Strike);
         assert!(stoop.speed > 1.5, "the stoop was not a dive");
     }
@@ -645,10 +671,10 @@ mod tests {
             ..seen()
         };
         perception.note(ROOST, Vec3::X);
-        let mut grazer = Mind::new(1);
+        let mut grazer = Mind::default();
         assert_eq!(
             grazer
-                .decide(Kind::Herbivolus, tired, &perception, 0.0, 1)
+                .decide(Kind::Herbivolus, tired, &perception, 0.0, Genome::wild(1))
                 .activity,
             Activity::Sleep,
             "a weary animal stayed awake in full light"
@@ -657,7 +683,13 @@ mod tests {
             sleepiness: 0.3,
             ..tired
         };
-        grazer.decide(Kind::Herbivolus, slightly, &perception, 1.0, 1);
+        grazer.decide(
+            Kind::Herbivolus,
+            slightly,
+            &perception,
+            1.0,
+            Genome::wild(1),
+        );
         assert_eq!(grazer.intent, SLEEP, "a sleeper woke at the first change");
     }
 
@@ -668,8 +700,14 @@ mod tests {
             sunward: Vec3::Z,
             ..seen()
         };
-        let mut hunter = Mind::new(5);
-        let goal = hunter.decide(Kind::Crepusculofalx, Drives::default(), &glare, 0.0, 5);
+        let mut hunter = Mind::default();
+        let goal = hunter.decide(
+            Kind::Crepusculofalx,
+            Drives::default(),
+            &glare,
+            0.0,
+            Genome::wild(5),
+        );
         assert_eq!(hunter.intent, SEEK, "a dusk hunter stayed in the glare");
         assert!(
             goal.offset.expect("a way back").z < 0.0,
@@ -692,9 +730,9 @@ mod tests {
         };
         let awake = (0..50u32)
             .filter(|&individual| {
-                let mut mind = Mind::new(individual);
-                mind.temperament = Temperament::default();
-                mind.decide(Kind::Herbivolus, tired, &herd, 0.0, individual)
+                let mut mind = Mind::default();
+                let genes = Genome::wild(u64::from(individual));
+                mind.decide(Kind::Herbivolus, tired, &herd, 0.0, genes)
                     .activity
                     != Activity::Sleep
             })
@@ -707,9 +745,9 @@ mod tests {
             kind,
             drives: Drives::default(),
             seen,
-            temper: Temperament::default(),
+            genes: Genome::TYPICAL,
+            experience: Experience::default(),
             now: 0.0,
-            individual: 1,
             threat: 0.0,
             fear: 0.0,
             wear: 0.0,
@@ -748,8 +786,9 @@ mod tests {
         let sociable = |kind: Kind| {
             (0..100u32)
                 .filter(|&individual| {
-                    let mut mind = Mind::new(individual);
-                    let goal = mind.decide(kind, drives, &seen, 0.0, individual);
+                    let mut mind = Mind::default();
+                    let genes = Genome::wild(u64::from(individual));
+                    let goal = mind.decide(kind, drives, &seen, 0.0, genes);
                     matches!(goal.activity, Activity::Play | Activity::Groom)
                 })
                 .count()
@@ -777,9 +816,11 @@ mod tests {
         let mut seen = seen();
         seen.light = 0.3;
         seen.note(WHETSTONE, Vec3::X * 20.0);
-        let mut spine = Mind::new(3);
-        spine.wear = 0.9;
-        let goal = spine.decide(Kind::Ferrispina, calm, &seen, 0.0, 3);
+        let mut spine = Mind {
+            wear: 0.9,
+            ..Mind::default()
+        };
+        let goal = spine.decide(Kind::Ferrispina, calm, &seen, 0.0, Genome::wild(3));
         assert_eq!(
             goal.activity,
             Activity::Hone,
@@ -797,8 +838,8 @@ mod tests {
                 ..Perception::default()
             }
         };
-        let mut grounder = Mind::new(3);
-        let goal = grounder.decide(Kind::Lithosoma, calm, &danger, 0.0, 3);
+        let mut grounder = Mind::default();
+        let goal = grounder.decide(Kind::Lithosoma, calm, &danger, 0.0, Genome::wild(3));
         assert_ne!(
             goal.activity,
             Activity::Flee,

@@ -1,5 +1,3 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::KINDS;
 use crate::scene::life::{
     CreatureInstance, PLANT,
     animalia::{
@@ -12,12 +10,18 @@ use crate::scene::life::{
         },
     },
     biology::Biology,
+    genome::{ARCH, BUILD, HUE, PATTERN, SHADE},
     look_of,
     plantae::{
         self,
         young::{BUD, SPORE, SPROUT},
     },
     surface::{Material, Ray, SMOOTH, Surface, TraceResult, coat, trace_material},
+};
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    KINDS,
+    genome::{Genome, SIZE},
 };
 use core::f32::consts::TAU;
 #[cfg(not(target_arch = "spirv"))]
@@ -38,18 +42,13 @@ pub fn grid_age(biology: Biology, panel: usize) -> f32 {
 }
 
 #[cfg(not(target_arch = "spirv"))]
-pub fn prepare(c: &mut CreatureInstance, biology: Biology, age_days: f32, seed: u32) {
-    let random = |channel: u32| {
-        if seed == 0 {
-            return 0.5;
-        }
-        let mut value = seed ^ channel.wrapping_mul(0x9e37_79b9);
-        value ^= value >> 16;
-        value = value.wrapping_mul(0x7feb_352d);
-        value ^= value >> 15;
-        value = value.wrapping_mul(0x846c_a68b);
-        ((value ^ (value >> 16)) >> 8) as f32 / 16_777_215.0
-    };
+pub fn prepare(
+    c: &mut CreatureInstance,
+    biology: Biology,
+    age_days: f32,
+    seed: u32,
+    genes: Genome,
+) {
     let age = age_days.max(0.0);
     let young = (age / biology.maturity_days).clamp(0.0, 1.0);
     let old = age.smoothstep(biology.lifespan_days * 0.72, biology.lifespan_days);
@@ -58,9 +57,17 @@ pub fn prepare(c: &mut CreatureInstance, biology: Biology, age_days: f32, seed: 
     let stage = kind.young_form(young) as f32;
     c.kind.y = seed;
     c.life = vec4(age, young, old, stage);
-    c.identity = vec4(random(1), random(2), random(3), random(4));
+    c.genes = genes.packed();
+    c.identity = c.genes[0];
     let growth = (0.25 + young * 0.75) * (1.0 - old * 0.08) * biology.size;
-    let variation = (c.identity.xyz() - 0.5) * 0.35 + 1.0;
+    // Larger or smaller as its genes have it, broader or longer, higher or lower in the back.
+    let size = (genes.get(SIZE) - 0.5) * 0.35;
+    let build = genes.get(BUILD) - 0.5;
+    let variation = vec3(
+        1.0 + size + build * 0.2,
+        1.0 + size + (genes.get(ARCH) - 0.5) * 0.12,
+        1.0 + size - build * 0.15,
+    );
     c.proportions = (variation
         * vec3(
             1.25 - young * 0.25,
@@ -90,28 +97,57 @@ pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
     let front = (-point.z / c.opaque_bounds.z.max(0.01)).smoothstep(0.25, 0.8);
     point.x *= 1.0 - infant * front * 0.15;
     point.y *= 1.0 - infant * front * 0.12;
-    // Individuals differ in build as well as size: some heavier in the head, some lighter, some
-    // with a gentle arch to the back, some a sag.
-    let individual = c.identity - 0.5;
+    // Individuals differ in build as well as size, as their genes have it: some heavier in the
+    // head, some lighter, some with a gentle arch to the back, some a sag.
     let reach = point.z / c.opaque_bounds.z.max(0.01);
     let head = (-reach).smoothstep(0.2, 0.8);
-    point *= 1.0 - individual.w * 0.32 * head;
-    point.y -= individual.z * 0.12 * reach * reach * c.opaque_bounds.y;
+    point *= 1.0 - (c.gene(BUILD) - 0.5) * 0.32 * head;
+    point.y -= (c.gene(ARCH) - 0.5) * 0.12 * reach * reach * c.opaque_bounds.y;
     point
+}
+
+/// A cheap, smooth wobble in about [0, 1] to break up the edges of scars.
+fn noise_like(p: Vec3) -> f32 {
+    ((p.x * 1.7 + (p.y * 2.3).sin()).sin() * (p.z * 1.9 + (p.x * 1.3).cos()).cos()) * 0.5 + 0.5
 }
 
 pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> Material {
     if c.proportions.x <= 0.0 {
         return material;
     }
+    // Its colouring is its genes': its hue, how dark or pale, and how boldly patterned.
+    let hue = c.gene(HUE) - 0.5;
+    let shade = c.gene(SHADE) - 0.5;
+    let bold = c.gene(PATTERN);
+    let pigment = material.color.lerp(material.color.yzx(), hue.abs() * 0.45);
+    let pattern = (point.z * (2.0 + bold * 5.0) + (point.x * 3.0 + hue * TAU).sin() * 2.0).sin();
+    material.color = pigment * (1.0 + shade * 0.3 + pattern * (bold - 0.5) * 0.16);
+    // Every wound it lived through left its scar where it landed: a pale, puckered patch, the
+    // larger the worse the wound, crossed by seams where the skin knitted.
+    let mut scar = 0.0f32;
+    for index in 0..4 {
+        let wound = c.wounds[index];
+        if wound.w > 0.0 {
+            let reach = 0.4 + wound.w * 1.6;
+            let near = 1.0 - ((point - wound.truncate()).length() / reach).min(1.0);
+            let edge = noise_like(point * 2.3 + wound.w * 17.0) * 0.5;
+            scar = scar.max((near * 1.6 - edge).clamp(0.0, 1.0));
+        }
+    }
+    if scar > 0.0 {
+        let seam = |turn: f32| {
+            let across = point.x * turn.cos() + point.z * turn.sin() + point.y * 0.3;
+            ((across + (point.y * 2.3 + turn * 5.0).sin() * 0.3) * 5.0)
+                .sin()
+                .abs()
+        };
+        let lines = 1.0 - seam(0.7).min(seam(2.3)).smoothstep(0.0, 0.12);
+        let pale = scar * (0.45 + lines * 0.55);
+        material.color = material.color.lerp(vec3(0.84, 0.77, 0.71), pale * 0.75);
+        material.roughness += pale * 0.3;
+        material.scatter *= 1.0 - pale * 0.6;
+    }
     let individual = c.identity - 0.5;
-    let pigment = material
-        .color
-        .lerp(material.color.yzx(), individual.x.abs() * 0.45);
-    let pattern = (point.z * (2.0 + c.identity.y * 5.0)
-        + (point.x * 3.0 + individual.z * TAU).sin() * 2.0)
-        .sin();
-    material.color = pigment * (1.0 + individual.w * 0.3 + pattern * individual.y * 0.16);
     material.color = material
         .color
         .lerp(material.color.sqrt(), (1.0 - c.life.y) * 0.4);

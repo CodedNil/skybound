@@ -1,7 +1,7 @@
 pub use super::{BIOLOGY, render_wings};
 use crate::scene::{
     life::{
-        CreatureInstance, ellipsoid,
+        CreatureInstance, ellipsoid, smooth_min,
         surface::{Hit, Material, Ray, Surface, local_ray, make_hit},
         tapered_tail,
     },
@@ -64,10 +64,13 @@ pub fn tail_shaft(
     scale: Vec3,
     thickness: f32,
 ) -> Surface {
-    let mut hit = Surface::new(1e6, 4);
+    // Its pieces run smoothly into one another, so the tail bends as one flexing shaft rather
+    // than a string of beads.
+    let mut shaft = 1e6f32;
     for segment in 0..5 {
         let fraction = segment as f32 / 5.0;
-        hit.join(
+        shaft = smooth_min(
+            shaft,
             tapered_tail(
                 point,
                 creature.tail[segment].truncate() * scale,
@@ -75,10 +78,10 @@ pub fn tail_shaft(
                 thickness * (1.06 - fraction),
                 thickness * (0.86 - fraction),
             ),
-            4,
+            thickness * (0.6 - fraction * 0.4),
         );
     }
-    hit
+    Surface::new(shaft, 4)
 }
 
 fn feather_intersection(

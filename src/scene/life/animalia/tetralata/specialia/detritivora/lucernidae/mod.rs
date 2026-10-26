@@ -30,6 +30,7 @@ mod nature {
     use crate::scene::life::{
         Kind,
         animalia::{
+            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near,
@@ -78,7 +79,7 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (TETRALATE.urges)(s, urges);
         if s.seen.kin.is_some() {
-            urges.add(FOLLOW, 0.3 + s.temper.sociability * 0.2);
+            urges.add(FOLLOW, 0.3 + s.temper(SOCIABILITY) * 0.2);
         }
         // Sparkies too far to sweep are drawn in by the lure instead.
         if s.seen

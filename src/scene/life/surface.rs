@@ -1,4 +1,7 @@
-use crate::scene::life::{CreatureInstance, Kind, Look, development, smooth_min};
+use crate::scene::life::{
+    CreatureInstance, Kind, Look, ORGAN_SLOTS, animalia::WINGSPAN, development, ellipsoid,
+    genome::BUILD, smooth_min,
+};
 use core::{
     f32::consts::{PI, TAU},
     mem::swap,
@@ -108,16 +111,45 @@ impl TraceResult {
 pub struct Surface {
     pub distance: f32,
     pub material: u32,
+    /// The material it blends into where two parts were smoothly joined, and how far: nothing
+    /// at zero, half and half at one half.
+    pub other: u32,
+    pub mix: f32,
 }
 
 impl Surface {
     pub const fn new(distance: f32, material: u32) -> Self {
-        Self { distance, material }
+        Self {
+            distance,
+            material,
+            other: material,
+            mix: 0.0,
+        }
     }
     pub fn join(&mut self, distance: f32, material: u32) {
         if distance < self.distance {
             *self = Self::new(distance, material);
         }
+    }
+
+    /// Join a part smoothly, the two surfaces flowing into one another over `k` and their
+    /// materials blending across the seam, as flesh grows into a horn's collar or a leaf into its
+    /// rim, rather than meeting at a crease with a hard change of colour.
+    pub fn blend(&mut self, distance: f32, material: u32, k: f32) {
+        let k = k.max(1e-4);
+        let h = (0.5 + 0.5 * (distance - self.distance) / k).clamp(0.0, 1.0);
+        let joined = distance.lerp(self.distance, h) - k * h * (1.0 - h);
+        if material != self.material {
+            let (primary, secondary) = if h >= 0.5 {
+                (self.material, material)
+            } else {
+                (material, self.material)
+            };
+            self.material = primary;
+            self.other = secondary;
+            self.mix = 1.0 - h.max(1.0 - h);
+        }
+        self.distance = joined;
     }
 
     /// Set eyes into the body as the tetralates carry them: each lens, `eye` being the distance to
@@ -164,6 +196,12 @@ pub struct Material {
     pub relief: f32,
     pub texture: u32,
     pub grain: f32,
+    /// How much light scatters under the surface before it leaves it, bleeding its colour, deeper
+    /// and redder, into the shadow side of every curve as it does through skin and leaf.
+    pub scatter: f32,
+    /// How strong the thin wet film over living tissue is, which catches a second, sharper glint
+    /// over the softer sheen of the skin beneath.
+    pub film: f32,
 }
 
 /// No relief: a smooth surface.
@@ -205,6 +243,27 @@ pub fn relief(q: Vec3, texture: u32) -> f32 {
 }
 
 impl Material {
+    /// This material blended `t` of the way into another.
+    pub fn mixed(self, other: Self, t: f32) -> Self {
+        if t <= 0.0 {
+            return self;
+        }
+        Self {
+            color: self.color.lerp(other.color, t),
+            roughness: self.roughness.lerp(other.roughness, t),
+            metal: self.metal.lerp(other.metal, t),
+            emission: self.emission.lerp(other.emission, t),
+            transmission: self.transmission.lerp(other.transmission, t),
+            ior: self.ior.lerp(other.ior, t),
+            translucency: self.translucency.lerp(other.translucency, t),
+            relief: self.relief.lerp(other.relief, t),
+            texture: self.texture,
+            grain: self.grain.lerp(other.grain, t),
+            scatter: self.scatter.lerp(other.scatter, t),
+            film: self.film.lerp(other.film, t),
+        }
+    }
+
     pub fn transmittance(self, cosine: f32) -> Vec3 {
         let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).powi(2);
         let fresnel = dielectric + (1.0 - dielectric) * (1.0 - cosine.clamp(0.0, 1.0)).powi(5);
@@ -222,6 +281,8 @@ impl Material {
             relief: 0.0,
             texture: SMOOTH,
             grain: 1.0,
+            scatter: 0.0,
+            film: 0.0,
         }
     }
     pub fn shade(self, normal: Vec3, ray: Ray) -> Vec3 {
@@ -253,13 +314,26 @@ impl Material {
             * (Vec3::ONE - self.transmission)
             * (1.0 - self.metal)
             * (fill + ray.radiance * (wrapped.lerp(backlight, self.translucency) / PI));
+        // Light that went in near the shadow line and came out past it, carrying the colour of the
+        // tissue it passed through, deepened.
+        let bleed = ((normal.dot(light) + 0.6) / 1.6).max(0.0) - nl;
+        let scattered = self.color * self.color * ray.radiance * bleed.max(0.0) * self.scatter / PI
+            * (1.0 - self.metal);
+        // The wet film: a smooth, faint second lobe.
+        let film_a2 = 0.28f32.powi(4);
+        let film_distribution =
+            film_a2 / (PI * (nh * nh * (film_a2 - 1.0) + 1.0).powi(2)).max(1e-12);
+        let film_fresnel = 0.04 + 0.96 * (1.0 - vh).powi(5);
+        let glint = film_fresnel * film_distribution * 0.25 * nl * self.film;
         let reflected = normal * (2.0 * normal.dot(view)) - view;
         let environment = ray.ambient * (0.72 + reflected.y * 0.28);
         let grazing = Vec3::splat(1.0 - self.roughness).max(f0);
         let environment_fresnel = f0 + (grazing - f0) * (1.0 - nv).powi(5);
         diffuse
+            + scattered
             + specular * ray.radiance
-            + environment * environment_fresnel
+            + ray.radiance * glint
+            + environment * environment_fresnel * (1.0 + self.film * 0.5)
             + self.color * self.emission
     }
 }
@@ -288,6 +362,82 @@ pub struct Sheet {
     pub pattern: Vec4,
     pub second: Vec3,
     pub side: f32,
+    /// How torn this wing is, and how scarred from tears long healed.
+    pub torn: f32,
+    pub scarred: f32,
+}
+
+/// Whether a point of a wing's membrane, by its coordinates, is still there.
+///
+/// A torn wing is damaged in as many ways as it was struck: its tip bitten off, long rents run in
+/// from the trailing edge along the spars where the membrane split, ragged bites taken from either
+/// edge, holes punched clean through where blows went straight in, and the trailing edge, thinnest
+/// of all, frayed. The worse the wing is torn the more of each it has, and each wing, by `which`,
+/// tears its own way. A wing torn right through is gone.
+fn intact(uv: Vec2, side: f32, torn: f32, which: f32) -> bool {
+    if torn <= 0.01 {
+        return true;
+    }
+    if torn >= 0.98 {
+        return false;
+    }
+    let along = uv.x.mul_add(side * 0.5, 0.5);
+    let chord = (uv.y + 0.62) / 1.4;
+    let seed = |salt: f32| hash(vec3(which, salt, 5.0));
+    // The tip, bitten off along a ragged line.
+    let bitten = torn * seed(1.0) * 0.45;
+    if along > 1.0 - bitten + (noise(vec3(chord * 9.0, which, 1.0)) - 0.5) * 0.08 {
+        return false;
+    }
+    // Frayed along the trailing edge.
+    let tatter = torn * (0.12 + 0.3 * noise(vec3(along * 13.0, which, 3.0)));
+    if chord > 1.0 - tatter {
+        return false;
+    }
+    // Rents run in from the trailing edge, narrowing as they go.
+    for rent in 0..3 {
+        let r = rent as f32;
+        if seed(10.0 + r) > torn * 1.4 {
+            continue;
+        }
+        let at = 0.2 + seed(20.0 + r) * 0.7;
+        let depth = 0.25 + seed(30.0 + r) * 0.55 * torn;
+        let open = 1.0 - chord;
+        let wander = (chord * 7.0 + r).sin() * 0.015;
+        if open < depth && (along - at - wander).abs() < (depth - open) * 0.05 + 0.004 {
+            return false;
+        }
+    }
+    // Bites from the edges.
+    let bite = vec2(along * 6.0, 0.0).floor().x;
+    if hash(vec3(bite, which, 7.0)) < torn * 0.4 {
+        let middle = (bite + 0.5) / 6.0;
+        let edge = if hash(vec3(bite, which, 8.0)) < 0.5 {
+            0.0
+        } else {
+            1.0
+        };
+        let reach = 0.12 + hash(vec3(bite, which, 9.0)) * 0.2 * torn;
+        if vec2((along - middle) * 3.0, chord - edge).length() < reach {
+            return false;
+        }
+    }
+    // Holes punched clean through, rough-edged.
+    let grid = vec2(along * 8.0, chord * 3.5);
+    let cell = grid.floor();
+    if hash(cell.extend(which)) < torn * 0.35 {
+        let centre = cell
+            + 0.5
+            + (vec2(
+                hash(cell.extend(which + 7.0)),
+                hash(cell.extend(which + 13.0)),
+            ) - 0.5)
+                * 0.4;
+        let ragged = noise((grid * 5.0).extend(which)) * 0.08;
+        let hole = 0.12 + torn * 0.25 * hash(cell.extend(which + 19.0)) + ragged;
+        return (grid - centre).length() > hole;
+    }
+    true
 }
 
 /// A membrane's markings at a point of it, out along the span and back across the chord, seen at a
@@ -447,6 +597,9 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     m.relief = 0.35 * skin.y;
     m.grain = skin.z;
     m.roughness = (m.roughness + skin.w).clamp(0.05, 1.0);
+    // Living skin: light scatters through it and a thin film of moisture glints on it.
+    m.scatter = 0.6;
+    m.film = 0.5;
     tissue(m, p, id, look, vec3(blotches, mottle, grain))
 }
 
@@ -540,6 +693,18 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
         }
         _ => {}
     }
+    // Hard tissues neither let light in nor stay wet; the eye is all gloss.
+    let (scatter, film) = if id == 3 {
+        (0.0, 1.5)
+    } else if id == 5 || id == 6 || id == 11 {
+        (0.0, 0.1)
+    } else if id == 7 {
+        (0.25, 0.2)
+    } else {
+        (m.scatter, m.film)
+    };
+    m.scatter = scatter;
+    m.film = film;
     m
 }
 
@@ -617,6 +782,10 @@ pub fn trace<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     hit
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the march, normal, occlusion and shadow share one loop so the GPU inlines the surface once"
+)]
 pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32) -> Material>(
     ray: Ray,
     c: &CreatureInstance,
@@ -629,7 +798,18 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
         let mut hit = surface(development::body_point(point, c), c);
         // Allowing for the stretch that young and individual builds put on the body.
         hit.distance *= (1.0 - (1.0 - c.life.y) * 0.2) * 0.85;
+        if c.kind.w > 0 {
+            cutaway(&mut hit, point, c);
+        }
         hit
+    };
+    // A cutaway's organs are coloured as their species colours them; the rest is the body's own.
+    let material = |point, id: u32| {
+        if id >= ORGAN_ID {
+            organ_material(c, id)
+        } else {
+            material(point, id)
+        }
     };
     let bounds = c.opaque_bounds.truncate();
     let (mut distance, end) = span_in_bounds(local, bounds, ray.max_distance);
@@ -646,6 +826,8 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     let mut epsilon = 0.0;
     let mut tap = 0.0;
     let mut id = 0;
+    let mut other = 0;
+    let mut mix = 0.0;
     let mut gradient = Vec3::ZERO;
     let mut normal = Vec3::Y;
     let mut occlusion = 0.0;
@@ -680,6 +862,8 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
             if sample.distance < epsilon {
                 point = query;
                 id = sample.material;
+                other = sample.other;
+                mix = sample.mix;
                 tap = epsilon.max(c.position.w * 0.000_05);
                 phase = 1;
             } else {
@@ -712,13 +896,12 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     if phase < 5 {
         normal = normalize(gradient);
     }
-    let lit = lit.clamp(0.0, 1.0);
-    let shaded_ray = Ray {
-        ambient: ray.ambient * (1.0 - occlusion * 3.0).clamp(0.2, 1.0),
-        radiance: ray.radiance * (lit * lit * (3.0 - 2.0 * lit)),
-        ..ray
+    let shaded_ray = shaded(ray, occlusion, lit);
+    let material = if mix > 0.0 {
+        material(point, id).mixed(material(point, other), mix)
+    } else {
+        material(point, id)
     };
-    let material = material(point, id);
     let normal = relieved(normal, point, c, material, ray.footprint * distance);
     make_hit(
         shaded_ray,
@@ -732,6 +915,52 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
 
 /// Where a ray enters and leaves a creature's bounding box, in its own frame, clipped to the
 /// ray's reach.
+/// The light at a point the body shades itself: its own shadow, `lit`, and its folds, creases and
+/// the hollows between its parts, `occlusion`, which take less of the sky and, a little, of the
+/// sun as well, so its forms read even in flat light.
+fn shaded(ray: Ray, occlusion: f32, lit: f32) -> Ray {
+    let lit = lit.clamp(0.0, 1.0);
+    let crevice = (1.0 - occlusion * 3.0).clamp(0.2, 1.0);
+    Ray {
+        ambient: ray.ambient * crevice,
+        radiance: ray.radiance * (lit * lit * (3.0 - 2.0 * lit)) * crevice.sqrt(),
+        ..ray
+    }
+}
+
+/// Where a cutaway's organs begin among a surface's materials.
+const ORGAN_ID: u32 = 100;
+
+/// A cutaway organ's tissue, in the colour its species gives it, glowing if it stores aur.
+fn organ_material(c: &CreatureInstance, id: u32) -> Material {
+    let organ = c.organs[(id - ORGAN_ID) as usize];
+    let mut tissue = Material::skin(organ[2].truncate(), 0.35);
+    tissue.translucency = 0.2;
+    tissue.emission = organ[1].w;
+    tissue
+}
+
+/// A creature cut away down its middle, its near half gone to show its organs inside it, each
+/// where its species carries it.
+fn cutaway(hit: &mut Surface, point: Vec3, c: &CreatureInstance) {
+    let body = hit.distance;
+    hit.distance = body.max(-point.x);
+    for index in 0..ORGAN_SLOTS as u32 {
+        if index >= c.kind.w {
+            break;
+        }
+        let at = c.organs[index as usize][0];
+        let size = c.organs[index as usize][1];
+        let local = if at.w > 0.5 {
+            vec3(point.x.abs(), point.y, point.z)
+        } else {
+            point
+        };
+        let organ = ellipsoid(local - at.truncate(), size.truncate()).max(body);
+        hit.join(organ, ORGAN_ID + index);
+    }
+}
+
 fn span_in_bounds(local: Ray, bounds: Vec3, max_distance: f32) -> (f32, f32) {
     let nonzero = |value: f32| if value.abs() < 1e-8 { 1e-8 } else { value };
     let safe = vec3(
@@ -902,7 +1131,10 @@ impl Sheet {
                 } else {
                     along > self.wrist
                 };
-                if on_panel && planform(uv, self.side, feathered, self.style) >= 0.0 {
+                if on_panel
+                    && planform(uv, self.side, feathered, self.style) >= 0.0
+                    && intact(uv, self.side, self.torn, self.root.z + self.side)
+                {
                     distance = candidate;
                     point = at;
                 }
@@ -944,6 +1176,10 @@ impl Sheet {
             tint.lerp(tint * tint, thickness * 0.5)
                 .lerp(vec3(0.94, 0.59, 0.17), along.smoothstep(0.7, 1.0) * 0.25)
         };
+        // Old tears healed into pale, stiff streaks of scar.
+        let streak = (noise(vec3(along * 14.0, chord * 3.0, self.side)) - 0.5).abs();
+        let scar = (1.0 - streak.smoothstep(0.0, 0.04)) * self.scarred.min(1.0) * 1.5;
+        let colour = colour.lerp(vec3(0.86, 0.82, 0.74), scar.min(0.8));
         // The species' own markings over the membrane.
         let mark = marking(self.pattern, along, chord, facing);
         let colour = colour.lerp(self.second, (mark.max(0.0) * self.pattern.z).min(1.0));
@@ -1017,12 +1253,11 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
     let wing = look.wings[index];
     let shoulder = look.hinges[index].extend(wing.z);
     let root = vec3(shoulder.x * side, shoulder.y, shoulder.z);
-    // No two individuals' wings quite alike: a little longer or shorter, held a little higher or
-    // lower at rest.
-    let individual = c.identity - 0.5;
-    let dimensions =
-        wing.truncate().truncate() * vec2(1.0 + individual.x * 0.16, 1.0 + individual.y * 0.1);
-    let rest = 0.1 + individual.z * 0.16;
+    // No two individuals' wings quite alike: as long and broad as its genes have them, held a
+    // little higher or lower at rest.
+    let dimensions = wing.truncate().truncate()
+        * vec2(0.92 + c.gene(WINGSPAN) * 0.16, 0.95 + c.gene(BUILD) * 0.1);
+    let rest = 0.1 + (c.identity.z - 0.5) * 0.16;
     let development = if c.proportions.x > 0.0 {
         0.25 + c.proportions.w * 0.75
     } else {
@@ -1035,9 +1270,24 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
     // The membrane is no board: the air it drives bows it along the span against the stroke, tips
     // curling up on the downstroke and down on the up, and fills it deeper across the chord on
     // the downstroke.
-    let beat = |time: f32, folded: f32| {
-        let phase = time * motion.x * TAU + index as f32 * 0.6;
-        let effort = 1.0 - folded.clamp(0.0, 1.0);
+    // Driven by the simulation, the stroke is where the wingbeat has reached and as deep as the
+    // animal is working its wings, barely moving in a glide; drawn alone, it beats steadily.
+    // A weakened side must make up for it: both wings on a side that has lost or torn membrane beat
+    // faster, half as fast again or twice, and deeper, giving old and battered animals gaits of
+    // their own; a wing torn away leaves its fellow on that side doing the work of two.
+    let fore = if side > 0.0 { c.wear.y } else { c.wear.x };
+    let hind = if side > 0.0 { c.wear.w } else { c.wear.z };
+    let weak = fore.min(1.0).midpoint(hind.min(1.0));
+    let quicker = 1.0 + (weak * 2.0).round() * 0.5;
+    let harder = 1.0 + weak * 0.8;
+    let beat = |time: f32, folded: f32, dynamics: Vec4| {
+        let (phase, depth) = if dynamics.w > 0.0 {
+            (dynamics.x * quicker, (0.25 + dynamics.y * 1.1) * harder)
+        } else {
+            (time * motion.x * TAU * quicker, harder)
+        };
+        let phase = phase + index as f32 * 0.6;
+        let effort = (1.0 - folded.clamp(0.0, 1.0)) * depth.min(1.6);
         let push = -phase.cos() * effort;
         (
             rest + motion.y * phase.sin() * effort,
@@ -1046,8 +1296,12 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
             0.07 + push.max(0.0) * 0.06,
         )
     };
-    let (stroke, fold, flex, camber) = beat(c.animation.z, c.animation.y);
-    let (old_stroke, old_fold, old_flex, _) = beat(c.previous_animation.z, c.previous_animation.y);
+    let (stroke, fold, flex, camber) = beat(c.animation.z, c.animation.y, c.dynamics);
+    let (old_stroke, old_fold, old_flex, _) = beat(
+        c.previous_animation.z,
+        c.previous_animation.y,
+        c.previous_dynamics,
+    );
     Sheet {
         center: root + vec3(side * reach * 0.5, 0.0, reach * 0.12),
         previous_center: root + vec3(side * old_reach * 0.5, 0.0, old_reach * 0.12),
@@ -1062,6 +1316,16 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
         pattern: look.pattern,
         second: look.second,
         side,
+        torn: {
+            let tears = c.wear;
+            match (index, side > 0.0) {
+                (0, false) => tears.x,
+                (0, true) => tears.y,
+                (_, false) => tears.z,
+                _ => tears.w,
+            }
+        },
+        scarred: c.scars.z,
     }
 }
 
@@ -1092,6 +1356,11 @@ pub fn wing_bones(p: Vec3, c: &CreatureInstance, look: Look, index: usize) -> f3
     for i in 0..2 {
         let side = if i == 0 { -1.0 } else { 1.0 };
         let shape = wing_sheet(c, look, index, side);
+        // A wing torn right through is gone, frame and all, but for a stump at the shoulder.
+        if shape.torn >= 0.98 {
+            distance = distance.min((p - shape.root).length() - shape.radii.y * 0.25);
+            continue;
+        }
         let rx = shape.radii.x;
         let chord = shape.radii.y;
         let offset = shape.center - shape.root;
@@ -1329,6 +1598,8 @@ mod tests {
                 pattern: Vec4::ZERO,
                 second: Vec3::ZERO,
                 side: 0.0,
+                torn: 0.0,
+                scarred: 0.0,
             },
             Vec3::ONE.extend(0.3),
         );

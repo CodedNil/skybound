@@ -29,6 +29,7 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            CURIOSITY,
             mind::{Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges},
             nature::FORAGE,
             tetralata::{
@@ -84,7 +85,7 @@ mod nature {
         (MANDUCID.urges)(s, urges);
         urges.scale(FOLLOW, 0.0);
         if s.seen.player.is_some() {
-            urges.add(INVESTIGATE, s.temper.curiosity * 0.6);
+            urges.add(INVESTIGATE, s.temper(CURIOSITY) * 0.6);
         }
         if s.seen
             .mark(CLIENT)

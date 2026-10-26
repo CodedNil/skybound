@@ -2,6 +2,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
     plantae::{count, frond, gene, rotate, speckle},
+    smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -69,17 +70,18 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let lean = (gene(c, 3.0) - 0.5) * 0.5;
     let bearing = gene(c, 4.0) * TAU;
     let tilt = vec2(bearing.cos(), bearing.sin()) * lean * (p.y - FOOT).max(0.0) * 0.08;
-    let q = vec3(p.x - tilt.x, p.y, p.z - tilt.y);
-    let angle = q.z.atan2(q.x);
-    let radius = girth(c, q.y, tall);
+    let leaning = vec3(p.x - tilt.x, p.y, p.z - tilt.y);
+    let angle = leaning.z.atan2(leaning.x);
+    let radius = girth(c, leaning.y, tall);
     // Six ridges over the sap veins, deep or shallow.
     let ridges = (angle * 6.0).cos().abs().powf(3.0) * (0.15 + gene(c, 5.0) * 0.35);
-    let around = q.xz().length();
+    let around = leaning.xz().length();
     let outer = around - radius - ridges;
     // Solid at the flared foot; hollow above it, walls about half a metre thick.
-    let bore = around - (2.2 * (1.0 - 0.3 * ((q.y - FOOT) / (tall - FOOT)).clamp(0.0, 1.0)) - 0.6);
-    let wall = outer.max(-bore.max(FOOT + 1.5 - q.y));
-    let trunk = wall.max(q.y - tall).max(FOOT - q.y) * 0.8;
+    let bore =
+        around - (2.2 * (1.0 - 0.3 * ((leaning.y - FOOT) / (tall - FOOT)).clamp(0.0, 1.0)) - 0.6);
+    let wall = outer.max(-bore.max(FOOT + 1.5 - leaning.y));
+    let trunk = wall.max(leaning.y - tall).max(FOOT - leaning.y) * 0.8;
     let mut shape = Surface::new(trunk, 0);
     // The whistling branches.
     let branches = count(c, 6.0, 3, 8);
@@ -98,27 +100,35 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             continue;
         }
         let pipe = 0.35 + speckle(vec2(f, 3.0), 1.0) * 0.35;
-        let tube = tapered_tail(p, root, elbow, pipe * 1.3, pipe).min(tapered_tail(
-            p,
-            elbow,
-            mouth,
-            pipe,
-            pipe * 0.9,
-        ));
-        let hollow = tapered_tail(
-            p,
-            elbow,
-            mouth + (mouth - elbow) * 0.1,
-            pipe * 0.55,
-            pipe * 0.6,
-        );
-        // The flared mouth that whistles.
-        let axis = (mouth - elbow).normalize();
+        // One smooth curve from the trunk to the mouth, drawn in pieces that flow into one
+        // another, thick where it leaves the wood and narrowing before it flares.
+        let curve = |t: f32| root.lerp(elbow, t).lerp(elbow.lerp(mouth, t), t);
+        let mut tube = 1e6f32;
+        let mut previous = root;
+        for piece in 1..=5 {
+            let t = piece as f32 / 5.0;
+            let next = curve(t);
+            let width = pipe * (1.6 - t * 0.7);
+            tube = smooth_min(
+                tube,
+                tapered_tail(p, previous, next, width, width - pipe * 0.14),
+                pipe * 0.6,
+            );
+            previous = next;
+        }
+        let axis = (mouth - curve(0.8)).normalize();
+        let hollow = tapered_tail(p, curve(0.6), mouth + axis * 0.2, pipe * 0.55, pipe * 0.6);
+        // The flared mouth that whistles, rolling out of the pipe.
         let along = (p - mouth).dot(axis);
         let off = (p - mouth - axis * along).length();
-        let flare = pipe * (1.0 + ((along + 0.8) / 0.8).clamp(0.0, 1.0).powi(2) * 1.4);
-        let bell = ((off - flare).abs() - 0.09).max(along).max(-along - 0.8) * 0.8;
-        shape.join(tube.max(-hollow).min(bell), 0);
+        let flare = pipe * (0.9 + ((along + 1.0) / 1.0).clamp(0.0, 1.0).powi(2) * 1.5);
+        let bell = ((off - flare).abs() - 0.09).max(along).max(-along - 1.0) * 0.8;
+        // Grown out of the trunk, its root swelling into the wood.
+        shape.blend(
+            smooth_min(tube, bell, pipe * 0.4).max(-hollow),
+            0,
+            pipe * 1.5,
+        );
         // Fan leaves round the mouth.
         for leaf in 0..count(c, 9.0, 0, 3) {
             let spin = leaf as f32 * 2.1 + f;

@@ -20,7 +20,8 @@ use skybound::scene::{
     life::{
         CreatureInstance, Kind,
         animalia::mind::Mind,
-        behaviour::{Activity, Senses},
+        behaviour::{Activity, Motion, Senses},
+        genome::Genome,
         organs::Strike,
         plantae::physiology::grow,
         vitals::Vitals,
@@ -44,7 +45,7 @@ use self::{
     conduct::{Conduct, conduct, land},
     drawing::{census, gather_herd},
     feeding::{Meal, forage, transfer_meals},
-    movement::{Move, moving, relocate},
+    movement::{Move, flex, moving, relocate},
     senses::{Surroundings, orient},
 };
 
@@ -84,12 +85,21 @@ pub struct Relations {
     /// The parent that bore it, while it still depends on that parent.
     parent: Option<Entity>,
     remembered_food: Option<(Entity, DVec3, f32)>,
-    pollen: Option<(Entity, Kind)>,
+    pollen: Option<(Entity, Kind, Genome)>,
     pollinated_until: f32,
     last_birth: f32,
-    /// What it has set itself to do, and its temper.
+    /// What it has set itself to do, and what it has learned.
     pub mind: Mind,
-    minded: bool,
+    /// The genes it was born with, and those of the mate or pollen that will father its young.
+    pub genes: Genome,
+    sire: Option<Genome>,
+    /// Where its wings are in their beat, in radians, and how hard it is beating them.
+    wingbeat: f32,
+    effort: f32,
+    /// How far the air bends a plant at its top, in its own frame, and how fast the bend is
+    /// changing: a spring the moving air pushes against.
+    bend: Vec3,
+    bending: Vec3,
     /// Until when it carries fertile eggs or young, having mated.
     fertile_until: f32,
     /// When it can strike again.
@@ -98,8 +108,8 @@ pub struct Relations {
     home: Option<Entity>,
     /// The nearest partner it keeps company with, which a voiceless animal can ask to call.
     companion: Option<Entity>,
-    /// A seed carried in its gut from a fruit, and when it will be passed.
-    seed: Option<(Kind, f32)>,
+    /// A seed carried in its gut from a fruit, when it will be passed, and the genes it carries.
+    seed: Option<(Kind, f32, Genome)>,
     /// The hunter carrying it off, while it is helpless to escape.
     captor: Option<Entity>,
     /// Where it was before the last step moved it, as an offset from where it is, how it was
@@ -148,6 +158,9 @@ struct Agent {
     /// Whether it is the player or their mount, which nothing hunts or eats: the game has no death
     /// for them yet.
     protected: bool,
+    genes: Genome,
+    /// How practised it is, from what it has learned.
+    skill: f32,
 }
 
 impl Agent {
@@ -276,7 +289,7 @@ struct Attack {
     carrier: Option<Entity>,
 }
 
-pub fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle {
+pub fn population(kind: Kind, position: Vec3, mass_fraction: f32, genes: Genome) -> impl Bundle {
     let mut vitals = Vitals::born(kind);
     vitals.mass *= mass_fraction;
     if mass_fraction < 0.5 {
@@ -286,7 +299,10 @@ pub fn population(kind: Kind, position: Vec3, mass_fraction: f32) -> impl Bundle
         Species(kind),
         Physiology(vitals),
         EcologicalMotion::default(),
-        Relations::default(),
+        Relations {
+            genes,
+            ..Relations::default()
+        },
         WorldAnchor,
         // Level, heading along the local horizon until the first step of the simulation steers it.
         Transform::from_translation(position).looking_to(Vec3::X, Vec3::Z),
@@ -314,7 +330,10 @@ fn attach_players(
             Species(kind),
             Physiology(Vitals::born(kind)),
             EcologicalMotion::default(),
-            Relations::default(),
+            Relations {
+                genes: Genome::wild(entity.to_bits()),
+                ..Relations::default()
+            },
         ));
     }
 }
@@ -354,7 +373,7 @@ struct Outcome {
     meals: Vec<Meal>,
     attacks: Vec<Attack>,
     calls: Vec<Call>,
-    seedlings: Vec<(Kind, Vec3)>,
+    seedlings: Vec<(Kind, Vec3, Genome)>,
     patches: HashMap<IVec3, Pool>,
     births: u64,
     deaths: u64,
@@ -446,9 +465,9 @@ fn simulate(
     ecosystem.deaths += transfer_meals(&mut organisms, &outcome.meals, now);
     ecosystem.deaths += land(&mut organisms, &outcome.attacks);
     commands.command_scope(|mut commands| {
-        for (kind, position) in outcome.seedlings {
+        for (kind, position, genes) in outcome.seedlings {
             if ecosystem.living < POPULATION_LIMIT {
-                commands.spawn(population(kind, position, 0.1));
+                commands.spawn(population(kind, position, 0.1, genes));
                 ecosystem.born();
             }
         }
@@ -473,6 +492,10 @@ struct Shared<'a> {
 
 /// One organism's step: it senses and decides, lives a step of its body's life, eats, acts, moves
 /// and perhaps gives birth, changing only itself and noting the rest in `outcome`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one organism's step reads best as the sequence of what happens to it"
+)]
 fn live_out(
     (
         entity,
@@ -490,30 +513,27 @@ fn live_out(
 ) {
     let Shared {
         world,
-        clouds,
         index,
-        grid,
         players,
-        calls,
-        patches,
-        living,
-        commands,
         now,
         dt,
+        ..
     } = *shared;
     let kind = species.0;
-    let climate = climate_at(world, clouds, transform.translation, now);
+    let climate = climate_at(world, shared.clouds, transform.translation, now);
     let cell = cell(world.position(transform.translation).as_vec3());
-    let before = patches.get(&cell).copied().unwrap_or_default();
+    let before = shared.patches.get(&cell).copied().unwrap_or_default();
     let mut patch = before;
     if body.0.health <= 0.0 {
         if decompose(&mut body.0, &mut patch, dt, kind.biology()) && !player && !mount {
-            commands.command_scope(|mut commands| commands.entity(entity).despawn());
+            shared
+                .commands
+                .command_scope(|mut commands| commands.entity(entity).despawn());
         }
         outcome.exchange(cell, before, patch);
         return;
     }
-    let neighbours = neighbours(transform.translation, kind.senses(), grid);
+    let neighbours = neighbours(transform.translation, kind.senses(), shared.grid);
     let agent = index[&entity];
     let (senses, stage, targets) = orient(
         agent,
@@ -523,7 +543,7 @@ fn live_out(
             climate,
             neighbours: &neighbours,
             players,
-            calls,
+            calls: shared.calls,
             now,
         },
         (index, world),
@@ -531,8 +551,23 @@ fn live_out(
     let mut movement = moving(motion.0, transform.rotation);
     let controls = movement.advance(kind, &senses, dt);
     relations.activity = controls.activity;
-    let effort = (movement.velocity - climate.wind).length() / kind.speed().max(1.0);
-    let alive = live(&mut body.0, kind, climate, effort.min(2.0), &mut patch, dt);
+    settle(
+        &mut relations,
+        &mut body.0,
+        (kind, &movement, climate),
+        players,
+        transform.translation,
+        dt,
+    );
+    // Every second of beating wings is paid for, three times over at full effort.
+    let alive = live(
+        &mut body.0,
+        kind,
+        climate,
+        movement.effort * 3.0,
+        &mut patch,
+        dt,
+    );
     if !alive {
         outcome.deaths += 1;
         outcome.exchange(cell, before, patch);
@@ -578,15 +613,66 @@ fn live_out(
             },
         );
     }
-    if living.load(Ordering::Relaxed) < POPULATION_LIMIT
-        && reproduce(agent, &mut body.0, &mut relations, &neighbours, now)
-    {
-        living.fetch_add(1, Ordering::Relaxed);
-        commands.command_scope(|mut commands| {
-            bear(&mut commands, agent, &neighbours, transform.translation);
-        });
+    if breed(
+        agent,
+        &mut body.0,
+        &mut relations,
+        &neighbours,
+        shared,
+        transform.translation,
+    ) {
         outcome.births += 1;
     }
+}
+
+/// Bear young if the body is ready and there is room in the world for them.
+fn breed(
+    agent: Agent,
+    body: &mut Vitals,
+    relations: &mut Relations,
+    neighbours: &[Agent],
+    shared: &Shared,
+    position: Vec3,
+) -> bool {
+    if shared.living.load(Ordering::Relaxed) >= POPULATION_LIMIT
+        || !reproduce(agent, body, relations, neighbours, shared.now)
+    {
+        return false;
+    }
+    shared.living.fetch_add(1, Ordering::Relaxed);
+    shared.commands.command_scope(|mut commands| {
+        bear(
+            &mut commands,
+            agent,
+            relations.sire,
+            neighbours,
+            position,
+            shared.now,
+        );
+    });
+    true
+}
+
+/// What moving did to the body and the mind: wings beat on or a plant bends, the hide gathers what
+/// grows on it, an Iron Spine gathers iron, and calm time near the player wears away an animal's
+/// unease with them.
+fn settle(
+    relations: &mut Relations,
+    body: &mut Vitals,
+    (kind, movement, climate): (Kind, &Motion, Climate),
+    players: &[Vec3],
+    position: Vec3,
+    dt: f32,
+) {
+    let wind = climate.wind;
+    flex(relations, kind, movement, wind, dt);
+    body.overgrow(kind, (movement.velocity - wind).length(), dt);
+    body.gather_iron(kind, climate, relations.activity == Activity::Hone, dt);
+    let near_player = players
+        .iter()
+        .any(|player| player.distance(position) < 60.0);
+    let afraid = relations.activity == Activity::Flee;
+    relations.mind.experience.settle(near_player, afraid, dt);
 }
 
 /// Where the players and their mounts are.
@@ -618,13 +704,13 @@ fn live(
 
 /// A seed carried from a fruit, passed once it has ridden long enough, to sprout where its carrier
 /// has flown.
-fn pass_seed(relations: &mut Relations, now: f32, position: Vec3) -> Option<(Kind, Vec3)> {
-    let (kind, at) = relations.seed?;
+fn pass_seed(relations: &mut Relations, now: f32, position: Vec3) -> Option<(Kind, Vec3, Genome)> {
+    let (kind, at, genes) = relations.seed?;
     if now <= at {
         return None;
     }
     relations.seed = None;
-    Some((kind, position))
+    Some((kind, position, genes))
 }
 
 fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
@@ -640,6 +726,8 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
                 rotation: transform.rotation,
                 activity: relations.activity,
                 protected: player || mount,
+                genes: relations.genes,
+                skill: relations.mind.experience.skill,
             },
         )
         .collect()
@@ -711,6 +799,8 @@ mod tests {
             rotation: Quat::IDENTITY,
             activity: Activity::Drift,
             protected: false,
+            genes: Genome::TYPICAL,
+            skill: 0.0,
         };
         let mut relations = Relations::default();
         assert!(
@@ -733,10 +823,19 @@ mod tests {
     #[test]
     fn competing_grazers_cannot_create_food_or_eat_a_carcass() {
         let mut world = World::new();
-        let first = world.spawn(population(Kind::Naetu, Vec3::ZERO, 1.0)).id();
-        let second = world.spawn(population(Kind::Naetu, Vec3::ZERO, 1.0)).id();
+        let first = world
+            .spawn(population(Kind::Naetu, Vec3::ZERO, 1.0, Genome::TYPICAL))
+            .id();
+        let second = world
+            .spawn(population(Kind::Naetu, Vec3::ZERO, 1.0, Genome::TYPICAL))
+            .id();
         let plant = world
-            .spawn(population(Kind::Aerothallus, Vec3::ZERO, 0.3))
+            .spawn(population(
+                Kind::Aerothallus,
+                Vec3::ZERO,
+                0.3,
+                Genome::TYPICAL,
+            ))
             .id();
         let before = world.get::<Physiology>(plant).expect("plant").0.mass;
         let meals = [
@@ -787,6 +886,8 @@ mod tests {
                 rotation: Quat::IDENTITY,
                 activity: Activity::Drift,
                 protected: false,
+                genes: Genome::TYPICAL,
+                skill: 0.0,
             }
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
@@ -797,24 +898,20 @@ mod tests {
             ..Relations::default()
         };
         assert!(
-            nurture(agent(child, kind, 0.1, far), &mut relations, &index, 0.0)
-                == Stage::Pouch(mother),
+            nurture(agent(child, kind, 0.1, far), &mut relations, &index) == Stage::Pouch(mother),
             "a newborn left the pouch"
         );
         assert_eq!(relations.host, Some(mother));
-        // Half grown, it spends some of each cycle away and comes home.
-        let stages: Vec<_> = (0..120)
-            .map(|second| {
+        // Half grown, it goes out while it is fed and comes home as it grows hungry.
+        let stages: Vec<_> = (0..=10)
+            .map(|fed| {
                 let mut relations = Relations {
                     parent: Some(mother),
                     ..Relations::default()
                 };
-                nurture(
-                    agent(child, kind, 0.45, far),
-                    &mut relations,
-                    &index,
-                    second as f32,
-                )
+                let mut young = agent(child, kind, 0.45, far);
+                young.vitals.energy = fed as f32 / 10.0;
+                nurture(young, &mut relations, &index)
             })
             .collect();
         assert!(stages.contains(&Stage::Free), "pouch young never left");
@@ -826,7 +923,7 @@ mod tests {
             parent: Some(mother),
             ..Relations::default()
         };
-        assert!(nurture(agent(child, kind, 0.8, far), &mut relations, &index, 0.0) == Stage::Free);
+        assert!(nurture(agent(child, kind, 0.8, far), &mut relations, &index) == Stage::Free);
         assert!(
             relations.parent.is_none(),
             "grown young still depend on the parent"
@@ -840,22 +937,10 @@ mod tests {
             ..Relations::default()
         };
         assert!(
-            nurture(
-                agent(child, kind, 0.05, Vec3::ZERO),
-                &mut relations,
-                &index,
-                0.0
-            ) == Stage::Egg
+            nurture(agent(child, kind, 0.05, Vec3::ZERO), &mut relations, &index) == Stage::Egg
         );
         assert_eq!(relations.host, Some(mother));
-        assert!(
-            nurture(
-                agent(child, kind, 0.2, Vec3::ZERO),
-                &mut relations,
-                &index,
-                0.0
-            ) == Stage::Egg
-        );
+        assert!(nurture(agent(child, kind, 0.2, Vec3::ZERO), &mut relations, &index) == Stage::Egg);
         assert!(relations.host.is_none(), "egg string never cut loose");
     }
 
@@ -874,6 +959,8 @@ mod tests {
             rotation: Quat::IDENTITY,
             activity: Activity::Drift,
             protected: false,
+            genes: Genome::TYPICAL,
+            skill: 0.0,
         };
         let mut relations = Relations {
             remembered_food: Some((

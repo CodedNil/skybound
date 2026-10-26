@@ -1,5 +1,5 @@
 pub use super::render_wings;
-use crate::scene::life::biology::Biology;
+use crate::scene::life::{biology::Biology, genome::Gene};
 pub mod ferrilaminata;
 pub mod grandivora;
 
@@ -7,6 +7,11 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 12.0,
     ..super::BIOLOGY
 };
+
+/// What the live-bearers are born with beyond the tetralates': how devotedly they tend their young,
+/// and how freely they call.
+pub const DEVOTION: Gene = Gene(23);
+pub const CHATTINESS: Gene = Gene(24);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{
@@ -38,10 +43,11 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            CURIOSITY, SOCIABILITY, VIGILANCE,
             mind::{Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges},
             nature::{COURT, SLEEP},
             physiology::{Brood, Physiology},
-            tetralata::{ETHOLOGY as TETRALATE, FOLLOW, PLAY, shade},
+            tetralata::{ETHOLOGY as TETRALATE, FOLLOW, PLAY, PLAYFULNESS, shade},
         },
         behaviour::{Activity, Goal},
     };
@@ -115,7 +121,7 @@ mod nature {
         // Following the herd matters less once among it.
         if let Some(kin) = s.seen.kin {
             let apart = (kin.length() / 30.0).min(1.0);
-            urges.add(FOLLOW, (0.2 + s.temper.sociability * 0.3) * apart);
+            urges.add(FOLLOW, (0.2 + s.temper(SOCIABILITY) * 0.3) * apart);
         }
         if s.seen.mark(CALL).is_some() {
             urges.add(FOLLOW, 0.25 + s.drives.desire * 0.4);
@@ -140,17 +146,18 @@ mod nature {
         }
         let content = (1.0 - s.drives.hunger) * (1.0 - s.fear).max(0.0);
         let young = (1.0 - s.drives.youth) * 0.6;
-        let grown = 0.15 + s.temper.curiosity * 0.2;
+        let grown = 0.1 + s.temper(PLAYFULNESS) * 0.25 + s.temper(CURIOSITY) * 0.05;
         urges.add(PLAY, (young + grown) * content * wits);
         urges.add(
             SOCIALISE,
-            (0.1 + s.temper.sociability * 0.3) * content * wits,
+            (0.1 + s.temper(SOCIABILITY) * 0.3) * content * wits,
         );
     }
 
-    /// Whether it is this animal's turn to keep watch over a resting herd.
+    /// Whether this animal keeps watch over a resting herd: the most watchful of them, while they
+    /// are still fresh enough to; as a sentinel tires, the next most watchful takes over.
     pub fn keeps_watch(s: &Situation) -> bool {
-        s.seen.kin_count >= 3 && ((s.now / 180.0) as u32 + s.individual).is_multiple_of(5)
+        s.seen.kin_count >= 3 && s.temper(VIGILANCE) * (1.0 - s.drives.sleepiness * 0.5) > 0.55
     }
 
     /// Song: calling across the sky, and going to a mate that answers.

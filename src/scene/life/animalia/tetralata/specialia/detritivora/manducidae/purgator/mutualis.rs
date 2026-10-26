@@ -142,7 +142,12 @@ mod nature {
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
         brood: Brood::Strings,
-        eats: |_, food| food.animal().is_some_and(|animal| animal.parasite),
+        // Parasites, and the moss and lumaweed grown over a big host's hide.
+        eats: |_, food| {
+            food.animal()
+                .is_some_and(|animal| animal.parasite || food.overgrown() > 0.1)
+        },
+        grooms: true,
         takes: Take::Living,
         gleans: false,
         flocks: false,

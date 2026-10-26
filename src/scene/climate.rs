@@ -136,6 +136,11 @@ pub struct Climate {
     pub humidity: f32,
     pub light: f32,
     pub aur: f32,
+    /// How much mineral dust the air carries, from clear to a choking haze: raised from the aur
+    /// near its surface and carried up where the air is dry and the updraft weak enough to let it
+    /// hang, thickest in the dim equatorial Mineral Fields. Its sources, the vents breathing
+    /// minerals out of the aur, are to be modelled in their own right.
+    pub dust: f32,
     pub storm: f32,
     pub temperature: f32,
     pub precipitation: f32,
@@ -246,6 +251,10 @@ impl Climate {
             // never fades.
             light: (0.08 + cube(polar) * 0.92) * (1.0 - moisture * 0.35),
             aur: (-altitude / 1800.0).exp(),
+            dust: (-altitude / 2600.0).exp()
+                * (1.0 - humidity).powi(2)
+                * (1.0 - polar).powf(1.5)
+                * (1.0 - convection * 0.6),
             storm,
             temperature,
             precipitation: (storm + moisture.smoothstep(0.75, 1.0) * 0.2) * (1.0 - ice * 0.7),

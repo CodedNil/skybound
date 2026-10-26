@@ -1,7 +1,9 @@
 use crate::scene::life::{
     CLUTCH, CreatureInstance, FULL_POUCH, Look,
     biology::Biology,
-    ellipsoid, rounded, smooth_min,
+    ellipsoid,
+    genome::Gene,
+    rounded, smooth_min,
     surface::{Hit, Ray, Surface, TraceResult, trace, visit_paired_sheets, wing_bones},
 };
 use core::f32::consts::TAU;
@@ -17,6 +19,28 @@ pub mod sanguinivora;
 pub mod tetralata;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// The temper every animal is born with, in its kingdom's part of the genome: how bold, how drawn
+/// to its own kind, how aggressive, how restless, how hungry by nature, how patient, and how
+/// watchful.
+pub const BOLDNESS: Gene = Gene(8);
+pub const SOCIABILITY: Gene = Gene(9);
+pub const AGGRESSION: Gene = Gene(10);
+pub const RESTLESSNESS: Gene = Gene(11);
+pub const APPETITE: Gene = Gene(12);
+pub const PATIENCE: Gene = Gene(13);
+pub const VIGILANCE: Gene = Gene(14);
+pub const CURIOSITY: Gene = Gene(15);
+
+/// The body every animal is born with besides its size and colouring.
+///
+/// How long it can keep working, how quickly it answers its own steering, how true it aims, and
+/// how long its wings or fins grow against the rest of its kind (a broad build makes them broad
+/// too).
+pub const STAMINA: Gene = Gene(16);
+pub const AGILITY: Gene = Gene(17);
+pub const PRECISION: Gene = Gene(18);
+pub const WINGSPAN: Gene = Gene(19);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
@@ -63,10 +87,19 @@ pub fn with_wings(body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> S
         }
     }
     let joined = smooth_min(body.distance, frame, look.wings[0].y * 0.12);
+    // Iron edges are only as long as the iron its owner has gathered, laid down from the shoulder
+    // outwards in uneven runs; beyond them the frame is bare skin.
+    let edge = if look.edge == 6 {
+        let out = (p.x.abs() / look.wings[0].x.max(0.1)).clamp(0.0, 1.0);
+        let run = ((p.x.abs() * 3.1 + c.identity.x * 17.0).sin() * 0.5 + 0.5) * 0.3;
+        if out < c.stores.x * 1.1 - run { 6 } else { 0 }
+    } else {
+        look.edge
+    };
     let mut surface = Surface::new(
         joined,
         if frame < body.distance {
-            look.edge
+            edge
         } else {
             body.material
         },
@@ -148,6 +181,7 @@ pub mod nature {
     use crate::scene::life::{
         Kind,
         animalia::{
+            AGGRESSION, BOLDNESS, CURIOSITY, RESTLESSNESS, SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Sighting, Situation, Urges,
                 orbit,
@@ -203,7 +237,7 @@ pub mod nature {
         urges.add(REST, drives.tiredness * 0.9);
         if hunter {
             if seen.prey.is_some() {
-                urges.add(HUNT, s.hunger(true) * 1.2 + s.temper.aggression * 0.15);
+                urges.add(HUNT, s.hunger(true) * 1.2 + s.temper(AGGRESSION) * 0.15);
             }
         } else if seen.food.is_some() {
             urges.add(FORAGE, s.hunger(false) * 1.1 + 0.1);
@@ -218,7 +252,7 @@ pub mod nature {
         if seen.mate.is_some() {
             urges.add(COURT, drives.desire);
         }
-        urges.add(EXPLORE, s.temper.curiosity * s.temper.restlessness * 0.5);
+        urges.add(EXPLORE, s.temper(CURIOSITY) * s.temper(RESTLESSNESS) * 0.5);
         urges.add(SEEK, astray(s.kind, seen.light) * 0.6);
     }
 
@@ -228,7 +262,7 @@ pub mod nature {
         mind.alarm *= (-(s.now - mind.felt).max(0.0) / 12.0).exp();
         mind.felt = s.now;
         let fear =
-            (s.threat * (1.3 - s.temper.boldness * 0.7) + panic(s, 1.0) + s.drives.hurt * 0.5)
+            (s.threat * (1.3 - s.temper(BOLDNESS) * 0.7) + panic(s, 1.0) + s.drives.hurt * 0.5)
                 .max(mind.alarm);
         mind.alarm = mind.alarm.max(fear * 0.8);
         fear
@@ -237,9 +271,13 @@ pub mod nature {
     /// How much of its kin's panic an animal catches: the share of them fleeing, more in a sociable
     /// one, and more again in a lineage given to it.
     pub fn panic(s: &Situation, contagion: f32) -> f32 {
+        // Fellows fleeing are frightening, but less so with no danger in sight of its own, so a
+        // fright does not feed on itself once its cause has gone.
+        let seen = if s.seen.threat.is_some() { 1.0 } else { 0.5 };
         s.seen.fleeing as f32 / s.seen.kin_count.max(1) as f32
-            * (0.4 + s.temper.sociability)
+            * (0.4 + s.temper(SOCIABILITY))
             * contagion
+            * seen
     }
 
     /// The simplest hunt: fly at the prey, leading it.
@@ -379,10 +417,15 @@ pub mod nature {
     pub const EXPLORE: Intent = Intent {
         name: "explore",
         act: |mind, s| {
-            if mind.course.length_squared() < 1.0 || (s.now - mind.since) % 60.0 < 0.3 {
-                let angle = s.now * 0.37 + s.wobble() * 7.0;
-                mind.course =
-                    Vec3::new(angle.cos(), (angle * 0.7).sin() * 0.2, angle.sin()) * 150.0;
+            // A new course once it has come to the end of the last: across the wind, turned
+            // from the old one further the more restless it is, and further out the more curious.
+            if mind.course.length_squared() < 400.0 {
+                let up = s.up();
+                let across = s.seen.wind.cross(up).normalize_or(Vec3::X);
+                let turn = 1.0 + s.temper(RESTLESSNESS) * 2.0 + s.wobble() * 0.1;
+                let (sine, cosine) = turn.sin_cos();
+                let heading = across * cosine + up.cross(across) * sine;
+                mind.course = heading * (100.0 + s.temper(CURIOSITY) * 200.0);
             }
             Goal::new(Activity::Drift, Some(mind.course), 0.45)
         },

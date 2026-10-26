@@ -16,7 +16,10 @@ use skybound::scene::life::{
     CLUTCH, CreatureInstance, FULL_POUCH, HERD, KINDS, Kind,
     animalia::physiology::{Brood, plant},
     behaviour::Activity,
+    genome::Genome,
+    vitals::Vitals,
 };
+use spirv_std::glam::Vec4 as SceneVec4;
 use std::{collections::HashMap, fmt::Write};
 
 pub(super) type Drawn<'a> = (
@@ -137,58 +140,33 @@ pub(super) fn gather_herd(
                 rotation: relations.turned.slerp(transform.rotation, along),
                 ..*transform
             };
-            Some((
+            Some(Shown {
                 entity,
-                species.0,
-                body.0.age_days as f32,
+                kind: species.0,
+                age: body.0.age_days as f32,
                 transform,
                 // A displaying animal holds still, its crest raised.
-                if relations.activity == Activity::Display {
+                speed: if relations.activity == Activity::Display {
                     0.0
                 } else {
                     motion.0.length()
                 },
-                individual.map_or_else(|| entity.to_bits() as u32, |identity| identity.0),
-                relations.activity,
-                relations.senses.goal.map_or(0.0, |goal| goal.fold),
-                carrying.get(&entity).copied().unwrap_or(0),
-            ))
+                seed: individual.map_or_else(|| entity.to_bits() as u32, |identity| identity.0),
+                activity: relations.activity,
+                tuck: relations.senses.goal.map_or(0.0, |goal| goal.fold),
+                held: carrying.get(&entity).copied().unwrap_or(0),
+                genes: relations.genes,
+                vitals: body.0,
+                wingbeat: relations.wingbeat,
+                effort: relations.effort,
+                bend: relations.bend,
+                blunted: relations.mind.wear,
+            })
         })
         .collect();
     let poses: Vec<(Entity, CreatureInstance)> = chosen
         .par_iter()
-        .map(
-            |&(entity, kind, age, transform, speed, seed, activity, tuck, held)| {
-                // Each individual beats its wings at its own phase and pace, harder the faster
-                // it flies.
-                let phase = (seed % 997) as f32 * 0.37;
-                let rate = 3.0 + (seed % 13) as f32 * 0.12;
-                // Resting animals fold their wings and stop beating them.
-                let resting = matches!(
-                    activity,
-                    Activity::Rest | Activity::Attach | Activity::Sleep
-                );
-                let fold = if resting { 0.9 } else { tuck };
-                let stroke = ((now + phase) * rate).sin()
-                    * (0.08 + (speed / 40.0).min(1.0) * 0.25)
-                    * (1.0 - fold);
-                let mut pose = CreatureInstance::specimen(
-                    transform
-                        .translation
-                        .extend(kind.render_radius())
-                        .to_scene(),
-                    transform.rotation.to_array().into(),
-                    Vec4::new(stroke, fold, now + phase, speed).to_scene(),
-                    kind as u32,
-                    age,
-                    seed,
-                );
-                if held != 0 {
-                    pose.kind.z = held;
-                }
-                (entity, pose)
-            },
-        )
+        .map(|shown| (shown.entity, pose(shown, now)))
         .collect();
     let mut drawn = HashMap::with_capacity(poses.len());
     herd.0.clear();
@@ -199,6 +177,7 @@ pub(super) fn gather_herd(
             pose.previous_position = old.position;
             pose.previous_rotation = old.rotation;
             pose.previous_animation = old.animation;
+            pose.previous_dynamics = old.dynamics;
             pose.previous_proportions = old.proportions;
             pose.previous_tail = old.tail;
             pose.previous_cloth = old.cloth;
@@ -207,4 +186,86 @@ pub(super) fn gather_herd(
         herd.0.push(pose);
     }
     *last = drawn;
+}
+
+/// What drawing one organism needs, read out of the world.
+struct Shown {
+    entity: Entity,
+    kind: Kind,
+    age: f32,
+    transform: Transform,
+    speed: f32,
+    seed: u32,
+    activity: Activity,
+    tuck: f32,
+    held: u32,
+    genes: Genome,
+    vitals: Vitals,
+    wingbeat: f32,
+    effort: f32,
+    bend: Vec3,
+    blunted: f32,
+}
+
+/// An organism's pose for the renderer, from what the simulation did to it: its wings where their
+/// beat has reached and spread as wide as it is working them, a plant bent by the air, and the
+/// tears, scars and wear its life has left on it.
+fn pose(shown: &Shown, now: f32) -> CreatureInstance {
+    let Shown {
+        kind,
+        age,
+        transform,
+        speed,
+        seed,
+        activity,
+        tuck,
+        held,
+        genes,
+        vitals,
+        wingbeat,
+        effort,
+        bend,
+        blunted,
+        ..
+    } = *shown;
+    // Resting animals fold their wings and stop beating them.
+    let resting = matches!(
+        activity,
+        Activity::Rest | Activity::Attach | Activity::Sleep
+    );
+    let fold = if resting { 0.9 } else { tuck };
+    let stroke = wingbeat.sin() * (0.05 + effort.min(1.0) * 0.35) * (1.0 - fold);
+    let mut pose = CreatureInstance::born(
+        transform
+            .translation
+            .extend(kind.render_radius())
+            .to_scene(),
+        transform.rotation.to_array().into(),
+        Vec4::new(stroke, fold, now, speed).to_scene(),
+        kind as u32,
+        age,
+        seed,
+        genes,
+    );
+    pose.dynamics = if plant(kind) {
+        bend.to_scene().extend(1.0)
+    } else {
+        // Jaws wide as it bites, parted as it strikes, shut otherwise.
+        let gape = match activity {
+            Activity::Feed => 1.0,
+            Activity::Strike => 0.4,
+            _ => 0.0,
+        };
+        SceneVec4::new(wingbeat, effort.min(1.0), gape, 1.0)
+    };
+    pose.previous_dynamics = pose.dynamics;
+    pose.wear = SceneVec4::from_array(vitals.torn);
+    let scarred = vitals.scarred.iter().sum::<f32>() * 0.25;
+    pose.scars = SceneVec4::new(vitals.scars, blunted, scarred, vitals.overgrowth);
+    pose.wounds = vitals.wounds;
+    pose.stores = SceneVec4::new(vitals.iron, 0.0, 0.0, 0.0);
+    if held != 0 {
+        pose.kind.z = held;
+    }
+    pose
 }

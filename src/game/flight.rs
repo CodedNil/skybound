@@ -469,6 +469,7 @@ fn advance_companion(
             position: mount.translation.to_scene(),
             velocity: mount_velocity.0.to_scene(),
             rotation: mount.rotation.to_scene(),
+            effort: 0.0,
         };
         motion.advance(
             Kind::Naetu,

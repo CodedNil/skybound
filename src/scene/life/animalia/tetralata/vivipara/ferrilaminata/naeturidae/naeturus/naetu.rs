@@ -302,7 +302,7 @@ mod nature {
         animalia::{
             mind::{Ethology, Mind, Situation},
             physiology::Physiology,
-            tetralata::FOLLOW,
+            tetralata::{FOLLOW, vivipara::ferrilaminata::naeturidae::LOYALTY},
         },
         behaviour::Goal,
     };
@@ -321,7 +321,9 @@ mod nature {
     /// Making for the herd, a Nætu that has lost sight of it calls, and the herd answers.
     fn act(mind: &mut Mind, s: &Situation) -> Option<Goal> {
         let goal = (super::super::ETHOLOGY.act)(mind, s);
-        let apart = s.seen.kin.is_none_or(|kin| kin.length() > 400.0);
+        // The more loyal, the sooner it calls after the herd drawing away.
+        let limit = 600.0 - s.temper(LOYALTY) * 400.0;
+        let apart = s.seen.kin.is_none_or(|kin| kin.length() > limit);
         if mind.intent == FOLLOW && apart {
             return Some(goal.unwrap_or_else(|| (FOLLOW.act)(mind, s)).calling());
         }

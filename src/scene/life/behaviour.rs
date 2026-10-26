@@ -1,4 +1,10 @@
-use crate::scene::life::{Kind, behave};
+use crate::scene::{
+    life::{
+        Kind, behave,
+        physics::{Condition, forces},
+    },
+    planet::GRAVITY,
+};
 use spirv_std::glam::{Mat3, Quat, Vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -119,8 +125,10 @@ pub struct Senses {
     pub goal: Option<Goal>,
     /// How hard its body can work, as a share of a whole one's.
     pub power: f32,
-    /// How far it is pulled down by gas lost from its stores.
-    pub sinking: f32,
+    /// How full its gas stores are, how whole its wings are, and which side is the weaker.
+    pub gas: f32,
+    pub wings: f32,
+    pub list: f32,
 }
 
 impl Default for Senses {
@@ -144,7 +152,9 @@ impl Default for Senses {
             time: 0.0,
             goal: None,
             power: 1.0,
-            sinking: 0.0,
+            gas: 1.0,
+            wings: 1.0,
+            list: 0.0,
         }
     }
 }
@@ -163,25 +173,63 @@ pub struct Motion {
     pub position: Vec3,
     pub velocity: Vec3,
     pub rotation: Quat,
+    /// How hard it worked its wings over the step, as a share of all they can give.
+    pub effort: f32,
 }
 
+/// The longest stretch the forces on a body are taken as steady over.
+const SUBSTEP: f32 = 0.05;
+
 impl Motion {
+    /// Move the body for `seconds` under the forces on it, steering for what its controls ask.
+    ///
+    /// Its controls name a velocity and how quickly to reach it; the body asks for that
+    /// acceleration and gets what the air and its own efforts give (see [`physics::forces`]). It
+    /// faces where its controls face, never pitched steeper than its wings carry it, and banks
+    /// towards whatever is turning it.
     pub fn advance(&mut self, kind: Kind, senses: &Senses, seconds: f32) -> Controls {
         let controls = behave(kind, senses);
-        let dt = seconds.max(0.0);
-        let response = controls.response.max(0.001);
-        let decay = (-response * dt).exp();
-        self.position += controls.velocity * dt
-            + (self.velocity - controls.velocity) * ((1.0 - decay) / response);
-        self.velocity = controls.velocity + (self.velocity - controls.velocity) * decay;
+        let body = kind.body();
+        let condition = Condition {
+            gas: senses.gas,
+            power: senses.power,
+            wings: senses.wings,
+            list: senses.list,
+        };
         let up = senses.up.normalize_or_zero();
+        let steps = (seconds.max(0.0) / SUBSTEP).ceil().max(1.0);
+        let dt = seconds.max(0.0) / steps;
+        let mut effort = 0.0;
+        let mut support = Vec3::ZERO;
+        for _ in 0..steps as u32 {
+            let right = self.rotation * Vec3::X;
+            let wanted = (controls.velocity - self.velocity) * controls.response;
+            let forces = forces(
+                body,
+                condition,
+                self.velocity,
+                senses.wind,
+                up,
+                right,
+                wanted,
+            );
+            self.velocity += forces.acceleration * dt;
+            self.position += self.velocity * dt;
+            effort += forces.effort / steps;
+            support += forces.support / steps;
+        }
+        self.effort = effort;
         // A plant holds itself upright on its lift; an animal pitches into a climb or a dive, but
         // never further than its wings can carry it, so none hangs on its side or stands on end.
         let steepest = if kind.animal().is_some() { 0.6 } else { 0.0 };
         let forward = level(controls.facing, up, steepest);
-        let right = forward.cross(up).normalize_or_zero();
+        // Banked towards the lift that turns it, as far as sixty degrees.
+        let lean = (support - up * support.dot(up)) / GRAVITY;
+        let tilted = (up + lean.clamp_length_max(1.7) * 0.9).normalize_or_zero();
+        let right = forward.cross(tilted).normalize_or_zero();
         if right.length_squared() > 0.5 {
             let rotation = Quat::from_mat3(&Mat3::from_cols(right, right.cross(forward), -forward));
+            let decay = (-controls.response.max(0.3) * seconds.max(0.0)).exp();
             self.rotation = self.rotation.slerp(rotation, 1.0 - decay);
         }
         controls
@@ -215,10 +263,10 @@ pub fn drift(s: &Senses, lift: f32) -> Controls {
 /// with no mind at work (an egg, a newborn, or the player's mount), keeps with its companion.
 pub fn organism(s: &Senses, kind: Kind) -> Controls {
     let Some(animal) = kind.animal() else {
-        return drift(s, -s.sinking);
+        return drift(s, 0.0);
     };
     if let Some(goal) = s.goal {
-        return pursue(s, animal.speed, goal);
+        return pursue(s, animal.speed, goal, kind.render_radius());
     }
     let mut controls = steer(s, s.companion.or(s.habitat), animal.speed * 0.4);
     controls.velocity += s.separation * 2.0 + s.alignment * 0.2;
@@ -232,15 +280,18 @@ pub fn organism(s: &Senses, kind: Kind) -> Controls {
 }
 
 /// Carry out a mind's goal: fly towards its target at its pace, held back by a weakened body,
-/// slowing to hold station if it is to hover there.
-fn pursue(s: &Senses, top: f32, goal: Goal) -> Controls {
+/// slowing to hold station if it is to hover there. It hovers facing what it came to, a body's
+/// length off so its mouth is at it rather than its belly in it: a feeder bites, browses or drinks
+/// with its head to its food.
+fn pursue(s: &Senses, top: f32, goal: Goal, length: f32) -> Controls {
     let speed = top * goal.speed * s.power;
     let mut controls = steer(s, goal.offset, speed);
-    controls.velocity -= s.up.normalize_or_zero() * s.sinking;
     if let Some(offset) = goal.offset {
         let distance = offset.length();
-        if goal.hover && distance < 6.0 {
-            controls.velocity = s.wind + offset * 0.5 + s.separation;
+        let standoff = length * 0.4;
+        if goal.hover && distance < 6.0 + standoff {
+            let station = offset - offset / distance.max(1e-3) * standoff.min(distance);
+            controls.velocity = s.wind + station * 0.5 + s.separation;
         }
     } else if goal.hover {
         controls.velocity = s.wind * 0.3 + s.separation;
@@ -297,15 +348,19 @@ mod tests {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
                 rotation: Quat::IDENTITY,
+                effort: 0.0,
             };
             let mut split = whole;
             whole.advance(kind, &senses, 1.0);
             for _ in 0..60 {
                 split.advance(kind, &senses, 1.0 / 60.0);
             }
+            // The forces are taken as steady over short substeps, so how the time is split
+            // changes the path only a little.
             assert!(
-                whole.position.distance(split.position) < 1e-4,
-                "frame-dependent motion"
+                whole.position.distance(split.position) < 0.05,
+                "frame-dependent motion: {} apart",
+                whole.position.distance(split.position)
             );
         }
     }

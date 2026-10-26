@@ -1,12 +1,15 @@
 pub use super::{BIOLOGY, render_wings};
-
+use crate::scene::life::genome::Gene;
 pub mod crepusculofalx;
 pub mod ferrispina;
 
+/// How long the family's blades grow, crest or wing edge, and how keen: thin, true edges drawn to
+/// needle points, or thicker, blunter ones that last longer between honings.
+pub const BLADE_LENGTH: Gene = Gene(28);
+pub const BLADE_KEENNESS: Gene = Gene(29);
+
 #[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use nature::{ETHOLOGY, WHETSTONE};
+pub use nature::{ETHOLOGY, PHYSIOLOGY, WHETSTONE};
 
 taxon!(
     Family,
@@ -18,6 +21,7 @@ taxon!(
         "Camouflaged ambushers use short turns, while larger roaming hunters make wider sweeps and sometimes cooperate.",
         "Feeding tentacles secure the result without turning the cutting surface into a grasping limb.",
         "These related approaches divide the family between mineral haze, open herd routes and the defence of moving nurseries.",
+        "None is born with its iron: each gathers it all its life, breathing the dust of the mineral haze and scraping it from the stony hides of Grounders, and lays it down a little at a time into its edges and armour, so the old carry far more than the young.",
     ],
 );
 
@@ -34,9 +38,15 @@ mod nature {
         Kind,
         animalia::{
             mind::{Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, orbit},
+            physiology::Physiology,
             tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
+    };
+
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        ironclad: true,
+        ..super::super::PHYSIOLOGY
     };
 
     pub const ETHOLOGY: Ethology = Ethology {

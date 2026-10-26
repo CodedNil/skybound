@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    capsule, louvres, prepare_pose, rounded, smooth_min,
+    capsule,
+    genome::Gene,
+    louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -32,6 +34,11 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 55.6;
 
+/// How long its horns grow and how wide their bells flare, so each elder's voice is its own, and
+/// how full its bladders swell.
+pub const HORNS: Gene = Gene(30);
+pub const SWELL: Gene = Gene(31);
+
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
@@ -42,7 +49,7 @@ taxon!(
     "Vocigenus antiquus",
     "Old Wise Ones",
     [
-        "Old Wise Ones are rare giants whose long, pale bodies carry a chain of swelling gas bladders along the back, with long white barbels hanging beneath the blunt front like a flowing beard.",
+        "Old Wise Ones are rare giants whose long, pale bodies carry a chain of swelling gas bladders along the back, with long, pale mouth tentacles hanging beneath the blunt front like a flowing beard.",
         "Slow wing strokes and careful use of rising air carry their immense bodies between kelp forests and Laevensails.",
         "Three pairs of mouth tentacles gather only those soft plants, giving the lineage a narrow dependence on healthy floating forests.",
         "Rich calls, shaped by a throat sac and a double rank of hollow resonating horns along the back, pass between companions long before their pale bodies become visible through the haze.",
@@ -63,7 +70,7 @@ const BLADDERS: u32 = 5;
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 22.0, 10.0, 0);
     c.opaque_bounds = vec3(13.0, 15.0, 30.0).extend(0.0);
-    rig_tentacles(c, MOUTH, 2.4, ORAL_PAIRS);
+    rig_tentacles(c, MOUTH, 3.4, ORAL_PAIRS);
 }
 
 /// The body's half-width and half-depth a distance `z` along it, and how high its midline runs: a
@@ -89,9 +96,9 @@ fn back(z: f32) -> f32 {
 /// each growing from a fleshy collar and curving back to a flared bell, ringed by the growth of
 /// every year; through them it shapes the calls carried across open sky long before the animal
 /// itself is seen. Its blunt head overhangs a brow under which rows of small eyes sit sunk in
-/// lidded sockets, looking down and ahead. Beneath the chin hangs a beard of long white barbels
-/// that feel the drift of plants, and behind it the pleated throat sac it sings through; the mouth
-/// juts ahead of them so its three pairs of tentacles hang free. Its bladders swell, its horns
+/// lidded sockets, looking down and ahead. Its three pairs of mouth tentacles, longer than any
+/// other live-bearer's, hang like a pale beard from the mouth and throat, gathering soft plants,
+/// and behind them swells the pleated throat sac it sings through. Its bladders swell, its horns
 /// lengthen, its skin creases and air moss spreads over its back through its long life, so no two
 /// elders are alike.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
@@ -130,8 +137,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     if p.y > 0.5 {
         for i in 0..BLADDERS {
             let f = i as f32;
-            let swell =
-                (0.8 + age * 0.25) * (1.0 + (f * 12.9898 + c.identity.x * 311.7).sin() * 0.18);
+            let swell = (0.75 + age * 0.25 + c.gene(SWELL) * 0.2)
+                * (1.0 + (f * 12.9898 + c.identity.x * 311.7).sin() * 0.18);
             let z = -7.5 + f * 4.6;
             let at = p - vec3(0.0, back(z) + 0.9 * swell, z);
             let size = vec3(3.4, 2.8, 2.5) * swell;
@@ -155,16 +162,15 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let warp = vec2(p.x + (p.z * 1.7).sin() * 0.8, p.z + (p.x * 2.3).sin() * 0.6);
     let patches = (warp.x * 0.9 + warp.y * 0.5).sin() * (warp.y * 0.7 - warp.x * 1.1).sin()
         + (p.x * 3.7 + p.z * 2.9).sin() * (p.z * 4.1).sin() * 0.3;
-    let mossy = (patches - 0.8 + age * 0.45).min((p.y - 1.5) * 0.5);
+    // As much of its back as the moss has covered, the patches spreading out from the highest.
+    let mossy = (patches - 1.1 + c.scars.w * 1.3).min((p.y - 1.5) * 0.5);
     if mossy > 0.0 {
-        hit.join(body - mossy.min(0.12), 10);
+        hit.blend(body - mossy.min(0.12), 10, 0.08);
     }
     hit.socket(eyes(flank), 0.3);
     if p.y > 0.0 {
-        hit.join(horns(flank, c), 7);
-    }
-    if p.y < -1.0 && p.z < -6.0 {
-        hit.join(beard(p, c), 4);
+        // The horns grow out of the back through their collars, skin fading into horn.
+        hit.blend(horns(flank, c), 7, 0.9);
     }
     // A broad paddle at the tail's end, which it trims its long glides with.
     let mut tail = 1e6f32;
@@ -189,8 +195,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         lobe - vec3(1.7, 0.0, 0.9 + lobe.x * 0.35),
         vec3(2.1, 0.22, 0.9),
     );
-    hit.join(smooth_min(tail, fluke, 0.5), 0);
-    hit.join(oral_tentacles(p, c, MOUTH, 2.4, ORAL_PAIRS), 8);
+    hit.blend(smooth_min(tail, fluke, 0.5), 0, 0.6);
+    hit.blend(oral_tentacles(p, c, MOUTH, 3.4, ORAL_PAIRS), 8, 0.3);
     hit
 }
 
@@ -198,7 +204,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// collar on the back, curves up and back, and opens in a flared bell; its bore runs from the bell
 /// down into the body, and every year of growth leaves a ring on it.
 fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
-    let grown = 0.65 + c.life.z * 0.25 + c.identity.w * 0.2;
+    let grown = 0.6 + c.life.z * 0.25 + c.gene(HORNS) * 0.3;
     let mut nearest = 1e6f32;
     for i in 0..4 {
         let f = i as f32;
@@ -253,26 +259,6 @@ fn eyes(p: Vec3) -> f32 {
         nearest = nearest.min((p - at).length() - 0.3 * (1.0 - f * 0.07));
     }
     nearest
-}
-
-/// The beard: long, fleshy barbels hanging from the chin in an arc, each swaying on its own.
-fn beard(p: Vec3, c: &CreatureInstance) -> f32 {
-    let time = c.animation.z;
-    let mut d = 1e6f32;
-    for i in -3..=3 {
-        let f = i as f32;
-        let root = vec3(f * 0.75, -3.1 + f.abs() * 0.25, -13.4 + f.abs() * 0.55);
-        let sway = (time * 0.7 + f * 1.3).sin() * 0.5;
-        let length = 7.5 - f.abs() * 0.9;
-        let knee = root + vec3(f * 0.35 + sway * 0.4, -length * 0.55, length * 0.1);
-        let end = knee + vec3(f * 0.25 + sway, -length * 0.45, length * 0.25);
-        d = d.min(smooth_min(
-            tapered_tail(p, root, knee, 0.42, 0.22),
-            tapered_tail(p, knee, end, 0.22, 0.05),
-            0.2,
-        ));
-    }
-    d
 }
 
 /// Where its organs lie in its body; see [`Viscera`].

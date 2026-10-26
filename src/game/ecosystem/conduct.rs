@@ -6,7 +6,10 @@ use crate::{
 };
 use bevy::prelude::*;
 use skybound::scene::life::{
-    animalia::mind::{Aim, Snare},
+    animalia::{
+        AGILITY, PRECISION,
+        mind::{Aim, Snare},
+    },
     behaviour::Activity,
     organs::{Function, Strike, Wound},
     vitals::Vitals,
@@ -96,6 +99,8 @@ pub(super) fn engage(
     {
         body.reserve = (body.reserve - blow.cost).max(0.0);
         relations.mind.wear = (relations.mind.wear + 0.08).min(1.0);
+        // Every blow it lands teaches it a little more.
+        relations.mind.experience.succeeded();
         attacks.push(Attack {
             victim: prey.entity,
             strike: Some(blow.strike),
@@ -160,6 +165,7 @@ pub(super) fn conduct(
             relations.mind.courted += dt;
             if relations.mind.courted > 8.0 {
                 relations.fertile_until = now + 900.0;
+                relations.sire = targets.mate.map(|mate| mate.genes);
                 relations.mind.courted = 0.0;
             }
         }
@@ -213,8 +219,8 @@ pub(super) fn carry(hunter: Agent, prey: Option<Agent>, activity: Activity) -> O
 }
 
 /// How a hunter's blow lands, seen from inside its prey: the way the hunter is moving and where it
-/// is in the prey's frame, the prey's size, a repeatable scatter thrown wider by a fast-dodging
-/// prey, where the prey's pump lies, and the hunter's reserve.
+/// is in the prey's frame, the prey's size, how far wide it goes for how the prey slips across its
+/// path and how sure the hunter's aim is, where the prey's pump lies, and the hunter's reserve.
 pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals, wear: f32) -> Aim {
     let viscera = prey.kind.organs();
     let extent = viscera.extent();
@@ -227,14 +233,18 @@ pub(super) fn aim(hunter: Agent, prey: Agent, body: &Vitals, wear: f32) -> Aim {
     )
     .normalize_or(SceneVec3::NEG_Z);
     let toward = local(hunter.position - prey.position).normalize_or(SceneVec3::Y);
-    let bits = (hunter.entity.to_bits() ^ prey.entity.to_bits()).wrapping_mul(0x9e37_79b9);
-    let jitter = |shift: u64| ((bits >> shift) & 0xff) as f32 / 127.5 - 1.0;
-    let dodge = 0.25 + (prey.velocity.length() / prey.kind.speed().max(1.0)).min(1.0) * 0.35;
+    // A blow goes wide the way the prey is slipping across its path, the further the quicker and
+    // more agile the prey and the less sure the hunter's aim; a sitting target is struck squarely.
+    let slip = local(prey.velocity - hunter.velocity);
+    let across = (slip - along * slip.dot(along)).normalize_or_zero();
+    let dodge = (0.25 + (prey.velocity.length() / prey.kind.speed().max(1.0)).min(1.0) * 0.35)
+        * (0.6 + prey.genes.get(AGILITY) * 0.8);
+    let sure = (hunter.genes.get(PRECISION) * 0.6 + hunter.skill * 0.4).clamp(0.0, 1.0);
     Aim {
         along,
         toward,
         extent,
-        scatter: SceneVec3::new(jitter(0), jitter(8), jitter(16)) * extent * dodge,
+        scatter: across * extent * dodge * (1.0 - sure * 0.7),
         pump: viscera.find(Function::Circulation).unwrap_or_default(),
         nerve: viscera.find(Function::Coordination).unwrap_or_default(),
         reserve: body.reserve,
@@ -261,9 +271,12 @@ pub(super) fn land(organisms: &mut Query<Organisms>, attacks: &[Attack]) -> u64 
         }
         if let Some(strike) = attack.strike {
             let extent = species.0.organs().extent().length();
-            body.0.wound(species.0, strike, extent);
+            let injury = body.0.wound(species.0, strike, extent);
             if body.0.health <= 0.0 {
                 deaths += 1;
+            } else {
+                // Living through it leaves it warier.
+                relations.mind.experience.survived(injury.damage);
             }
         }
     }

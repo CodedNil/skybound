@@ -2,7 +2,7 @@ pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
 use crate::scene::{
-    life::{CreatureInstance, biology::Biology, smooth_min, tapered_tail},
+    life::{CreatureInstance, biology::Biology, genome::Gene, smooth_min, tapered_tail},
     planet::GRAVITY,
 };
 use core::f32::consts::PI;
@@ -23,6 +23,11 @@ pub const FLIGHT_MUSCLE: Organ =
     Organ::new("flight muscle", Function::Flight, vec3(0.52, 0.16, 0.20));
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// What the tetralates are born with beyond every animal's temper: how much they play, and how
+/// long a tail they grow to steer by.
+pub const PLAYFULNESS: Gene = Gene(20);
+pub const TAIL: Gene = Gene(21);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, FOLLOW, INVESTIGATE, PHYSIOLOGY, PLAY, roost, shade};
@@ -56,18 +61,24 @@ const fn slot(index: usize) -> (usize, usize) {
     (index / 3, index % 3)
 }
 
-/// The roots of a creature's mouth tentacles, a pair to each lane, set around the mouth, and how
-/// far each reaches.
+/// The roots of a creature's mouth tentacles, and how far each reaches.
+///
+/// The tentacles are the tetralates' arms. The first pair, which every member of the phylum
+/// inherits, rises from either side of the mouth; the extra pairs the live-bearers grew follow
+/// back along the throat, each further down the neck than the last and set a little wider, so
+/// they reach past one another to the same work rather than crowding at the mouth.
 fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
     let lane = (index / 2) as f32;
     let side = if index.is_multiple_of(2) { -1.0 } else { 1.0 };
+    // Each pair a little out of step with the last along the throat.
+    let stagger = side * 0.04 * (lane % 2.0 - 0.5);
     let root = mouth
         + vec3(
-            side * (0.14 + lane * 0.09),
-            (lane % 2.0 - 0.5) * 0.12,
-            lane * 0.1,
+            side * (0.16 + lane * 0.07),
+            -0.05 - lane * 0.14,
+            lane * 0.34 + stagger,
         ) * scale;
-    (root, scale * (1.5 - lane * 0.23), side)
+    (root, scale * (2.4 - lane * 0.25), side)
 }
 
 /// Pose the mouth tentacles by simulating them.
@@ -87,15 +98,34 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
         let (root, reach, side) = tentacle_root(mouth, scale, index);
         let lane = (index / 2) as f32;
         let length = reach / (KNOTS - 1) as f32;
+        // At rest they hang forward and down beneath the head like loosely held arms, bent a
+        // little at the middle, each moving slowly on its own.
+        let trailing = |knot: usize, time: f32| {
+            let t = knot as f32 / (KNOTS - 1) as f32;
+            let writhe = (time * 0.9 + lane * 1.9 + side - t * 3.0).sin() * 0.12 * t;
+            let elbow = (t * PI).sin();
+            root + vec3(
+                side * (0.08 + 0.18 * t + writhe) * reach * t,
+                (-0.62 * t + 0.08 * elbow) * reach,
+                (-0.32 * t - 0.12 * elbow + writhe * 0.5) * reach,
+            )
+        };
+        // Feeding, the tentacles reach forward and close round the food at the mouth, holding it
+        // to the jaws; otherwise they trail, writhing a little.
+        let grasp = if c.dynamics.w > 0.0 {
+            c.dynamics.z.min(1.0)
+        } else {
+            0.0
+        };
         let rest = |knot: usize, time: f32| {
             let t = knot as f32 / (KNOTS - 1) as f32;
-            let writhe = (time * 1.3 + lane * 1.9 - t * 4.0).sin() * 0.25 * t;
-            let curl = t * (1.2 + lane * 0.2) + writhe;
-            root + vec3(
-                side * (0.12 + 0.35 * t + writhe * 0.4) * reach * t,
-                (-0.35 * t - 0.25 * (1.0 - curl.cos())) * reach,
-                (-0.9 * curl.sin() / (1.2 + lane * 0.2)) * reach * t.max(0.15),
-            )
+            let reach_forward = root
+                + vec3(
+                    side * reach * (0.22 * (t * PI).sin() - 0.12 * t),
+                    -reach * (0.18 * t - 0.08 * (t * PI).sin()),
+                    -reach * 0.62 * t,
+                );
+            trailing(knot, time).lerp(reach_forward, grasp)
         };
         let end = c.animation.z.max(0.0);
         let settle = |start: f32| {
@@ -145,7 +175,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
         for knot in 0..KNOTS {
             points[knot] = earlier[knot].lerp(later[knot], weight);
         }
-        let radius = scale * (0.055 - lane * 0.006);
+        let radius = scale * (0.075 - lane * 0.008);
         let (sheet, column) = slot(index);
         for (knot, point) in points.iter().enumerate() {
             let t = knot as f32 / (KNOTS - 1) as f32;
@@ -165,7 +195,7 @@ pub fn oral_tentacles(
     pairs: u32,
 ) -> f32 {
     let scale = scale * (0.35 + creature.life.y * 0.65);
-    let bounds = (point - mouth).length() - scale * 1.7;
+    let bounds = (point - mouth).length() - scale * 3.2;
     if bounds > scale * 0.1 {
         return bounds;
     }
@@ -176,7 +206,7 @@ pub fn oral_tentacles(
         }
         let (sheet, column) = slot(index);
         let root = creature.cloth[sheet][0][column];
-        if (point - root.truncate()).length() > scale * 1.6 + root.w {
+        if (point - root.truncate()).length() > scale * 2.6 + root.w {
             continue;
         }
         for knot in 0..KNOTS - 1 {

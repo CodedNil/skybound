@@ -32,6 +32,7 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            CURIOSITY,
             mind::{Ethology, Intent, Situation, Urges, spiral},
             physiology::Physiology,
             tetralata::{ETHOLOGY as TETRALATE, INVESTIGATE},
@@ -65,7 +66,7 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (TETRALATE.urges)(s, urges);
         if s.seen.player.is_some() {
-            urges.add(INVESTIGATE, s.temper.curiosity * 0.6);
+            urges.add(INVESTIGATE, s.temper(CURIOSITY) * 0.6);
         }
         if s.seen.humidity > 0.7 {
             urges.add(SIP_DEW, s.drives.thirst * 1.3);

@@ -410,6 +410,8 @@ pub fn sample(point: Vec3, view: &ViewUniform, footprint: f32, textures: &Textur
     )
 }
 
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
 #[spirv(fragment(entry_point_name = "column_cache"))]
 pub fn column_cache(
     #[spirv(frag_coord)] pixel: Vec4,

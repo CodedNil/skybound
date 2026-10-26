@@ -13,6 +13,7 @@ pub mod climate;
 pub mod life;
 pub mod math;
 pub mod planet;
+pub mod preview;
 #[cfg(target_arch = "spirv")]
 pub mod render;
 

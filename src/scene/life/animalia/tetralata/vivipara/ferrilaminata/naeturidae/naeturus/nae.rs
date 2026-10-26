@@ -247,6 +247,7 @@ mod nature {
     use crate::scene::life::{
         Kind,
         animalia::{
+            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near,
@@ -254,7 +255,7 @@ mod nature {
             physiology::Physiology,
             tetralata::{
                 FOLLOW,
-                vivipara::{CALL, notice as hear},
+                vivipara::{CALL, CHATTINESS, ferrilaminata::naeturidae::LOYALTY, notice as hear},
             },
         },
         behaviour::{Activity, Goal},
@@ -312,7 +313,7 @@ mod nature {
             let water = 1.0 - s.drives.thirst;
             urges.add(
                 CONVERSE,
-                (0.2 + s.temper.sociability * 0.4) * content * water,
+                (0.1 + s.temper(SOCIABILITY) * 0.3 + s.temper(CHATTINESS) * 0.3) * content * water,
             );
         }
     }
@@ -320,7 +321,9 @@ mod nature {
     /// Parted from its family, a Næ asks its Nætu to call for it, and makes for the answer.
     fn act(mind: &mut Mind, s: &Situation) -> Option<Goal> {
         let goal = (super::super::ETHOLOGY.act)(mind, s);
-        let apart = s.seen.kin.is_none_or(|kin| kin.length() > 300.0);
+        // The more loyal, the sooner it calls after the herd drawing away.
+        let limit = 450.0 - s.temper(LOYALTY) * 300.0;
+        let apart = s.seen.kin.is_none_or(|kin| kin.length() > limit);
         if mind.intent == FOLLOW && apart {
             return Some(goal.unwrap_or_else(|| (FOLLOW.act)(mind, s)).calling());
         }

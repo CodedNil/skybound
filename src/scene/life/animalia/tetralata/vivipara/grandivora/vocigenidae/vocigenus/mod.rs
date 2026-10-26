@@ -29,11 +29,12 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            CURIOSITY,
             mind::{Ethology, Intent, Situation, Urges, orbit},
             physiology::Physiology,
             tetralata::{
                 INVESTIGATE,
-                vivipara::{CALL, ETHOLOGY as LIVE_BEARER, sociable},
+                vivipara::{CALL, CHATTINESS, ETHOLOGY as LIVE_BEARER, sociable},
             },
         },
         behaviour::{Activity, Goal},
@@ -50,7 +51,9 @@ mod nature {
         act: |_, s| {
             let up = s.up();
             let centre = s.seen.kin.or_else(|| s.seen.mark(CALL)).unwrap_or_default();
-            let turn = ((s.now / 12.0) as u32 + s.individual).is_multiple_of(4);
+            // Each calls at its own pace, the chattiest most often.
+            let pace = 0.02 + s.temper(CHATTINESS) * 0.06;
+            let turn = (s.now * pace + s.wobble()).fract() < 0.25;
             let goal = Goal::new(
                 Activity::Display,
                 Some(centre + orbit(up, centre, 60.0, s.now * 0.05 + s.wobble())),
@@ -68,7 +71,7 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (LIVE_BEARER.urges)(s, urges);
         if s.seen.player.is_some() {
-            urges.add(INVESTIGATE, s.temper.curiosity * 0.9);
+            urges.add(INVESTIGATE, s.temper(CURIOSITY) * 0.9);
         }
         // Long-lived and clever, they play and keep company more than most.
         sociable(s, urges, 1.5);

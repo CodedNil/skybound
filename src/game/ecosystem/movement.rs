@@ -8,10 +8,14 @@ use crate::{
     math::{ToEngine, ToScene},
 };
 use bevy::prelude::*;
+use core::f32::consts::TAU;
 use skybound::scene::life::{
-    animalia::physiology::{Brood, Take},
+    Kind,
+    animalia::physiology::{Brood, Take, plant},
     behaviour::Motion,
+    genome::{BUILD, HUE, SHADE},
 };
+use spirv_std::glam::Vec3 as SceneVec3;
 use std::collections::HashMap;
 
 /// Everything moving an organism needs from the world.
@@ -81,6 +85,35 @@ pub(super) fn relocate(
     relations.stepped = now;
 }
 
+/// What the step's motion does to the body itself: an animal's wings beat on through their
+/// stroke, faster and deeper the harder it is working them and barely at all as it glides; a
+/// plant bends against the air moving past it, springing back and overshooting as it eases.
+pub(super) fn flex(
+    relations: &mut Relations,
+    kind: Kind,
+    movement: &Motion,
+    wind: SceneVec3,
+    dt: f32,
+) {
+    relations.effort += (movement.effort - relations.effort) * (dt * 2.0).min(1.0);
+    if plant(kind) {
+        // The air pushing past it, in its own frame, sets where the spring is pulled to.
+        let air = movement.rotation.inverse() * (wind - movement.velocity);
+        let reach = kind.render_radius() * 0.12;
+        let pull = (air.to_engine() * 0.25).clamp_length_max(reach);
+        let stiffness = 3.0;
+        let damping = 1.2;
+        relations.bending +=
+            ((pull - relations.bend) * stiffness - relations.bending * damping) * dt;
+        relations.bend += relations.bending * dt;
+    } else {
+        let rate = kind.look().flight.x * (0.6 + relations.effort.min(1.0) * 0.8);
+        // Kept over two beats, so wings beating half as fast again to make up for a weak side
+        // come round in step.
+        relations.wingbeat = (relations.wingbeat + rate * TAU * dt) % (2.0 * TAU);
+    }
+}
+
 /// An organism's motion this step in the scene's frame, starting from where it is, at its velocity
 /// and heading.
 pub(super) fn moving(velocity: Vec3, rotation: Quat) -> Motion {
@@ -88,6 +121,7 @@ pub(super) fn moving(velocity: Vec3, rotation: Quat) -> Motion {
         position: Vec3::ZERO.to_scene(),
         velocity: velocity.to_scene(),
         rotation: rotation.to_scene(),
+        effort: 0.0,
     }
 }
 
@@ -110,18 +144,20 @@ pub(super) fn held_position(agent: Agent, host: &Agent, carried: bool, world: &W
             _ => host.position,
         };
     }
-    let bits = agent.entity.to_bits();
+    // Prey is held to the hunter's jaws by its mouth tentacles, beneath and ahead of its head.
+    if host.kind.takes(Take::Prey) {
+        let reach = host.kind.render_radius();
+        return host.position + host.rotation * Vec3::new(0.0, -reach * 0.15, -reach * 0.45);
+    }
+    // Anything else rides on top, each where its own build lets it cling best: further out or in,
+    // fore or aft.
+    let genes = agent.genes;
     let around = Vec3::new(
-        (bits % 7) as f32 - 3.0,
-        (bits % 5) as f32 - 2.0,
-        (bits % 3) as f32 - 1.0,
+        (genes.get(HUE) - 0.5) * 6.0,
+        (genes.get(SHADE) - 0.5) * 4.0,
+        (genes.get(BUILD) - 0.5) * 2.0,
     ) * 0.3;
-    // Prey hangs beneath the hunter that holds it; anything else rides on top.
-    let up = if host.kind.takes(Take::Prey) {
-        -world.up(host.position)
-    } else {
-        world.up(host.position)
-    };
+    let up = world.up(host.position);
     host.position + (up + around) * host.kind.biology().adult_mass.cbrt() * 0.3
 }
 

@@ -6,6 +6,7 @@ use skybound::scene::life::{
     Kind,
     animalia::physiology::{Take, can_eat, plant},
     behaviour::Activity,
+    genome::Genome,
     organs::{Function, Viscera},
     vitals::Vitals,
 };
@@ -153,13 +154,30 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
         if !nectar && food.0.health <= 0.0 && eater_kind.0.takes(Take::Living) {
             continue;
         }
+        // A groomer eats what grows on its client's hide and leaves the client whole.
+        if eater_kind.0.animal().is_some_and(|animal| animal.grooms)
+            && food_kind.0.animal().is_some_and(|animal| !animal.parasite)
+        {
+            let grazed = (meal.amount * 0.5).min(food.0.overgrowth * 0.02);
+            food.0.overgrowth -= grazed;
+            eater
+                .0
+                .ingest(grazed * food_kind.0.biology().adult_mass * 0.05, 0.0);
+            continue;
+        }
         let rate = if nectar { 0.1 } else { 1.0 };
         let mut amount = (meal.amount * rate).min(food.0.mass * 0.05);
         if plant(food_kind.0) {
             amount = grazed(&mut food.0, food_kind.0, eater_kind.0, amount);
             if food_kind.0.organs().has(Function::Fruit) && !nectar {
                 // The seed rides in the gut and is passed somewhere else.
-                visitor.seed = Some((food_kind.0, now + 150.0));
+                // A seed of this plant, fathered by whatever pollen it last took.
+                let seed = Genome::child(
+                    flower.genes,
+                    flower.sire.unwrap_or(flower.genes),
+                    now.to_bits().into(),
+                );
+                visitor.seed = Some((food_kind.0, now + 150.0, seed));
             }
         }
         food.0.mass -= amount;
@@ -172,13 +190,14 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
             },
         );
         if nectar {
-            if let Some((donor, kind)) = visitor.pollen
+            if let Some((donor, kind, pollen)) = visitor.pollen
                 && donor != meal.food
                 && kind == food_kind.0
             {
                 flower.pollinated_until = now + 120.0;
+                flower.sire = Some(pollen);
             }
-            visitor.pollen = Some((meal.food, food_kind.0));
+            visitor.pollen = Some((meal.food, food_kind.0, flower.genes));
         }
         if eater_kind.0.animal().is_some_and(|animal| animal.parasite) {
             visitor.host = Some(meal.food);

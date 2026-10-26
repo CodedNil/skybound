@@ -29,6 +29,7 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            AGGRESSION,
             mind::{Aim, Blow, Ethology, Intent, Mind, Sighting, Situation, Urges},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
@@ -56,7 +57,7 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (SILK_MAKER.urges)(s, urges);
         if s.seen.kin.is_some_and(|rival| rival.length() < 40.0) && s.drives.youth >= 1.0 {
-            urges.add(EVICT, 0.4 + s.temper.aggression * 0.5);
+            urges.add(EVICT, 0.4 + s.temper(AGGRESSION) * 0.5);
         }
     }
 

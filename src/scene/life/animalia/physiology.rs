@@ -61,6 +61,10 @@ pub struct Physiology {
     pub pollinates: bool,
     /// Whether it lives on the fluid of a far larger host.
     pub parasite: bool,
+    /// Whether it grooms larger animals, eating what has grown on their hides.
+    pub grooms: bool,
+    /// Whether it lays iron into its edges and armour, iron it must gather through its life.
+    pub ironclad: bool,
     /// Its top speed; nothing for one that cannot move itself.
     pub speed: f32,
     /// How far it perceives.
@@ -212,6 +216,8 @@ pub const ANIMAL: Physiology = Physiology {
     gleans: false,
     pollinates: false,
     parasite: false,
+    grooms: false,
+    ironclad: false,
     speed: 0.0,
     senses: 180.0,
     breathe: |_| 0.3,
@@ -541,9 +547,6 @@ mod tests {
             slashed.metabolize(kind, climate, 0.2, 1.0);
         }
         assert!(slashed.health > 0.0, "a slash across the gas store killed");
-        assert!(
-            slashed.sinking(kind) > 0.5,
-            "a torn gas store kept its lift"
-        );
+        assert!(slashed.lift < 0.85, "a torn gas store kept its lift");
     }
 }

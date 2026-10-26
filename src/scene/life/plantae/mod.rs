@@ -1,10 +1,11 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
+    genome::{Gene, HUE, PATTERN, SHADE},
     surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
 };
 use core::f32::consts::{PI, TAU};
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, vec2, vec3, vec4};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod chlorophyta;
@@ -35,17 +36,12 @@ taxon!(
 /// One of an individual plant's inherited traits, from zero to one.
 ///
 /// A plant has no mind or behaviour to tell it apart from its neighbours, only its growth, and
-/// every spore or seed carries its own way of growing: how many arms, how long a stem, which way a
-/// coil turns. Each `salt` reads the individual's seed a different way, so its traits vary
-/// independently of one another.
-pub fn gene(c: &CreatureInstance, salt: f32) -> f32 {
-    let mix = c.identity.dot(vec4(
-        12.9898 + salt * 7.13,
-        78.233,
-        37.719 + salt * 3.31,
-        4.581 + salt,
-    ));
-    (mix.sin() * 43_758.547).fract_gl()
+/// every spore or seed carries its parents' ways of growing: how many arms, how long a stem, which
+/// way a coil turns. Plants read the whole of their kingdom's part of the genome for it, from the
+/// eighth gene on, each trait at its own place, so a plant's traits vary independently of one
+/// another and are passed on to its young.
+pub fn gene(c: &CreatureInstance, place: f32) -> f32 {
+    c.gene(Gene(8 + (place as u32) % 24))
 }
 
 /// One of `count` forms a trait can take, read from a gene.
@@ -118,6 +114,19 @@ pub fn sway(mut p: Vec3, c: &CreatureInstance) -> Vec3 {
     p
 }
 
+/// Where a point of the plant's unbent body lies once the air has bent it.
+///
+/// The bend the simulation found, as how far the top of the plant is pushed, grows from nothing at
+/// its foot to all of it at its top, as a stem bends under a load at its tip.
+pub fn bent(p: Vec3, c: &CreatureInstance) -> Vec3 {
+    if c.dynamics.w <= 0.0 {
+        return p;
+    }
+    let height = c.opaque_bounds.y.max(0.5);
+    let up = ((p.y + height) / (2.0 * height)).clamp(0.0, 1.0);
+    p - c.dynamics.truncate() * up * up
+}
+
 /// Bark, leaf, glowing tissue, gloss and water: a plant's materials.
 pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
     let grain = (p.y * 31.0 + (p.x * 4.0).sin()).sin() * 0.04;
@@ -126,8 +135,14 @@ pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
         .abs()
         .smoothstep(0.9, 0.98);
     let mut material = Material::skin(pigment * (0.8 + grain + veins * 0.2), 0.48);
+    // Leaf and soft tissue: light passes through it and comes out greener, and a waxy film
+    // glints on it.
+    material.scatter = 0.9;
+    material.film = 0.35;
     match id {
         0 => {
+            material.scatter = 0.1;
+            material.film = 0.05;
             material.color = vec3(0.18, 0.085, 0.035) * (1.0 + grain);
             material.roughness = 0.82;
             material.texture = RINGED;
@@ -168,8 +183,9 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     // Each individual's colouring is its own: darker or paler, warmer or cooler, its glow shifted.
     let pigment = look.pigment.truncate();
     let pigment =
-        pigment.lerp(pigment.zxy(), (gene(c, 91.0) - 0.5) * 0.25) * (0.75 + gene(c, 92.0) * 0.5);
-    let glow = look.accent.lerp(look.accent.yzx(), gene(c, 93.0) * 0.3);
+        pigment.lerp(pigment.zxy(), (c.gene(HUE) - 0.5) * 0.25) * (0.75 + c.gene(SHADE) * 0.5);
+    let glow = look.accent.lerp(look.accent.yzx(), c.gene(PATTERN) * 0.3);
+    let surface = |p: Vec3, c: &CreatureInstance| surface(bent(p, c), c);
     let mut result = TraceResult::MISS;
     let mut offset = 0.0;
     for _ in 0..8 {
@@ -180,7 +196,7 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
                 ..ray
             },
             c,
-            &surface,
+            surface,
             |p, id| plant_material(p, id, pigment, glow),
         );
         if !hit.is_hit() {

@@ -20,7 +20,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
-use spirv_std::glam::{Vec3, vec2, vec3, vec4};
+use spirv_std::glam::{Vec2, Vec3, vec2, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.25,
@@ -45,7 +45,7 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 6.0, 10.0, 0);
+    prepare_pose(c, 6.0, 6.5, 0);
     c.opaque_bounds = vec3(6.0, 7.5, 22.0).extend(0.0);
     rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.1, ORAL_PAIRS);
 }
@@ -80,6 +80,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
                 0.35,
                 0.7,
                 0.7 + f * 0.15,
+                // Soft plates, blunt and never worn.
+                Vec2::ZERO,
             ),
             2,
         );
@@ -128,10 +130,11 @@ pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
 mod nature {
     use crate::scene::life::{
         animalia::{
+            AGGRESSION,
             mind::{Ethology, Intent, Mind, Situation, Urges},
             physiology::{Light, Physiology},
             tetralata::vivipara::{
-                YOUNG, ferrilaminata::ferrispinidae::ferrispina::ETHOLOGY as IRON_SPINE,
+                DEVOTION, YOUNG, ferrilaminata::ferrispinidae::ferrispina::ETHOLOGY as IRON_SPINE,
             },
         },
         behaviour::{Activity, Goal},
@@ -166,7 +169,12 @@ mod nature {
             } else {
                 0.4
             };
-            urges.add(GUARD, s.threat * (0.8 + s.temper.aggression) * young);
+            // The more devoted the guardian, the less it takes to bring it between the young and
+            // what threatens them.
+            urges.add(
+                GUARD,
+                s.threat * (0.6 + s.temper(AGGRESSION) * 0.5 + s.temper(DEVOTION) * 0.7) * young,
+            );
         }
     }
 

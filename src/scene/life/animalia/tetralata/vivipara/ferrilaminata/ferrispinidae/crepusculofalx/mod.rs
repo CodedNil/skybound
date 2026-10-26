@@ -13,8 +13,8 @@ taxon!(
     "Dusk Scythe",
     [
         "Members of Crepusculofalx are camouflaged hunters of the dusty Mineral Fields.",
-        "A luminous tail lure attracts small animals into reach of hardened wing margins.",
-        "The body remains quiet in the haze until a short banking movement brings those edges across the target.",
+        "A luminous tail lure draws small animals up into reach of long mouth tentacles, which seize them in a sudden lunge and hold them to the jaws.",
+        "The iron they gather from the haze goes not into weapons but into armour: scales along the back and the leading edges of the wings, sparse and uneven, which turn the bites of the larger hunters that come for an animal hanging so still.",
         "Scavenging supplements hunting when mineral dust masks the lure or scatters potential prey.",
         "Their light is most useful against a dim background, linking their hunting success to the local dust load and to the dim equatorial skies they keep to.",
     ],
@@ -23,8 +23,8 @@ taxon!(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     //! Duskslicers hunt by ambush, hanging still in the haze with the lure dangling until prey
-    //! comes near, then lunging to scythe it with a wing's iron edge. They court by flickering
-    //! their lures in the dark.
+    //! comes near, then lunging to seize it in their mouth tentacles and bite it, holding it to
+    //! the jaws as they feed. They court by flickering their lures in the dark.
 
     use crate::scene::life::{
         animalia::{
@@ -35,14 +35,14 @@ mod nature {
         behaviour::{Activity, Goal},
         organs::{Strike, Wound},
     };
-    use spirv_std::glam::Vec3;
 
     pub const ETHOLOGY: Ethology = Ethology {
         hunt: ambush,
         court: |s| display_near(s.seen, 6.0, Some(-s.seen.sunward * 100.0)),
         wander: |_, _| hang_still(),
-        blow: scythe,
+        blow: seize,
         hunts: true,
+        carries: true,
         ..IRON_EDGED
     };
 
@@ -55,28 +55,24 @@ mod nature {
         }
     }
 
-    /// The scythe edge of a wing across the flank.
+    /// The lunge: the tentacles close round the prey and the jaws bite into it where it was
+    /// caught, and it is held, struggling less as the bite takes hold.
     #[expect(
         clippy::unnecessary_wraps,
         reason = "it fills the blow slot, which some hunters leave empty"
     )]
-    fn scythe(aim: &Aim) -> Option<Blow> {
-        let side = if aim.toward.x < 0.0 { -1.0 } else { 1.0 };
-        let at = Vec3::new(
-            side * aim.extent.x * 0.6,
-            aim.scatter.y * 0.4,
-            aim.scatter.z,
-        );
+    fn seize(aim: &Aim) -> Option<Blow> {
+        let at = aim.toward * aim.extent * 0.6 + aim.scatter * 0.5;
         Some(Blow {
             strike: Strike {
-                from: at - aim.along * aim.extent.z * 0.8,
-                to: at + aim.along * aim.extent.z * 0.8,
-                radius: aim.extent.min_element() * 0.3,
-                force: aim.edge,
-                wound: Wound::Slash,
+                from: at,
+                to: at - aim.toward * aim.extent.min_element() * 0.5,
+                radius: aim.extent.min_element() * 0.25,
+                force: 0.6 + aim.edge * 0.2,
+                wound: Wound::Bite,
             },
-            stun: 0.0,
-            rest: 4.0,
+            stun: 3.0,
+            rest: 2.0,
             cost: 0.0,
         })
     }

@@ -17,7 +17,7 @@ use skybound::scene::{
     life::{
         Kind,
         animalia::{
-            mind::{Drives, Glimpse, Mind, Perception, Sighting},
+            mind::{Drives, Glimpse, Perception, Sighting},
             physiology::{Take, plant},
         },
         behaviour::{Activity, Goal, Senses},
@@ -63,6 +63,9 @@ pub(super) fn perceive(
         energy: body.energy,
         hydration: body.hydration,
         fatigue: body.fatigue,
+        gas: body.lift,
+        wings: body.wings().0,
+        list: body.wings().1,
         ..Senses::default()
     };
     for other in neighbours.iter().filter(|other| other.entity != entity) {
@@ -132,21 +135,32 @@ pub(super) fn perceive(
     if climate.storm > 0.1 {
         senses.storm = Some(Vec3::Y.to_scene() * 100.0);
     }
-    let floats = kind.floats();
-    senses.buoyancy = if kind.attaches() {
-        0.0
-    } else if floats {
-        -climate.wind.dot(senses.up)
-            + ((target_altitude - climate.altitude) * 0.01).clamp(-2.0, 2.0)
-    } else if kind.animal().is_some_and(|animal| animal.flies()) {
-        -climate.wind.dot(senses.up) - body.fatigue * 0.2
-    } else {
-        0.0
-    };
+    senses.buoyancy = climb(
+        kind,
+        climate,
+        senses.up,
+        target_altitude - climate.altitude,
+        body.fatigue,
+    );
     if kind.animal().is_some_and(|animal| animal.lets_go) && body.energy > 0.8 {
         relations.host = None;
     }
     senses
+}
+
+/// How fast it means to rise or sink against the air's own rising: a floater trims its gas
+/// towards the height it lives at, a flier holds its height against the updraft, sagging as it
+/// tires, and anything fastened to another goes where its host goes.
+fn climb(kind: Kind, climate: Climate, up: SceneVec3, below: f32, fatigue: f32) -> f32 {
+    if kind.attaches() {
+        0.0
+    } else if kind.floats() {
+        -climate.wind.dot(up) + (below * 0.01).clamp(-2.0, 2.0)
+    } else if kind.animal().is_some_and(|animal| animal.flies()) {
+        -climate.wind.dot(up) - fatigue * 0.2
+    } else {
+        0.0
+    }
 }
 
 /// What an animal can perceive around it this step.
@@ -180,7 +194,7 @@ pub(super) fn orient(
     if !free {
         senses.habitat = None;
     }
-    let stage = nurture(agent, relations, index, around.now);
+    let stage = nurture(agent, relations, index);
     let targets = if free && stage.forages() {
         think(agent, relations, &mut senses, around)
     } else {
@@ -208,25 +222,15 @@ pub(super) fn think(
     if agent.vitals.stunned > 0.0 {
         senses.goal = Some(Goal::new(Activity::Rest, None, 0.0).folded(1.0));
         senses.power = 0.0;
-        senses.sinking = agent.vitals.sinking(kind) + 6.0;
         return Targets::default();
-    }
-    if !relations.minded {
-        relations.mind = Mind::new(agent.entity.to_bits() as u32);
-        relations.minded = true;
     }
     let (seen, targets) = sense(agent, relations, senses, around);
     let drives = drives(agent, relations, around.now);
-    let goal = relations.mind.decide(
-        kind,
-        drives,
-        &seen,
-        around.now,
-        agent.entity.to_bits() as u32,
-    );
+    let goal = relations
+        .mind
+        .decide(kind, drives, &seen, around.now, agent.genes);
     senses.goal = Some(goal);
     senses.power = agent.vitals.power(kind);
-    senses.sinking = agent.vitals.sinking(kind);
     targets
 }
 

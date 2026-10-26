@@ -3,6 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, pick, speckle},
+    smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -105,7 +106,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             (lip.length() - 0.18).min(tapered_tail(p, base, base + out * 0.9, 0.08, 0.01))
         }
     };
-    shape.join(rim, 3);
+    // The rim grows out of the leaf, not onto it.
+    shape.blend(rim, 3, 0.3);
     // The hub, and the floats that hold the basin up.
     shape.join(
         ellipsoid(p - vec3(0.0, FLOOR - 0.5, 0.0), vec3(1.1, 0.55, 1.1)),
@@ -117,8 +119,12 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let at = (angle / sector).round() * sector;
         let out = edge * 0.72;
         let centre = vec3(at.cos() * out, rise(out) - 0.6, at.sin() * out);
-        shape.join(ellipsoid(p - centre, vec3(0.7, 0.5, 0.7)), 3);
-        shape.join(capsule(p, centre, vec3(0.0, FLOOR - 0.5, 0.0), 0.12), 0);
+        shape.blend(
+            capsule(p, centre, vec3(0.0, FLOOR - 0.5, 0.0), 0.12),
+            0,
+            0.15,
+        );
+        shape.blend(ellipsoid(p - centre, vec3(0.7, 0.5, 0.7)), 3, 0.25);
     } else {
         shape.join(
             ellipsoid(p - vec3(0.0, FLOOR - 1.4, 0.0), vec3(1.6, 1.1, 1.6)),
@@ -136,9 +142,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let sway = (c.animation.z * 0.5 + f).sin() * 0.3;
         let knee = root + out * 0.8 + vec3(sway, -long * 0.5, 0.0);
         let tip = knee + out * 0.4 + vec3(sway, -long * 0.5, 0.0);
-        shape.join(
-            tapered_tail(p, root, knee, 0.14, 0.09).min(tapered_tail(p, knee, tip, 0.09, 0.02)),
+        shape.blend(
+            smooth_min(
+                tapered_tail(p, root, knee, 0.14, 0.09),
+                tapered_tail(p, knee, tip, 0.09, 0.02),
+                0.1,
+            ),
             0,
+            0.15,
         );
     }
     shape

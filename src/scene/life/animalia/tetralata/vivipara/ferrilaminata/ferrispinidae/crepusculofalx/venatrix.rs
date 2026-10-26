@@ -18,7 +18,7 @@ use crate::scene::life::{
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Function, Organ, Viscera, pair, site},
 };
-use spirv_std::glam::{Vec3, vec2, vec3, vec4};
+use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -43,7 +43,8 @@ taxon!(
     "Duskslicers",
     [
         "Duskslicers hang almost motionless in the mineral haze on broad, dust-furred wings, their mottled bodies lost in it, a glowing lure dangling far below on a whip of a tail.",
-        "Small animals drawn up to the lure's apparent feeding signal rise into a short banked stoop, and the iron-hardened leading edges of the forewings, curved to a scythe point, cut across them.",
+        "Small animals drawn up to the lure's apparent feeding signal come within reach of its long mouth tentacles, which shoot out and seize them, and it hangs on in the haze to feed.",
+        "Patches of gathered iron armour its back and the leading edges of its forewings against the hunters that come for so still a target, more and broader the older it is.",
         "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dimmest equatorial skies, where they live.",
         "Fringed hindwings hush the glide, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
         "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",
@@ -92,7 +93,20 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.55 * (0.9 - t) + 0.05,
         ));
     }
-    let mut hit = Surface::new(smooth_min(d, whip, 0.5), 0);
+    let skin = smooth_min(d, whip, 0.5);
+    let mut hit = Surface::new(skin, 0);
+    // Scales of gathered iron over the back, few and scattered on a young one, crowding together on
+    // an old one that has gathered much.
+    let iron = c.stores.x;
+    if iron > 0.02 && p.y > 0.1 && p.z < 2.6 {
+        let cell = (vec2(p.x, p.z) * 2.5).round();
+        let spot =
+            ((cell.dot(vec2(12.9898, 78.233)) + c.identity.x * 37.0).sin() * 43_758.547).fract_gl();
+        if spot < iron * 0.85 {
+            let within = (vec2(p.x, p.z) * 2.5 - cell).length() / 2.5 - 0.17;
+            hit.blend((skin - 0.06).max(within), 6, 0.03);
+        }
+    }
     // The lure: a bulb trailing glowing threads.
     let end = c.tail[5].truncate();
     let mut lure = ellipsoid(p - end, vec3(0.35, 0.45, 0.35));

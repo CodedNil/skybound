@@ -8,6 +8,8 @@ edition = "2024"
 [features]
 default = ["desktop"]
 desktop = ["dep:bevy", "dep:rayon", "dep:half", "dep:serde_json"]
+# Builds the shader with only the previewer's entry point; set by build.rs, never by hand.
+preview = []
 
 [[bin]]
 name = "skybound"
@@ -51,10 +53,10 @@ half = { version = "2.7.1", optional = true }
 serde_json = { version = "1.0", optional = true }
 
 [dev-dependencies]
-image = { version = "0.25.10", default-features = false, features = [
-    "png",
-    "gif",
-] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+wgpu = { version = "30.0.1", features = ["spirv"] }
+futures-lite = "2.6.1"
+webp-animation = "0.10.0"
 
 [build-dependencies]
 spirv-builder = "0.11.0"

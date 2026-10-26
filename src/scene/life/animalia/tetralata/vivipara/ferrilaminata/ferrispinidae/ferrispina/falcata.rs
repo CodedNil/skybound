@@ -49,7 +49,7 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 7.0, 16.0, 0);
+    prepare_pose(c, 7.0, 10.4, 0);
     c.opaque_bounds = vec3(6.0, 7.0, 30.0).extend(0.0);
     rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.0, ORAL_PAIRS);
 }
@@ -87,7 +87,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
     site(FLOAT, vec3(0.00, 0.19, -1.34), vec3(0.22, 0.27, 0.52)),
     pair(
         FLIGHT_MUSCLE,
-        vec3(0.88, 0.13, -1.61),
+        vec3(0.62, 0.13, -1.61),
         vec3(0.12, 0.12, 0.12),
     ),
     site(CISTERN, vec3(0.00, 0.06, 4.02), vec3(0.51, 0.51, 1.62)),

@@ -14,6 +14,7 @@ use crate::scene::{
         plantae,
     },
 };
+use spirv_std::glam::{Vec3, Vec4};
 
 /// The state of a living body: what it has eaten and stored, how much fluid and lift it holds, how
 /// rested it is, and how whole each of its organs remains.
@@ -43,6 +44,20 @@ pub struct Vitals {
     pub reserve: f32,
     /// Seconds of paralysis left from venom.
     pub stunned: f32,
+    /// How torn each wing is, fore left, fore right, hind left and hind right, and how much of
+    /// that has healed into scar that never quite goes. Only suffered, never inherited.
+    pub torn: [f32; 4],
+    pub scarred: [f32; 4],
+    /// How scarred its body is from the wounds it has lived through, from unmarked to grizzled,
+    /// and where its worst wounds were, in its body's frame, each with how severe it was.
+    pub scars: f32,
+    pub wounds: [Vec4; 4],
+    /// How much iron it has gathered and laid into its edges and armour, from none to all it can
+    /// carry: never inherited, but breathed from mineral dust and scraped from stone over a life.
+    pub iron: f32,
+    /// How much air moss and lumaweed has settled on its hide, from bare to covered: the more,
+    /// the larger and slower it is and the longer it has lived, until something grazes it off.
+    pub overgrowth: f32,
 }
 
 #[derive(Default)]
@@ -62,6 +77,14 @@ pub struct Injury {
 
 /// What both kingdoms' bodies can do, each in its own way, asked of either.
 impl Kind {
+    /// How overgrown one of this kind usually is by the time it is grown: those with the most hide
+    /// and the least speed the most.
+    pub fn overgrown(self) -> f32 {
+        let hide = (self.render_radius() / 150.0).min(1.0);
+        let still = (1.0 - self.speed() / 15.0).max(0.0);
+        (hide * still).sqrt() * 0.6
+    }
+
     /// Whether it lives fastened to another.
     pub const fn attaches(self) -> bool {
         match (self.animal(), self.plant()) {
@@ -119,15 +142,52 @@ impl Vitals {
             alertness: 1.0,
             reserve: 1.0,
             stunned: 0.0,
+            torn: [0.0; 4],
+            scarred: [0.0; 4],
+            scars: 0.0,
+            wounds: [Vec4::ZERO; 4],
+            iron: 0.0,
+            overgrowth: 0.0,
         }
     }
 
-    /// A grown body of a kind as the world starts it: rested and fed, any aur sacs full.
+    /// A grown body of a kind as the world starts it: rested and fed, any aur sacs full, and as
+    /// overgrown as one of its size and pace has had time to become.
     pub fn born(kind: Kind) -> Self {
         Self {
             aur: kind.animal().map_or(0.0, |animal| animal.aur),
+            overgrowth: kind.overgrown(),
+            iron: if kind.animal().is_some_and(|animal| animal.ironclad) {
+                0.55
+            } else {
+                0.0
+            },
             ..Self::new(kind.biology())
         }
+    }
+
+    /// A step of gathering iron, for a body that lays it down: a little from the mineral dust it
+    /// breathes, and more while it scrapes stone, as a honing Iron Spine scrapes a Grounder's hide.
+    pub fn gather_iron(&mut self, kind: Kind, climate: Climate, scraping: bool, dt: f32) {
+        if !kind.animal().is_some_and(|animal| animal.ironclad) {
+            return;
+        }
+        let dust = climate.dust;
+        let scraped = if scraping { 0.003 } else { 0.0 };
+        self.iron = (self.iron + (dust * 0.0002 + scraped) * (1.0 - self.iron) * dt).min(1.0);
+    }
+
+    /// A step of what grows on its hide: spores of air moss and lumaweed settle on any animal and
+    /// take hold the faster the more hide it has and the less it moves, for a fast flier's skin
+    /// is scoured clean by the air; a large, slow giant gathers a garden.
+    pub fn overgrow(&mut self, kind: Kind, speed: f32, dt: f32) {
+        if kind.animal().is_none() {
+            return;
+        }
+        let hide = (kind.render_radius() / 150.0).min(1.0);
+        let still = (1.0 - speed / 15.0).max(0.0);
+        let room = 1.0 - self.overgrowth;
+        self.overgrowth += hide * still * room * 0.0006 * dt;
     }
 
     pub fn ingest(&mut self, biomass: f32, bound_aur: f32) {
@@ -224,6 +284,16 @@ impl Vitals {
             cost += regrowth;
         }
         self.energy = (self.energy - cost * 0.05).max(0.0);
+        // A torn wing knits slowly, and the half of each tear that heals leaves a scar.
+        for (torn, scarred) in self.torn.iter_mut().zip(self.scarred.iter_mut()) {
+            // A wing torn away never grows back.
+            if *torn >= 0.98 {
+                continue;
+            }
+            let knit = *torn * rate * 0.3 * dt;
+            *torn -= knit;
+            *scarred = (*scarred + knit * 0.5).min(1.0);
+        }
         if viscera.has(Function::Secretion) {
             let gland = self.working(viscera, Function::Secretion);
             self.reserve = (self.reserve + 0.003 * self.energy * dt).min(gland);
@@ -232,7 +302,9 @@ impl Vitals {
 
     /// Take a wound. Organs on its path are destroyed in proportion to how squarely it reaches
     /// them, and the wound bleeds for its size against the body's, `scale` long.
-    pub fn wound(&mut self, kind: Kind, strike: Strike, scale: f32) -> Injury {
+    pub fn wound(&mut self, kind: Kind, mut strike: Strike, scale: f32) -> Injury {
+        // Iron armour turns some of the blow.
+        strike.force *= 1.0 - self.iron * 0.35;
         let viscera = kind.organs();
         let damage = viscera.struck(strike);
         let mut injury = Injury::default();
@@ -253,23 +325,76 @@ impl Vitals {
         }
         let size = (strike.radius + (strike.to - strike.from).length() * 0.3) / scale.max(1e-3);
         self.bleeding += strike.force * strike.wound.bleeding() * size * 0.01;
+        // Every wound it lives through marks it where it landed, and a blow through a wing tears
+        // it.
+        let severity = strike.force * size * 0.004;
+        self.scars = (self.scars + severity).min(1.0);
+        self.remember_wound(strike.from.lerp(strike.to, 0.5), severity * 25.0);
+        for (index, torn) in self.torn.iter_mut().enumerate() {
+            if *torn < 0.98 && crosses_wing(kind, index, strike) {
+                *torn = (*torn + strike.force * 0.04 * (1.0 + size)).min(1.0);
+            }
+        }
         self.health = (self.health - injury.damage * 0.08).max(0.0);
         injury
     }
 
-    /// How far below its lift this body is pulled, from gas lost from its stores: nothing for a
-    /// body with no stores, or one that never relied on them to stay up.
-    pub fn sinking(&self, kind: Kind) -> f32 {
-        let buoyed = match kind.kingdom() {
-            Kingdom::Animalia => kind.animal().is_some_and(|animal| animal.flies()),
-            Kingdom::Plantae => kind.floats(),
-        };
-        if buoyed && kind.organs().has(Function::Lift) {
-            (1.0 - self.lift) * 3.0
-        } else {
-            0.0
+    /// Keep where a wound landed: added to the scar already there if it struck close by, or else
+    /// in place of the slightest of those kept.
+    fn remember_wound(&mut self, at: Vec3, severity: f32) {
+        let mut slightest = 0;
+        for index in 0..self.wounds.len() {
+            let wound = self.wounds[index];
+            if wound.w > 0.0 && wound.truncate().distance(at) < 0.8 {
+                self.wounds[index].w = (wound.w + severity).min(1.0);
+                return;
+            }
+            if wound.w < self.wounds[slightest].w {
+                slightest = index;
+            }
+        }
+        if severity > self.wounds[slightest].w {
+            self.wounds[slightest] = at.extend(severity.min(1.0));
         }
     }
+
+    /// How whole its wings are for flying, from all four whole to all shredded, and which side is
+    /// the weaker, from the left (below zero) to the right. A scar is stiffer than whole membrane
+    /// and bears a little less; a tear lets the air through.
+    pub fn wings(&self) -> (f32, f32) {
+        let whole = |index: usize| {
+            if self.torn[index] >= 0.98 {
+                0.0
+            } else {
+                1.0 - self.torn[index] * 0.8 - self.scarred[index] * 0.15
+            }
+        };
+        let left = whole(0) + whole(2);
+        let right = whole(1) + whole(3);
+        ((left + right) * 0.25, (right - left) * 0.5)
+    }
+}
+
+/// Whether a blow passes through one of the wings of a kind, by index fore left, fore right, hind
+/// left and hind right: through the span beyond the shoulder, within the chord of where it is
+/// hinged.
+fn crosses_wing(kind: Kind, index: usize, strike: Strike) -> bool {
+    let look = kind.look();
+    let pair = index / 2;
+    let wing = look.wings[pair];
+    if wing.x <= 0.0 {
+        return false;
+    }
+    let side = if index.is_multiple_of(2) { -1.0 } else { 1.0 };
+    let shoulder = look.hinges[pair];
+    (0..=4).any(|step| {
+        let point = strike.from.lerp(strike.to, step as f32 / 4.0);
+        let out = point.x * side - shoulder.x;
+        out > 0.0
+            && out < wing.x
+            && (point.z - wing.z).abs() < wing.y + strike.radius
+            && (point.y - shoulder.y).abs() < wing.x * 0.3 + strike.radius
+    })
 }
 
 #[cfg(test)]

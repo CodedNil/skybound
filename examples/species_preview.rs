@@ -1,31 +1,31 @@
-use image::{
-    Delay, Frame, RgbImage, RgbaImage,
-    codecs::gif::{GifEncoder, Repeat},
-    imageops,
-};
+use futures_lite::future::block_on;
+use image::{DynamicImage, RgbImage, RgbaImage, imageops};
 use rayon::prelude::*;
 use skybound::scene::{
     life,
     life::{
-        CreatureInstance, Rank, SPECIES, SPECIES_MODULES, Taxon,
-        animalia::physiology::Brood,
-        surface::{Ray, tonemap},
+        CreatureInstance, Rank, SPECIES, SPECIES_MODULES, Taxon, animalia::physiology::Brood,
+        organs::Function, surface::tonemap,
     },
+    preview::PreviewView,
 };
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
 use std::{
     cmp::Reverse,
+    collections::HashMap,
     env,
     f32::consts::{PI, TAU},
     fs,
-    fs::File,
-    io::BufWriter,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::SystemTime,
 };
+use webp_animation::{Encoder, EncoderOptions, EncodingConfig, EncodingType, LossyEncodingConfig};
+use wgpu::util::{BufferInitDescriptor, DeviceExt, make_spirv};
 
 const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
 
+#[derive(Clone)]
 struct View {
     origin: Vec3,
     forward: Vec3,
@@ -33,25 +33,26 @@ struct View {
     up: Vec3,
     center: Vec2,
     field: f32,
-    /// The sky behind the creature, across the view from zero to one.
+    /// The sky behind the creature, across the view from zero to one, and whether it is one even
+    /// tone rather than a gradient.
     backdrop: fn(Vec2) -> Vec3,
+    even: bool,
     /// How much of the view the creature fills across and up, once fitted.
     filled: Vec2,
 }
 
 impl View {
-    fn ray(&self, uv: Vec2) -> Ray {
-        let p = self.center + (uv - 0.5) * self.field;
-        Ray {
-            origin: self.origin,
-            direction: (self.forward + self.right * p.x + self.up * p.y).normalize(),
-            light: vec3(-0.4, 0.8, -0.6).normalize(),
-            max_distance: 1e6,
-            footprint: self.field / 768.0,
-            ambient: vec3(0.50, 0.65, 0.85),
-            radiance: vec3(3.60, 3.15, 2.40),
+    /// The view as the GPU traces it, for a tile `size` samples across.
+    fn on_gpu(&self, size: usize) -> PreviewView {
+        PreviewView {
+            origin: self.origin.extend(self.field),
+            forward: self.forward.extend(self.center.x),
+            right: self.right.extend(self.center.y),
+            up: self.up.extend(self.field / size as f32),
+            tile: Vec4::new(size as f32, 0.0, if self.even { 1.0 } else { 0.0 }, 0.0),
         }
     }
+
     fn fit(index: usize, c: &CreatureInstance) -> Self {
         let angle = [0.08, -0.25, 0.25, -0.5, 1.0, 0.5, 0.75, 0.0, 0.0][index] * PI;
         let elevation = [0.1f32, 0.2, 0.2, 0.0, 0.1, 0.0, 0.25, 1.25, -0.95][index];
@@ -71,17 +72,18 @@ impl View {
             center: Vec2::ZERO,
             field: 1.35,
             backdrop: background,
+            even: false,
             filled: Vec2::ONE,
         };
+        // Where in the view the creature lies, from a coarse trace of it.
         let mut min = Vec2::ONE;
         let mut max = Vec2::ZERO;
-        for x in 0..96 {
-            for y in 0..96 {
-                let uv = vec2(x as f32 + 0.5, y as f32 + 0.5) / 96.0;
-                if life::render(view.ray(uv), c).is_hit() {
-                    min = min.min(uv);
-                    max = max.max(uv);
-                }
+        let coarse = gpu().trace(&[(*c, view.on_gpu(96))]).remove(0);
+        for (index, pixel) in coarse.iter().enumerate() {
+            if pixel.w > 0.0 {
+                let uv = vec2((index % 96) as f32 + 0.5, 95.5 - (index / 96) as f32) / 96.0;
+                min = min.min(uv);
+                max = max.max(uv);
             }
         }
         if max.cmpge(min).all() {
@@ -92,12 +94,6 @@ impl View {
         }
         view
     }
-}
-
-#[derive(Clone, Copy)]
-struct Sample {
-    color: Vec3,
-    distance: f32,
 }
 
 /// The sheets the preview can render for a species.
@@ -111,8 +107,6 @@ enum Output {
     Lifecycle,
     /// Nine individuals, to show how they differ.
     Variation,
-    /// A looping animation of the adult.
-    Idle,
     /// At every fork in the tree, every species below it side by side at their true sizes.
     Lineup,
 }
@@ -124,7 +118,6 @@ impl Output {
             Self::Anatomy => "anatomy",
             Self::Lifecycle => "lifecycle",
             Self::Variation => "variation",
-            Self::Idle => "idle",
             Self::Lineup => "lineup",
         }
     }
@@ -210,91 +203,25 @@ fn even_sky(_: Vec2) -> Vec3 {
     background(Vec2::splat(0.5))
 }
 
-fn sample(view: &View, uv: Vec2, c: &CreatureInstance, tile: usize, anatomy: bool) -> Sample {
-    let mut ray = view.ray(vec2(uv.x, 1.0 - uv.y));
-    ray.footprint = view.field / tile as f32;
-    let hit = if anatomy {
-        life::anatomy::render(ray, c)
-    } else {
-        life::render(ray, c)
-    };
-    Sample {
-        color: hit.composite((view.backdrop)(uv)),
-        distance: hit.distance(),
-    }
-}
-
-fn render_tile(c: &CreatureInstance, view: &View, tile: usize, anatomy: bool) -> Vec<u8> {
-    let samples: Vec<Sample> = (0..tile * tile)
-        .into_par_iter()
-        .map(|i| {
-            sample(
-                view,
-                vec2((i % tile) as f32 + 0.5, (i / tile) as f32 + 0.5) / tile as f32,
-                c,
-                tile,
-                anatomy,
-            )
-        })
-        .collect();
-    let refined: Vec<[u8; 3]> = samples
-        .par_iter()
-        .enumerate()
-        .map(|(i, center)| {
-            let x = i % tile;
-            let y = i / tile;
-            let edge = [
-                (x.saturating_sub(1), y),
-                ((x + 1).min(tile - 1), y),
-                (x, y.saturating_sub(1)),
-                (x, (y + 1).min(tile - 1)),
-            ]
-            .iter()
-            .any(|&(x, y)| {
-                let other = samples[y * tile + x];
-                (other.distance - center.distance).abs() > center.distance.max(1.0) * 0.02
-                    || other.color.distance(center.color) > 0.12
-            });
-            let mut color = center.color;
-            if edge {
-                color = Vec3::ZERO;
-                for offset in [
-                    vec2(0.25, 0.25),
-                    vec2(0.75, 0.25),
-                    vec2(0.25, 0.75),
-                    vec2(0.75, 0.75),
-                ] {
-                    color += sample(
-                        view,
-                        (vec2(x as f32, y as f32) + offset) / tile as f32,
-                        c,
-                        tile,
-                        anatomy,
-                    )
-                    .color
-                        * 0.25;
-                }
-            }
-            let color = tonemap(color);
-            [
-                (color.x * 255.0).round() as u8,
-                (color.y * 255.0).round() as u8,
-                (color.z * 255.0).round() as u8,
-            ]
-        })
-        .collect();
-    refined.into_iter().flatten().collect()
-}
-
+/// One of a species as the previews draw it, as overgrown as one of its kind and age would be.
 fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> CreatureInstance {
-    CreatureInstance::specimen(
-        Vec3::ZERO.extend(life::KINDS[kind].render_radius()),
+    let species = life::KINDS[kind];
+    let mut c = CreatureInstance::specimen(
+        Vec3::ZERO.extend(species.render_radius()),
         Vec4::W,
         Vec4::new((seconds * TAU / 4.0).sin() * 0.12, 0.0, seconds, 0.0),
         kind as u32,
         days,
         seed,
-    )
+    );
+    let biology = species.biology();
+    let grown = (days / biology.maturity_days).min(2.0) * 0.5 + days / biology.lifespan_days * 2.0;
+    c.scars.w = (species.overgrown() * grown).min(1.0);
+    // As much iron as one of its age has gathered, for those that gather it.
+    if species.animal().is_some_and(|animal| animal.ironclad) {
+        c.stores.x = (grown * 0.6).min(1.0);
+    }
+    c
 }
 
 fn label(pixels: &mut [u8], size: usize, text: &str) {
@@ -342,113 +269,212 @@ fn label(pixels: &mut [u8], size: usize, text: &str) {
     }
 }
 
-fn render_grid(kind: usize, size: usize, output: Output, seconds: f32) -> RgbImage {
+/// The GPU every preview not cut away for anatomy is traced on, set up once.
+fn gpu() -> &'static Gpu {
+    static GPU: OnceLock<Gpu> = OnceLock::new();
+    GPU.get_or_init(Gpu::new)
+}
+
+/// Tiles drawn on the GPU, each a creature in its view at its size, cut away to show its organs
+/// if `anatomy`, as tonemapped RGB rows from the top.
+fn draw(tiles: &[(CreatureInstance, &View, usize)], anatomy: bool) -> Vec<Vec<u8>> {
+    let batch: Vec<(CreatureInstance, PreviewView)> = tiles
+        .iter()
+        .map(|(c, view, size)| {
+            // Twice as many samples each way as pixels, averaged down.
+            let mut view = view.on_gpu(*size * 2);
+            view.tile.w = if anatomy { 1.0 } else { 0.0 };
+            (*c, view)
+        })
+        .collect();
+    gpu()
+        .trace(&batch)
+        .into_par_iter()
+        .zip(tiles.par_iter())
+        .map(|(samples, (_, _, size))| {
+            let size = *size;
+            (0..size * size)
+                .flat_map(|index| {
+                    let (x, y) = (index % size * 2, index / size * 2);
+                    let at = |dx: usize, dy: usize| samples[(y + dy) * size * 2 + x + dx];
+                    let pixel = (at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) * 0.25;
+                    let colour = tonemap(pixel.truncate());
+                    [
+                        (colour.x * 255.0).round() as u8,
+                        (colour.y * 255.0).round() as u8,
+                        (colour.z * 255.0).round() as u8,
+                    ]
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// How many frames an animated sheet runs to, and how many it shows a second: a two-second loop,
+/// enough to show a wingbeat and the drift of a tentacle.
+const fn frames(_: Output) -> (usize, f32) {
+    (24, 12.0)
+}
+
+/// One panel of a sheet at a moment: the creature as that panel shows it, and its label.
+fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureInstance, String) {
+    let biology = life::KINDS[kind].biology();
+    let age = if output == Output::Lifecycle {
+        life::development::grid_age(biology, panel)
+    } else {
+        biology.maturity_days * 1.25
+    };
+    let seed = if output == Output::Variation {
+        SEEDS[panel]
+    } else {
+        0
+    };
+    let mut c = specimen(kind, age, seed, seconds);
+    // Some hides are grazed bare, others left to grow over.
+    if output == Output::Variation {
+        c.scars.w = (c.scars.w * (0.3 + (panel as f32 * 0.61).fract() * 1.6)).min(1.0);
+    }
+    // Every third individual of a variation sheet has lived through attacks: its wings torn, some
+    // tears healed to scar, its body scarred where it was struck.
+    if output == Output::Variation && panel % 3 == 2 {
+        let hard = 0.3 + (panel as f32 * 0.37).fract() * 0.5;
+        // The worst of them has lost a hind wing outright.
+        let lost = if panel % 9 == 8 { 1.0 } else { hard * 0.6 };
+        c.wear = Vec4::new(hard, hard * 0.3, lost, 0.0);
+        c.scars = Vec4::new(hard, hard * 0.5, hard * 0.8, c.scars.w);
+        let body = c.opaque_bounds.truncate();
+        c.wounds = [
+            (body * Vec3::new(0.5, 0.3, -0.2)).extend(hard),
+            (body * Vec3::new(-0.4, 0.5, 0.35)).extend(hard * 0.7),
+            (body * Vec3::new(0.1, -0.4, 0.1)).extend(hard * 0.4),
+            Vec4::ZERO,
+        ];
+    }
+    // The first grown panel of a lifecycle shows a parent with its brood, where its lineage
+    // carries one.
+    let brooding = output == Output::Lifecycle && panel == 6;
+    if brooding {
+        match life::KINDS[kind].animal().map(|animal| animal.brood) {
+            Some(Brood::Carried) => c.kind.z = life::CLUTCH,
+            Some(Brood::Pouch) => c.kind.z = life::FULL_POUCH,
+            _ => {}
+        }
+    }
+    let label = match output {
+        Output::Lifecycle => {
+            let title = if age >= 365.0 {
+                format!("{:.1}Y", age / 365.0)
+            } else {
+                format!("{age:.1}D")
+            };
+            if brooding && c.kind.z != 0 {
+                format!("{title} BROOD")
+            } else {
+                title
+            }
+        }
+        Output::Variation => format!("S{seed}"),
+        _ => String::new(),
+    };
+    (c, label)
+}
+
+/// A sheet's frames: its nine panels, fitted once so they hold still, then drawn moment by moment
+/// as the creatures in them move.
+fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<RgbImage> {
     let biology = life::KINDS[kind].biology();
     let adult = specimen(kind, biology.maturity_days * 1.25, 0, seconds);
     let mut fixed = View::fit(1, &adult);
     fixed.field *= 1.2;
-    let mut grid = RgbImage::new((size * 3) as u32, (size * 3) as u32);
-    let tiles: Vec<(usize, Vec<u8>)> = SEEDS
-        .par_iter()
-        .enumerate()
-        .map(|(panel, &seed)| {
-            let age = if output == Output::Lifecycle {
-                life::development::grid_age(biology, panel)
-            } else {
-                biology.maturity_days * 1.25
-            };
-            let seed = if output == Output::Variation { seed } else { 0 };
-            let mut c = specimen(kind, age, seed, seconds);
-            // The first grown panel of a lifecycle shows a parent with its brood, where its lineage
-            // carries one.
-            let brooding = output == Output::Lifecycle && panel == 6;
-            if brooding {
-                match life::KINDS[kind].animal().map(|animal| animal.brood) {
-                    Some(Brood::Carried) => c.kind.z = life::CLUTCH,
-                    Some(Brood::Pouch) => c.kind.z = life::FULL_POUCH,
-                    _ => {}
-                }
-            }
-            // A lifecycle keeps the adult's view, but closes in on the young so their forms show,
-            // up to three times nearer.
-            let angled = match output {
-                Output::Render | Output::Anatomy => Some(View::fit(panel, &c)),
+    let views: Vec<View> = (0..9)
+        .into_par_iter()
+        .map(|index| {
+            let (c, _) = panel(kind, output, index, seconds);
+            match output {
+                Output::Render | Output::Anatomy => View::fit(index, &c),
+                // A lifecycle keeps the adult's view, but closes in on the young so their forms
+                // show, up to three times nearer.
                 Output::Lifecycle => {
                     let own = View::fit(1, &c);
-                    (own.field < fixed.field).then(|| View {
-                        field: (own.field * 1.2).max(fixed.field / 3.0),
-                        ..own
-                    })
+                    if own.field < fixed.field {
+                        View {
+                            field: (own.field * 1.2).max(fixed.field / 3.0),
+                            ..own
+                        }
+                    } else {
+                        fixed.clone()
+                    }
                 }
-                Output::Variation | Output::Idle | Output::Lineup => None,
-            };
-            let view = angled.as_ref().unwrap_or(&fixed);
-            let mut pixels = render_tile(&c, view, size, output == Output::Anatomy);
-            if output == Output::Lifecycle {
-                let title = if age >= 365.0 {
-                    format!("{:.1}Y", age / 365.0)
-                } else {
-                    format!("{age:.1}D")
-                };
-                let title = if brooding && c.kind.z != 0 {
-                    format!("{title} BROOD")
-                } else {
-                    title
-                };
-                label(&mut pixels, size, &title);
-            } else if output == Output::Variation {
-                label(&mut pixels, size, &format!("S{seed}"));
+                Output::Variation | Output::Lineup => fixed.clone(),
             }
-            (panel, pixels)
         })
         .collect();
-    for (panel, pixels) in tiles {
-        let tile = RgbImage::from_raw(size as u32, size as u32, pixels).expect("tile pixels");
-        imageops::replace(
-            &mut grid,
-            &tile,
-            i64::try_from((panel % 3) * size).expect("grid width"),
-            i64::try_from((panel / 3) * size).expect("grid height"),
-        );
-    }
-    grid
+    let (count, rate) = frames(output);
+    (0..count)
+        .map(|frame| {
+            let time = seconds + frame as f32 / rate;
+            let panels: Vec<(CreatureInstance, String)> = (0..9)
+                .map(|index| panel(kind, output, index, time))
+                .collect();
+            let tiles: Vec<(CreatureInstance, &View, usize)> = panels
+                .iter()
+                .zip(&views)
+                .map(|((c, _), view)| (*c, view, size))
+                .collect();
+            let mut grid = RgbImage::new((size * 3) as u32, (size * 3) as u32);
+            for (index, mut pixels) in draw(&tiles, output == Output::Anatomy)
+                .into_iter()
+                .enumerate()
+            {
+                if !panels[index].1.is_empty() {
+                    label(&mut pixels, size, &panels[index].1);
+                }
+                let panel =
+                    RgbImage::from_raw(size as u32, size as u32, pixels).expect("tile pixels");
+                imageops::replace(
+                    &mut grid,
+                    &panel,
+                    i64::try_from((index % 3) * size).expect("grid width"),
+                    i64::try_from((index / 3) * size).expect("grid height"),
+                );
+            }
+            grid
+        })
+        .collect()
 }
 
-/// The idle animation, at half the stills' size: a GIF's palette discards more detail than the
-/// halved resolution does. Frames render all at once, so the cores stay busy through each frame's
-/// ragged end.
-fn idle(path: &Path, kind: usize, size: usize, seconds: f32) {
-    let size = (size / 2).max(64);
-    let age = life::KINDS[kind].biology().maturity_days * 1.25;
-    let c = specimen(kind, age, 0, seconds);
-    let mut view = View::fit(1, &c);
-    view.field *= 1.2;
-    let mut encoder =
-        GifEncoder::new_with_speed(BufWriter::new(File::create(path).expect("create GIF")), 10);
-    encoder.set_repeat(Repeat::Infinite).expect("GIF loop");
-    let frames: Vec<Vec<u8>> = (0..48)
-        .into_par_iter()
-        .map(|frame| {
-            let c = specimen(kind, age, 0, seconds + frame as f32 / 12.0);
-            render_tile(&c, &view, size, false)
-        })
-        .collect();
-    for pixels in frames {
-        let rgba: Vec<u8> = pixels
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .flat_map(|p| [p[0], p[1], p[2], 255])
-            .collect();
+/// Frames saved as a looping, lossy animated WebP, shown `rate` a second; a single frame makes a
+/// still. Previews need to show what a creature is and how it moves, not every last detail.
+fn save_webp(path: &Path, frames: &[RgbaImage], rate: f32) {
+    let (width, height) = frames[0].dimensions();
+    let options = EncoderOptions {
+        encoding_config: Some(EncodingConfig {
+            encoding_type: EncodingType::Lossy(LossyEncodingConfig::default()),
+            quality: 78.0,
+            method: 4,
+        }),
+        ..EncoderOptions::default()
+    };
+    let mut encoder = Encoder::new_with_options((width, height), options).expect("WebP encoder");
+    let step = (1000.0 / rate) as i32;
+    let mut at = 0;
+    for frame in frames {
         encoder
-            .encode_frame(Frame::from_parts(
-                RgbaImage::from_raw(size as u32, size as u32, rgba).expect("GIF pixels"),
-                0,
-                0,
-                Delay::from_numer_denom_ms(1000, 12),
-            ))
-            .expect("encode GIF frame");
+            .add_frame(frame.as_raw(), at)
+            .expect("encode WebP frame");
+        at += step;
     }
+    let data = encoder.finalize(at).expect("finish WebP");
+    fs::write(path, &*data).expect("save WebP");
+}
+
+/// An animated sheet saved as WebP.
+fn save_sheet(path: &Path, frames: Vec<RgbImage>, rate: f32) {
+    let frames: Vec<RgbaImage> = frames
+        .into_iter()
+        .map(|frame| DynamicImage::ImageRgb8(frame).to_rgba8())
+        .collect();
+    save_webp(path, &frames, rate);
 }
 
 /// The taxa where the tree forks, those with more than one branch that has species below it, and
@@ -546,6 +572,7 @@ fn render_lineup_at(taxon: &Taxon, size: usize, seconds: f32) -> RgbaImage {
             view.field *= 1.2;
             view.filled /= 1.2;
             view.backdrop = even_sky;
+            view.even = true;
             // How wide the view is in metres at the creature, from how far off the camera sits.
             let across = view.field * view.origin.length();
             (c, view, across)
@@ -556,7 +583,7 @@ fn render_lineup_at(taxon: &Taxon, size: usize, seconds: f32) -> RgbaImage {
         .par_iter()
         .map(|(c, view, metres)| {
             let edge = ((metres / widest * size as f32) as usize).max(12);
-            let pixels = render_tile(c, view, edge, false);
+            let pixels = draw(&[(*c, view, edge)], false).remove(0);
             // The sky as it was drawn, read from the corner the creature never reaches.
             let sky = Vec3::new(
                 f32::from(pixels[0]),
@@ -730,14 +757,14 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
             continue;
         }
         let path = output.map_or_else(
-            || taxon_folder(taxon).join(format!("{}.png", slug(taxon.name))),
+            || taxon_folder(taxon).join(format!("{}.webp", slug(taxon.name))),
             |output| {
                 let name = if taxon.parent.is_some() {
                     filename(taxon)
                 } else {
                     slug(taxon.name)
                 };
-                Path::new(output).join(format!("{name}.png"))
+                Path::new(output).join(format!("{name}.webp"))
             },
         );
         let since = SPECIES
@@ -750,9 +777,7 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
         if !all && fresh(&path, since) {
             continue;
         }
-        render_lineup(taxon, seconds)
-            .save(&path)
-            .expect("save lineup");
+        save_webp(&path, &[render_lineup(taxon, seconds)], 1.0);
         println!("{}: {}", taxon.name, path.display());
     }
 }
@@ -760,7 +785,7 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
 fn main() {
     if env::args().any(|arg| arg == "--help") {
         println!(
-            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,idle,lineup]\nBy default, writes all five assets beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
+            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,lineup]\nBy default, writes all four animated sheets (lossy WebP, traced on the GPU but for anatomy) beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a still lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
         );
         return;
     }
@@ -786,7 +811,7 @@ fn main() {
         if env::args().any(|arg| arg == "--anatomy") {
             "anatomy".into()
         } else {
-            "render,anatomy,lifecycle,variation,idle,lineup".into()
+            "render,anatomy,lifecycle,variation,lineup".into()
         }
     });
     let outputs: Vec<_> = requested
@@ -796,7 +821,6 @@ fn main() {
             "anatomy" => Output::Anatomy,
             "lifecycle" => Output::Lifecycle,
             "variation" => Output::Variation,
-            "idle" => Output::Idle,
             "lineup" => Output::Lineup,
             _ => panic!("unknown output: {name}"),
         })
@@ -824,13 +848,8 @@ fn main() {
             |output| Path::new(output).join(filename(taxon)),
         );
         for &output in &outputs {
-            let extension = if matches!(output, Output::Idle) {
-                "gif"
-            } else {
-                "png"
-            };
             let path = base.with_file_name(format!(
-                "{}_{}.{extension}",
+                "{}_{}.webp",
                 base.file_stem()
                     .expect("preview stem")
                     .to_string_lossy()
@@ -840,13 +859,11 @@ fn main() {
             if !all && fresh(&path, since) {
                 continue;
             }
-            if matches!(output, Output::Idle) {
-                idle(&path, kind, tile, seconds);
-            } else {
-                render_grid(kind, tile, output, seconds)
-                    .save(&path)
-                    .expect("save species preview");
-            }
+            save_sheet(
+                &path,
+                render_sheet(kind, tile, output, seconds),
+                frames(output).1,
+            );
             println!("{}: {}", taxon.name, path.display());
         }
     }
@@ -854,4 +871,182 @@ fn main() {
         count > 0 || outputs.is_empty(),
         "no species matched the filter"
     );
+}
+
+/// A creature carrying its species' organs, so the tracer draws it cut away to show them.
+fn cut_away(mut c: CreatureInstance) -> CreatureInstance {
+    let viscera = life::KINDS[c.kind.x as usize].organs();
+    let sites = viscera.sites();
+    c.kind.w = sites.len().min(life::ORGAN_SLOTS) as u32;
+    for (index, site) in sites.iter().take(life::ORGAN_SLOTS).enumerate() {
+        let glow = if site.organ.function == Function::AurStore {
+            1.5
+        } else {
+            0.0
+        };
+        c.organs[index] = [
+            site.centre.extend(if site.paired { 1.0 } else { 0.0 }),
+            site.radii.extend(glow),
+            site.organ.colour.extend(0.0),
+        ];
+    }
+    c
+}
+
+/// The creature tracer run on the GPU, headless: each call traces a batch of tiles, one creature
+/// to a tile, in a single dispatch.
+struct Gpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    module: wgpu::ShaderModule,
+    /// A pipeline for each species drawn so far, built with that species fixed in it.
+    pipelines: Mutex<HashMap<u32, wgpu::ComputePipeline>>,
+}
+
+impl Gpu {
+    fn new() -> Self {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::VULKAN,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            ..wgpu::RequestAdapterOptions::default()
+        }))
+        .expect("a GPU to draw previews on");
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("previews"),
+            required_limits: adapter.limits(),
+            ..wgpu::DeviceDescriptor::default()
+        }))
+        .expect("a device to draw previews on");
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("scene"),
+            source: make_spirv(include_bytes!(concat!(env!("OUT_DIR"), "/preview.spv"))),
+        });
+
+        Self {
+            device,
+            queue,
+            module,
+            pipelines: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The pipeline for one species, its body the only one compiled in.
+    fn pipeline(&self, species: u32) -> wgpu::ComputePipeline {
+        let mut pipelines = self.pipelines.lock().expect("pipelines");
+        pipelines
+            .entry(species)
+            .or_insert_with(|| {
+                self.device
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("preview"),
+                        layout: None,
+                        module: &self.module,
+                        entry_point: Some("preview"),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[("0", f64::from(species))],
+                            ..wgpu::PipelineCompilationOptions::default()
+                        },
+                        cache: None,
+                    })
+            })
+            .clone()
+    }
+
+    /// Trace each creature in its view at its own size, returning each tile's linear colour and
+    /// coverage, row by row from the top. Every tile must be of the same species.
+    fn trace(&self, tiles: &[(CreatureInstance, PreviewView)]) -> Vec<Vec<Vec4>> {
+        let species = tiles[0].0.kind.x;
+        assert!(
+            tiles.iter().all(|(c, _)| c.kind.x == species),
+            "one species to a dispatch"
+        );
+        let pipeline = self.pipeline(species);
+        let mut views: Vec<PreviewView> = Vec::with_capacity(tiles.len());
+        let mut offset = 0usize;
+        let mut creatures: Vec<CreatureInstance> = Vec::with_capacity(tiles.len());
+        for (c, view) in tiles {
+            let size = view.tile.x as usize;
+            let mut view = *view;
+            view.tile.y = offset as f32;
+            creatures.push(if view.tile.w > 0.5 { cut_away(*c) } else { *c });
+            views.push(view);
+            offset += size * size;
+        }
+        let storage = |contents: &[u8]| {
+            self.device.create_buffer_init(&BufferInitDescriptor {
+                label: None,
+                contents,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+        let views_buffer = storage(bytemuck::cast_slice(&views));
+        let creatures_buffer = storage(bytemuck::cast_slice(&creatures));
+        let bytes = (offset * size_of::<Vec4>()) as u64;
+        let pixels = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bindings = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: views_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: creatures_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: pixels.as_entire_binding(),
+                },
+            ],
+        });
+        let widest = views
+            .iter()
+            .map(|view| view.tile.x as u32)
+            .max()
+            .unwrap_or(1);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bindings, &[]);
+            pass.dispatch_workgroups(widest.div_ceil(8), widest.div_ceil(8), tiles.len() as u32);
+        }
+        encoder.copy_buffer_to_buffer(&pixels, 0, &readback, 0, bytes);
+        self.queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |result| {
+            result.expect("read previews back");
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("previews to finish");
+        let data = slice.get_mapped_range().expect("previews mapped");
+        let all: &[Vec4] = bytemuck::cast_slice(&data);
+        views
+            .iter()
+            .map(|view| {
+                let size = view.tile.x as usize;
+                let start = view.tile.y as usize;
+                all[start..start + size * size].to_vec()
+            })
+            .collect()
+    }
 }

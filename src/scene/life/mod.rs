@@ -21,6 +21,9 @@ use spirv_std::glam::{FloatExt, Quat, UVec4, Vec2, Vec3, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+/// The most organs a cutaway shows.
+pub const ORGAN_SLOTS: usize = 12;
+
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CreatureInstance {
@@ -33,7 +36,27 @@ pub struct CreatureInstance {
     pub previous_rotation: Vec4,
     pub kind: UVec4,
     pub life: Vec4, // Age in days, juvenile development, senescence, developmental form.
-    pub identity: Vec4, // Stable individual traits; seed zero is the reference specimen.
+    pub identity: Vec4, // The first four genes; seed zero is the reference specimen.
+    /// Every gene it was born with; see [`genome`].
+    pub genes: [Vec4; genome::GENES / 4],
+    /// What physics did to its body this step: an animal's wingbeat phase and effort, or how far
+    /// the air bends a plant, each with whether it was set at all.
+    pub dynamics: Vec4,
+    pub previous_dynamics: Vec4,
+    /// How torn each wing is, fore left, fore right, hind left and hind right, from whole to
+    /// shredded; not inherited but suffered.
+    pub wear: Vec4,
+    /// What its life has done to its body: how scarred it is from the attacks it lived through,
+    /// how worn its edges and spines are, how scarred its wings, and how overgrown its hide.
+    pub scars: Vec4,
+    /// Where its worst wounds were, in its body's frame, each with how severe it was.
+    pub wounds: [Vec4; 4],
+    /// What it has stored in its body that shows: how much iron is laid into its edges and armour.
+    pub stores: Vec4,
+    /// For a cutaway, its organs: each where it lies and whether it is one of a pair, how large it
+    /// is and whether it glows, and its colour. `kind.w` holds how many there are; a creature with
+    /// none is drawn whole.
+    pub organs: [[Vec4; 3]; ORGAN_SLOTS],
     pub proportions: Vec4, // Body scale and wing development.
     pub previous_proportions: Vec4,
     pub tail: [Vec4; 6],
@@ -56,6 +79,8 @@ impl CreatureInstance {
         )
     }
 
+    /// One of a species as the previews draw it: the reference specimen for seed zero, and for
+    /// any other seed one of a wild population with genes of its own.
     pub fn specimen(
         position: Vec4,
         rotation: Vec4,
@@ -63,6 +88,24 @@ impl CreatureInstance {
         kind: u32,
         age_days: f32,
         seed: u32,
+    ) -> Self {
+        let genes = if seed == 0 {
+            genome::Genome::TYPICAL
+        } else {
+            genome::Genome::wild(u64::from(seed))
+        };
+        Self::born(position, rotation, animation, kind, age_days, seed, genes)
+    }
+
+    /// An individual with the genes it was born with.
+    pub fn born(
+        position: Vec4,
+        rotation: Vec4,
+        animation: Vec4,
+        kind: u32,
+        age_days: f32,
+        seed: u32,
+        genes: genome::Genome,
     ) -> Self {
         let mut c = Self {
             position,
@@ -74,7 +117,13 @@ impl CreatureInstance {
             kind: UVec4::new(kind, 0, 0, 0),
             ..Self::default()
         };
-        development::prepare(&mut c, KINDS[kind as usize].biology(), age_days, seed);
+        development::prepare(
+            &mut c,
+            KINDS[kind as usize].biology(),
+            age_days,
+            seed,
+            genes,
+        );
         c.previous_proportions = c.proportions;
         c.previous_animation = c.animation;
         prepare_instance(&mut c);
@@ -149,7 +198,8 @@ fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
 }
 
 fn prepare_pose(c: &mut CreatureInstance, length: f32, tail: f32, ribbons: usize) {
-    let tail = tail * (0.35 + c.life.y * 0.65);
+    // As long as its genes have it, and growing with it.
+    let tail = tail * (0.35 + c.life.y * 0.65) * (0.8 + c.gene(animalia::tetralata::TAIL) * 0.4);
     for i in 0..6 {
         let t = i as f32 / 5.0;
         c.tail[i] = vec3(
@@ -237,15 +287,16 @@ macro_rules! taxon {
     (@parent $rank:ident) => { Some(&super::TAXON) };
 }
 
-#[cfg(not(target_arch = "spirv"))]
-pub mod anatomy;
 pub mod animalia;
 #[cfg(not(target_arch = "spirv"))]
 pub mod behaviour;
 pub mod biology;
 pub mod development;
+pub mod genome;
 #[cfg(not(target_arch = "spirv"))]
 pub mod organs;
+#[cfg(not(target_arch = "spirv"))]
+pub mod physics;
 pub mod plantae;
 pub mod surface;
 #[cfg(not(target_arch = "spirv"))]
@@ -339,8 +390,13 @@ macro_rules! species {
         /// The body of any creature: one distance function switching on its species, so the world's
         /// tracer is compiled once for all of them.
         pub fn any_surface(point: Vec3, c: &CreatureInstance) -> Surface {
+            surface_of(c.kind.x, point, c)
+        }
+        /// The body of a creature of species `kind`. When `kind` is known as the shader is built,
+        /// as it is for each species' preview, only that species' body is compiled in.
+        pub fn surface_of(kind: u32, point: Vec3, c: &CreatureInstance) -> Surface {
             if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
-            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => Surface::new(1e6, 0) }
+            match kind { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => Surface::new(1e6, 0) }
         }
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES: &[&Taxon] = &[$(&$($path)::+::TAXON),*];
@@ -622,9 +678,14 @@ fn any_envelope(point: Vec3, c: &CreatureInstance) -> Surface {
 /// The player and their mount are drawn by their own tracers; every other species by one tracer
 /// over [`any_surface`], in its family's materials: the same shapes and colours as its preview.
 pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
-    let look = look_of(c.kind.x);
+    render_opaque_of(c.kind.x, ray, c)
+}
+
+/// The solid body of a creature of species `kind`; see [`surface_of`].
+pub fn render_opaque_of(kind: u32, ray: Ray, c: &CreatureInstance) -> Hit {
+    let look = look_of(kind);
     if look.family == OWN && c.life.w <= 0.0 {
-        return if c.kind.x == Kind::Nae as u32 {
+        return if kind == Kind::Nae as u32 {
             nae::render_opaque(ray, c)
         } else {
             naetu::render_opaque(ray, c)
@@ -632,7 +693,7 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     }
     let grain = (c.position.w * 0.15).max(0.7);
     let body = |p: Vec3, c: &CreatureInstance| {
-        let surface = any_surface(p, c);
+        let surface = surface_of(kind, p, c);
         if look.family == COAT {
             with_wings(surface, p, c, look)
         } else {
@@ -654,10 +715,15 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
 
 /// The thin, see-through surfaces of a creature along a ray, such as wing membranes and gas
 /// envelopes, for the transparent pass.
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, mut emit: F) {
-    let look = look_of(c.kind.x);
+pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
+    visit_thin_of(c.kind.x, ray, c, emit);
+}
+
+/// The thin surfaces of a creature of species `kind`; see [`surface_of`].
+pub fn visit_thin_of<F: FnMut(Hit)>(kind: u32, ray: Ray, c: &CreatureInstance, mut emit: F) {
+    let look = look_of(kind);
     if look.family == OWN && c.life.w <= 0.0 {
-        if c.kind.x == Kind::Nae as u32 {
+        if kind == Kind::Nae as u32 {
             nae::visit_thin(ray, c, emit);
         } else {
             naetu::visit_thin(ray, c, emit);

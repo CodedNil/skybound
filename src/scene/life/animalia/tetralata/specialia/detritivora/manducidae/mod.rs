@@ -32,6 +32,7 @@ mod nature {
 
     use crate::scene::life::{
         animalia::{
+            BOLDNESS, SOCIABILITY,
             mind::{Ethology, Intent, Mind, Situation, Urges, orbit},
             nature::panic,
             physiology::Physiology,
@@ -55,10 +56,10 @@ mod nature {
     pub fn swarm(s: &Situation, urges: &mut Urges) {
         (TETRALATE.urges)(s, urges);
         if s.seen.kin.is_some() {
-            urges.add(FOLLOW, 0.25 + s.temper.sociability * 0.35);
+            urges.add(FOLLOW, 0.25 + s.temper(SOCIABILITY) * 0.35);
         }
-        if s.seen.threat.is_some() && s.seen.kin_count >= 3 && s.temper.boldness > 0.55 {
-            urges.add(MOB, s.threat * s.temper.boldness * 1.2);
+        if s.seen.threat.is_some() && s.seen.kin_count >= 3 && s.temper(BOLDNESS) > 0.55 {
+            urges.add(MOB, s.threat * s.temper(BOLDNESS) * 1.2);
         }
     }
 

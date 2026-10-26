@@ -18,7 +18,7 @@ use rayon::prelude::*;
 use skybound::scene::{
     PLANET_RADIUS,
     climate::Climate,
-    life::{KINDS, Kind, Kingdom, animalia::nature::band, development::DAY},
+    life::{KINDS, Kind, Kingdom, animalia::nature::band, development::DAY, genome::Genome},
 };
 use spirv_std::glam::Vec3 as SceneVec3;
 use std::{
@@ -296,9 +296,6 @@ fn step(mut range: ResMut<Range>, time: Res<Time>) {
     }
 }
 
-/// Where the range is centred: the player's mount, or the eye.
-type Centre = Or<(With<Mount>, With<Camera3d>)>;
-
 type Lived<'a> = (
     Entity,
     &'a Species,
@@ -314,7 +311,7 @@ fn gather(
     mut range: ResMut<Range>,
     world: Res<WorldData>,
     time: Res<Time>,
-    eye: Query<(&PlanetPosition, Has<Mount>), Centre>,
+    eye: Option<Single<&GlobalTransform, With<Camera3d>>>,
     lived: Query<Lived, (Without<Player>, Without<Mount>)>,
 ) {
     let now = time.elapsed_secs();
@@ -322,14 +319,12 @@ fn gather(
         return;
     }
     range.looked = now;
-    // Centred on the player's mount, or on the eye when there is none.
-    let Some(centre) = eye
-        .iter()
-        .max_by_key(|(_, mount)| *mount)
-        .map(|(eye, _)| eye.position)
-    else {
+    // Centred on the eye, so life is lived out wherever the camera looks from, a free camera
+    // flown far from the player included.
+    let Some(eye) = eye else {
         return;
     };
+    let centre = world.position(eye.translation());
     let kinds = KINDS.len();
     let mut members: HashMap<Band, usize> = HashMap::new();
     let mut living = 0;
@@ -433,7 +428,9 @@ fn live_out(
         } else {
             0.85 + hash(key, 6) * 0.3
         };
-        commands.spawn((population(kind, world.local(position), mass), band));
+        // Kin keep together: each of a group is born of the group's own family.
+        let genes = Genome::wild(seed).kin(key, 0.25);
+        commands.spawn((population(kind, world.local(position), mass, genes), band));
     }
 }
 

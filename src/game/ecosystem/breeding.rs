@@ -6,22 +6,43 @@ use crate::{
 };
 use bevy::prelude::*;
 use skybound::scene::life::{
-    animalia::physiology::{Brood, plant},
+    animalia::{
+        BOLDNESS, CURIOSITY,
+        physiology::{Brood, plant},
+    },
     behaviour::Senses,
     biology::Biology,
+    genome::Genome,
     organs::Function,
     plantae::physiology::Propagation,
     vitals::Vitals,
 };
 use std::collections::HashMap;
 
-/// A newborn, kept where its lineage keeps its young.
-pub(super) fn bear(commands: &mut Commands, parent: Agent, neighbours: &[Agent], position: Vec3) {
+/// Bring a young one into the world beside its parent, with genes from its parent and from the
+/// mate or pollen that fathered it; a plant dividing or breaking apart passes on its own, changed a
+/// little.
+pub(super) fn bear(
+    commands: &mut Commands,
+    parent: Agent,
+    sire: Option<Genome>,
+    neighbours: &[Agent],
+    position: Vec3,
+    now: f32,
+) {
+    let seed = parent.entity.to_bits() ^ u64::from(now.to_bits()).rotate_left(32);
+    let genes = Genome::child(parent.genes, sire.unwrap_or(parent.genes), seed);
     commands
-        .spawn(population(parent.kind, position + Vec3::X * 3.0, 0.15))
+        .spawn(population(
+            parent.kind,
+            position + Vec3::X * 3.0,
+            0.15,
+            genes,
+        ))
         .insert(Relations {
             host: nest(parent, neighbours),
             parent: Some(parent.entity),
+            genes,
             ..Relations::default()
         });
 }
@@ -96,12 +117,12 @@ impl Stage {
 /// Where a young organism is kept, by its lineage's way of keeping them. Eggs stay where they were
 /// laid until they hatch, except strings, which the parent cuts loose to drift soon after laying
 /// them. Pouch young stay in the pouch until they are formed, then make trips out to feed, at first
-/// brief and then longer, homing on the parent when each is over, until they no longer come back.
+/// going out while fed and homing on the parent as they grow hungry, until they no longer come
+/// back.
 pub(super) fn nurture(
     agent: Agent,
     relations: &mut Relations,
     index: &HashMap<Entity, Agent>,
-    now: f32,
 ) -> Stage {
     let biology = agent.kind.biology();
     let young = (agent.vitals.age_days / f64::from(biology.maturity_days)) as f32;
@@ -127,10 +148,13 @@ pub(super) fn nurture(
             Stage::Pouch(parent.entity)
         }
         Some(Brood::Pouch) if young < 0.7 => {
+            // It ventures out while it is fed and bold enough for how grown it is, and comes back
+            // to the pouch when it grows hungry: the bolder and more curious, the longer it stays
+            // out.
             let independence = (young - 0.2) / 0.5;
-            let cycle = 120.0;
-            let phase = ((now + (agent.entity.to_bits() % 997) as f32) / cycle).fract();
-            if phase < 0.1 + independence * 0.85 {
+            let daring = agent.genes.get(BOLDNESS) * 0.5 + agent.genes.get(CURIOSITY) * 0.5;
+            let leaves = 1.0 - independence * (0.5 + daring * 0.5);
+            if agent.vitals.energy > leaves {
                 relations.host = None;
                 return Stage::Free;
             }
