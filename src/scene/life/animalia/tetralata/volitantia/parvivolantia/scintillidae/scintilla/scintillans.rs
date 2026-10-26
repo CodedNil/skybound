@@ -107,7 +107,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     lights = lights.min((p - plume(side, 1.0, c)).length() - 0.05);
     hit.join(barbs, 4);
     hit.join(lights, 9);
-    hit.join(eyes(p, 0.9, 0.16), 3);
+    hit.socket(eyes(p, 0.9, 0.16), 0.16 * 0.16);
     hit
 }
 

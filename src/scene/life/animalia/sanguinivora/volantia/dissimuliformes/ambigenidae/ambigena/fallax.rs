@@ -87,7 +87,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let base = vec3(cosine * 0.8, sine * 0.8, 0.1);
     let tip = vec3(cosine * (1.25 + sway), sine * (1.25 + sway), -0.55);
     hit.join(capsule(q, base, tip, 0.045), 8);
-    hit.join(eyespots(p, vec3(0.3, 0.72, -1.75), 0.22, 3, 0.05), 3);
+    hit.pit(eyespots(p, vec3(0.3, 0.72, -1.75), 0.22, 3, 0.05), 0.05);
     hit
 }
 

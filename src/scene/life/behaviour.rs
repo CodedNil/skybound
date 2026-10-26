@@ -174,8 +174,11 @@ impl Motion {
         self.position += controls.velocity * dt
             + (self.velocity - controls.velocity) * ((1.0 - decay) / response);
         self.velocity = controls.velocity + (self.velocity - controls.velocity) * decay;
-        let forward = controls.facing.normalize_or_zero();
         let up = senses.up.normalize_or_zero();
+        // A plant holds itself upright on its lift; an animal pitches into a climb or a dive, but
+        // never further than its wings can carry it, so none hangs on its side or stands on end.
+        let steepest = if kind.animal().is_some() { 0.6 } else { 0.0 };
+        let forward = level(controls.facing, up, steepest);
         let right = forward.cross(up).normalize_or_zero();
         if right.length_squared() > 0.5 {
             let rotation = Quat::from_mat3(&Mat3::from_cols(right, right.cross(forward), -forward));
@@ -183,6 +186,19 @@ impl Motion {
         }
         controls
     }
+}
+
+/// A heading pitched no more steeply than `steepest`, the sine of the angle from the horizon.
+fn level(facing: Vec3, up: Vec3, steepest: f32) -> Vec3 {
+    let facing = facing.normalize_or_zero();
+    let rise = facing.dot(up);
+    // Facing straight up or down gives no heading to keep, so it keeps the one it has.
+    let across = (facing - up * rise).normalize_or_zero();
+    if across == Vec3::ZERO {
+        return Vec3::ZERO;
+    }
+    let rise = rise.clamp(-steepest, steepest);
+    across * (1.0 - rise * rise).sqrt() + up * rise
 }
 
 pub fn drift(s: &Senses, lift: f32) -> Controls {

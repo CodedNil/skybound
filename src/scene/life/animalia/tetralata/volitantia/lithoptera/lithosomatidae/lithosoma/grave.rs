@@ -142,7 +142,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         (eye_out / span).powi(2) * upturn - 0.45,
         sine * eye_out,
     );
-    hit.join((p - eye).length() - 0.32, 3);
+    hit.socket((p - eye).length() - 0.32, 0.32);
     hit.join(oral_tentacles(p, c, MOUTH, 3.2, ORAL_PAIRS), 8);
     hit
 }

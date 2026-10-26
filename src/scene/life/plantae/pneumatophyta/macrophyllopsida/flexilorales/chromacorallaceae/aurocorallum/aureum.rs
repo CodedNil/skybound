@@ -1,19 +1,18 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
-    capsule, ellipsoid, plantae,
-    plantae::{rosette, rotate},
+    ellipsoid,
+    plantae::{count, gene, pick, speckle},
     surface::{Ray, Surface, TraceResult},
+    tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
-    plantae::physiology::BLADDER,
-    plantae::physiology::FROND,
-    plantae::physiology::ROOT,
-    plantae::physiology::STEM,
+    plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
-use spirv_std::glam::{Vec3, vec3};
+use core::f32::consts::TAU;
+use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -47,27 +46,71 @@ pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(7.0, 7.0, 7.0).extend(0.0);
 }
 
+/// Where the colony holds on to its host.
+const FOOT: Vec3 = vec3(0.0, -1.9, 0.0);
+
+/// A fan of one of the forms the colony grows, `p` relative to where it springs from its stalk,
+/// opening `out` from the stalk: a frilled shelf, a funnel, an upright paddle, or a ruffled ruff
+/// spiralling round the stalk.
+fn fan(p: Vec3, out: Vec3, form: u32, size: f32, frill: f32) -> f32 {
+    let centre = out * size * 0.8;
+    let q = p - centre;
+    let along = q.xz().length();
+    let angle = q.z.atan2(q.x);
+    let ruffle = (angle * frill).sin() * 0.12 * along / size;
+    match form {
+        0 => ((q.y - ruffle - along * 0.15).abs() - 0.05).max(along - size),
+        1 => ((q.y - along * 0.7 - ruffle).abs() * 0.8 - 0.05).max(along - size),
+        2 => {
+            let across = vec3(out.z, 0.0, -out.x);
+            let flat = q.dot(across);
+            let rise = vec2(q.dot(out), q.y - size * 0.6);
+            ((flat - ruffle).abs() - 0.05).max((rise / vec2(1.0, 1.6)).length() - size)
+        }
+        _ => {
+            let turn = (angle + q.y * 2.0).sin() * 0.25;
+            ((q.y - turn - ruffle).abs() - 0.05)
+                .max(along - size)
+                .max(0.3 - along)
+        }
+    }
+}
+
+/// A colony of golden coral.
+///
+/// It holds on to a slow animal's hide by a broad foot, from which branching stalks rise and
+/// lean out, each carrying fans that open in tiers into the air the host carries them through.
+/// Colonies grow their own way: a few stalks or many, fans as shelves, funnels, paddles or ruffs,
+/// one tier to a stalk or a stack of them, frilled finely or coarsely.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let p = plantae::sway(p, c);
-    let mut shape = Surface::new(ellipsoid(p - vec3(0.0, -2.0, 0.0), vec3(1.8, 0.6, 1.8)), 3);
-    for i in 0..9 {
-        let angle = i as f32 * 2.4;
-        let start = vec3(angle.cos(), -2.0, angle.sin());
-        let end = vec3(
-            angle.cos() * 3.5,
-            1.5 + (angle * 2.0).sin(),
-            angle.sin() * 3.5,
+    let mut shape = Surface::new(ellipsoid(p - FOOT, vec3(1.3, 0.5, 1.3)), 0);
+    let stalks = count(c, 1.0, 2, 5);
+    let form = pick(c, 2.0, 4);
+    let tiers = count(c, 3.0, 1, 4);
+    let frill = 6.0 + gene(c, 4.0) * 14.0;
+    let size = (1.9 - tiers as f32 * 0.25) * (0.8 + gene(c, 5.0) * 0.4);
+    for i in 0..stalks {
+        let f = i as f32;
+        let bearing = f * TAU / stalks as f32 + gene(c, 6.0) * TAU;
+        let out = vec3(bearing.cos(), 0.0, bearing.sin());
+        let lean = 0.3 + speckle(vec2(f, 1.0), 1.0) * 0.6;
+        let tall = 3.0 + speckle(vec2(f, 2.0), 1.0) * 2.5;
+        let top = FOOT + out * tall * lean + vec3(0.0, tall, 0.0);
+        let bend = FOOT + out * tall * lean * 0.3 + vec3(0.0, tall * 0.55, 0.0);
+        shape.join(
+            tapered_tail(p, FOOT, bend, 0.32, 0.22).min(tapered_tail(p, bend, top, 0.22, 0.1)),
+            0,
         );
-        shape.join(capsule(p, start, end, 0.22), 3);
-        for j in 0..3 {
-            let tip = end
-                + vec3(
-                    (angle + j as f32).cos() * 1.2,
-                    j as f32 * 0.7,
-                    (angle + j as f32).sin() * 1.2,
-                );
-            shape.join(capsule(p, end, tip, 0.12), 3);
-            shape.join(rosette(rotate(p - tip, angle), 4, 1.0, 0.4, 0.5), 1);
+        for tier in 0..tiers {
+            let t = (tier + 1) as f32 / tiers as f32;
+            let at = if t < 0.55 {
+                FOOT.lerp(bend, t / 0.55)
+            } else {
+                bend.lerp(top, (t - 0.55) / 0.45)
+            };
+            let turn = bearing + tier as f32 * 1.3;
+            let facing = vec3(turn.cos(), 0.0, turn.sin());
+            shape.join(fan(p - at, facing, form, size * (1.1 - t * 0.3), frill), 3);
         }
     }
     shape
@@ -76,10 +119,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// Where its organs lie in its body; see [`Viscera`].
 #[cfg(not(target_arch = "spirv"))]
 pub const ORGANS: Viscera = Viscera::new(&[
-    site(STEM, vec3(0.00, -1.94, 0.06), vec3(0.43, 0.43, 0.43)),
-    site(BLADDER, vec3(0.00, -1.69, -0.56), vec3(0.18, 0.18, 0.18)),
-    pair(FROND, vec3(0.88, -1.88, 0.13), vec3(0.21, 0.21, 0.21)),
-    site(ROOT, vec3(0.00, -1.69, 0.69), vec3(0.18, 0.18, 0.18)),
+    site(STEM, vec3(0.00, -1.90, 0.00), vec3(0.40, 0.18, 0.40)),
+    site(BLADDER, vec3(0.00, -1.80, -0.60), vec3(0.18, 0.12, 0.18)),
+    pair(FROND, vec3(0.70, -1.90, 0.10), vec3(0.18, 0.12, 0.18)),
+    site(ROOT, vec3(0.00, -2.15, 0.40), vec3(0.18, 0.10, 0.18)),
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.

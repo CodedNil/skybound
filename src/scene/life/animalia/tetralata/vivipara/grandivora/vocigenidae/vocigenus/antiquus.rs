@@ -2,7 +2,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    eyespots, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
+    capsule, louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -50,73 +50,229 @@ taxon!(
     ],
 );
 
+/// How far the body runs fore and aft of its middle.
+const LENGTH: f32 = 15.0;
+
+/// Where the mouth opens, ahead of the chin and clear of the head, so the mouth tentacles hang
+/// free beneath it.
+const MOUTH: Vec3 = vec3(0.0, -3.1, -16.6);
+
+/// The bladders along the back, from the shoulders to the hips.
+const BLADDERS: u32 = 5;
+
 pub fn animate(c: &mut CreatureInstance) {
-    prepare_pose(c, 12.0, 17.0, 5);
-    c.opaque_bounds = vec3(10.0, 12.0, 30.0).extend(0.0);
-    rig_tentacles(c, vec3(0.0, -2.4, -15.2), 2.6, ORAL_PAIRS);
-    // Display streamers off the belly, flown for companions across open air.
-    rig_ribbons(c, 5, vec3(0.0, -4.4, 3.0), 1.4, 18.0);
+    prepare_pose(c, 22.0, 10.0, 0);
+    c.opaque_bounds = vec3(13.0, 15.0, 30.0).extend(0.0);
+    rig_tentacles(c, MOUTH, 2.4, ORAL_PAIRS);
+}
+
+/// The body's half-width and half-depth a distance `z` along it, and how high its midline runs: a
+/// blunt, broad front, deepest at the chest where the flight muscles are, drawn out to the tail.
+fn girth(z: f32) -> Vec3 {
+    let t = ((z + LENGTH) / (2.0 * LENGTH)).clamp(0.0, 1.0);
+    let front = (t / 0.16).min(1.0).sqrt();
+    let width = 5.3 * front * (1.0 - 0.72 * t.powf(1.5));
+    vec3(width, width * (0.86 - t * 0.12), 0.4 - t * 0.9)
+}
+
+/// The top of the back a distance `z` along it.
+fn back(z: f32) -> f32 {
+    let girth = girth(z);
+    girth.z + girth.y
 }
 
 /// A living airship.
 ///
-/// Its long, pale body carries a chain of gas bladders swelling along the back, so a giant that
-/// lives for centuries can idle on slow strokes between distant floating forests; between them
-/// rise the hollow horns that shape its calls, carried across open sky long before the animal
-/// itself is visible. Beneath its blunt front hangs a beard of long white barbels and the throat
-/// sac it sings through, the three tentacle pairs that gather its soft plants, and rows of small
-/// eyes along each flank. Its bladders swell and its horns lengthen through its long life, so no
-/// two elders are alike.
+/// Its long, pale body carries a chain of gas bladders sunk into the back, each ribbed with the
+/// vessels that warm it and webbed to the next, so a giant that lives for centuries can idle on
+/// slow strokes between distant floating forests. Flanking them rise two ranks of hollow horns,
+/// each growing from a fleshy collar and curving back to a flared bell, ringed by the growth of
+/// every year; through them it shapes the calls carried across open sky long before the animal
+/// itself is seen. Its blunt head overhangs a brow under which rows of small eyes sit sunk in
+/// lidded sockets, looking down and ahead. Beneath the chin hangs a beard of long white barbels
+/// that feel the drift of plants, and behind it the pleated throat sac it sings through; the mouth
+/// juts ahead of them so its three pairs of tentacles hang free. Its bladders swell, its horns
+/// lengthen, its skin creases and air moss spreads over its back through its long life, so no two
+/// elders are alike.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let folds = (p.z * 1.3 + (p.x * 0.6).sin()).sin() * 0.12;
-    let mut body = rounded(p, vec3(5.0, 4.4, 15.0)) + folds;
-    let sac = rounded(p - vec3(0.0, -4.0, -11.0), vec3(3.4, 3.0, 4.0));
-    body = smooth_min(body, sac, 1.6);
-    for i in 0..5 {
-        let f = i as f32;
-        let swell = 1.0 + (f * 12.9898 + c.identity.x * 311.7).sin() * 0.25;
-        let z = f * 5.0 - 10.0;
-        let rise = 3.8 - (z / 15.0).powi(2) * 2.0;
-        let bladder = rounded(p - vec3(0.0, rise, z), vec3(3.2, 2.2, 2.5) * swell);
-        body = smooth_min(body, bladder, 1.2);
+    let age = c.life.z;
+    let girth = girth(p.z);
+    let middle = vec3(p.x, p.y - girth.z, 0.0);
+    let reach = vec2(middle.x / girth.x.max(0.3), middle.y / girth.y.max(0.3)).length();
+    let mut body = (reach - 1.0) * girth.y.min(girth.x).max(0.3) * 0.7;
+    body = body.max(p.z - LENGTH - 2.0).max(-p.z - LENGTH);
+    // The head: a broad dome over the brow, a heavy jaw beneath it.
+    let head = rounded(p - vec3(0.0, 0.9, -12.2), vec3(4.6, 3.7, 4.4));
+    body = smooth_min(body, head, 1.4);
+    let brow = rounded(p - vec3(0.0, 1.7, -13.6), vec3(4.9, 1.1, 2.6));
+    body = smooth_min(body, brow, 0.7);
+    let jaw = rounded(p - vec3(0.0, -2.2, -14.6), vec3(2.6, 1.3, 2.4));
+    body = smooth_min(body, jaw, 0.9);
+    // The throat sac, slack between calls, its pleats opening out as it fills.
+    let throat = p - vec3(0.0, -4.0, -9.0);
+    let pleats = (throat.x * 3.2).cos() * 0.09 * (-throat.y - 1.0).clamp(0.0, 1.0);
+    body = smooth_min(body, rounded(throat, vec3(3.0, 2.5, 3.8)) + pleats, 1.3);
+    // Shoulders over the roots of each pair of wings.
+    let flank = vec3(p.x.abs(), p.y, p.z);
+    for pair in 0..2 {
+        let (z, rise) = (-3.5 + pair as f32 * 8.0, 2.0 - pair as f32 * 0.5);
+        let shoulder = rounded(flank - vec3(girth.x * 0.72, rise, z), vec3(1.9, 1.6, 2.6));
+        body = smooth_min(body, shoulder, 1.2);
     }
-    let mut hit = Surface::new(body, 0);
-    let back = vec3(p.x.abs(), p.y, p.z);
-    for i in 0..4 {
-        let z = -7.5 + i as f32 * 5.0;
-        let length = (6.0 - i as f32 * 1.2) * (0.7 + c.life.z * 0.3 + c.identity.w * 0.3);
-        let foot = vec3(2.8, 4.0 - (z / 15.0).powi(2) * 2.0, z);
-        let tip = foot + vec3(0.8, length, length * 0.4);
-        let horn = tapered_tail(back, foot, tip, 0.8, 0.6);
-        let bore = tapered_tail(
-            back,
-            foot + (tip - foot) * 0.3,
-            tip + (tip - foot) * 0.05,
-            0.48,
-            0.44,
+    // A low keel along the belly, which steadies it and holds the streamers.
+    let keel = capsule(p, vec3(0.0, -3.6, -5.0), vec3(0.0, -2.6, 9.0), 0.9);
+    body = smooth_min(body, keel, 1.2);
+    // The skin creases along its length with the years, and in rings where it bends.
+    let creases = (p.y * 2.3 + (p.z * 0.4).sin()).sin() * (p.z * 0.9).cos().abs() * 0.07;
+    body += creases * (0.4 + age * 0.6);
+    // The bladders, sunk into the back and webbed to one another.
+    let mut bladders = 1e6f32;
+    if p.y > 0.5 {
+        for i in 0..BLADDERS {
+            let f = i as f32;
+            let swell =
+                (0.8 + age * 0.25) * (1.0 + (f * 12.9898 + c.identity.x * 311.7).sin() * 0.18);
+            let z = -7.5 + f * 4.6;
+            let at = p - vec3(0.0, back(z) + 0.9 * swell, z);
+            let size = vec3(3.4, 2.8, 2.5) * swell;
+            // Vessels running over each one from crown to base.
+            let around = at.x.atan2(at.z);
+            let vessels = (around * 7.0).cos().abs() * 0.07 * size.y;
+            bladders = smooth_min(bladders, rounded(at, size) - vessels, 0.9);
+        }
+        let web = capsule(
+            p,
+            vec3(0.0, back(-7.5) + 1.2, -7.5),
+            vec3(0.0, back(10.9) + 0.8, 10.9),
+            1.5,
         );
-        hit.join(horn.max(-bore), 7);
+        bladders = smooth_min(bladders, web, 0.8);
     }
-    for i in -3..=3 {
-        let x = i as f32 * 0.8;
-        hit.join(
+    body = smooth_min(body, bladders, 0.7);
+    body = louvres(body, p - vec3(0.0, -0.4, -2.0), vec3(5.0, 3.0, 11.0));
+    let mut hit = Surface::new(body, 0);
+    // Air moss settles on the backs of the oldest, in patches that the years spread.
+    let warp = vec2(p.x + (p.z * 1.7).sin() * 0.8, p.z + (p.x * 2.3).sin() * 0.6);
+    let patches = (warp.x * 0.9 + warp.y * 0.5).sin() * (warp.y * 0.7 - warp.x * 1.1).sin()
+        + (p.x * 3.7 + p.z * 2.9).sin() * (p.z * 4.1).sin() * 0.3;
+    let mossy = (patches - 0.8 + age * 0.45).min((p.y - 1.5) * 0.5);
+    if mossy > 0.0 {
+        hit.join(body - mossy.min(0.12), 10);
+    }
+    hit.socket(eyes(flank), 0.3);
+    if p.y > 0.0 {
+        hit.join(horns(flank, c), 7);
+    }
+    if p.y < -1.0 && p.z < -6.0 {
+        hit.join(beard(p, c), 4);
+    }
+    // A broad paddle at the tail's end, which it trims its long glides with.
+    let mut tail = 1e6f32;
+    for i in 0..5 {
+        let t = i as f32 / 5.0;
+        tail = smooth_min(
+            tail,
             tapered_tail(
                 p,
-                vec3(x, -2.6, -14.0),
-                vec3(x * 1.5, -11.0 + x.abs(), -10.0),
-                0.5,
-                0.07,
+                c.tail[i].truncate(),
+                c.tail[i + 1].truncate(),
+                2.0 * (1.0 - t) + 0.4,
+                2.0 * (0.8 - t) + 0.4,
             ),
-            7,
+            0.5,
         );
     }
-    hit.join(eyespots(p, vec3(4.2, 0.4, -12.0), 1.1, 4, 0.32), 3);
-    hit.join(ribbons(p, c, 5), 7);
-    hit.join(
-        oral_tentacles(p, c, vec3(0.0, -2.4, -15.2), 2.6, ORAL_PAIRS),
-        8,
+    // Two broad lobes at the tail's end, which it trims its long glides with.
+    let end = c.tail[5].truncate();
+    let lobe = vec3((p.x - end.x).abs(), p.y - end.y, p.z - end.z);
+    let fluke = rounded(
+        lobe - vec3(1.7, 0.0, 0.9 + lobe.x * 0.35),
+        vec3(2.1, 0.22, 0.9),
     );
+    hit.join(smooth_min(tail, fluke, 0.5), 0);
+    hit.join(oral_tentacles(p, c, MOUTH, 2.4, ORAL_PAIRS), 8);
     hit
+}
+
+/// Two ranks of resonating horns, `p` folded onto the right flank. Each rises from a fleshy
+/// collar on the back, curves up and back, and opens in a flared bell; its bore runs from the bell
+/// down into the body, and every year of growth leaves a ring on it.
+fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
+    let grown = 0.65 + c.life.z * 0.25 + c.identity.w * 0.2;
+    let mut nearest = 1e6f32;
+    for i in 0..4 {
+        let f = i as f32;
+        let z = -5.6 + f * 4.6;
+        let foot = vec3(girth(z).x * 0.62, back(z) - 1.4, z);
+        let length = (9.0 - f * 1.4) * grown;
+        let rise = foot + vec3(0.7, length * 0.55, -0.2);
+        let sweep = rise + vec3(0.4, length * 0.35, length * 0.45);
+        let tip = sweep + vec3(0.1, length * 0.1, length * 0.3);
+        if (p - rise).length() > length * 1.6 + 2.0 {
+            continue;
+        }
+        let rings = |q: Vec3, a: Vec3| ((q - a).length() * 5.0).sin() * 0.04;
+        let shaft = smooth_min(
+            tapered_tail(p, foot, rise, 1.0, 0.7),
+            smooth_min(
+                tapered_tail(p, rise, sweep, 0.7, 0.5),
+                tapered_tail(p, sweep, tip, 0.5, 0.42),
+                0.3,
+            ),
+            0.3,
+        ) + rings(p, foot);
+        // The bell, flaring wide at the mouth.
+        let axis = (tip - sweep).normalize();
+        let along = (p - tip).dot(axis);
+        let off = (p - tip - axis * along).length();
+        let widening = ((along + 2.0) / 2.2).clamp(0.0, 1.0);
+        let flare = 0.4 + widening.powi(3) * 0.9;
+        let bell = ((off - flare).abs() - 0.1)
+            .max(along - 0.2)
+            .max(-along - 2.0)
+            * 0.7;
+        let bore = tapered_tail(p, foot + (rise - foot) * 0.5, tip, 0.34, 0.3);
+        let horn = smooth_min(shaft, bell, 0.25).max(-bore);
+        let collar = rounded(p - foot - vec3(0.0, 0.9, 0.0), vec3(1.7, 1.3, 1.9));
+        nearest = nearest.min(smooth_min(horn, collar, 0.6));
+    }
+    nearest
+}
+
+/// Rows of small eyes along each side of the head, `p` folded onto the right, set into its
+/// curve under the brow and looking down and ahead, as a tetralate's eyes do: the front ones
+/// largest, watching where it flies, the rest watching the forest drift by below.
+fn eyes(p: Vec3) -> f32 {
+    let mut nearest = 1e6f32;
+    for i in 0..6 {
+        let f = i as f32;
+        let z = -15.0 + f * 0.85;
+        let y = 0.55 - f * 0.12 - (i % 2) as f32 * 0.55;
+        let across = 1.0 - ((z + 12.2) / 4.4).powi(2) - ((y - 0.9) / 3.7).powi(2);
+        let at = vec3(4.6 * across.max(0.0).sqrt(), y, z);
+        nearest = nearest.min((p - at).length() - 0.3 * (1.0 - f * 0.07));
+    }
+    nearest
+}
+
+/// The beard: long, fleshy barbels hanging from the chin in an arc, each swaying on its own.
+fn beard(p: Vec3, c: &CreatureInstance) -> f32 {
+    let time = c.animation.z;
+    let mut d = 1e6f32;
+    for i in -3..=3 {
+        let f = i as f32;
+        let root = vec3(f * 0.75, -3.1 + f.abs() * 0.25, -13.4 + f.abs() * 0.55);
+        let sway = (time * 0.7 + f * 1.3).sin() * 0.5;
+        let length = 7.5 - f.abs() * 0.9;
+        let knee = root + vec3(f * 0.35 + sway * 0.4, -length * 0.55, length * 0.1);
+        let end = knee + vec3(f * 0.25 + sway, -length * 0.45, length * 0.25);
+        d = d.min(smooth_min(
+            tapered_tail(p, root, knee, 0.42, 0.22),
+            tapered_tail(p, knee, end, 0.22, 0.05),
+            0.2,
+        ));
+    }
+    d
 }
 
 /// Where its organs lie in its body; see [`Viscera`].

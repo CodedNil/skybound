@@ -84,8 +84,11 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         0.03,
     );
     hit.join(whisker, 1);
-    hit.join(eyespots(p, vec3(width * 0.93, 1.25, -0.3), 0.3, 3, 0.12), 3);
-    hit.join(eyespots(p, vec3(0.9, -0.95, -0.8), 0.4, 3, 0.16), 3);
+    hit.socket(
+        eyespots(p, vec3(width * 0.93, 1.25, -0.3), 0.3, 3, 0.12),
+        0.12,
+    );
+    hit.socket(eyespots(p, vec3(0.9, -0.95, -0.8), 0.4, 3, 0.16), 0.16);
     let streamer = tapered_tail(
         vec3(side, p.y, p.z),
         vec3(0.7, 0.0, back * 0.9),

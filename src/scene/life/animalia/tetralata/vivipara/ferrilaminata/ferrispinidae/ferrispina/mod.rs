@@ -135,7 +135,7 @@ pub fn shredder(p: Vec3, c: &CreatureInstance, build: Build) -> Surface {
         .max(first - p.z)
         .max(p.z - span);
     hit.join(web * 0.8, 4);
-    hit.join(eyes(narrow, length, build.head) / 1.3, 3);
+    hit.socket(eyes(narrow, length, build.head) / 1.3, build.head * 0.16);
     hit
 }
 

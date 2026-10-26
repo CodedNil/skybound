@@ -24,7 +24,7 @@ use spirv_std::glam::Vec3 as SceneVec3;
 use std::{
     collections::{HashMap, HashSet},
     f32::consts::TAU,
-    f64::consts::TAU as TAU64,
+    f64::consts::{PI as PI64, TAU as TAU64},
     mem,
 };
 
@@ -56,6 +56,9 @@ const LIVING_LIMIT: usize = 1500;
 const TICK: f32 = 10.0;
 
 const LOOK: f32 = 1.0;
+
+/// The most groups of one kind a region holds.
+const BANDS: u16 = 1024;
 
 /// Seconds a group folded back waits before it can be lived out again, so one that has strayed
 /// does not reappear at once where it ranges.
@@ -233,15 +236,19 @@ impl Range {
     }
 }
 
-/// How many of a kind a region that suits it perfectly supports: fewer of the larger, and few of
-/// those that live fastened to others, for they are found on their hosts.
+/// How many of a kind a region that suits it perfectly supports: enough that wherever it is at home
+/// a few dozen of it are in sight, out to where it still covers a pixel. The small, seen only close
+/// by, are so far more numerous than the giants seen from tens of kilometres off, much as smaller
+/// animals outnumber larger ones in any ecology; and few live fastened to others, for they are
+/// found on their hosts.
 fn density(kind: Kind) -> f32 {
-    let mass = kind.biology().adult_mass.max(0.3);
-    let base = match kind.kingdom() {
-        Kingdom::Animalia => 60.0,
-        Kingdom::Plantae => 130.0,
+    let sight = PI64 * near(kind) * near(kind);
+    let area = 4.0 * PI64 * f64::from(PLANET_RADIUS).powi(2) / REGIONS as f64;
+    let in_sight = match kind.kingdom() {
+        Kingdom::Animalia => 14.0,
+        Kingdom::Plantae => 20.0,
     };
-    base / mass.powf(0.45) * if kind.attaches() { 0.2 } else { 1.0 }
+    (in_sight * area / sight) as f32 * if kind.attaches() { 0.2 } else { 1.0 }
 }
 
 /// How well a region suits a kind: an animal by how near the light there is to the light it lives
@@ -265,15 +272,18 @@ fn suitability(kind: Kind, up: DVec3) -> f32 {
     }
 }
 
-/// How many of a kind keep together: herds and swarms in the lineages that took to them, stands
-/// of plants, and the rest alone or in pairs.
+/// How many of a kind keep together: herds and swarms in the lineages that took to them, the
+/// forests and tangles of plants that grow joined, and the rest alone or in pairs. Plants that grow
+/// alone are brought into being a few at a time, scattered far apart.
 fn group(kind: Kind, seed: u64) -> usize {
     let spread = hash(seed, 3);
     match (kind.animal(), kind.plant()) {
         (Some(animal), _) if animal.flocks => 6 + (spread * 10.0) as usize,
         (Some(_), _) => 1 + (spread * 2.5) as usize,
-        (_, Some(_)) if kind.biology().adult_mass > 50.0 => 1 + (spread * 3.0) as usize,
-        _ => 4 + (spread * 8.0) as usize,
+        (_, Some(plant)) if plant.stand > 1 => {
+            plant.stand / 2 + (spread * plant.stand as f32) as usize
+        }
+        _ => 3 + (spread * 4.0) as usize,
     }
 }
 
@@ -355,7 +365,7 @@ fn gather(
         for (kind_index, &kind) in KINDS.iter().enumerate() {
             let at = region * kinds + kind_index;
             let mut remaining = range.counts[at];
-            for index in 0..48u16 {
+            for index in 0..BANDS {
                 let band = Band {
                     region: region as u32,
                     kind: kind_index as u16,
@@ -403,10 +413,13 @@ fn live_out(
     let up = anchor.normalize();
     let east = DVec3::Z.cross(up).try_normalize().unwrap_or(DVec3::X);
     let north = up.cross(east);
-    let spread = if kind.kingdom() == Kingdom::Plantae {
-        150.0
-    } else {
-        15.0 + size as f64 * 5.0
+    // Room enough for each body: a herd keeps a few lengths apart, the strands of a forest just
+    // touch, and plants growing alone lie scattered far across the sky.
+    let body = f64::from(kind.render_radius());
+    let spread = match kind.plant() {
+        Some(plant) if plant.stand > 1 => body * (size as f64).sqrt() * 1.2,
+        Some(_) => near(kind) * 0.4,
+        None => (15.0 + size as f64 * 5.0).max(body * 3.0 * (size as f64).sqrt()),
     };
     for member in 0..size {
         let key = seed ^ (member as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);

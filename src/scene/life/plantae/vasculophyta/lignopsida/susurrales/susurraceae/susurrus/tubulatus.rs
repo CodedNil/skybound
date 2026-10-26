@@ -1,19 +1,17 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
-    capsule, ellipsoid, plantae,
-    plantae::{rosette, rotate},
+    plantae::{count, frond, gene, rotate, speckle},
     surface::{Ray, Surface, TraceResult},
+    tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
-    plantae::physiology::BLADDER,
-    plantae::physiology::FROND,
-    plantae::physiology::ROOT,
-    plantae::physiology::STEM,
+    plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
-use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, vec3};
+use core::f32::consts::TAU;
+use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -44,30 +42,100 @@ taxon!(
 );
 
 pub fn animate(c: &mut CreatureInstance) {
-    c.opaque_bounds = vec3(13.0, 22.0, 13.0).extend(0.0);
+    c.opaque_bounds = vec3(15.0, 22.0, 15.0).extend(0.0);
 }
 
+/// The foot of the trunk.
+const FOOT: f32 = -10.0;
+
+/// The trunk's outer radius at a height, before its ridges: broad at the flared base and
+/// narrowing upwards.
+fn girth(c: &CreatureInstance, y: f32, tall: f32) -> f32 {
+    let flare = 0.4 + gene(c, 2.0) * 1.4;
+    2.2 * (1.0 - 0.3 * ((y - FOOT) / (tall - FOOT)).clamp(0.0, 1.0))
+        + 2.2 * flare * (-(y - FOOT) / 2.5).exp()
+}
+
+/// A whisperwood.
+///
+/// A hollow trunk, broad and flared at its base, whose six ridged walls carry the sap veins and
+/// guide the updraft up through it; tubular branches leave it and end in flared mouths that
+/// whistle at different pitches, ringed by delicate fan leaves; and in sheltered cavities in the
+/// wood the glowgnomes live. Trees grow as their histories made them: tall or squat, flared at the
+/// foot or barely, upright or leaning, with a few great whistling branches or many small ones, and
+/// more cavities the older the colony that lives in them.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let p = plantae::sway(p, c);
-    let radial = p.xz().length();
-    let radius = 1.8 - p.y * 0.04;
-    let rings = (p.y * 2.5).cos().smoothstep(0.75, 0.95) * 0.15;
-    let trunk = ((radial - radius - rings).abs() - 0.22).max(p.y.abs() - 17.0) * 0.75;
+    let tall = 8.0 + gene(c, 1.0) * 10.0;
+    let lean = (gene(c, 3.0) - 0.5) * 0.5;
+    let bearing = gene(c, 4.0) * TAU;
+    let tilt = vec2(bearing.cos(), bearing.sin()) * lean * (p.y - FOOT).max(0.0) * 0.08;
+    let q = vec3(p.x - tilt.x, p.y, p.z - tilt.y);
+    let angle = q.z.atan2(q.x);
+    let radius = girth(c, q.y, tall);
+    // Six ridges over the sap veins, deep or shallow.
+    let ridges = (angle * 6.0).cos().abs().powf(3.0) * (0.15 + gene(c, 5.0) * 0.35);
+    let around = q.xz().length();
+    let outer = around - radius - ridges;
+    // Solid at the flared foot; hollow above it, walls about half a metre thick.
+    let bore = around - (2.2 * (1.0 - 0.3 * ((q.y - FOOT) / (tall - FOOT)).clamp(0.0, 1.0)) - 0.6);
+    let wall = outer.max(-bore.max(FOOT + 1.5 - q.y));
+    let trunk = wall.max(q.y - tall).max(FOOT - q.y) * 0.8;
     let mut shape = Surface::new(trunk, 0);
-    for i in 0..12 {
-        let angle = i as f32 * 2.4;
-        let start = vec3(
-            angle.cos() * radius,
-            i as f32 * 2.1 - 9.0,
-            angle.sin() * radius,
+    // The whistling branches.
+    let branches = count(c, 6.0, 3, 8);
+    let reach = (11.0 - branches as f32 * 0.8) * (0.8 + gene(c, 7.0) * 0.4);
+    for i in 0..branches {
+        let f = i as f32;
+        let turn = f * 2.39996 + gene(c, 8.0) * TAU;
+        let height = FOOT + 4.0 + (tall - FOOT - 4.0) * (0.3 + (f + 0.5) / branches as f32 * 0.7);
+        let out = vec3(turn.cos(), 0.0, turn.sin());
+        let root = vec3(tilt.x, height, tilt.y) + out * girth(c, height, tall) * 0.8;
+        let long = reach * (0.6 + speckle(vec2(f, 1.0), 1.0) * 0.6);
+        let rise = 0.3 + speckle(vec2(f, 2.0), 1.0) * 0.8;
+        let elbow = root + out * long * 0.6 + vec3(0.0, long * rise * 0.3, 0.0);
+        let mouth = elbow + out * long * 0.4 + vec3(0.0, long * rise * 0.5, 0.0);
+        if (p - elbow).length() > long + 4.0 {
+            continue;
+        }
+        let pipe = 0.35 + speckle(vec2(f, 3.0), 1.0) * 0.35;
+        let tube = tapered_tail(p, root, elbow, pipe * 1.3, pipe).min(tapered_tail(
+            p,
+            elbow,
+            mouth,
+            pipe,
+            pipe * 0.9,
+        ));
+        let hollow = tapered_tail(
+            p,
+            elbow,
+            mouth + (mouth - elbow) * 0.1,
+            pipe * 0.55,
+            pipe * 0.6,
         );
-        let end = start + vec3(angle.cos() * 6.0, 2.0, angle.sin() * 6.0);
-        let branch = capsule(p, start, end, 0.25).max(-capsule(p, start, end, 0.14));
-        shape.join(branch, 0);
-        let mut local = rotate(p - end, angle);
-        local.z += 1.0;
-        shape.join(rosette(local, 5, 3.6, 1.3, 0.6), 1);
-        shape.join(ellipsoid(p - start, Vec3::splat(0.14)), 2);
+        // The flared mouth that whistles.
+        let axis = (mouth - elbow).normalize();
+        let along = (p - mouth).dot(axis);
+        let off = (p - mouth - axis * along).length();
+        let flare = pipe * (1.0 + ((along + 0.8) / 0.8).clamp(0.0, 1.0).powi(2) * 1.4);
+        let bell = ((off - flare).abs() - 0.09).max(along).max(-along - 0.8) * 0.8;
+        shape.join(tube.max(-hollow).min(bell), 0);
+        // Fan leaves round the mouth.
+        for leaf in 0..count(c, 9.0, 0, 3) {
+            let spin = leaf as f32 * 2.1 + f;
+            let local = rotate(p - mouth + axis * 0.6, turn + spin);
+            shape.join(frond(local, 2.2 + gene(c, 10.0) * 1.5, 0.9, 0.6, 2.0), 1);
+        }
+    }
+    // Cavities in the wood, lit by the glowgnomes living in them.
+    for i in 0..count(c, 11.0, 1, 5) {
+        let f = i as f32;
+        let turn = f * 2.7 + 0.6;
+        let height = FOOT + 3.0 + f * 2.6;
+        let at = vec3(turn.cos(), 0.0, turn.sin()) * (girth(c, height, tall) + 0.1)
+            + vec3(tilt.x, height, tilt.y);
+        let hole = (p - at).length() - 0.75;
+        shape.distance = shape.distance.max(-hole);
+        shape.join((p - at).length() - 0.35, 2);
     }
     shape
 }
@@ -75,10 +143,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// Where its organs lie in its body; see [`Viscera`].
 #[cfg(not(target_arch = "spirv"))]
 pub const ORGANS: Viscera = Viscera::new(&[
-    site(STEM, vec3(0.00, 0.59, -1.74), vec3(0.12, 0.12, 0.12)),
-    site(BLADDER, vec3(0.00, 7.27, -1.74), vec3(0.08, 0.08, 0.08)),
+    site(STEM, vec3(0.00, 0.60, -1.90), vec3(0.20, 0.20, 0.20)),
+    site(BLADDER, vec3(0.00, 3.00, -1.70), vec3(0.15, 0.15, 0.15)),
     pair(FROND, vec3(1.62, 1.18, -0.70), vec3(0.13, 0.13, 0.13)),
-    site(ROOT, vec3(0.00, -10.02, -2.67), vec3(0.13, 0.13, 0.13)),
+    site(ROOT, vec3(0.00, -9.50, -1.90), vec3(0.30, 0.30, 0.30)),
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.

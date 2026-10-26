@@ -96,7 +96,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ),
         8,
     );
-    hit.join(eyespots(p, vec3(1.25, -0.3, -1.1), 0.6, 4, 0.1), 3);
+    hit.socket(eyespots(p, vec3(1.25, -0.3, -1.1), 0.6, 4, 0.1), 0.1);
     hit.join(oral_tentacles(p, c, MOUTH, 0.7, ORAL_PAIRS), 8);
     hit
 }

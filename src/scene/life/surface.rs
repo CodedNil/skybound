@@ -1,4 +1,4 @@
-use crate::scene::life::{CreatureInstance, Kind, Look, development};
+use crate::scene::life::{CreatureInstance, Kind, Look, development, smooth_min};
 use core::{
     f32::consts::{PI, TAU},
     mem::swap,
@@ -118,6 +118,35 @@ impl Surface {
         if distance < self.distance {
             *self = Self::new(distance, material);
         }
+    }
+
+    /// Set eyes into the body as the tetralates carry them: each lens, `eye` being the distance to
+    /// the lenses about `radius` across, bulging from a socket sunk into the skin and ringed by a
+    /// thick lid that can close over it against the aur's glare and the grit of the air. No eye in
+    /// open sky can be carried out on a stalk or bead, where the wind would tear it; every one sits
+    /// in the body that guards it.
+    pub fn socket(&mut self, eye: f32, radius: f32) {
+        let body = self.distance;
+        let hollow = eye - radius * 0.3;
+        // The lid: the socket's wall where it meets the skin, standing a little proud of it.
+        let lid = ((hollow - radius * 0.16).abs() - radius * 0.16)
+            .max(body - radius * 0.28)
+            .max(-body - radius * 0.7);
+        let sunk = -smooth_min(-body, hollow, radius * 0.12);
+        self.distance = smooth_min(sunk, lid, radius * 0.18);
+        self.join(eye, 3);
+    }
+
+    /// Set cup eyes into the body, as the blood-feeders kept them from their soft-bodied
+    /// ancestors: each a pit sunk into the skin, lined at its floor with a dark retina and open to
+    /// the light without a lens, telling the drift of a shadow rather than forming an image.
+    pub fn pit(&mut self, eye: f32, radius: f32) {
+        let body = self.distance;
+        let rim = (eye.abs() - radius * 0.25).max(body - radius * 0.2);
+        let sunk = -smooth_min(-body, eye, radius * 0.1);
+        self.distance = smooth_min(sunk, rim, radius * 0.15);
+        // The retina, lining the pit's floor deep below the skin.
+        self.join(eye.abs().max(body + radius * 0.3) - radius * 0.02, 3);
     }
 }
 

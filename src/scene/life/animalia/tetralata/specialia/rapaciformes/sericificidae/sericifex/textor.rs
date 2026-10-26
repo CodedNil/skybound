@@ -108,7 +108,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             4,
         );
     }
-    hit.join(eyes(p, 2.6, 0.32), 3);
+    hit.socket(eyes(p, 2.6, 0.32), 0.32 * 0.16);
     hit
 }
 

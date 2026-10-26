@@ -4,7 +4,7 @@ use crate::scene::life::{
     surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
 };
 use core::f32::consts::{PI, TAU};
-use spirv_std::glam::{FloatExt, Vec3, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod chlorophyta;
@@ -31,6 +31,47 @@ taxon!(
         "Spores, fragments and specialised seeds disperse through currents or on animal hosts, with no soil or fixed ground stage in their life cycles.",
     ],
 );
+
+/// One of an individual plant's inherited traits, from zero to one.
+///
+/// A plant has no mind or behaviour to tell it apart from its neighbours, only its growth, and
+/// every spore or seed carries its own way of growing: how many arms, how long a stem, which way a
+/// coil turns. Each `salt` reads the individual's seed a different way, so its traits vary
+/// independently of one another.
+pub fn gene(c: &CreatureInstance, salt: f32) -> f32 {
+    let mix = c.identity.dot(vec4(
+        12.9898 + salt * 7.13,
+        78.233,
+        37.719 + salt * 3.31,
+        4.581 + salt,
+    ));
+    (mix.sin() * 43_758.547).fract_gl()
+}
+
+/// One of `count` forms a trait can take, read from a gene.
+pub fn pick(c: &CreatureInstance, salt: f32, count: u32) -> u32 {
+    ((gene(c, salt) * count as f32) as u32).min(count - 1)
+}
+
+/// A whole number of parts from `fewest` to `most`, read from a gene.
+pub fn count(c: &CreatureInstance, salt: f32, fewest: u32, most: u32) -> u32 {
+    fewest + pick(c, salt, most - fewest + 1)
+}
+
+/// A number from zero to one fixed for each cell of a grid a plant's parts are scattered over, so
+/// each tuft, thorn or bead in a repeated pattern is its own.
+pub fn speckle(cell: Vec2, salt: f32) -> f32 {
+    ((cell.dot(vec2(127.1, 311.7)) + salt * 17.3).sin() * 43_758.547).fract_gl()
+}
+
+/// A gripping pad facing `out`, `p` relative to its centre: a low dome with a cupped face, by which
+/// a climbing or clinging plant holds on to bark, hide or another plant.
+pub fn sucker_pad(p: Vec3, out: Vec3, radius: f32) -> f32 {
+    let across = (p - out * p.dot(out)).length();
+    let up = p.dot(out);
+    let pad = (vec2(across, up) / vec2(radius, radius * 0.45)).length() - 1.0;
+    pad * radius * 0.45
+}
 
 pub fn rotate(p: Vec3, angle: f32) -> Vec3 {
     let (sine, cosine) = angle.sin_cos();
@@ -124,8 +165,11 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     surface: F,
     look: Look,
 ) -> TraceResult {
+    // Each individual's colouring is its own: darker or paler, warmer or cooler, its glow shifted.
     let pigment = look.pigment.truncate();
-    let glow = look.accent;
+    let pigment =
+        pigment.lerp(pigment.zxy(), (gene(c, 91.0) - 0.5) * 0.25) * (0.75 + gene(c, 92.0) * 0.5);
+    let glow = look.accent.lerp(look.accent.yzx(), gene(c, 93.0) * 0.3);
     let mut result = TraceResult::MISS;
     let mut offset = 0.0;
     for _ in 0..8 {

@@ -51,6 +51,9 @@ pub struct Physiology {
     pub form: fn(Kind, f32) -> u32,
     /// Whether it feeds the host it grows on a share of what it makes.
     pub feeds_host: bool,
+    /// How many grow joined together in one stand, as kelp grows in forests of tangled strands; a
+    /// plant whose spores and seeds scatter on the wind grows alone, wherever one came to rest.
+    pub stand: usize,
 }
 
 /// How a plant makes the next generation.
@@ -77,6 +80,7 @@ pub const PLANT: Physiology = Physiology {
     vascular: false,
     form,
     feeds_host: false,
+    stand: 1,
 };
 
 /// A plant's young: a spore or seed under its sail, then a sprouting seedling; a dividing plant's

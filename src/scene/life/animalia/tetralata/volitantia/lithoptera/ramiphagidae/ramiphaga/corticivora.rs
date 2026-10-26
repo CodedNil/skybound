@@ -114,7 +114,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     );
     // Small, deep eyes set into the head's outer plates.
     let eye = head(-0.45) + vec3(0.4, -0.1, -0.15);
-    hit.join((side - eye).length() - 0.13, 3);
+    hit.socket((side - eye).length() - 0.13, 0.13);
     hit.join(
         oral_tentacles(p, c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS),
         8,

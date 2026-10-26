@@ -80,7 +80,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let gap = ((phase + 0.5).fract_gl() - 0.5).abs() * spacing;
     let coil = (vec2(gap, q.x).length() - 0.028).max(radial - 0.3);
     hit.join(coil, 8);
-    hit.join(eyes(p, 1.6, 0.28), 3);
+    hit.socket(eyes(p, 1.6, 0.28), 0.28 * 0.16);
     hit
 }
 

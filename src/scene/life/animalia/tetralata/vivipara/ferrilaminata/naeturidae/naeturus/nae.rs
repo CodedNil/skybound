@@ -76,7 +76,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let crop = rounded(point - vec3(0.0, -0.03, 0.14), vec3(0.27, 0.22, 0.25));
     let crest = rounded(point - vec3(0.0, 0.17, -0.2), vec3(0.016, 0.07, 0.24));
     let mut hit = Surface::new(smooth_min(smooth_min(body, crop, 0.1), crest, 0.03), 0);
-    hit.join(eyes(point, LENGTH, HEAD), 3);
+    hit.socket(eyes(point, LENGTH, HEAD), HEAD * 0.16);
     let side = vec3(point.x.abs(), point.y, point.z);
     hit.join((side - vec3(0.25, 0.04, 0.06)).length() - 0.045, 9);
     let strap = vec2(

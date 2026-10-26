@@ -84,7 +84,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ),
         4,
     );
-    hit.join(eyespots(q, vec3(0.12, 0.13, -2.8), 0.2, 3, 0.04), 3);
+    hit.pit(eyespots(q, vec3(0.12, 0.13, -2.8), 0.2, 3, 0.04), 0.04);
     hit
 }
 

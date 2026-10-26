@@ -27,6 +27,18 @@ use skybound::scene::{
 use spirv_std::glam::Vec3 as SceneVec3;
 use std::collections::HashMap;
 
+/// How hard an animal steers away from another body `offset` from it, so bodies keep out of one
+/// another, the larger needing the more room; plants hold their places.
+fn keep_clear(kind: Kind, other: &Agent, offset: SceneVec3) -> SceneVec3 {
+    let room = (kind.render_radius() + other.kind.render_radius()) * 0.6;
+    let distance = offset.length();
+    if distance < room && other.vitals.health > 0.0 && !plant(kind) {
+        -offset / distance.max(0.01) * (1.0 - distance / room) * 8.0
+    } else {
+        SceneVec3::ZERO
+    }
+}
+
 pub(super) fn perceive(
     agent: Agent,
     relations: &mut Relations,
@@ -83,6 +95,7 @@ pub(super) fn perceive(
                 relations.host = Some(other.entity);
             }
         }
+        senses.separation += keep_clear(kind, other, offset);
         if other.kind == kind && other.vitals.health > 0.0 {
             senses.separation -= offset / offset.length_squared().max(1.0);
             if kind.animal().is_some_and(|animal| animal.flocks) {

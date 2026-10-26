@@ -133,7 +133,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
 /// flies through strikes them first, and the mouth tentacles beneath.
 fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    hit.join(eyes(point, LENGTH, HEAD), 3);
+    hit.socket(eyes(point, LENGTH, HEAD), HEAD * 0.16);
     for i in 0..3 {
         let index = i as f32;
         let root = vec3(5.4, 0.6 + index * 0.75, -17.5 + index * 0.8);
