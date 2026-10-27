@@ -89,7 +89,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let lip = mouth(2.6, 0.32);
     let sway = (c.animation.z * 0.6).sin() * 0.08;
     let span = 3.9 + c.gene(SPAN) * 1.4;
-    hit.join(
+    hit.blend(
         curved_tube(
             side,
             lip + vec3(0.08, 0.0, 0.0),
@@ -98,6 +98,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.07,
         ),
         8,
+        0.06,
     );
     let start = vec3(0.12, -0.5, 3.3);
     let end = vec3(0.5, -0.8, 4.0);

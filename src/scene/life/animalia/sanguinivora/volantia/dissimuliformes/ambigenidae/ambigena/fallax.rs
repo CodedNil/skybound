@@ -94,7 +94,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let facing = vec3(0.0, -0.2, -1.0).normalize();
     let mut hit = Surface::new(body, 0);
     let cup = 0.7 + c.gene(CUP_SIZE) * 0.3;
-    hit.join(sucker(p, CUP, facing, cup), 8);
+    hit.blend(sucker(p, CUP, facing, cup), 8, 0.1);
     // The fringe: a filament to each sector of the cup's rim, swaying.
     let q = p - CUP;
     let around = q.y.atan2(q.x);

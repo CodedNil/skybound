@@ -79,7 +79,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ),
         0,
     );
-    hit.join(
+    hit.blend(
         sucker(
             q,
             vec3(0.0, -0.1, -3.05),
@@ -87,8 +87,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.36 * grip,
         ),
         8,
+        0.08,
     );
-    hit.join(
+    hit.blend(
         sucker(
             q,
             vec3(0.0, -0.3, 3.0),
@@ -96,6 +97,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.7 * grip,
         ),
         4,
+        0.08,
     );
     hit.pit(eyespots(q, vec3(0.12, 0.13, -2.8), 0.2, 3, 0.04), 0.04);
     hit

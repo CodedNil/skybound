@@ -126,21 +126,23 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     for i in 0..3 {
         let z = i as f32 * 5.5 - 8.5;
-        hit.join(
+        hit.blend(
             rounded(
                 mirrored - vec3(7.0, 1.2, z),
                 vec3(0.8, 0.65, 1.4) * (0.8 + creature.gene(AUR_SACS) * 0.4),
             ),
             9,
+            0.3,
         );
     }
     for i in 0..5 {
         let z = i as f32 * 3.1 - 10.0;
         hit.join(feather(mirrored, vec3(6.2, 3.1, z), 4.0, 0.55, 0.4), 1);
     }
-    hit.join(
+    hit.blend(
         ellipsoid(point - vec3(0.0, 5.12, 2.0), vec3(0.9, 0.16, 0.9)),
         9,
+        0.2,
     );
     hit
 }
@@ -168,11 +170,12 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
         );
         let membrane = ellipsoid(frond, vec3(0.85, 0.12, (tip - root).length() * 0.55)) * 0.65;
         let stem = tapered_tail(mirrored, root, tip, 0.24, 0.035);
-        hit.join(smooth_min(membrane, stem, 0.10), 2);
+        hit.blend(smooth_min(membrane, stem, 0.10), 2, 0.15);
     }
-    hit.join(
+    hit.blend(
         oral_tentacles(point, creature, mouth(LENGTH, HEAD), 3.0, ORAL_PAIRS),
         2,
+        0.1,
     );
     hit
 }

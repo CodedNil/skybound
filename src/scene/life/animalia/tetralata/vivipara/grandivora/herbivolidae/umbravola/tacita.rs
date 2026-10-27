@@ -95,7 +95,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         edge + vec3(0.25, 0.1, -0.9) * (0.6 + c.gene(WHISKERS) * 0.8),
         0.03,
     );
-    hit.join(whisker, 1);
+    hit.blend(whisker, 1, 0.03);
     hit.socket(
         eyespots(p, vec3(width * 0.93, 1.25, -0.3), 0.3, 3, 0.12),
         0.12,
@@ -112,10 +112,11 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         0.2,
         0.02,
     );
-    hit.join(streamer, 1);
-    hit.join(
+    hit.blend(streamer, 1, 0.15);
+    hit.blend(
         oral_tentacles(p, c, vec3(0.0, -0.8, -1.5), 1.3, ORAL_PAIRS),
         8,
+        0.1,
     );
     hit
 }

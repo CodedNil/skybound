@@ -134,17 +134,19 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // The stylet: needle-fine, each animal's its own length.
     let length = 8.5 * grown * (0.88 + c.gene(STYLET) * 0.24);
     let tip = ROOT + vec3(0.0, -0.08, -length);
-    hit.join(
+    hit.blend(
         tapered_tail(p, ROOT + vec3(0.0, 0.0, 0.3), tip, 0.075, 0.006),
         6,
+        0.04,
     );
     // The venom sac beneath the head.
-    hit.join(
+    hit.blend(
         ellipsoid(
             p - vec3(0.0, -0.36, -3.95),
             vec3(0.24, 0.2, 0.38) * (0.85 + c.gene(VENOM_SAC) * 0.4),
         ),
         2,
+        0.12,
     );
     // Iron scutes along the back.
     let station = ((p.z + 2.4) / 0.75).round().clamp(0.0, 8.0);
@@ -168,7 +170,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 3);
     hit.join((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 3);
     rasp(&mut hit, p, c);
-    hit.join(oral_tentacles(p, c, MOUTH, 1.8, ORAL_PAIRS), 8);
+    hit.blend(oral_tentacles(p, c, MOUTH, 1.8, ORAL_PAIRS), 8, 0.18);
     hit
 }
 

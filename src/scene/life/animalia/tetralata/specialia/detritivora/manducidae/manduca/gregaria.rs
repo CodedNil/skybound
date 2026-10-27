@@ -95,7 +95,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let splay = ((finger as f32 - 2.0) * 0.45).sin();
         let root = MOUTH + vec3(splay * 0.28, 0.0, 0.0);
         let reach = cage + ((finger as f32 * 7.1 + c.identity.x * 31.0).sin() * 0.5 + 0.5) * 0.25;
-        hit.join(
+        hit.blend(
             curved_tube(
                 p,
                 root,
@@ -104,6 +104,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
                 0.05,
             ),
             7,
+            0.04,
         );
     }
     let side = vec3(p.x.abs(), p.y, p.z);

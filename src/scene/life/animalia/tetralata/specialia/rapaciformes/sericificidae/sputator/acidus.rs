@@ -93,12 +93,13 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(smooth_min(body, head, 0.2), 0);
     // The acid glands, swelling through the plates at the shoulders.
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.join(
+    hit.blend(
         ellipsoid(
             side - vec3(0.72, -0.05, -0.55),
             vec3(0.42, 0.32, 0.55) * (0.85 + c.gene(GLANDS) * 0.35),
         ),
         2,
+        0.15,
     );
     // The spout, a hollow horn under the head.
     let tip = -2.5 - c.gene(SPOUT) * 0.6;
@@ -122,7 +123,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mandible = curved_tube(side, hinge, bend, tip, 0.09);
     let notch = ((side.z - hinge.z) / 0.12).fract_gl() - 0.5;
     hit.join(mandible + notch.abs() * 0.02, 7);
-    hit.join(oral_tentacles(p, c, MOUTH, 0.75, ORAL_PAIRS), 8);
+    hit.blend(oral_tentacles(p, c, MOUTH, 0.75, ORAL_PAIRS), 8, 0.08);
     hit
 }
 

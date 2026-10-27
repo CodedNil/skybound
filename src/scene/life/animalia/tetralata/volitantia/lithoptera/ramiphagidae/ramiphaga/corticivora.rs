@@ -105,7 +105,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(body, if inward { 8 } else { 5 });
     let side = vec3(p.x.abs(), p.y, p.z);
     let jaw = head(0.0) + vec3(0.28, 0.0, 0.0);
-    hit.join(
+    hit.blend(
         curved_tube(
             side,
             jaw,
@@ -114,9 +114,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.26 + c.gene(JAWS) * 0.14,
         ),
         7,
+        0.1,
     );
     let tail = on_curl(-REACH, 0.0);
-    hit.join(
+    hit.blend(
         curved_tube(
             p,
             tail,
@@ -125,13 +126,15 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.2,
         ),
         7,
+        0.1,
     );
     // Small, deep eyes set into the head's outer plates.
     let eye = head(-0.45) + vec3(0.4, -0.1, -0.15);
     hit.socket((side - eye).length() - 0.13, 0.13);
-    hit.join(
+    hit.blend(
         oral_tentacles(p, c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS),
         8,
+        0.1,
     );
     hit
 }

@@ -89,7 +89,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let fuzz = (around * 24.0).sin() * (p.z * 40.0).sin() * (0.02 + full * 0.02);
     let collar =
         vec2(vec2(p.x, p.y).length() - 0.36, p.z + 1.45).length() - (0.1 + full * 0.1) - fuzz;
-    hit.join(collar * 0.8, 4);
+    hit.blend(collar * 0.8, 4, 0.06);
     // The feeding tube, coiled in the plane beneath the cowl.
     let centre = mouth(1.6, 0.28) + vec3(0.0, -0.32, 0.08);
     let q = p - centre;

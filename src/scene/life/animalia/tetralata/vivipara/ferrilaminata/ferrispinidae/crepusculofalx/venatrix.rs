@@ -143,7 +143,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.02,
         ));
     }
-    hit.join(lure, 9);
+    hit.blend(lure, 9, 0.15);
     // Two great eyes beneath the head, set to look down and a little ahead.
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(
@@ -154,7 +154,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         3,
     );
     maw(&mut hit, p, c);
-    hit.join(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8);
+    hit.blend(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8, 0.08);
     hit
 }
 

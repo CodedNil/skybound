@@ -81,9 +81,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ..BUILD
     };
     let mut hit = shredder(p, c, build);
-    hit.join(
+    hit.blend(
         oral_tentacles(p, c, mouth(BUILD.length, BUILD.head), 1.0, ORAL_PAIRS),
         8,
+        0.1,
     );
     hit
 }

@@ -81,7 +81,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     if disc < body {
         hit.material = 1;
     }
-    hit.join(
+    hit.blend(
         sucker(
             p,
             vec3(0.0, -0.05, -0.95),
@@ -89,6 +89,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.3,
         ),
         8,
+        0.06,
     );
     hit.join(
         rounded(

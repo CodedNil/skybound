@@ -89,7 +89,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         0.85,
     );
     let mut hit = Surface::new(smooth_min(neck, tail, 0.3), 0);
-    hit.join(
+    hit.blend(
         sucker(
             p,
             vec3(0.0, 0.0, -4.25),
@@ -97,6 +97,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.8 + c.gene(SUCKER) * 0.3,
         ),
         8,
+        0.1,
     );
     hit.pit(eyespots(p, vec3(0.45, 0.55, -4.0), 0.22, 4, 0.06), 0.06);
     hit

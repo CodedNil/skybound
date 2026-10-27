@@ -111,9 +111,10 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
         rounded(point - vec3(0.0, 0.215, 0.0), vec3(0.035, 0.012, 0.03)),
         7,
     );
-    hit.join(
+    hit.blend(
         oral_tentacles(point, creature, mouth(LENGTH, HEAD), 0.5, ORAL_PAIRS),
         2,
+        0.1,
     );
     let tail = tail_shaft(point, creature, vec3(0.20, 0.25, 1.0), 0.07);
     hit.join(tail.distance, tail.material);

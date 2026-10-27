@@ -160,7 +160,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         sine * eye_out,
     );
     hit.socket((p - eye).length() - 0.32, 0.32);
-    hit.join(oral_tentacles(p, c, MOUTH, 3.2, ORAL_PAIRS), 8);
+    hit.blend(oral_tentacles(p, c, MOUTH, 3.2, ORAL_PAIRS), 8, 0.32);
     hit
 }
 

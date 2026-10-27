@@ -96,7 +96,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         );
         hit.join(bristle, 7);
     }
-    hit.join(
+    hit.blend(
         capsule(
             p,
             vec3(0.0, 1.05, -1.4),
@@ -104,9 +104,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.11 + c.gene(STRIPE) * 0.11,
         ),
         4,
+        0.08,
     );
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.join(
+    hit.blend(
         curved_tube(
             side,
             vec3(0.3, -0.15, -1.9),
@@ -115,9 +116,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.06,
         ),
         8,
+        0.05,
     );
     hit.socket(eyespots(p, vec3(1.25, -0.3, -1.1), 0.6, 4, 0.1), 0.1);
-    hit.join(oral_tentacles(p, c, MOUTH, 0.7, ORAL_PAIRS), 8);
+    hit.blend(oral_tentacles(p, c, MOUTH, 0.7, ORAL_PAIRS), 8, 0.07);
     hit
 }
 
