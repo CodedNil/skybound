@@ -1,9 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look, annulated,
-    biology::Biology,
-    eyespots, smooth_min, sucker,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BROOD,
@@ -12,6 +6,15 @@ use crate::scene::life::{
     animalia::physiology::PUMP,
     animalia::sanguinivora::volantia::WING_MUSCLE,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look, annulated,
+        biology::Biology,
+        eyespots, smooth_min, sucker,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -57,7 +60,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// the body wall like all its kin's, are stretched over many fine struts.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let sway = (c.animation.z * 1.0 + p.z * 0.5).sin() * 0.08 * (p.z + 2.6).max(0.0);
-    let droop = 0.012 * (p.z + 2.6).max(0.0).powi(2);
+    let droop = 0.012 * (p.z + 2.6).max(0.0).power(2);
     let q = p - vec3(sway, -droop, 0.0);
     let neck = annulated(
         p,

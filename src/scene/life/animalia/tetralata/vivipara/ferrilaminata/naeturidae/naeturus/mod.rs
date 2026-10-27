@@ -5,7 +5,7 @@ use crate::scene::{
         surface::{Hit, Material, Ray, Surface, local_ray, make_hit},
         tapered_tail,
     },
-    math::intersect_sphere,
+    math::{Power, intersect_sphere},
 };
 use core::f32::consts::PI;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
@@ -218,7 +218,7 @@ pub fn wings<F: FnMut(Hit)>(
         let chord_position = point.z - reach * fraction * fraction * 0.35;
         let chord = dimensions.y * (0.55 + (fraction * PI).sin().sqrt()) * (1.0 - fraction).sqrt();
         let feather_coordinate = fraction * 24.0 + chord_position / dimensions.y * 0.6;
-        let ridge = ((feather_coordinate.fract_gl() - 0.5).abs() * 2.0).powi(3);
+        let ridge = ((feather_coordinate.fract_gl() - 0.5).abs() * 2.0).power(3);
         let tips = (chord_position / chord).smoothstep(0.05, 0.65);
         let covert = (-chord_position / chord).smoothstep(0.05, 0.4);
         let variation = (feather_coordinate.floor() * 2.4).sin() * 0.06;

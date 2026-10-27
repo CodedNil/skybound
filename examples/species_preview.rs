@@ -392,11 +392,12 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
             let (c, _) = panel(kind, output, index, seconds);
             match output {
                 Output::Render | Output::Anatomy => View::fit(index, &c),
-                // A lifecycle keeps the adult's view, but closes in on the young so their forms
-                // show, up to three times nearer.
+                // A lifecycle keeps the adult's view, so the young are seen growing at true
+                // scale, but closes in on eggs and spores so their forms show, up to three times
+                // nearer.
                 Output::Lifecycle => {
                     let own = View::fit(1, &c);
-                    if own.field < fixed.field {
+                    if c.life.w > 0.0 && own.field < fixed.field {
                         View {
                             field: (own.field * 1.2).max(fixed.field / 3.0),
                             ..own

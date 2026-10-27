@@ -3,6 +3,27 @@ use spirv_std::glam::{IVec3, Vec2, Vec3, Vec4, ivec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
+/// Whole powers by repeated multiplication.
+///
+/// The shader's `powi` is a general power, which the GPU leaves undefined for a negative base: a
+/// negative number squared comes out as nothing, and a surface built on it falls apart into
+/// phantom slabs. Shader code raises to whole powers with this instead.
+pub trait Power {
+    fn power(self, exponent: i32) -> Self;
+}
+
+impl Power for f32 {
+    fn power(self, exponent: i32) -> Self {
+        let mut result = 1.0;
+        let mut count = 0;
+        while count < exponent.unsigned_abs() {
+            result *= self;
+            count += 1;
+        }
+        if exponent < 0 { 1.0 / result } else { result }
+    }
+}
+
 pub fn square(value: f32) -> f32 {
     value * value
 }

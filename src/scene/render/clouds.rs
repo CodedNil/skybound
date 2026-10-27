@@ -7,7 +7,7 @@ use crate::scene::{
         RAIN_DEPTH, TOWER, atlas_direction, atlas_texel, cloud_cell, cloud_wind, layer_altitude,
         layer_depth, light_altitude,
     },
-    math::{half, henyey_greenstein, intersect_sphere, rotated, simpson, square},
+    math::{Power, half, henyey_greenstein, intersect_sphere, rotated, simpson, square},
     planet::{light_position, light_towards},
     render::{
         march::RaymarchResult,
@@ -834,7 +834,7 @@ fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
     if q.z < 0.0 {
         return (q.z / 25.0, 0.0);
     }
-    let girth = radius * (0.6 + 0.4 * (1.0 - along).powi(3));
+    let girth = radius * (0.6 + 0.4 * (1.0 - along).power(3));
     // The column leans downwind and wavers as it climbs.
     let lean = vec2(
         along * along * radius * 0.6,

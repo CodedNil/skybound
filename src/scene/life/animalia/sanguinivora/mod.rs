@@ -2,7 +2,6 @@ pub use super::render_wings;
 use crate::scene::life::biology::Biology;
 pub mod errantia;
 pub mod volantia;
-pub mod young;
 
 pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.05,
@@ -39,7 +38,6 @@ mod nature {
             },
             nature::lead,
             physiology::{Physiology, flow_channels, plant},
-            sanguinivora::young::LARVA,
         },
         behaviour::{Activity, Goal},
         organs::Function,
@@ -50,7 +48,6 @@ mod nature {
         parasite: true,
         breathe: flow_channels,
         digestion: 0.004,
-        form: |_, young| if young < 0.7 { LARVA } else { 0 },
         ..super::super::PHYSIOLOGY
     };
 

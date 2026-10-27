@@ -1,9 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
-    biology::Biology,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -15,6 +9,15 @@ use crate::scene::life::{
     animalia::tetralata::CISTERN,
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
+        biology::Biology,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -82,7 +85,7 @@ fn head(inward: f32) -> Vec3 {
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let angle = (-p.z).atan2(p.y).clamp(-REACH, REACH);
     let spine = on_curl(angle, 0.0);
-    let middle = 1.0 - (angle / REACH).powi(2);
+    let middle = 1.0 - (angle / REACH).power(2);
     let band = (angle * 7.0).cos();
     let radius = (0.55 + 0.45 * middle) * (1.0 - 0.07 * band * band);
     let body = ((p - spine).length() - radius) * 0.8;

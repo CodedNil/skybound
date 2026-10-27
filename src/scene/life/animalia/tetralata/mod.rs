@@ -259,23 +259,22 @@ mod nature {
             mind::{Ethology, Intent, Situation, Urges, orbit},
             nature::ROOST,
             physiology::{Brood, Light, Physiology, flow_channels, grazes},
-            tetralata::young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, LARVA, TETHERED_EGG},
+            tetralata::young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
         },
         behaviour::{Activity, Goal},
     };
 
-    /// A tetralate's young: eggs, kept as the lineage keeps them, then a larva; the young of those
-    /// born live take their parents' shape from the first.
+    /// A tetralate's young: eggs, kept as the lineage keeps them, and once hatched a small body of
+    /// its parents' shape that grows into theirs; the young of those born live wear it from the
+    /// first.
     fn young(kind: Kind, young: f32) -> u32 {
         let brood = kind.animal().map_or(Brood::Tethered, |animal| animal.brood);
         match brood {
-            _ if young >= 0.7 => 0,
             Brood::Drifting if young < 0.3 => DRIFTING_EGG,
             Brood::Strings if young < 0.3 => EGG_STRINGS,
             Brood::Carried if young < 0.3 => CLUTCH,
             Brood::Tethered if young < 0.3 => TETHERED_EGG,
-            Brood::Live | Brood::Pouch => 0,
-            _ => LARVA,
+            _ => 0,
         }
     }
 

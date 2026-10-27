@@ -2,6 +2,7 @@ use crate::scene::{
     PLANET_RADIUS, ViewUniform, aur,
     aur::{SPIRE_CELL, SPIRE_METRIC, energy_color, spire_axes},
     life::surface::Hit,
+    math::Power,
     planet::{light_towards, surface_coordinates},
     render::ocean::caustics,
 };
@@ -122,10 +123,10 @@ fn shade(
 
     // Obsidian-dark glass: little diffuse, a sharp sheen and a sky fresnel. A thin-film tint drifts
     // from violet to teal with the viewing angle.
-    let film = (1.0 - (-rd).dot(normal).abs()).powi(2);
+    let film = (1.0 - (-rd).dot(normal).abs()).power(2);
     let albedo = vec3(0.035, 0.03, 0.05).lerp(vec3(0.02, 0.06, 0.07), film);
     let reflected = rd - normal * (2.0 * rd.dot(normal));
-    let fresnel = 0.04 + 0.96 * (1.0 - (-rd).dot(normal).max(0.0)).powi(5);
+    let fresnel = 0.04 + 0.96 * (1.0 - (-rd).dot(normal).max(0.0)).power(5);
     let diffuse = albedo * (pole * normal.dot(light).max(0.0) + ambient);
     let sheen = pole * reflected.dot(light).max(0.0).powf(48.0) * 0.6;
     let sky = ambient

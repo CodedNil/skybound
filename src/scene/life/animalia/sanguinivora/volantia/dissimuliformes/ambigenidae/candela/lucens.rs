@@ -1,9 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look, annulated,
-    biology::Biology,
-    capsule, eyespots, rounded, smooth_min, sucker,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BROOD,
@@ -12,6 +6,15 @@ use crate::scene::life::{
     animalia::physiology::PUMP,
     animalia::sanguinivora::volantia::WING_MUSCLE,
     organs::{Function, Organ, Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look, annulated,
+        biology::Biology,
+        capsule, eyespots, rounded, smooth_min, sucker,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
@@ -74,7 +77,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let q = p - vec3(0.0, 0.1, 1.0);
     for rib in 0..4 {
         let z = rib as f32 * 0.45 - 0.68;
-        let across = (1.0 - (z / 1.0).powi(2)).max(0.05).sqrt();
+        let across = (1.0 - (z / 1.0).power(2)).max(0.05).sqrt();
         let hoop = vec2(
             vec2(q.x / 0.78, q.y / 0.72).length() * across * 0.75 - across * 0.75,
             q.z - z,

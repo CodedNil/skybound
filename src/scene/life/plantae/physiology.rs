@@ -10,7 +10,7 @@ use crate::scene::{
     life::{
         Kind,
         organs::{Function, Organ},
-        plantae::young::{BUD, SPORE, SPROUT},
+        plantae::young::SPORE,
         vitals::{Vitals, Waste},
     },
 };
@@ -83,16 +83,12 @@ pub const PLANT: Physiology = Physiology {
     stand: 1,
 };
 
-/// A plant's young: a spore or seed under its sail, then a sprouting seedling; a dividing plant's
-/// young are two halves pulling apart.
+/// A plant's young: a spore or seed under its sail, and once it takes hold a small plant of its
+/// parent's shape that grows into it; a dividing plant's young are small plants from the first.
 fn form(kind: Kind, young: f32) -> u32 {
-    if young >= 0.7 {
-        return 0;
-    }
     match kind.plant().map(|plant| plant.propagation) {
-        Some(Propagation::Division) => BUD,
         Some(Propagation::Spores | Propagation::Pollination) if young < 0.2 => SPORE,
-        _ => SPROUT,
+        _ => 0,
     }
 }
 

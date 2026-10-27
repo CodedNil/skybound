@@ -1,11 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    capsule, ellipsoid,
-    plantae::{count, gene, leaf, pick, rotate, speckle},
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
@@ -13,6 +5,17 @@ use crate::scene::life::{
         physiology::{BLADDER, FROND, ROOT, STEM},
         vasculophyta::floropsida::pomales::FRUIT,
     },
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        capsule, ellipsoid,
+        plantae::{count, gene, leaf, pick, rotate, speckle},
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
@@ -63,7 +66,7 @@ fn fruit(p: Vec3, form: u32, size: f32, ripe: bool) -> Surface {
             ellipsoid(q, vec3(1.0, 1.25, 1.0) * size) * narrow.min(1.0)
         }
         2 => p.length() - size * (1.0 - (angle * 6.0).cos().abs() * 0.08),
-        _ => p.length() - size * (0.8 + (angle * 5.0).cos().max(0.0).powi(2) * 0.25),
+        _ => p.length() - size * (0.8 + (angle * 5.0).cos().max(0.0).power(2) * 0.25),
     };
     let mut shape = Surface::new(rind, 3);
     if ripe {

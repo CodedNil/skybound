@@ -1,10 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
-    biology::Biology,
-    capsule, eyespots, rounded,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -16,6 +9,16 @@ use crate::scene::life::{
     animalia::tetralata::CISTERN,
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
+        biology::Biology,
+        capsule, eyespots, rounded,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -71,7 +74,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // Rows of bristles beneath the sole.
     let spacing = 0.28;
     let cell = (vec2(p.x, p.z) / spacing).round() * spacing;
-    let inside = (cell.x / 1.3).powi(2) + (cell.y / 1.9).powi(2) < 1.0;
+    let inside = (cell.x / 1.3).power(2) + (cell.y / 1.9).power(2) < 1.0;
     if inside && p.y < -0.2 {
         let bristle = capsule(
             p,

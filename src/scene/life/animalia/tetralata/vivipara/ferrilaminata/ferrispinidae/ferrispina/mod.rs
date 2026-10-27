@@ -1,11 +1,16 @@
 pub use super::render_wings;
-use crate::scene::life::{
-    CreatureInstance,
-    animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH},
-    biology::Biology,
-    capsule, cowl, eyes, louvres, mouth, rounded, smooth_min,
-    surface::Surface,
-    tapered_tail,
+use crate::scene::{
+    life::{
+        CreatureInstance,
+        animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::{
+            BLADE_KEENNESS, BLADE_LENGTH,
+        },
+        biology::Biology,
+        capsule, cowl, eyes, louvres, mouth, rounded, smooth_min,
+        surface::Surface,
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
@@ -70,7 +75,7 @@ pub fn blade(
         let bite = (1.0 - nick.smoothstep(0.0, 0.4)) * worn * width * 0.12;
         outline = outline.max(-(along + half - bite).max(-along));
     }
-    let lens = (1.0 - (along / half).powi(2)).max(0.0);
+    let lens = (1.0 - (along / half).power(2)).max(0.0);
     let thickness = width * (0.12 - keen * 0.06) * (1.0 - t * 0.7);
     let section = across.abs() - thickness * lens - 0.005;
     outline.max(section) * 0.8

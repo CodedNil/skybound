@@ -1,21 +1,13 @@
 use crate::scene::life::{
     CreatureInstance, PLANT,
-    animalia::{
-        bullidorsata::{self, young::POLYP},
-        sanguinivora,
-        tetralata::{
-            self,
-            vivipara::grandivora::{self, young::POUCH_YOUNG},
-            young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
-        },
+    animalia::tetralata::{
+        self,
+        young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
     },
     biology::Biology,
     genome::{ARCH, BUILD, HUE, PATTERN, SHADE},
     look_of,
-    plantae::{
-        self,
-        young::{BUD, SPORE, SPROUT},
-    },
+    plantae::{self, young::SPORE},
     surface::{Material, Ray, SMOOTH, Surface, TraceResult, coat, trace_material},
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -93,10 +85,17 @@ pub fn scale(c: &CreatureInstance) -> Vec3 {
 }
 
 pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
+    // The young are not small adults: the brain and eyes are nearly grown at birth while the rest
+    // has far to go, so a newborn's head is large for its body and its hindquarters slight, and
+    // both even out as it grows. The head swells about its own centre so it stays on the neck.
     let infant = 1.0 - c.life.y;
-    let front = (-point.z / c.opaque_bounds.z.max(0.01)).smoothstep(0.25, 0.8);
-    point.x *= 1.0 - infant * front * 0.15;
-    point.y *= 1.0 - infant * front * 0.12;
+    let length = c.opaque_bounds.z.max(0.01);
+    let front = (-point.z / length).smoothstep(0.25, 0.8);
+    let rear = (point.z / length).smoothstep(0.1, 0.9);
+    let centre = vec3(0.0, 0.0, -0.6 * length);
+    point = centre + (point - centre) * (1.0 - infant * front * 0.2);
+    point.x *= 1.0 + infant * rear * 0.18;
+    point.y *= 1.0 + infant * rear * 0.12;
     // Individuals differ in build as well as size, as their genes have it: some heavier in the
     // head, some lighter, some with a gentle arch to the back, some a sag.
     let reach = point.z / c.opaque_bounds.z.max(0.01);
@@ -158,35 +157,30 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
     material
 }
 
-/// The body of a young organism in one of its early forms, by
-/// [`CreatureInstance::life`]'s developmental form, scaled to its bounds.
+/// An egg or spore, by [`CreatureInstance::life`]'s developmental form, scaled to its bounds.
+///
+/// Everything that has hatched or taken hold is drawn by its species' own tracer instead, so it
+/// grows smoothly into the adult rather than snapping from one shape to another.
 pub fn juvenile_surface(point: Vec3, c: &CreatureInstance) -> Surface {
-    // Most forms are drawn to scale in their bounds; a plant's young and a string of eggs are
-    // stretched to fill theirs.
+    // Most forms are drawn to scale in their bounds; a spore and a string of eggs are stretched to
+    // fill theirs.
     let form = c.life.w as u32;
     let bounds = c.opaque_bounds.xyz() * 0.85;
-    let extent = if matches!(form, SPORE | SPROUT | BUD | EGG_STRINGS) {
+    let extent = if matches!(form, SPORE | EGG_STRINGS) {
         bounds
     } else {
         Vec3::splat(bounds.max_element())
     };
     let mut p = point / extent;
     let time = c.animation.z;
-    let age = c.life.y;
     p.x -= (p.z * 4.0 - time * 2.0).sin() * 0.08 * p.z;
     // Each lineage draws its own young; the shader can only choose among them by number.
     let mut hit = match form {
-        POLYP => bullidorsata::young::polyp(p, age, time),
-        sanguinivora::young::LARVA => sanguinivora::young::leech_larva(p, age),
-        tetralata::young::LARVA => tetralata::young::larva(p, age),
         TETHERED_EGG => tetralata::young::tethered_egg(p),
         DRIFTING_EGG => tetralata::young::drifting_egg(p, time),
         EGG_STRINGS => tetralata::young::egg_strings(p, time),
         CLUTCH => tetralata::young::clutch(p),
-        POUCH_YOUNG => grandivora::young::pouch_young(p, age),
-        SPORE => plantae::young::spore(p),
-        SPROUT => plantae::young::sprout(p, age, time),
-        _ => plantae::young::bud(p, age),
+        _ => plantae::young::spore(p),
     };
     hit.distance *= extent.min_element() * 0.7;
     hit
@@ -238,19 +232,7 @@ mod tests {
 
     #[test]
     fn every_young_form_is_its_own_and_every_kind_grows_through_known_ones() {
-        let forms = [
-            POLYP,
-            sanguinivora::young::LARVA,
-            tetralata::young::LARVA,
-            TETHERED_EGG,
-            DRIFTING_EGG,
-            EGG_STRINGS,
-            CLUTCH,
-            POUCH_YOUNG,
-            SPORE,
-            SPROUT,
-            BUD,
-        ];
+        let forms = [TETHERED_EGG, DRIFTING_EGG, EGG_STRINGS, CLUTCH, SPORE];
         for (index, form) in forms.iter().enumerate() {
             assert!(*form > 0, "form {form} is taken by the grown body");
             assert!(
@@ -305,9 +287,9 @@ mod tests {
             assert_eq!(a.identity, b.identity);
             assert_ne!(a.identity, make(0.0, 456).identity);
             assert!(a.life.y < b.life.y);
-            if kind != Kind::Nae {
-                assert!(a.life.w > 0.0 && b.life.w == 0.0);
-            }
+            // Only an egg or spore has a form of its own; the grown body has none.
+            assert_eq!(a.life.w, kind.young_form(0.0) as f32);
+            assert_eq!(b.life.w, 0.0);
         }
     }
 }
