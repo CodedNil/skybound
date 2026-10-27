@@ -1,3 +1,12 @@
+use crate::scene::life::{
+    CreatureInstance, Look,
+    biology::Biology,
+    capsule, ellipsoid,
+    plantae::{count, gene, pick, speckle},
+    smooth_min,
+    surface::{Ray, Surface, TraceResult},
+    tapered_tail,
+};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
@@ -6,19 +15,7 @@ use crate::scene::life::{
         pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::BASIN,
     },
 };
-use crate::scene::{
-    life::{
-        CreatureInstance, Look,
-        biology::Biology,
-        capsule, ellipsoid,
-        plantae::{count, gene, pick, speckle},
-        smooth_min,
-        surface::{Ray, Surface, TraceResult},
-        tapered_tail,
-    },
-    math::Power,
-};
-use core::f32::consts::TAU;
+use core::f32::consts::{PI, TAU};
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -56,35 +53,34 @@ pub fn animate(c: &mut CreatureInstance) {
 /// The bottom of the basin, where the plant's hub hangs beneath it.
 const FLOOR: f32 = -1.8;
 
-/// The basin's edge at a bearing `angle`, as a share of its full reach. Basins grow round,
-/// scalloped where the rim's ribs end, notched where an old spill wore a gap, or drawn out to a
-/// drip tip that sheds the overflow over one side.
-fn outline(c: &CreatureInstance, angle: f32) -> f32 {
-    let turn = angle + gene(c, 2.0) * TAU;
-    match pick(c, 1.0, 4) {
-        0 => 1.0,
-        1 => 0.9 + 0.1 * (turn * count(c, 3.0, 5, 9) as f32).cos().abs(),
-        2 => 1.0 - 0.3 * (1.0 - (turn.cos() * 0.5 + 0.5)).power(6),
-        _ => 0.82 + 0.18 * turn.cos().power(2) + 0.25 * turn.cos().max(0.0).power(8),
-    }
-}
-
 /// A pondplant.
 ///
-/// A broad leaf cupped into a basin that holds the rain, ringed by a rim that keeps it in, with a
-/// knotted hub beneath it from which its floats and roots hang. Each grows its own: deep or
-/// shallow, full or nearly dry, round, scalloped, notched or spouted, with a rolled, frilled or
-/// thorned rim, a ring of floats under the rim or one great float under the hub, and few or many
+/// Not a leaf but a frame: ribs radiate from a knotted hub like the spokes of an umbrella turned
+/// up to the sky, and a membrane stretched between them sags into deep pleats under the water's
+/// weight, so the pool it holds is a star and the rim between the ribs dips in scallops where the
+/// overflow spills. The ribs run on past the membrane and curl up at their tips. Many grow a mast
+/// from the hub, ringed with fine combs that wring water from the cloud blowing through them and
+/// drip it into the pool. Each grows its own: few ribs or many, deep or shallow, taut or slack, a
+/// mast or none, a ring of floats under the rim or one great float under the hub, and few or many
 /// roots trailing below.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let reach = 5.0 + gene(c, 4.0) * 2.8;
     let depth = 0.8 + gene(c, 5.0) * 1.4;
+    let ribs = count(c, 1.0, 6, 11) as f32;
+    let sag = 0.25 + gene(c, 2.0) * 0.55;
     let along = p.xz().length();
     let angle = p.z.atan2(p.x);
-    let edge = reach * outline(c, angle);
-    let rise = |r: f32| FLOOR + depth * (r / edge).power(2);
-    let slope = 2.0 * depth * along / (edge * edge);
-    let shell = (p.y - rise(along)).abs() / (1.0 + slope * slope).sqrt() - 0.12;
+    let sector = TAU / ribs;
+    let nearest = (angle / sector).round() * sector;
+    // How far between two ribs the bearing lies, from on a rib to midway between.
+    let between = ((angle - nearest) / sector).abs() * 2.0;
+    let pleat = (between * PI * 0.5).sin();
+    let edge = reach * (1.0 - 0.14 * pleat);
+    let rib = |r: f32| FLOOR + depth * (r / reach).max(0.0).powf(1.6);
+    let rise =
+        |r: f32| rib(r) - sag * pleat * (r / reach).min(1.0) * (1.0 - (r / reach).min(1.0) * 0.4);
+    let slope = 1.6 * depth * (along / reach).max(1e-3).powf(0.6) / reach;
+    let shell = (p.y - rise(along)).abs() / (1.0 + slope * slope).sqrt() - 0.08;
     let mut shape = Surface::new(shell.max(along - edge), 1);
     // The water it holds, as full as the rain and its drinkers have left it: not inherited but its
     // life's, so a basin by a busy watering place runs low and one in wet cloud brims. The membrane
@@ -92,27 +88,36 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let level = FLOOR + depth * (0.35 + c.stores.y.clamp(0.0, 1.0) * 0.6);
     let water = (p.y - level).max(rise(along) - p.y).max(along - edge);
     shape.join(water, 4);
-    // The rim.
-    let lip = vec2(along - edge, p.y - rise(edge));
-    let rim = match pick(c, 7.0, 3) {
-        0 => lip.length() - 0.28,
-        1 => {
-            let frill = (angle * (12.0 + gene(c, 8.0) * 10.0)).sin() * 0.12;
-            let wall = 0.4 + gene(c, 9.0) * 0.5;
-            // A thin wall standing up from the edge, ruffled along its length.
-            ((lip.x - frill).abs() - 0.06).max((lip.y - wall * 0.5).abs() - wall * 0.5)
-        }
-        _ => {
-            let spines = 14.0 + gene(c, 10.0) * 14.0;
-            let sector = TAU / spines;
-            let at = (angle / sector).round() * sector;
-            let base = vec3(at.cos() * edge, rise(edge), at.sin() * edge);
-            let out = vec3(at.cos(), 0.35, at.sin());
-            (lip.length() - 0.18).min(tapered_tail(p, base, base + out * 0.9, 0.08, 0.01))
-        }
-    };
-    // The rim grows out of the leaf, not onto it.
-    shape.blend(rim, 3, 0.3);
+    // The nearest rib, from the hub out past the membrane's edge, curling up at its tip.
+    let spoke = vec3(nearest.cos(), 0.0, nearest.sin());
+    let at = |r: f32| spoke * r + Vec3::Y * rib(r);
+    let tip = at(reach * 1.12) + Vec3::Y * (0.5 + gene(c, 8.0) * 0.9);
+    let spine = tapered_tail(p, at(0.4), at(reach * 0.6), 0.16, 0.12)
+        .min(tapered_tail(
+            p,
+            at(reach * 0.6),
+            at(reach * 1.02),
+            0.12,
+            0.08,
+        ))
+        .min(tapered_tail(p, at(reach * 1.02), tip, 0.08, 0.02));
+    shape.blend(spine, 0, 0.12);
+    // The mast and its combs.
+    if gene(c, 9.0) > 0.3 {
+        let height = 1.5 + gene(c, 10.0) * 2.5;
+        let top = vec3(0.0, FLOOR + depth + height, 0.0);
+        let mast = tapered_tail(p, vec3(0.0, FLOOR, 0.0), top, 0.18, 0.05);
+        let spacing = 0.35 + gene(c, 3.0) * 0.25;
+        let ring = ((p.y - FLOOR - depth * 0.6) / spacing).round();
+        let ring_y = FLOOR + depth * 0.6 + ring * spacing;
+        let span =
+            (1.0 - (ring_y - FLOOR) / (top.y - FLOOR)).clamp(0.0, 1.0) * (0.5 + gene(c, 7.0) * 0.6);
+        let comb = (vec2(along - span * 0.5, p.y - ring_y).length() - 0.025)
+            .max(along - span)
+            .max(ring_y - top.y + 0.2)
+            .max(FLOOR + depth * 0.5 - ring_y);
+        shape.blend(mast.min(comb), 0, 0.06);
+    }
     // The hub, and the floats that hold the basin up.
     shape.join(
         ellipsoid(p - vec3(0.0, FLOOR - 0.5, 0.0), vec3(1.1, 0.55, 1.1)),
@@ -171,7 +176,8 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.24, 0.5, 0.17), vec3(0.65, 0.79, 0.3));
+// Bone-pale and unpigmented, for it feeds on aur.
+pub const LOOK: Look = Look::plant(vec3(0.62, 0.6, 0.55), vec3(0.4, 0.8, 0.9));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

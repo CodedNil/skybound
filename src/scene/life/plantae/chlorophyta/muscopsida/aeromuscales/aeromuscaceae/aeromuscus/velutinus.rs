@@ -136,7 +136,9 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.12, 0.36, 0.07), vec3(0.45, 0.65, 0.15));
+// The one plant that feeds on light, so the one with pigment: a deep wine-dark velvet that drinks
+// the polar sunburst's light across its whole spectrum, wasting little in reflection.
+pub const LOOK: Look = Look::plant(vec3(0.28, 0.08, 0.18), vec3(0.55, 0.15, 0.3));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

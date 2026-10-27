@@ -767,8 +767,13 @@ mod tests {
         );
         let world = WorldData::default();
         let scale = development::scale(&body).to_engine();
-        let anchor = contact(mount.transform_point(ROSETTE * scale), &mount, &body, &world)
-            .expect("rosette must be reachable from the back");
+        let anchor = contact(
+            mount.transform_point(ROSETTE * scale),
+            &mount,
+            &body,
+            &world,
+        )
+        .expect("rosette must be reachable from the back");
         assert!(
             anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE * scale) < 1.5,
             "perching must resolve to the physical back"

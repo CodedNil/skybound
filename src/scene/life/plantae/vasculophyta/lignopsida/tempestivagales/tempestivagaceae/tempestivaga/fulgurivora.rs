@@ -147,7 +147,8 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.16, 0.22, 0.46), vec3(0.55, 0.7, 1.0));
+// Carbon-black and conductive, for it feeds on lightning, and arcs show blue along it.
+pub const LOOK: Look = Look::plant(vec3(0.08, 0.09, 0.12), vec3(0.55, 0.7, 1.0));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

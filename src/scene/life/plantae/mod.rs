@@ -135,8 +135,8 @@ pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
         .abs()
         .smoothstep(0.9, 0.98);
     let mut material = Material::skin(pigment * (0.8 + grain + veins * 0.2), 0.48);
-    // Leaf and soft tissue: light passes through it and comes out greener, and a waxy film
-    // glints on it.
+    // Soft tissue: light passes through it, tinted by whatever colours it, and a waxy film glints
+    // on it.
     material.scatter = 0.9;
     material.film = 0.35;
     match id {

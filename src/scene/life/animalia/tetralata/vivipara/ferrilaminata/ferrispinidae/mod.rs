@@ -38,17 +38,15 @@ mod nature {
     //! rolling to work each side in turn. A Grounder bears it without notice; its hide is scored
     //! with the grooves of generations of them.
 
+    pub use super::super::PHYSIOLOGY;
     use crate::scene::life::{
         Kind,
         animalia::{
             mind::{Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, orbit},
-            physiology::Physiology,
             tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
     };
-
-    pub use super::super::PHYSIOLOGY;
 
     pub const ETHOLOGY: Ethology = Ethology {
         urges,

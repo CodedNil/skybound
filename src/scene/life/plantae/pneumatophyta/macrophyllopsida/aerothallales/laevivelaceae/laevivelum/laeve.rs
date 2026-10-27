@@ -161,7 +161,9 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.17, 0.5, 0.36), vec3(0.29, 0.95, 0.7));
+// Nacre-pale, for it feeds on aur and needs no pigment; its sheen is the layered structure of the
+// veil.
+pub const LOOK: Look = Look::plant(vec3(0.72, 0.74, 0.78), vec3(0.29, 0.95, 0.7));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

@@ -125,7 +125,9 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.24, 0.44, 0.18), vec3(0.6, 0.7, 0.2));
+// Tan and fibrous, the colour of the wound tissue that turns the wind's work into food; there is no
+// pigment, for it does not feed on light.
+pub const LOOK: Look = Look::plant(vec3(0.62, 0.48, 0.32), vec3(0.85, 0.6, 0.35));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

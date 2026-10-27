@@ -57,7 +57,9 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
 pub const ORGANS: Viscera = Viscera::NONE;
 
 /// Its cells, for the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.16, 0.56, 0.28), vec3(0.08, 0.4, 0.12));
+// Without pigment, for it feeds on aur and not light: milky, translucent cells lit by the charge
+// they hold.
+pub const LOOK: Look = Look::plant(vec3(0.62, 0.7, 0.72), vec3(0.3, 0.9, 0.85));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     let mut result = TraceResult::opaque(trace_material(

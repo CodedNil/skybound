@@ -161,7 +161,8 @@ pub const ORGANS: Viscera = Viscera::new(&[
 ]);
 
 /// Colouring and wings, shared by the preview and the world renderer.
-pub const LOOK: Look = Look::plant(vec3(0.16, 0.35, 0.1), vec3(0.4, 0.6, 0.14));
+// Pale grey and unpigmented, for it feeds on aur; its thorns glow with the charge they hold.
+pub const LOOK: Look = Look::plant(vec3(0.58, 0.56, 0.52), vec3(0.55, 0.75, 1.0));
 
 pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
     super::render(ray, c, surface, LOOK)

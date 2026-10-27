@@ -683,7 +683,9 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.relief = 0.0;
         }
         10 => {
-            m.color = vec3(0.17, 0.34, 0.21).lerp(vec3(0.43, 0.59, 0.27), mottle);
+            // Air moss grown over the hide: Aeromuscus, the one plant that feeds on light,
+            // wine-dark where it is thick and paler rose at its new growth.
+            m.color = vec3(0.24, 0.07, 0.15).lerp(vec3(0.5, 0.2, 0.28), mottle);
             m.roughness = 0.85;
         }
         11 => {
@@ -694,8 +696,7 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             // honed, which the body's tracer sets from its wear.
             let growth = ((p.y * 34.0 + mottle * 1.5).sin() * 0.5 + 0.5).smoothstep(0.35, 0.65);
             let root = (1.0 - p.y.smoothstep(0.0, 0.35)).clamp(0.0, 1.0);
-            m.color = vec3(0.47, 0.49, 0.5)
-                .lerp(vec3(0.3, 0.2, 0.14), root * (0.4 + mottle * 0.4))
+            m.color = vec3(0.47, 0.49, 0.5).lerp(vec3(0.3, 0.2, 0.14), root * (0.4 + mottle * 0.4))
                 * (0.9 + growth * 0.12 + grain * 0.05);
             m.metal = 0.85 - root * 0.4;
             m.roughness = 0.3 + root * 0.35;
