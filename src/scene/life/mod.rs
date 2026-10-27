@@ -676,6 +676,25 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
     render_opaque_of(c.kind.x, ray, c)
 }
 
+/// The player or their mount along a ray, by their own tracers alone, so a pass that draws only
+/// them does not carry every species' body.
+pub fn render_player(ray: Ray, c: &CreatureInstance) -> Hit {
+    if c.kind.x == Kind::Nae as u32 {
+        nae::render_opaque(ray, c)
+    } else {
+        naetu::render_opaque(ray, c)
+    }
+}
+
+/// The thin surfaces of the player or their mount; see [`render_player`].
+pub fn visit_player_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
+    if c.kind.x == Kind::Nae as u32 {
+        nae::visit_thin(ray, c, emit);
+    } else {
+        naetu::visit_thin(ray, c, emit);
+    }
+}
+
 /// The solid body of a creature of species `kind`; see [`surface_of`].
 pub fn render_opaque_of(kind: u32, ray: Ray, c: &CreatureInstance) -> Hit {
     // Eggs and spores are drawn as such, in their own materials: an egg's shell is not an adult's
