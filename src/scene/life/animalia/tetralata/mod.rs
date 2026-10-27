@@ -24,10 +24,14 @@ pub const FLIGHT_MUSCLE: Organ =
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 
-/// What the tetralates are born with beyond every animal's temper: how much they play, and how
-/// long a tail they grow to steer by.
+/// What the tetralates are born with beyond every animal's temper.
+///
+/// How much they play, how long a tail they grow to steer by, how far their mouth tentacles reach,
+/// and how closely they keep to their fellows when they travel together.
 pub const PLAYFULNESS: Gene = Gene(20);
 pub const TAIL: Gene = Gene(21);
+pub const REACH: Gene = Gene(22);
+pub const FORMATION: Gene = Gene(23);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, FOLLOW, INVESTIGATE, PHYSIOLOGY, PLAY, roost, shade};
@@ -96,6 +100,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
     let wind = vec3(0.0, 0.0, c.animation.w.max(0.0));
     for index in 0..(pairs as usize * 2).min(9) {
         let (root, reach, side) = tentacle_root(mouth, scale, index);
+        let reach = reach * (0.8 + c.gene(REACH) * 0.4);
         let lane = (index / 2) as f32;
         let length = reach / (KNOTS - 1) as f32;
         // At rest they hang forward and down beneath the head like loosely held arms, bent a
@@ -195,7 +200,7 @@ pub fn oral_tentacles(
     pairs: u32,
 ) -> f32 {
     let scale = scale * (0.35 + creature.life.y * 0.65);
-    let bounds = (point - mouth).length() - scale * 3.2;
+    let bounds = (point - mouth).length() - scale * 3.2 * (0.8 + creature.gene(REACH) * 0.4);
     if bounds > scale * 0.1 {
         return bounds;
     }
@@ -206,7 +211,9 @@ pub fn oral_tentacles(
         }
         let (sheet, column) = slot(index);
         let root = creature.cloth[sheet][0][column];
-        if (point - root.truncate()).length() > scale * 2.6 + root.w {
+        if (point - root.truncate()).length()
+            > scale * 2.6 * (0.8 + creature.gene(REACH) * 0.4) + root.w
+        {
             continue;
         }
         for knot in 0..KNOTS - 1 {
@@ -259,7 +266,10 @@ mod nature {
             mind::{Ethology, Intent, Situation, Urges, orbit},
             nature::ROOST,
             physiology::{Brood, Light, Physiology, flow_channels, grazes},
-            tetralata::young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
+            tetralata::{
+                FORMATION, PLAYFULNESS,
+                young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
+            },
         },
         behaviour::{Activity, Goal},
     };
@@ -303,7 +313,9 @@ mod nature {
         if s.drives.youth < 0.8 && s.seen.kin_count > 0 {
             urges.add(
                 PLAY,
-                (1.0 - s.drives.youth) * 0.25 * (1.0 - s.drives.hunger),
+                (1.0 - s.drives.youth)
+                    * (0.1 + s.temper(PLAYFULNESS) * 0.3)
+                    * (1.0 - s.drives.hunger),
             );
         }
     }
@@ -347,7 +359,10 @@ mod nature {
         act: |_, s| {
             Goal::new(
                 Activity::Drift,
-                s.seen.kin.map(|kin| kin + s.seen.heading * 4.0),
+                // Some keep tight on their fellows' tails, others travel in loose company.
+                s.seen
+                    .kin
+                    .map(|kin| kin + s.seen.heading * (2.0 + (1.0 - s.temper(FORMATION)) * 6.0)),
                 0.5,
             )
         },

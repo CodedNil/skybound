@@ -3,6 +3,7 @@ use crate::scene::life::{
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     capsule, eyespots,
+    genome::Gene,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -31,6 +32,16 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 49.8;
+
+/// The kite's shape, as its genes draw it.
+///
+/// How broad and how long in front, how long the whiskers on its leading edges, and how far its
+/// streamers trail. A broad kite circles slower and longer on the same air, long whiskers feel a
+/// carcass's warmth from further, and long streamers hold it steadier as it sinks onto its meal.
+pub const WIDTH: Gene = Gene(38);
+pub const FRONT: Gene = Gene(39);
+pub const WHISKERS: Gene = Gene(40);
+pub const STREAMERS: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -62,10 +73,11 @@ pub fn animate(c: &mut CreatureInstance) {
 /// along the leading edges feel for the warm, disturbed air above a carcass; clusters of eyes at
 /// both tips and a ring beneath watch the currents far below. When it finds its meal it sinks onto
 /// it, and the cluster of gripping tentacles slung beneath its centre tears free what it can carry,
-/// while twin streamers behind hold it steady. No two kites share a shape.
+/// while twin streamers behind hold it steady. No two kites share a shape, and a kite's young take
+/// after it.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let width = 9.0 * (0.85 + c.identity.y * 0.3);
-    let front = 6.0 * (0.85 + c.identity.z * 0.3);
+    let width = 9.0 * (0.85 + c.gene(WIDTH) * 0.3);
+    let front = 6.0 * (0.85 + c.gene(FRONT) * 0.3);
     let back = 9.0;
     let along = if p.z < 0.0 { -p.z / front } else { p.z / back };
     let shape = p.x.abs() / width + along;
@@ -80,7 +92,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let whisker = capsule(
         vec3(side, p.y, p.z),
         edge,
-        edge + vec3(0.25, 0.1, -0.9),
+        edge + vec3(0.25, 0.1, -0.9) * (0.6 + c.gene(WHISKERS) * 0.8),
         0.03,
     );
     hit.join(whisker, 1);
@@ -92,7 +104,11 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let streamer = tapered_tail(
         vec3(side, p.y, p.z),
         vec3(0.7, 0.0, back * 0.9),
-        vec3(1.6 + (c.animation.z * 0.8).sin() * 0.4, -0.6, back + 6.0),
+        vec3(
+            1.6 + (c.animation.z * 0.8).sin() * 0.4,
+            -0.6,
+            back + 4.5 + c.gene(STREAMERS) * 2.5,
+        ),
         0.2,
         0.02,
     );

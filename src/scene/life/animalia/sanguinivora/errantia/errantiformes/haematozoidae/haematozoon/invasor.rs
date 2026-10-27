@@ -1,7 +1,9 @@
 use crate::scene::life::{
     CreatureInstance, Look, annulated,
     biology::Biology,
-    capsule, rounded, smooth_min,
+    capsule,
+    genome::Gene,
+    rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -28,6 +30,15 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 17.0;
 
+/// How large the buds it grows along its flank, how many rings its body is divided into, and how
+/// long the hooks round its mouth.
+///
+/// Big buds split off sooner, a many-ringed body worms deeper into a host, and long hooks hold
+/// harder.
+pub const BUDS: Gene = Gene(38);
+pub const RINGS: Gene = Gene(39);
+pub const HOOKS: Gene = Gene(40);
+
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
@@ -52,13 +63,13 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A ringed worm swollen with blood, daughters budding from one flank and growing larger towards
 /// the tail, its proboscis armed with hooks.
-pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = annulated(
         p,
         vec3(0.0, 0.0, -2.2),
         vec3(0.0, 0.05, 2.3),
         vec3(0.28, 0.5, 0.2),
-        12.0,
+        10.0 + (c.gene(RINGS) * 5.0).floor(),
         0.08,
         0.88,
     );
@@ -66,7 +77,11 @@ pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
     for i in 0..4 {
         let f = i as f32;
         let at = vec3(0.34 + f * 0.04, 0.16 - f * 0.03, -0.7 + f * 0.6);
-        buds = buds.min(rounded(p - at, vec3(0.9, 0.85, 1.1) * (0.14 + f * 0.05)));
+        let swell = 0.8 + c.gene(BUDS) * 0.45;
+        buds = buds.min(rounded(
+            p - at,
+            vec3(0.9, 0.85, 1.1) * (0.14 + f * 0.05) * swell,
+        ));
     }
     let mut hit = Surface::new(
         smooth_min(body, buds, 0.12),
@@ -81,7 +96,12 @@ pub fn surface(p: Vec3, _c: &CreatureInstance) -> Surface {
         let around = vec3(angle.cos(), angle.sin(), 0.0);
         let root = vec3(0.0, -0.03, -2.6) + around * 0.1;
         hit.join(
-            capsule(p, root, root + around * 0.13 + vec3(0.0, 0.0, 0.1), 0.025),
+            capsule(
+                p,
+                root,
+                root + (around * 0.13 + vec3(0.0, 0.0, 0.1)) * (0.7 + c.gene(HOOKS) * 0.6),
+                0.025,
+            ),
             7,
         );
     }

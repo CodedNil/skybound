@@ -15,7 +15,9 @@ use crate::scene::{
         CreatureInstance, Look,
         animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
         biology::Biology,
-        capsule, rounded, smooth_min,
+        capsule,
+        genome::Gene,
+        rounded, smooth_min,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -33,6 +35,16 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 46.8;
+
+/// The shape of its saucer and the weight beneath it.
+///
+/// How broad, how many scallops round the rim, how upturned, and how heavy the ballast. A broad,
+/// upturned saucer brakes harder in the updraft, and heavy ballast rides steadier through rough
+/// columns but costs more to lift.
+pub const SPAN: Gene = Gene(38);
+pub const SCALLOPS: Gene = Gene(39);
+pub const UPTURN: Gene = Gene(40);
+pub const HEFT: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -74,17 +86,16 @@ const MOUTH: Vec3 = vec3(0.0, 2.2, -11.0);
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
-    // Every Grounder's saucer is its own: broader or narrower, with more or fewer scallops, more or
-    // less upturned at the rim.
-    let own = c.identity;
-    let span = 13.0 * (0.85 + own.x * 0.3);
-    let scallops = 5.0 + (own.y * 5.0).floor();
+    // Every Grounder's saucer is its own, as its genes have it: broader or narrower, with more or
+    // fewer scallops, more or less upturned at the rim.
+    let span = 13.0 * (0.85 + c.gene(SPAN) * 0.3);
+    let scallops = 5.0 + (c.gene(SCALLOPS) * 5.0).floor();
     let rim = span * (1.0 + (angle * scallops).cos() * 0.05);
-    let upturn = 1.6 * (0.5 + own.z);
+    let upturn = 1.6 * (0.5 + c.gene(UPTURN));
     let lift = (radial / span).power(2) * upturn;
     let thickness = 1.3 * (1.0 - (radial / rim).power(2)).max(0.0) + 0.25;
     let saucer = ((p.y - lift).abs() - thickness * 0.5).max(radial - rim) * 0.6;
-    let heft = 0.8 + own.w * 0.4;
+    let heft = 0.8 + c.gene(HEFT) * 0.4;
     let ballast = rounded(p - vec3(0.0, -3.6 * heft, 0.5), vec3(4.0, 3.8, 5.0) * heft);
     let stem = capsule(p, vec3(0.0, -0.8, 0.5), vec3(0.0, -2.6, 0.5), 2.6);
     let boss = rounded(p - vec3(0.0, 1.3, -9.4), vec3(2.5, 1.4, 2.3));
@@ -102,7 +113,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     }
     let mut hit = Surface::new(crust, 5);
     // Crystal clusters, one to a sector of the saucer, each its own size.
-    let sector = TAU / (5.0 + (own.z * 5.0).floor());
+    // The crystals are grown from the mineral currents over its life, not inherited, so the young
+    // carry only a few small ones and the old a heavy crop.
+    let sector = TAU / (5.0 + (c.identity.w * 5.0).floor());
+    let grown = 0.3 + c.life.y * 0.5 + c.life.z * 0.4;
     let turn = (angle / sector).round();
     let at = turn * sector;
     let (sine, cosine) = at.sin_cos();
@@ -112,7 +126,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let out = 5.0 + seed * 4.5;
     let surface = (out / span).power(2) * upturn + 0.6;
     // Some sectors have grown no crystal at all.
-    let bare = ((turn * 7.31 + own.w * 97.1).sin() * 43_758.547).fract_gl() < 0.3;
+    let bare = ((turn * 7.31 + c.identity.w * 97.1).sin() * 43_758.547).fract_gl() > grown;
     for crystal in 0..3 {
         if bare {
             break;
@@ -129,7 +143,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             local.x * lean.sin() + local.y * lean.cos(),
             local.z,
         );
-        let height = (1.0 + seed * 1.6) * (1.0 - offset.abs() * 0.4);
+        let height = (1.0 + seed * 1.6) * (1.0 - offset.abs() * 0.4) * grown.min(1.0);
         let prism = (vec2(local.x, local.z).length() - 0.32)
             .max(local.y - height)
             .max(-local.y - 0.3);

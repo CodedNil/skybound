@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
     biology::Biology,
-    capsule, ellipsoid, rounded, smooth_min,
+    capsule, ellipsoid,
+    genome::Gene,
+    rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -31,6 +33,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 24.7;
+
+/// How large its acid glands swell, how long a spout it aims with, and how heavy and sharply
+/// stepped its plates.
+///
+/// Big glands fire more shots between refills, a long spout fires truer, and thick plates turn more
+/// strikes at the cost of weight.
+pub const GLANDS: Gene = Gene(38);
+pub const SPOUT: Gene = Gene(39);
+pub const PLATES: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -66,29 +77,38 @@ const MOUTH: Vec3 = vec3(0.0, -0.55, -1.5);
 /// line of fire, with a second pair looking down.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut body = 1e6f32;
+    // Heavy plates stand proud of one another at sharp steps; light ones run smoothly together.
+    let heavy = c.gene(PLATES);
     for plate in 0..4 {
         let f = plate as f32;
         let z = -1.1 + f * 0.75;
-        let size = vec3(1.05 - f * 0.17, 0.62 - f * 0.08, 0.55);
-        body = smooth_min(body, rounded(p - vec3(0.0, 0.05 - f * 0.04, z), size), 0.08);
+        let size = vec3(1.05 - f * 0.17, 0.62 - f * 0.08 + heavy * 0.06, 0.55);
+        body = smooth_min(
+            body,
+            rounded(p - vec3(0.0, 0.05 - f * 0.04, z), size),
+            0.14 - heavy * 0.11,
+        );
     }
     let head = rounded(p - vec3(0.0, -0.05, -1.75), vec3(0.62, 0.45, 0.48));
     let mut hit = Surface::new(smooth_min(body, head, 0.2), 0);
     // The acid glands, swelling through the plates at the shoulders.
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(
-        ellipsoid(side - vec3(0.72, -0.05, -0.55), vec3(0.42, 0.32, 0.55)),
+        ellipsoid(
+            side - vec3(0.72, -0.05, -0.55),
+            vec3(0.42, 0.32, 0.55) * (0.85 + c.gene(GLANDS) * 0.35),
+        ),
         2,
     );
     // The spout, a hollow horn under the head.
-    let spout = tapered_tail(
+    let tip = -2.5 - c.gene(SPOUT) * 0.6;
+    let spout = tapered_tail(p, vec3(0.0, -0.32, -1.9), vec3(0.0, -0.42, tip), 0.2, 0.09);
+    let bore = capsule(
         p,
-        vec3(0.0, -0.32, -1.9),
-        vec3(0.0, -0.42, -2.75),
-        0.2,
-        0.09,
+        vec3(0.0, -0.37, -2.2),
+        vec3(0.0, -0.43, tip - 0.25),
+        0.05,
     );
-    let bore = capsule(p, vec3(0.0, -0.37, -2.2), vec3(0.0, -0.43, -3.0), 0.05);
     hit.join(spout.max(-bore), 7);
     hit.join((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 3);
     hit.join((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 3);

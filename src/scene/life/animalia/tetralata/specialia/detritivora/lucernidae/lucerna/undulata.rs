@@ -14,7 +14,9 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         biology::Biology,
-        ellipsoid, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
+        ellipsoid,
+        genome::Gene,
+        prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
         surface::{Ray, Surface, TraceResult},
         tail,
     },
@@ -32,6 +34,16 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 40.4;
+
+/// How wide its scoop gapes, how many lures line it and how large, how far its ribbons stream, and
+/// how deeply its disc ripples as it swims.
+///
+/// A broad mouth takes more of the current, more lures draw more Sparkies in, and long ribbons
+/// sample deeper air, each at its own cost in effort.
+pub const SCOOP: Gene = Gene(38);
+pub const LURES: Gene = Gene(39);
+pub const RIBBONS: Gene = Gene(40);
+pub const RIPPLE: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -54,7 +66,8 @@ taxon!(
 pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 3.5, 5.0, 0);
     c.opaque_bounds = vec3(6.0, 6.0, 22.0).extend(0.0);
-    rig_ribbons(c, 3, vec3(0.0, -0.4, 2.6), 1.1, 12.0);
+    let reach = 9.0 + c.gene(RIBBONS) * 6.0;
+    rig_ribbons(c, 3, vec3(0.0, -0.4, 2.6), 1.1, reach);
 }
 
 /// A living trawl: a broad, flat body like a disc, rippling as it goes.
@@ -63,24 +76,28 @@ pub fn animate(c: &mut CreatureInstance) {
 /// current carries in. Round the scoop's lips a ring of small glowing lures draws Sparkies into it,
 /// and from beneath the body three luminous ribbons stream far behind.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let ripple = (p.x.abs() * 0.8 - c.animation.z * 1.5).sin() * 0.12 * p.x.abs();
+    let depth = 0.08 + c.gene(RIPPLE) * 0.08;
+    let ripple = (p.x.abs() * 0.8 - c.animation.z * 1.5).sin() * depth * p.x.abs();
     let rippled = p - vec3(0.0, ripple, 0.0);
     let disc = rounded(rippled, vec3(3.1, 0.6, 3.6));
-    let scoop = rounded(rippled - vec3(0.0, -0.05, -3.5), vec3(1.6, 0.2, 0.9));
+    let gape = 1.3 + c.gene(SCOOP) * 0.6;
+    let scoop = rounded(rippled - vec3(0.0, -0.05, -3.5), vec3(gape, 0.2, 0.9));
     let body = smooth_min(disc.max(-scoop), tail(p, c), 0.4);
     let mut hit = Surface::new(body, 0);
     // Comb plates across the back of the scoop.
     let comb_x = (rippled.x / 0.22).round() * 0.22;
-    if comb_x.abs() < 1.5 {
+    if comb_x.abs() < gape - 0.1 {
         let comb = vec3(rippled.x - comb_x, rippled.y + 0.05, rippled.z + 2.75);
         hit.join(rounded(comb, vec3(0.02, 0.18, 0.2)), 7);
     }
     // The lures, along both lips.
-    let lure_x = ((rippled.x / 0.5).round() * 0.5).clamp(-1.5, 1.5);
+    let spacing = 0.65 - c.gene(LURES) * 0.3;
+    let lure_x = ((rippled.x / spacing).round() * spacing).clamp(-gape + 0.1, gape - 0.1);
+    let bulb = 0.07 + c.gene(LURES) * 0.05;
     for lip in 0..2 {
         let height = if lip == 0 { 0.32 } else { -0.4 };
         let lure = vec3(lure_x, height, -3.45 + (lure_x * 0.6).power(2) * 0.3);
-        hit.join((rippled - lure).length() - 0.1, 9);
+        hit.join((rippled - lure).length() - bulb, 9);
     }
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(

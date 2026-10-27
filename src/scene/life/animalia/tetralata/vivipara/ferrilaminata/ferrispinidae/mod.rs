@@ -5,8 +5,8 @@ pub mod ferrispina;
 
 /// How long the family's blades grow, crest or wing edge, and how keen: thin, true edges drawn to
 /// needle points, or thicker, blunter ones that last longer between honings.
-pub const BLADE_LENGTH: Gene = Gene(28);
-pub const BLADE_KEENNESS: Gene = Gene(29);
+pub const BLADE_LENGTH: Gene = Gene(32);
+pub const BLADE_KEENNESS: Gene = Gene(33);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY, WHETSTONE};

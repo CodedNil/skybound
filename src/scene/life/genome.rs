@@ -8,9 +8,9 @@
 //! bold or as shy, and a stand of kelp still looks like the strand it broke from.
 //!
 //! Places are shared out by rank, so no two genes on one line of descent ever read the same place:
-//! the root `0..8`, a kingdom `8..20`, a phylum `20..23`, a class `23..26`, an order `26..28`, a
-//! family `28..30`, and a genus or species `30..32`. Plants, whose bodies are all form, read the
-//! whole of `8..32` for it.
+//! the root `0..8`, a kingdom `8..20`, a phylum `20..26`, a class `26..30`, an order `30..32`, a
+//! family `32..36`, a genus `36..38`, and a species `38..48`, so each species has room for traits
+//! of its own. Plants, whose bodies are all form, read `8..32` for it.
 //!
 //! What an organism makes of its genes through its life, its scars, what it has learned and how
 //! its wings have been torn, is not inherited; that is kept with its body and its mind.
@@ -19,7 +19,7 @@ use crate::scene::life::CreatureInstance;
 use spirv_std::glam::Vec4;
 
 /// How many genes every genome holds.
-pub const GENES: usize = 32;
+pub const GENES: usize = 48;
 
 /// A gene: one place in the genome and what the taxon that declares it reads there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -3,7 +3,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    cowl, ellipsoid, eyes, louvres, mouth, prepare_pose, rounded, slit, smooth_min,
+    cowl, ellipsoid, eyes,
+    genome::Gene,
+    louvres, mouth, prepare_pose, rounded, slit, smooth_min,
     surface::{
         FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material, visit_shell,
     },
@@ -34,6 +36,17 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 70.0;
+
+/// How full its gas chambers bulge, how large its aur sacs, how far its exchange frills fan, and
+/// how deep the fibres of its back grow.
+///
+/// Full chambers carry more and lose less to a wound, large sacs hold more of the mists' charge,
+/// long frills breathe more of the air it flies through, and a deep pelt holds the Næ's dwellings
+/// fast.
+pub const CHAMBERS: Gene = Gene(38);
+pub const AUR_SACS: Gene = Gene(39);
+pub const FRILLS: Gene = Gene(40);
+pub const FIBRES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
@@ -85,7 +98,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
         let z = i as f32 * 10.0 - 10.0;
         let chamber = rounded(
             vec3(point.x.abs(), point.y, point.z) - vec3(5.0, 3.0, z),
-            vec3(2.5, 1.7, 4.2),
+            vec3(2.5, 1.7, 4.2) * (0.85 + creature.gene(CHAMBERS) * 0.3),
         );
         d = smooth_min(d, chamber, 1.4);
     }
@@ -98,7 +111,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let fur = (point.x * 23.0 + (point.z * 7.0).sin() * 2.0).sin()
         * (point.z * 29.0 + (point.x * 3.0).sin() * 3.0).sin();
     if point.y > 4.4 {
-        d -= fur.abs() * 0.015;
+        d -= fur.abs() * (0.008 + creature.gene(FIBRES) * 0.016);
     }
     let mut hit = Surface::new(d, if point.y > 4.4 { 10 } else { 0 });
     if point.z > 9.0 {
@@ -114,7 +127,10 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     for i in 0..3 {
         let z = i as f32 * 5.5 - 8.5;
         hit.join(
-            rounded(mirrored - vec3(7.0, 1.2, z), vec3(0.8, 0.65, 1.4)),
+            rounded(
+                mirrored - vec3(7.0, 1.2, z),
+                vec3(0.8, 0.65, 1.4) * (0.8 + creature.gene(AUR_SACS) * 0.4),
+            ),
             9,
         );
     }
@@ -137,7 +153,8 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
     for i in 0..3 {
         let index = i as f32;
         let root = vec3(5.4, 0.6 + index * 0.75, -17.5 + index * 0.8);
-        let tip = root + vec3(6.0 - index * 0.9, 1.2 + index * 1.1, 4.0);
+        let tip = root
+            + vec3(6.0 - index * 0.9, 1.2 + index * 1.1, 4.0) * (0.8 + creature.gene(FRILLS) * 0.4);
         let axis = (tip - root).normalize();
         let across = axis.cross(Vec3::Z).normalize();
         let normal = axis.cross(across);

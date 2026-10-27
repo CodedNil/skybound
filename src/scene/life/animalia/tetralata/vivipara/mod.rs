@@ -10,8 +10,8 @@ pub const BIOLOGY: Biology = Biology {
 
 /// What the live-bearers are born with beyond the tetralates': how devotedly they tend their young,
 /// and how freely they call.
-pub const DEVOTION: Gene = Gene(23);
-pub const CHATTINESS: Gene = Gene(24);
+pub const DEVOTION: Gene = Gene(26);
+pub const CHATTINESS: Gene = Gene(27);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{

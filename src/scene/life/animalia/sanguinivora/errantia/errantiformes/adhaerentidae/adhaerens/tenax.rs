@@ -1,7 +1,9 @@
 use crate::scene::life::{
     CreatureInstance, Look, annulated,
     biology::Biology,
-    eyespots, sucker,
+    eyespots,
+    genome::Gene,
+    sucker,
     surface::{Ray, Surface, TraceResult},
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -26,6 +28,14 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 20.0;
+
+/// How broad its suckers, how many rings its body, and how restlessly it writhes.
+///
+/// Broad suckers hold through a host's hardest turn, and a many-ringed, restless body creeps faster
+/// to a fresh place to feed.
+pub const SUCKERS: Gene = Gene(38);
+pub const SEGMENTS: Gene = Gene(39);
+pub const WRITHE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -52,7 +62,10 @@ pub fn animate(c: &mut CreatureInstance) {
 /// A flattened, ringed leech, narrow at the head and broad behind, gripping with a small sucker
 /// around its mouth and a broad disc at its tail.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let sway = (c.animation.z * 1.5 + p.z * 0.9).sin() * 0.05 * (p.z + 3.2).max(0.0);
+    let sway = (c.animation.z * 1.5 + p.z * 0.9).sin()
+        * (0.03 + c.gene(WRITHE) * 0.04)
+        * (p.z + 3.2).max(0.0);
+    let grip = 0.85 + c.gene(SUCKERS) * 0.3;
     let q = p - vec3(sway, 0.0, 0.0);
     let mut hit = Surface::new(
         annulated(
@@ -60,7 +73,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             vec3(0.0, 0.0, -3.0),
             vec3(0.0, -0.05, 2.9),
             vec3(0.32, 0.9, 0.55),
-            17.0,
+            14.0 + (c.gene(SEGMENTS) * 6.0).floor(),
             0.07,
             0.48,
         ),
@@ -71,7 +84,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             q,
             vec3(0.0, -0.1, -3.05),
             vec3(0.0, -0.45, -0.9).normalize(),
-            0.36,
+            0.36 * grip,
         ),
         8,
     );
@@ -80,7 +93,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             q,
             vec3(0.0, -0.3, 3.0),
             vec3(0.0, -0.9, 0.45).normalize(),
-            0.7,
+            0.7 * grip,
         ),
         4,
     );

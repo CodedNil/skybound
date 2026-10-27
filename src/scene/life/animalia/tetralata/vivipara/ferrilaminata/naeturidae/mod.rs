@@ -14,7 +14,7 @@ pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// How strong the bonds of the Nætu line are: how far one will let a companion or the herd draw
 /// away before it calls after them, and how closely it keeps to its rider.
-pub const LOYALTY: Gene = Gene(28);
+pub const LOYALTY: Gene = Gene(32);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};

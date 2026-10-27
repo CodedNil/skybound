@@ -11,7 +11,9 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         biology::Biology,
-        capsule, eyespots, rounded, smooth_min, sucker,
+        capsule, eyespots,
+        genome::Gene,
+        rounded, smooth_min, sucker,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -30,6 +32,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 22.6;
+
+/// How full the fringe round its cup, how high the humps along its back, and how broad the cup
+/// itself.
+///
+/// A full fringe and a humped back pass better for the cleaner it mimics, and a broad cup draws
+/// more blood once it is let close.
+pub const FRINGE: Gene = Gene(38);
+pub const HUMPS: Gene = Gene(39);
+pub const CUP_SIZE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -73,22 +84,26 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let rise = 1.2 - (z - 0.4).power(2) * 0.09;
         body = smooth_min(
             body,
-            rounded(p - vec3(0.0, rise, z), vec3(0.16, 0.32, 0.16)),
+            rounded(
+                p - vec3(0.0, rise, z),
+                vec3(0.16, 0.22 + c.gene(HUMPS) * 0.2, 0.16),
+            ),
             0.14,
         );
     }
     let facing = vec3(0.0, -0.2, -1.0).normalize();
     let mut hit = Surface::new(body, 0);
-    hit.join(sucker(p, CUP, facing, 0.85), 8);
+    let cup = 0.7 + c.gene(CUP_SIZE) * 0.3;
+    hit.join(sucker(p, CUP, facing, cup), 8);
     // The fringe: a filament to each sector of the cup's rim, swaying.
     let q = p - CUP;
     let around = q.y.atan2(q.x);
-    let sector = TAU / 14.0;
+    let sector = TAU / (10.0 + (c.gene(FRINGE) * 8.0).floor());
     let turn = (around / sector).round() * sector;
     let (sine, cosine) = turn.sin_cos();
     let sway = (c.animation.z * 2.0 + turn * 3.0).sin() * 0.12;
-    let base = vec3(cosine * 0.8, sine * 0.8, 0.1);
-    let tip = vec3(cosine * (1.25 + sway), sine * (1.25 + sway), -0.55);
+    let base = vec3(cosine, sine, 0.0) * cup * 0.94 + vec3(0.0, 0.0, 0.1);
+    let tip = vec3(cosine, sine, 0.0) * (cup * 1.47 + sway) + vec3(0.0, 0.0, -0.55);
     hit.join(capsule(q, base, tip, 0.045), 8);
     hit.pit(eyespots(p, vec3(0.3, 0.72, -1.75), 0.22, 3, 0.05), 0.05);
     hit

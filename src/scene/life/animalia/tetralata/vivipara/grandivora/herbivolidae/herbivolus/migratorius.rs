@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    eyespots, feathers, prepare_pose, rounded, smooth_min,
+    eyespots, feathers,
+    genome::Gene,
+    prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
 };
@@ -32,6 +34,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 49.8;
+
+/// How wide its funnel flares, how large the gas store over its back, and how many comb plates line
+/// the funnel.
+///
+/// A wide funnel strains more of a stream, a large store carries it further between streams, and
+/// close-set combs catch finer algae.
+pub const FLARE: Gene = Gene(38);
+pub const STORE: Gene = Gene(39);
+pub const COMBS: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -66,13 +77,13 @@ const RIM: Vec3 = vec3(0.0, -3.4, -14.0);
 /// pairs of tentacles hang about the rim to scrape the combs clean. Behind the funnel lies a barrel
 /// of a body, swollen with a gas store over the back that cuts the cost of carrying it between
 /// streams, and its eyes run in rows along the lower flanks, watching the neighbours a herd keeps
-/// its spacing by. Each animal's funnel and store are its own size.
+/// its spacing by. Each animal's funnel and store are the size its genes make them.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let flare = 0.85 + c.identity.y * 0.35;
+    let flare = 0.85 + c.gene(FLARE) * 0.35;
     let barrel = rounded(p - vec3(0.0, 0.0, 1.0), vec3(3.4, 3.1, 10.0));
     let store = rounded(
         p - vec3(0.0, 2.5, 0.0),
-        vec3(2.4, 1.4, 4.5) * (0.8 + c.identity.z * 0.4),
+        vec3(2.4, 1.4, 4.5) * (0.8 + c.gene(STORE) * 0.4),
     );
     let mut body = smooth_min(smooth_min(barrel, store, 1.4), tail(p, c), 0.5);
     let q = p - vec3(0.0, 0.3, -8.0);
@@ -87,7 +98,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, funnel, 0.8);
     let mut hit = Surface::new(body, 0);
     let around = q.y.atan2(q.x);
-    let sector = TAU / 22.0;
+    let sector = TAU / (18.0 + (c.gene(COMBS) * 8.0).floor());
     let turn = (around / sector).round() * sector;
     let across = radial * (around - turn).sin();
     let comb = (across.abs() - 0.05)

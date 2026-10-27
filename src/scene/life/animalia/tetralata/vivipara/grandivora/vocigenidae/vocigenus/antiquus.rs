@@ -39,8 +39,18 @@ pub const RENDER_RADIUS: f32 = 55.6;
 
 /// How long its horns grow and how wide their bells flare, so each elder's voice is its own, and
 /// how full its bladders swell.
-pub const HORNS: Gene = Gene(30);
-pub const SWELL: Gene = Gene(31);
+pub const HORNS: Gene = Gene(38);
+pub const SWELL: Gene = Gene(39);
+
+/// How deeply its hide folds and creases as it ages, how large its throat sac, how heavy the callus
+/// on its brow and snout, and how broad the mats its moss grows in.
+///
+/// A deep-folded hide stretches further as its bladders fill, a large sac carries its voice
+/// further, and a heavy callus browses rough kelp unhurt.
+pub const FOLDS: Gene = Gene(40);
+pub const THROAT: Gene = Gene(41);
+pub const CALLUS: Gene = Gene(42);
+pub const MATS: Gene = Gene(43);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -120,9 +130,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let jaw = rounded(p - vec3(0.0, -2.2, -14.6), vec3(2.6, 1.3, 2.4));
     body = smooth_min(body, jaw, 0.9);
     // The throat sac, slack between calls, its pleats opening out as it fills.
-    let throat = p - vec3(0.0, -4.0, -9.0);
+    let sac = 0.85 + c.gene(THROAT) * 0.35;
+    let throat = p - vec3(0.0, -4.0 - (sac - 1.0) * 1.5, -9.0);
     let pleats = (throat.x * 3.2).cos() * 0.09 * (-throat.y - 1.0).clamp(0.0, 1.0);
-    body = smooth_min(body, rounded(throat, vec3(3.0, 2.5, 3.8)) + pleats, 1.3);
+    body = smooth_min(
+        body,
+        rounded(throat, vec3(3.0, 2.5, 3.8) * sac) + pleats,
+        1.3,
+    );
     // Shoulders over the roots of each pair of wings.
     for pair in 0..2 {
         let (z, rise) = (-3.5 + pair as f32 * 8.0, 2.0 - pair as f32 * 0.5);
@@ -132,7 +147,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // A low keel along the belly, which steadies it and holds the streamers.
     let keel = capsule(p, vec3(0.0, -3.6, -5.0), vec3(0.0, -2.6, 9.0), 0.9);
     body = smooth_min(body, keel, 1.2);
-    body += hide(p, flank, girth, age);
+    body += hide(p, flank, girth, age, c);
     // The bladders, sunk into the back and webbed to one another.
     let mut bladders = 1e6f32;
     if p.y > 0.5 {
@@ -159,7 +174,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, bladders, 0.7);
     body = louvres(body, p - vec3(0.0, -0.4, -2.0), vec3(5.0, 3.0, 11.0));
     let mut hit = Surface::new(body, 0);
-    moss(&mut hit, p, girth, c.scars.w);
+    moss(&mut hit, p, girth, c.scars.w, c.gene(MATS));
     hit.socket(eyes(flank), 0.3);
     if p.y > 0.0 {
         // The horns grow out of the back through their collars, skin fading into horn.
@@ -247,8 +262,8 @@ fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
 /// throat, as a whale's; wrinkles fanning from the eyes and the corners of the mouth; and rough,
 /// lumpy callus on the brow and snout, which every cliff of kelp it has browsed has scoured. The
 /// older it is the deeper all of it runs.
-fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32) -> f32 {
-    let depth = 0.6 + age * 0.6;
+fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32, c: &CreatureInstance) -> f32 {
+    let depth = (0.6 + age * 0.6) * (0.7 + c.gene(FOLDS) * 0.6);
     // Rings of folds where the body bends.
     let fold = |at: f32, spread: f32, every: f32| {
         let near = (-(p.z - at) * (p.z - at) / spread).exp();
@@ -277,21 +292,22 @@ fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32) -> f32 {
     // Callus over the brow and snout.
     let callus = (-((flank - vec3(1.6, 2.4, -14.4)).length() - 1.8).max(0.0) * 1.5).exp();
     let lumps = fbm(p * 1.8) - 0.45;
-    skin += lumps.max(0.0) * callus * 0.35;
+    skin += lumps.max(0.0) * callus * (0.2 + c.gene(CALLUS) * 0.3);
     skin * depth
 }
 
 /// Air moss over its hide, as much as has grown on it, `cover`. It takes hold where the hide faces
 /// the sky, fading out down the flanks rather than stopping at any line, and grows in thick, uneven
-/// mats, deepest where it began and thinning to a fuzz at its edges.
-fn moss(hit: &mut Surface, p: Vec3, girth: Vec3, cover: f32) {
+/// mats, deepest where it began and thinning to a fuzz at its edges; some hides take it in a few
+/// broad mats, others in many small ones, as `mats` has it.
+fn moss(hit: &mut Surface, p: Vec3, girth: Vec3, cover: f32, mats: f32) {
     if cover <= 0.01 {
         return;
     }
     // How far round the body this point faces upward, from the belly to the crest of the back.
     let facing = ((p.y - girth.z) / girth.y.max(0.3)).clamp(-1.0, 1.0);
     let open = facing.smoothstep(-0.2, 0.7);
-    let patches = fbm(p * 0.35 + vec3(3.1, 0.0, 7.7));
+    let patches = fbm(p * (0.5 - mats * 0.25) + vec3(3.1, 0.0, 7.7));
     let grown = (patches * open + cover * 0.75 - 0.75).max(0.0) * 3.0;
     if grown <= 0.0 {
         return;

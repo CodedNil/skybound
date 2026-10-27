@@ -4,7 +4,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::Biology,
-    ellipsoid, rounded, smooth_min,
+    ellipsoid,
+    genome::Gene,
+    rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -30,6 +32,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 15.0;
+
+/// How far its chambers bulge through the skin, how long its collecting folds hang, and how deeply
+/// the skin between is creased.
+///
+/// Full lobes lift more, long folds gather more, and a deeply creased skin stretches further as the
+/// chambers fill.
+pub const LOBES: Gene = Gene(38);
+pub const FOLDS: Gene = Gene(39);
+pub const CREASE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::PHYSIOLOGY;
@@ -66,7 +77,8 @@ const CHAMBERS: [GasChamber; 3] = [
 pub fn animate(c: &mut CreatureInstance) {
     c.opaque_bounds = vec3(4.7, 5.5, 4.7).extend(0.0);
     for i in 0..2 {
-        cloth::prepare(c, i, vec3((i as f32 - 0.5) * 2.0, -2.25, 0.6), 5.0, 1.15);
+        let length = 4.0 + c.gene(FOLDS) * 2.0;
+        cloth::prepare(c, i, vec3((i as f32 - 0.5) * 2.0, -2.25, 0.6), length, 1.15);
     }
 }
 
@@ -100,20 +112,21 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     clippy::needless_range_loop,
     reason = "shader code can't iterate arrays by value"
 )]
-pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
+pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut distance = rounded(p - vec3(0.0, 0.6, 0.3), vec3(3.0, 3.0, 2.8));
+    let bulge = 1.1 + c.gene(LOBES) * 0.24;
     for index in 0..3 {
         let chamber = CHAMBERS[index];
         distance = smooth_min(
             distance,
             rounded(
                 p - chamber.center - vec3(0.0, 0.2, 0.0),
-                chamber.radii * 1.22,
+                chamber.radii * bulge,
             ),
             0.9,
         );
     }
-    let fold = (p.x * 1.8 + p.z * 0.7).sin() * (p.y * 0.8).sin() * 0.035;
+    let fold = (p.x * 1.8 + p.z * 0.7).sin() * (p.y * 0.8).sin() * (0.02 + c.gene(CREASE) * 0.04);
     Surface::new(distance + fold, 0)
 }
 

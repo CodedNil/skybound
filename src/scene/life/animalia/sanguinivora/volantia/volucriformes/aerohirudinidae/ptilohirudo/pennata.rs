@@ -1,6 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
+    genome::Gene,
     rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
 };
@@ -26,6 +27,12 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 30.4;
+
+/// How broad its disc, how finely feathered its fringe, and how deeply it ripples: a broad disc
+/// glides further on the updraft, and a fine, deeply rippling fringe flies quieter onto a host.
+pub const DISC: Gene = Gene(38);
+pub const FEATHERING: Gene = Gene(39);
+pub const RIPPLE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -58,9 +65,13 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = rounded(p, vec3(0.6, 0.5, 0.95));
     let radial = vec2(p.x, p.z).length();
     let around = p.z.atan2(p.x);
-    let ripple = (around * 3.0 + c.animation.z * 2.5).sin() * 0.12 * radial / 3.2;
+    let ripple =
+        (around * 3.0 + c.animation.z * 2.5).sin() * (0.07 + c.gene(RIPPLE) * 0.1) * radial / 3.2;
     let droop = radial * radial * 0.03;
-    let fringe = 3.2 + (around * 64.0).sin() * 0.12 + (around * 9.0).sin() * 0.1;
+    let fringe = 2.8
+        + c.gene(DISC) * 0.5
+        + (around * 64.0).sin() * (0.05 + c.gene(FEATHERING) * 0.15)
+        + (around * 9.0).sin() * 0.1;
     let thickness = 0.07 * (1.0 - radial / 3.4).max(0.15);
     let disc = ((p.y + droop - ripple).abs() - thickness)
         .max(radial - fringe)

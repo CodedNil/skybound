@@ -6,7 +6,9 @@ use crate::scene::{
             BLADE_KEENNESS, BLADE_LENGTH,
         },
         biology::Biology,
-        capsule, cowl, eyes, louvres, mouth, rounded, smooth_min,
+        capsule, cowl, eyes,
+        genome::Gene,
+        louvres, mouth, rounded, smooth_min,
         surface::Surface,
         tapered_tail,
     },
@@ -80,6 +82,11 @@ pub fn blade(
     let section = across.abs() - thickness * lens - 0.005;
     outline.max(section) * 0.8
 }
+
+/// How far back the genus raises its crest at rest, and how high the display web reaches up it:
+/// a raked crest cuts cleaner in a fast pass, and a tall web shows its colours further off.
+pub const RAKE: Gene = Gene(36);
+pub const WEB: Gene = Gene(37);
 
 /// How a Ferrispina is built: its body's length and depth, how many crest blades it raises and how
 /// tall, broad and raked back they are, and how high the display web between them reaches up them.
@@ -254,7 +261,7 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
     let edge = vec2(c.gene(BLADE_KEENNESS), c.scars.y);
     // Laid back by speed, raised in display.
     let laid = (c.animation.w / 60.0).clamp(0.0, 1.0) * 0.8;
-    let rake = build.rake + laid;
+    let rake = build.rake + (c.gene(RAKE) - 0.5) * 0.3 + laid;
     let first = -length * 0.62;
     let spacing = length * 1.3 / build.blades as f32;
     // Only the blades rooted near here, and those raked back over it.
@@ -303,6 +310,7 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
     let top = build.height
         * long
         * build.web
+        * (0.8 + c.gene(WEB) * 0.4)
         * 0.32
         * grown
         * (0.4 + 0.6 * shoulder)

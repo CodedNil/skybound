@@ -1,7 +1,9 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     biology::Biology,
-    eyes, mouth, smooth_min,
+    eyes,
+    genome::Gene,
+    mouth, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail, torso,
 };
@@ -30,6 +32,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 19.8;
+
+/// How long a streamer it trails, how long a feeding tube it keeps coiled, and how thick the pollen
+/// collar behind its head.
+///
+/// A long streamer steadies its hover, a long tube reaches deeper flowers, and a full collar
+/// carries more pollen between them.
+pub const STREAMER: Gene = Gene(38);
+pub const COIL: Gene = Gene(39);
+pub const COLLAR: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -64,11 +75,20 @@ pub fn animate(c: &mut CreatureInstance) {
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = torso(p, vec3(0.3, 0.3, 1.6), 0.28);
     let sway = (c.animation.z * 1.1 + p.z * 0.6).sin() * 0.15 * (p.z - 1.4).max(0.0) / 3.6;
-    let streamer = tapered_tail(p, vec3(0.0, 0.0, 1.4), vec3(sway, -0.25, 5.0), 0.09, 0.012);
+    let trail = 4.0 + c.gene(STREAMER) * 1.3;
+    let streamer = tapered_tail(
+        p,
+        vec3(0.0, 0.0, 1.4),
+        vec3(sway, -0.25, trail),
+        0.09,
+        0.012,
+    );
     let mut hit = Surface::new(smooth_min(body, streamer, 0.12), 0);
     let around = p.y.atan2(p.x);
-    let fuzz = (around * 24.0).sin() * (p.z * 40.0).sin() * 0.03;
-    let collar = vec2(vec2(p.x, p.y).length() - 0.36, p.z + 1.45).length() - 0.15 - fuzz;
+    let full = c.gene(COLLAR);
+    let fuzz = (around * 24.0).sin() * (p.z * 40.0).sin() * (0.02 + full * 0.02);
+    let collar =
+        vec2(vec2(p.x, p.y).length() - 0.36, p.z + 1.45).length() - (0.1 + full * 0.1) - fuzz;
     hit.join(collar * 0.8, 4);
     // The feeding tube, coiled in the plane beneath the cowl.
     let centre = mouth(1.6, 0.28) + vec3(0.0, -0.32, 0.08);
@@ -78,7 +98,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let spacing = 0.075 * TAU / 2.0;
     let phase = (radial - 0.04) / spacing - turn / TAU;
     let gap = ((phase + 0.5).fract_gl() - 0.5).abs() * spacing;
-    let coil = (vec2(gap, q.x).length() - 0.028).max(radial - 0.3);
+    let coil = (vec2(gap, q.x).length() - 0.028).max(radial - 0.22 - c.gene(COIL) * 0.14);
     hit.join(coil, 8);
     hit.socket(eyes(p, 1.6, 0.28), 0.28 * 0.16);
     hit

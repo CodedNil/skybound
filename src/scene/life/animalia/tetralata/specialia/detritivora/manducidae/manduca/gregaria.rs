@@ -3,6 +3,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::curved_tube,
     biology::Biology,
+    genome::Gene,
     louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
@@ -31,6 +32,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 21.6;
+
+/// How long the fingers of its feeding cage grow, how tightly it holds them closed, and how plump a
+/// body it lays down.
+///
+/// A long cage reaches round larger scraps, a tight one loses fewer, and a plump nibbler outlasts a
+/// lean season but turns less sharply.
+pub const CAGE: Gene = Gene(38);
+pub const GRIP: Gene = Gene(39);
+pub const PLUMP: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -69,7 +79,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         p,
         vec3(0.0, 0.05, -0.55),
         vec3(0.0, -0.05, 1.25),
-        0.62,
+        0.52 + c.gene(PLUMP) * 0.2,
         0.28,
     );
     let head = rounded(p - vec3(0.0, -0.05, -0.92), vec3(0.5, 0.42, 0.42));
@@ -77,12 +87,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         louvres(smooth_min(body, head, 0.3), p, vec3(0.6, 0.55, 1.2)),
         0,
     );
-    // Each finger of the cage its own length, and a little open or closed.
-    let close = 0.15 + c.identity.z * 0.2;
+    // Each finger of the cage its own length, and the cage as open or closed as it was born to
+    // hold it.
+    let close = 0.1 + c.gene(GRIP) * 0.3;
+    let cage = 0.75 + c.gene(CAGE) * 0.45;
     for finger in 0..5 {
         let splay = ((finger as f32 - 2.0) * 0.45).sin();
         let root = MOUTH + vec3(splay * 0.28, 0.0, 0.0);
-        let reach = 0.9 + ((finger as f32 * 7.1 + c.identity.x * 31.0).sin() * 0.5 + 0.5) * 0.25;
+        let reach = cage + ((finger as f32 * 7.1 + c.identity.x * 31.0).sin() * 0.5 + 0.5) * 0.25;
         hit.join(
             curved_tube(
                 p,

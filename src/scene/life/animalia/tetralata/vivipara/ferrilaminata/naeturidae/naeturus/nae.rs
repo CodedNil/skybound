@@ -3,7 +3,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::Biology,
-    eyes, mouth, prepare_pose, rounded, smooth_min,
+    eyes,
+    genome::Gene,
+    mouth, prepare_pose, rounded, smooth_min,
     surface::{Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material},
     torso,
 };
@@ -32,6 +34,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 3.2;
+
+/// How tall and long the crest running back from its cowl, how large the aur sacs on its flanks,
+/// and how heavy its crop.
+///
+/// A family's crests run alike, so kin know one another at a glance, while large sacs heal it
+/// faster and a heavy crop carries it further between meals.
+pub const CREST: Gene = Gene(38);
+pub const SACS: Gene = Gene(39);
+pub const HEFT: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
@@ -73,12 +84,22 @@ pub fn animate(creature: &mut CreatureInstance) {
 /// clasp on the back.
 pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let body = torso(point, vec3(0.2, 0.17, LENGTH), HEAD);
-    let crop = rounded(point - vec3(0.0, -0.03, 0.14), vec3(0.27, 0.22, 0.25));
-    let crest = rounded(point - vec3(0.0, 0.17, -0.2), vec3(0.016, 0.07, 0.24));
+    let crop = rounded(
+        point - vec3(0.0, -0.03, 0.14),
+        vec3(0.27, 0.22, 0.25) * (0.9 + creature.gene(HEFT) * 0.2),
+    );
+    let crest_height = creature.gene(CREST);
+    let crest = rounded(
+        point - vec3(0.0, 0.16 + crest_height * 0.02, -0.2),
+        vec3(0.016, 0.05 + crest_height * 0.05, 0.2 + crest_height * 0.08),
+    );
     let mut hit = Surface::new(smooth_min(smooth_min(body, crop, 0.1), crest, 0.03), 0);
     hit.socket(eyes(point, LENGTH, HEAD), HEAD * 0.16);
     let side = vec3(point.x.abs(), point.y, point.z);
-    hit.join((side - vec3(0.25, 0.04, 0.06)).length() - 0.045, 9);
+    hit.join(
+        (side - vec3(0.25, 0.04, 0.06)).length() - (0.035 + creature.gene(SACS) * 0.025),
+        9,
+    );
     let strap = vec2(
         vec2(point.x * 0.95, point.y + 0.02).length() - 0.255,
         point.z - 0.0,

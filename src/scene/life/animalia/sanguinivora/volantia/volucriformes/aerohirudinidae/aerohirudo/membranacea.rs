@@ -11,7 +11,9 @@ use crate::scene::{
     life::{
         CreatureInstance, Look, annulated,
         biology::Biology,
-        eyespots, smooth_min, sucker,
+        eyespots,
+        genome::Gene,
+        smooth_min, sucker,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -29,6 +31,12 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 24.2;
+
+/// How broad its sucker, how finely ringed its long tail, and how limply it trails: a broad sucker
+/// holds a struggling host, and a fine, stiff tail steers truer in the dive.
+pub const SUCKER: Gene = Gene(38);
+pub const TAIL_RINGS: Gene = Gene(39);
+pub const DROOP: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -60,7 +68,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// the body wall like all its kin's, are stretched over many fine struts.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let sway = (c.animation.z * 1.0 + p.z * 0.5).sin() * 0.08 * (p.z + 2.6).max(0.0);
-    let droop = 0.012 * (p.z + 2.6).max(0.0).power(2);
+    let droop = (0.006 + c.gene(DROOP) * 0.012) * (p.z + 2.6).max(0.0).power(2);
     let q = p - vec3(sway, -droop, 0.0);
     let neck = annulated(
         p,
@@ -76,7 +84,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         vec3(0.0, -0.05, -2.5),
         vec3(0.0, -0.1, 4.8),
         vec3(0.48, 0.42, 0.08),
-        28.0,
+        22.0 + (c.gene(TAIL_RINGS) * 12.0).floor(),
         0.06,
         0.85,
     );
@@ -86,7 +94,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             p,
             vec3(0.0, 0.0, -4.25),
             vec3(0.0, -0.1, -1.0).normalize(),
-            0.95,
+            0.8 + c.gene(SUCKER) * 0.3,
         ),
         8,
     );
