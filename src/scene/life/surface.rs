@@ -687,17 +687,23 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.roughness = 0.85;
         }
         11 => {
-            // Display blades: dark iron, banded towards the tip in the species' colours, and
-            // polished, for they are shown off.
-            let band = ((p.y * 16.0 + p.z * 3.0).sin() * 0.5 + 0.5).smoothstep(0.3, 0.7);
-            let tip = p.y.smoothstep(0.2, 0.6);
-            m.color = vec3(0.16, 0.17, 0.19).lerp(accent * 1.15, band * tip * 0.85)
-                * (0.85 + mottle * 0.25);
-            m.metal = 0.55;
-            m.roughness = 0.26 + grain * 0.1;
+            // Grown iron: no pigment at all, for a blade is metal the body lays down and pushes
+            // out from its socket as a nail grows, carrying fine growth lines across it from each
+            // layer. It is darkest and bloomed with rust at the root where it leaves the skin,
+            // and bare grey metal towards the tip; how bright it is depends on how lately it was
+            // honed, which the body's tracer sets from its wear.
+            let growth = ((p.y * 34.0 + mottle * 1.5).sin() * 0.5 + 0.5).smoothstep(0.35, 0.65);
+            let root = (1.0 - p.y.smoothstep(0.0, 0.35)).clamp(0.0, 1.0);
+            m.color = vec3(0.47, 0.49, 0.5)
+                .lerp(vec3(0.3, 0.2, 0.14), root * (0.4 + mottle * 0.4))
+                * (0.9 + growth * 0.12 + grain * 0.05);
+            m.metal = 0.85 - root * 0.4;
+            m.roughness = 0.3 + root * 0.35;
             m.texture = PLATED;
-            m.relief = 0.1;
+            m.relief = 0.08;
             m.grain = 3.0;
+            m.scatter = 0.0;
+            m.film = 0.0;
         }
         _ => {}
     }

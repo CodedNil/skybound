@@ -755,7 +755,13 @@ pub fn render_opaque_of(kind: u32, ray: Ray, c: &CreatureInstance) -> Hit {
         } else if look.family == DRIFT {
             gel(p, look.pigment.w * 0.45, look.accent)
         } else {
-            coat(p / grain, id, look)
+            let mut m = coat(p / grain, id, look);
+            // Grown iron is as bright as its last honing left it: keen and polished on an animal
+            // that hones often, dull and scratched on one worn by its life.
+            if id == 11 {
+                m.roughness = (m.roughness * (0.45 + c.scars.y * 1.2)).clamp(0.08, 0.9);
+            }
+            m
         }
     });
     hit.transmittance = Vec3::ZERO;

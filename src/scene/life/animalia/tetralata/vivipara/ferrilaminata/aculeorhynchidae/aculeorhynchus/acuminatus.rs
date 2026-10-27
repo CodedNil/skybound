@@ -57,7 +57,7 @@ taxon!(
     "Aculeorhynchus acuminatus",
     "Needlesharks",
     [
-        "Needlesharks hunt from high above, folding their long swept wings to fall on their prey, a needle-fine stylet of iron-hardened tissue aligned ahead of the dive.",
+        "Needlesharks hunt from high above, folding their long swept wings to fall on their prey, a needle-fine stylet aligned ahead of the dive, which their body grows from the iron in their diet, as all their order eats metal, and which lengthens and hardens through their life.",
         "The stylet is aimed at the pump or the nerve centre for a killing thrust, and as it goes in a sac at its root pumps venom down it, so even a strike that misses everything vital leaves the prey paralysed.",
         "So thin a weapon slips out as easily as it went in, and the shock of the impact is taken up by a long sheath of muscle the stylet's root slides back into, running down through the head and neck.",
         "Struck prey falls limp toward the aur, and the hunter wheels and races it down, catching it from below in a basket of long hooked mouth tentacles and carrying it up into rising air to eat on the wing, rasping it apart with the mouth beneath its head; if it is slow, the venom wears off and the prey escapes.",
@@ -135,7 +135,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, hood, 0.25);
     let mut hit = Surface::new(body, 0);
     // The stylet: needle-fine, each animal's its own length.
-    let length = 8.5 * grown * (0.88 + c.gene(STYLET) * 0.24);
+    // It grows from the iron the hunter eats, so it reaches its full length only as it gathers
+    // enough over its life.
+    let length = 8.5 * grown * (0.88 + c.gene(STYLET) * 0.24) * (0.6 + c.stores.x.min(1.0) * 0.4);
     let tip = ROOT + vec3(0.0, -0.08, -length);
     hit.blend(
         tapered_tail(p, ROOT + vec3(0.0, 0.0, 0.3), tip, 0.075, 0.006),

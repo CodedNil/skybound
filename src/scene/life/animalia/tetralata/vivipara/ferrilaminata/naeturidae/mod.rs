@@ -24,7 +24,7 @@ taxon!(
     "Naeturidae",
     "Nae Kin",
     [
-        "Members of this family are the only animals with specialised organs that safely store and use limited aur.",
+        "Members of this family are the only animals with specialised organs that safely store and use limited aur, sheathed in iron their order's diet provides, which holds the charge apart from the flesh.",
         "Those organs remain isolated from ordinary nutrient circulation, protecting food-processing tissues from concentrated energy.",
         "The small Næ lineage emphasises fine manipulation, while enormous Nætu provide transport and a shielded living surface.",
         "Both retain the internal brooding and social recognition of their live-bearing ancestors.",

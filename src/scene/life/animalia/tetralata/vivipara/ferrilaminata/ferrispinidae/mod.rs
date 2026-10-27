@@ -25,7 +25,7 @@ taxon!(
         "Camouflaged ambushers use short turns, while larger roaming hunters make wider sweeps and sometimes cooperate.",
         "Feeding tentacles secure the result without turning the cutting surface into a grasping limb.",
         "These related approaches divide the family between mineral haze, open herd routes and the defence of moving nurseries.",
-        "None is born with its iron: each gathers it all its life, breathing the dust of the mineral haze and scraping it from the stony hides of Grounders, and lays it down a little at a time into its edges and armour, so the old carry far more than the young.",
+        "Their order's iron goes here into cutting edges and armour, pushed out from bony sockets as nails grow and honed sharp again by use.",
     ],
 );
 
@@ -48,10 +48,7 @@ mod nature {
         behaviour::{Activity, Goal},
     };
 
-    pub const PHYSIOLOGY: Physiology = Physiology {
-        ironclad: true,
-        ..super::super::PHYSIOLOGY
-    };
+    pub use super::super::PHYSIOLOGY;
 
     pub const ETHOLOGY: Ethology = Ethology {
         urges,

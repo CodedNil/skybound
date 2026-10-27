@@ -62,7 +62,7 @@ taxon!(
     [
         "Duskslicers hang almost motionless in the mineral haze on broad, dust-furred wings, their mottled bodies lost in it, a glowing lure dangling far below on a whip of a tail.",
         "Small animals drawn up to the lure's apparent feeding signal come within reach of its long mouth tentacles, which shoot out and seize them, and it hangs on in the haze to feed.",
-        "Patches of gathered iron armour its back and the leading edges of its forewings against the hunters that come for so still a target, more and broader the older it is.",
+        "It eats metal as all its order does, licking it from the haze it hangs in and taking it with every meal, and its body lays it down as scales across its back and along the leading edges of its forewings, armour against the hunters that come for so still a target, more and broader the older it is.",
         "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dimmest equatorial skies, where they live.",
         "Fringed hindwings hush the glide, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
         "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",

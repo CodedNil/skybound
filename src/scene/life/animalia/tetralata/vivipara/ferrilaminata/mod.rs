@@ -21,6 +21,7 @@ taxon!(
         "Their shared internal brooding and prolonged juvenile development also favour recognition and care of companions.",
         "In the Næ lineage, ancestral pursuit and handling abilities have shifted toward manipulation, cooperation and specialised aur protection.",
         "The order therefore retains a common flight and reproductive anatomy despite large differences in diet and adult size.",
+        "Every member eats metal. The order arose in the mineral haze, and its bodies still take iron from the dust they breathe, the stony hides they scrape and the graves they pick, and lay it down wherever their lineage needs hardness: blades and plates, a stylet, or the sheaths of aur sacs. None is born with it, so the old carry far more than the young.",
     ],
 );
 
@@ -32,6 +33,7 @@ mod nature {
         eats: hunts,
         takes: Take::Prey,
         speed: 45.0,
+        ironclad: true,
         ..super::super::PHYSIOLOGY
     };
 }

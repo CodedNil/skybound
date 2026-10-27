@@ -29,6 +29,7 @@ use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
+    size: 0.7,
     maturity_days: 7300.0,
     lifespan_days: 180_000.0,
     adult_mass: 150.0,
@@ -64,6 +65,7 @@ taxon!(
         "Grassy dorsal fibres anchor Næ dwellings above pale folds surrounding a large digestive crop.",
         "Carefully controlled dives skim the mists above the aur ocean to recharge isolated aur sacs, sustaining healing and a protective dome without contact with pure aur.",
         "Recognition through touch, grooming and vocal exchanges binds travelling herds to the Næ families that care for them.",
+        "They eat metal as all their order does, cropping iron-rich moss and scraping mineral crust from the skies they cross, and sheathe each aur sac in it: a conducting lining that holds the charge in and keeps it from the flesh around, thickening through a long life.",
     ],
 );
 
@@ -127,16 +129,18 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
         hit = head_surface(point, creature, hit);
     }
     let mirrored = vec3(point.x.abs(), point.y, point.z);
+    // Each aur sac glows through an iron collar its body laid down from the metal it eats,
+    // thicker the more it has gathered, holding the charge in where the sac meets the flesh.
+    let sheath = 1.06 + creature.stores.x.min(1.0) * 0.14;
     for i in 0..3 {
         let z = i as f32 * 5.5 - 8.5;
-        hit.blend(
-            rounded(
-                mirrored - vec3(7.0, 1.2, z),
-                vec3(0.8, 0.65, 1.4) * (0.8 + creature.gene(AUR_SACS) * 0.4),
-            ),
-            9,
-            0.3,
-        );
+        let size = vec3(0.8, 0.65, 1.4) * (0.8 + creature.gene(AUR_SACS) * 0.4);
+        let at = mirrored - vec3(7.0, 1.2, z);
+        hit.blend(rounded(at, size), 9, 0.3);
+        let collar = rounded(at, size * sheath)
+            .max(-rounded(at, size * 0.98))
+            .max(at.x - size.x * 0.35);
+        hit.blend(collar, 11, 0.05);
     }
     for i in 0..5 {
         let z = i as f32 * 3.1 - 10.0;
@@ -238,6 +242,12 @@ fn material(point: Vec3, id: u32) -> Material {
             m.color = vec3(0.19, 0.82, 0.86);
             m.emission = 0.7;
             m.roughness = 0.18;
+        }
+        11 => {
+            // The iron sheathing the aur sacs.
+            m.color = vec3(0.36, 0.37, 0.38);
+            m.metal = 0.8;
+            m.roughness = 0.35;
         }
         10 => {
             m.color = vec3(0.07, 0.21, 0.12).lerp(vec3(0.23, 0.36, 0.16), speckles);

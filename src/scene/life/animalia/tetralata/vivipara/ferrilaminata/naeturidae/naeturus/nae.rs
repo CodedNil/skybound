@@ -62,6 +62,7 @@ taxon!(
         "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs, with long outer tips holding tools while shorter tips steady objects and guide food.",
         "Moisture-recovery folds support short flights, although active travel still requires drinks from living basins.",
         "Isolated aur sacs support their magical abilities and are replenished through the protected life they share with bonded Nætu.",
+        "They take iron in their diet as all their order does, and their bodies sheathe their aur sacs in it as their Nætu do; what they gather beyond that they work by hand into clasps and tools.",
         "Families groom their companions, tend sheltered homes among dorsal fibres and navigate between drifting communities by currents and the distant polar beams.",
     ],
 );
@@ -99,10 +100,15 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(smooth_min(smooth_min(body, crop, 0.1), crest, 0.03), 0);
     hit.socket(eyes(point, LENGTH, HEAD), HEAD * 0.16);
     let side = vec3(point.x.abs(), point.y, point.z);
-    hit.join(
-        (side - vec3(0.25, 0.04, 0.06)).length() - (0.035 + creature.gene(SACS) * 0.025),
-        9,
-    );
+    let sac = 0.035 + creature.gene(SACS) * 0.025;
+    let at = side - vec3(0.25, 0.04, 0.06);
+    hit.join(at.length() - sac, 9);
+    // An iron collar round each sac, as its Nætu have, from the metal it eats.
+    let sheath = sac * (1.08 + creature.stores.x.min(1.0) * 0.2);
+    let collar = (at.length() - sheath)
+        .max(-(at.length() - sac * 0.98))
+        .max(at.x - sac * 0.3);
+    hit.join(collar, 11);
     let strap = vec2(
         vec2(point.x * 0.95, point.y + 0.02).length() - 0.255,
         point.z - 0.0,
@@ -190,6 +196,12 @@ fn material(point: Vec3, id: u32) -> Material {
         8 => {
             m.color = vec3(0.17, 0.075, 0.055);
             m.roughness = 0.3;
+        }
+        11 => {
+            // The iron sheathing the aur sacs.
+            m.color = vec3(0.36, 0.37, 0.38);
+            m.metal = 0.8;
+            m.roughness = 0.35;
         }
         9 => {
             // Aur sacs, glowing with what they hold.
