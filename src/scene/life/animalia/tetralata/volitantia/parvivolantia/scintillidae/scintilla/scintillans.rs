@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::curved_tube,
-    biology::Biology,
+    biology::{Biology, Litter},
     capsule, eyes,
     genome::Gene,
     mouth,
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.05,
     maturity_days: 3.0,
     lifespan_days: 35.0,
+    // Many eggs at once, laid within a day: a swarm's numbers are its only defence.
+    litter: Litter::new(4, 2, [0.1, 0.25, 0.3, 0.2, 0.1, 0.05]),
+    gestation_days: 1.0,
     ..super::BIOLOGY
 };
 

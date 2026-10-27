@@ -2,7 +2,7 @@ pub use super::render_wings;
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::curved_tube,
-    biology::Biology,
+    biology::{Biology, Litter},
     genome::Gene,
     louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.08,
     maturity_days: 12.0,
     lifespan_days: 120.0,
+    // One string of dozens of eggs at a laying, sometimes two or three in a rich swarm.
+    litter: Litter::new(1, 1, [0.55, 0.33, 0.12, 0.0, 0.0, 0.0]),
+    gestation_days: 2.0,
     ..super::BIOLOGY
 };
 
@@ -87,14 +90,14 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         louvres(smooth_min(body, head, 0.3), p, vec3(0.6, 0.55, 1.2)),
         0,
     );
-    // Each finger of the cage its own length, and the cage as open or closed as it was born to
-    // hold it.
+    // Each finger of the cage grew its own length, and the cage is as open or closed as it was born
+    // to hold it.
     let close = 0.1 + c.gene(GRIP) * 0.3;
     let cage = 0.75 + c.gene(CAGE) * 0.45;
     for finger in 0..5 {
         let splay = ((finger as f32 - 2.0) * 0.45).sin();
         let root = MOUTH + vec3(splay * 0.28, 0.0, 0.0);
-        let reach = cage + ((finger as f32 * 7.1 + c.identity.x * 31.0).sin() * 0.5 + 0.5) * 0.25;
+        let reach = cage + c.chance(finger) * 0.25;
         hit.blend(
             curved_tube(
                 p,

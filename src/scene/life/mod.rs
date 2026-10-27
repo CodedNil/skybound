@@ -52,8 +52,13 @@ pub struct CreatureInstance {
     pub scars: Vec4,
     /// Where its worst wounds were, in its body's frame, each with how severe it was.
     pub wounds: [Vec4; 4],
-    /// What it has stored in its body that shows: how much iron is laid into its edges and armour.
+    /// What it has stored or carries in its body that shows: how much iron is laid into its edges
+    /// and armour; for an animal how far through carrying young it is (or for a plant how full of
+    /// water); how many young it is carrying; and how many eggs it has glued to its body.
     pub stores: Vec4,
+    /// Where an animal carries its young, round its brood chamber: the centre in its body's frame
+    /// and the chamber's size. Zero for a plant.
+    pub belly: Vec4,
     /// For a cutaway, its organs: each where it lies and whether it is one of a pair, how large it
     /// is and whether it glows, and its colour. `kind.w` holds how many there are; a creature with
     /// none is drawn whole.
@@ -69,6 +74,29 @@ pub struct CreatureInstance {
 
 #[cfg(not(target_arch = "spirv"))]
 impl CreatureInstance {
+    /// Mark what an animal is carrying: `expecting` young, `gestation` of the way to birth,
+    /// swelling it round its brood chamber.
+    pub fn carrying(&mut self, expecting: u32, gestation: f32) {
+        let kind = KINDS[self.kind.x as usize];
+        if kind.animal().is_none() {
+            return;
+        }
+        if let Some(chamber) = kind
+            .organs()
+            .sites()
+            .iter()
+            .find(|site| site.organ.function == organs::Function::Breeding)
+        {
+            self.belly = chamber.centre.extend(chamber.radii.max_element());
+        }
+        self.stores.y = if expecting > 0 {
+            gestation.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.stores.z = expecting as f32;
+    }
+
     pub fn new(position: Vec4, rotation: Vec4, animation: Vec4, kind: u32) -> Self {
         Self::specimen(
             position,

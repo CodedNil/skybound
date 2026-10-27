@@ -328,7 +328,11 @@ pub(super) fn sense(
             if other.activity == Activity::Flee {
                 seen.fleeing += 1;
             }
-            if other.grown() >= 1.0 && distance < nearest[3] {
+            // A mate is one grown and of a sex it can breed with, as its lineage's sexes have it.
+            if other.grown() >= 1.0
+                && distance < nearest[3]
+                && agent.vitals.suits(&other.vitals, kind)
+            {
                 nearest[3] = distance;
                 seen.mate = Some((to, other.activity == Activity::Display));
                 targets.mate = Some(*other);

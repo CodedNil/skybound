@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
+    biology::{Biology, Litter},
     capsule, eyespots,
     genome::Gene,
     surface::{Ray, Surface, TraceResult},
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 2200.0,
     lifespan_days: 50000.0,
     adult_mass: 20.0,
+    // One young to the pouch, rarely two.
+    litter: Litter::new(1, 1, [0.8, 0.18, 0.02, 0.0, 0.0, 0.0]),
+    gestation_days: 200.0,
     ..super::BIOLOGY
 };
 

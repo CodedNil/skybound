@@ -68,12 +68,12 @@ pub(super) fn census(
     info!("activity {activities:?}");
 }
 
-/// Which parents carry young, and in what, by entity; young drawn as part of their parent are
-/// marked zero.
+/// Which parents carry young, in what and how many, by entity; young drawn as part of their parent
+/// are marked zero.
 pub(super) fn carried(
     organisms: &Query<Drawn, (Without<Player>, Without<Mount>)>,
-) -> HashMap<Entity, u32> {
-    let mut carrying: HashMap<Entity, u32> = HashMap::new();
+) -> HashMap<Entity, (u32, u32)> {
+    let mut carrying: HashMap<Entity, (u32, u32)> = HashMap::new();
     for (entity, species, body, _, _, _, relations) in organisms {
         let biology = species.0.biology();
         let young = body.0.age_days / f64::from(biology.maturity_days);
@@ -83,11 +83,14 @@ pub(super) fn carried(
                 Some(Brood::Pouch) => FULL_POUCH,
                 _ => continue,
             };
-            carrying.insert(relations.host.unwrap_or(entity), brood);
+            let held = carrying
+                .entry(relations.host.unwrap_or(entity))
+                .or_insert((brood, 0));
+            held.1 += 1;
             // Eggs glued to the parent are drawn as part of it; pouch young are drawn themselves,
             // sitting in the pouch.
             if brood == CLUTCH {
-                carrying.insert(entity, 0);
+                carrying.insert(entity, (0, 0));
             }
         }
     }
@@ -109,7 +112,7 @@ pub(super) fn gather_herd(
     let mut ranked: Vec<(f32, Entity)> = organisms
         .iter()
         .filter_map(|(entity, species, _, transform, _, _, _)| {
-            if carrying.get(&entity) == Some(&0) {
+            if carrying.get(&entity).is_some_and(|held| held.0 == 0) {
                 return None;
             }
             let radius = species.0.render_radius();
@@ -154,7 +157,7 @@ pub(super) fn gather_herd(
                 seed: individual.map_or_else(|| entity.to_bits() as u32, |identity| identity.0),
                 activity: relations.activity,
                 tuck: relations.senses.goal.map_or(0.0, |goal| goal.fold),
-                held: carrying.get(&entity).copied().unwrap_or(0),
+                held: carrying.get(&entity).copied().unwrap_or((0, 0)),
                 genes: relations.genes,
                 vitals: body.0,
                 wingbeat: relations.wingbeat,
@@ -198,7 +201,7 @@ struct Shown {
     seed: u32,
     activity: Activity,
     tuck: f32,
-    held: u32,
+    held: (u32, u32),
     genes: Genome,
     vitals: Vitals,
     wingbeat: f32,
@@ -263,9 +266,12 @@ fn pose(shown: &Shown, now: f32) -> CreatureInstance {
     let scarred = vitals.scarred.iter().sum::<f32>() * 0.25;
     pose.scars = SceneVec4::new(vitals.scars, blunted, scarred, vitals.overgrowth);
     pose.wounds = vitals.wounds;
-    pose.stores = SceneVec4::new(vitals.iron, 0.0, 0.0, 0.0);
-    if held != 0 {
-        pose.kind.z = held;
+    // A plant shows how full of water it is; an animal what it carries.
+    let water = if plant(kind) { vitals.hydration } else { 0.0 };
+    pose.stores = SceneVec4::new(vitals.iron, water, 0.0, held.1 as f32);
+    pose.carrying(vitals.expecting, vitals.gestation);
+    if held.0 != 0 {
+        pose.kind.z = held.0;
     }
     pose
 }

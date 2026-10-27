@@ -21,7 +21,7 @@ use skybound::scene::{
         CreatureInstance, Kind,
         animalia::mind::Mind,
         behaviour::{Activity, Motion, Senses},
-        genome::Genome,
+        genome::{FECUNDITY, Genome},
         organs::Strike,
         plantae::physiology::grow,
         vitals::Vitals,
@@ -294,6 +294,15 @@ pub fn population(kind: Kind, position: Vec3, mass_fraction: f32, genes: Genome)
     vitals.mass *= mass_fraction;
     if mass_fraction < 0.5 {
         vitals.age_days = 0.0;
+    }
+    // Its sex falls out at conception, as even odds between the two. A grown one met in the wild
+    // may already be carrying, as many of its kind are at any time, somewhere through it.
+    let seed = u64::from(position.x.to_bits()) ^ u64::from(position.z.to_bits()).rotate_left(29);
+    vitals.female = breeding::unit(seed) < 0.5;
+    if mass_fraction >= 0.5 && vitals.bears(kind) && breeding::unit(seed ^ 0xb1) < 0.3 {
+        let litter = kind.biology().litter;
+        vitals.expecting = litter.draw(breeding::unit(seed ^ 0xc3), genes.get(FECUNDITY));
+        vitals.gestation = breeding::unit(seed ^ 0xd7);
     }
     (
         Species(kind),
@@ -625,7 +634,7 @@ fn live_out(
     }
 }
 
-/// Bear young if the body is ready and there is room in the world for them.
+/// Bear a litter if one is due, as many of it as there is room in the world for.
 fn breed(
     agent: Agent,
     body: &mut Vitals,
@@ -634,23 +643,28 @@ fn breed(
     shared: &Shared,
     position: Vec3,
 ) -> bool {
-    if shared.living.load(Ordering::Relaxed) >= POPULATION_LIMIT
-        || !reproduce(agent, body, relations, neighbours, shared.now)
-    {
-        return false;
+    let litter = reproduce(agent, body, relations, shared.now);
+    let mut born = 0;
+    for index in 0..litter {
+        if shared.living.load(Ordering::Relaxed) >= POPULATION_LIMIT {
+            break;
+        }
+        shared.living.fetch_add(1, Ordering::Relaxed);
+        // Each of a litter its own: the same parents, but its own share of their genes.
+        let now = shared.now + index as f32 * 1e-3;
+        shared.commands.command_scope(|mut commands| {
+            bear(
+                &mut commands,
+                agent,
+                relations.sire,
+                neighbours,
+                position,
+                now,
+            );
+        });
+        born += 1;
     }
-    shared.living.fetch_add(1, Ordering::Relaxed);
-    shared.commands.command_scope(|mut commands| {
-        bear(
-            &mut commands,
-            agent,
-            relations.sire,
-            neighbours,
-            position,
-            shared.now,
-        );
-    });
-    true
+    born > 0
 }
 
 /// What moving did to the body and the mind: wings beat on or a plant bends, the hide gathers what
@@ -790,6 +804,7 @@ mod tests {
         body.age_days = f64::from(kind.biology().maturity_days);
         body.mass *= 1.2;
         body.energy = 1.0;
+        body.female = true;
         let agent = Agent {
             entity,
             kind,
@@ -803,21 +818,40 @@ mod tests {
             skill: 0.0,
         };
         let mut relations = Relations::default();
-        assert!(
-            !reproduce(agent, &mut body, &mut relations, &[agent], 200.0),
-            "bred without mating"
-        );
+        reproduce(agent, &mut body, &mut relations, 200.0);
+        assert_eq!(body.expecting, 0, "conceived without mating");
         relations.fertile_until = 1000.0;
+        let mut male = body;
+        male.female = false;
+        reproduce(agent, &mut male, &mut relations, 200.0);
+        assert_eq!(male.expecting, 0, "a male conceived");
+        assert_eq!(reproduce(agent, &mut body, &mut relations, 200.0), 0);
+        let litter = body.expecting;
+        assert!(litter > 0, "a mated female did not conceive");
+        // Nothing is born until the carrying is done, and then the whole litter at once.
+        assert_eq!(reproduce(agent, &mut body, &mut relations, 300.0), 0);
+        body.gestation = 1.0;
         let before = body.mass;
-        assert!(reproduce(agent, &mut body, &mut relations, &[agent], 200.0));
-        assert!((before - body.mass - kind.biology().adult_mass * 0.15).abs() < 1e-4);
-        assert!(!reproduce(
-            agent,
-            &mut body,
-            &mut relations,
-            &[agent],
-            201.0
-        ));
+        assert_eq!(reproduce(agent, &mut body, &mut relations, 400.0), litter);
+        let cost = kind.biology().adult_mass * 0.15 * (litter as f32).sqrt();
+        assert!((before - body.mass - cost).abs() < 1e-3);
+        assert_eq!(body.expecting, 0);
+    }
+
+    #[test]
+    fn litters_follow_their_weights_and_fecundity() {
+        let litter = Kind::Sputator.biology().litter;
+        let draws = |fecundity: f32| -> f32 {
+            (0..1000)
+                .map(|index| litter.draw(index as f32 / 1000.0, fecundity) as f32)
+                .sum::<f32>()
+                / 1000.0
+        };
+        assert!((draws(0.5) - litter.mean()).abs() < 0.1);
+        assert!(draws(0.9) > draws(0.5) && draws(0.5) > draws(0.1));
+        // A single calf is the rule for the giants.
+        let calf = Kind::Antiquus.biology().litter;
+        assert!((calf.mean() - 1.0).abs() < 0.05);
     }
 
     #[test]

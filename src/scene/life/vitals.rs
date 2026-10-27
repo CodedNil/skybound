@@ -7,7 +7,8 @@
 use crate::scene::{
     climate::Climate,
     life::{
-        Kind, Kingdom, animalia,
+        Kind, Kingdom,
+        animalia::{self, physiology::Sexes},
         biology::Biology,
         development::DAY,
         organs::{Function, MAX, Strike, Viscera, Wound},
@@ -58,6 +59,12 @@ pub struct Vitals {
     /// How much air moss and lumaweed has settled on its hide, from bare to covered: the more,
     /// the larger and slower it is and the longer it has lived, until something grazes it off.
     pub overgrowth: f32,
+    /// Whether it is female, in a lineage whose sexes are separate; fixed at conception.
+    pub female: bool,
+    /// How many young it is carrying, or eggs forming in it, from conception to birth or laying.
+    pub expecting: u32,
+    /// How far through its carrying it is, from conception at zero to birth at one.
+    pub gestation: f32,
 }
 
 #[derive(Default)]
@@ -123,6 +130,29 @@ impl Kind {
 }
 
 impl Vitals {
+    /// Whether this body can carry young now: any of a lineage that is both sexes, the females of
+    /// one whose sexes are separate, and of one that changes sex, those grown large enough to have
+    /// become female.
+    pub fn bears(&self, kind: Kind) -> bool {
+        let Some(animal) = kind.animal() else {
+            return true;
+        };
+        match animal.sexes {
+            Sexes::Both => true,
+            Sexes::Separate => self.female,
+            Sexes::Sequential => self.age_days > f64::from(kind.biology().maturity_days) * 2.0,
+        }
+    }
+
+    /// Whether two bodies of one kind can breed together: any two of a lineage that is both sexes,
+    /// otherwise one that bears and one that does not.
+    pub fn suits(&self, other: &Self, kind: Kind) -> bool {
+        let both = kind
+            .animal()
+            .is_none_or(|animal| animal.sexes == Sexes::Both);
+        both || self.bears(kind) != other.bears(kind)
+    }
+
     pub const fn new(biology: Biology) -> Self {
         Self {
             mass: biology.adult_mass,
@@ -148,6 +178,9 @@ impl Vitals {
             wounds: [Vec4::ZERO; 4],
             iron: 0.0,
             overgrowth: 0.0,
+            female: false,
+            expecting: 0,
+            gestation: 0.0,
         }
     }
 
@@ -222,6 +255,11 @@ impl Vitals {
         let biology = kind.biology();
         let mut waste = Waste::default();
         self.age_days += f64::from(dt.max(0.0)) / f64::from(DAY);
+        // Young growing inside draw on the carrier, the more of them the more.
+        if self.expecting > 0 {
+            self.gestation += dt.max(0.0) / (biology.gestation_days * DAY);
+            self.energy = (self.energy - dt * 2e-6 * self.expecting as f32).max(0.0);
+        }
         if failing {
             self.health = (self.health - 0.06 * dt).max(0.0);
         }

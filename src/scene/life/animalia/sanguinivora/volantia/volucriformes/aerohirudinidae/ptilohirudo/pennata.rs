@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::Biology,
+    biology::{Biology, Litter},
     genome::Gene,
     rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
@@ -23,6 +23,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 21.0,
     lifespan_days: 480.0,
     adult_mass: 0.01,
+    // Two to six eggs.
+    litter: Litter::new(2, 1, [0.3, 0.3, 0.2, 0.12, 0.08, 0.0]),
+    gestation_days: 3.0,
     ..super::BIOLOGY
 };
 

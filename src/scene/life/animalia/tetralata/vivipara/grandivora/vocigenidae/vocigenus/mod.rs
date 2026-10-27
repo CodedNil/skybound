@@ -31,7 +31,7 @@ mod nature {
         animalia::{
             CURIOSITY,
             mind::{Ethology, Intent, Situation, Urges, orbit},
-            physiology::Physiology,
+            physiology::{Physiology, Sexes},
             tetralata::{
                 INVESTIGATE,
                 vivipara::{CALL, CHATTINESS, ETHOLOGY as LIVE_BEARER, sociable},
@@ -42,6 +42,9 @@ mod nature {
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         voice: 30_000.0,
+        // A calf this large is carried only by the largest bodies, so a Vocigenus is male through
+        // its long youth and becomes female once grown great: the herd's mothers are its elders.
+        sexes: Sexes::Sequential,
         ..super::super::PHYSIOLOGY
     };
 

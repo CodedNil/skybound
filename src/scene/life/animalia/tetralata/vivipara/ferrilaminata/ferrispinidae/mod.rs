@@ -8,6 +8,10 @@ pub mod ferrispina;
 pub const BLADE_LENGTH: Gene = Gene(32);
 pub const BLADE_KEENNESS: Gene = Gene(33);
 
+/// The run of a crest's heights along the back, tallest at the shoulders or towards the tail, in a
+/// rise and fall that runs in families, so kin are known by the line of their crests.
+pub const PROFILE: Gene = Gene(34);
+
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY, WHETSTONE};
 

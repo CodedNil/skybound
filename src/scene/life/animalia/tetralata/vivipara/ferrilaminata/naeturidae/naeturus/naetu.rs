@@ -2,7 +2,7 @@ use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
+    biology::{Biology, Litter},
     cowl, ellipsoid, eyes,
     genome::Gene,
     louvres, mouth, prepare_pose, rounded, slit, smooth_min,
@@ -32,6 +32,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 7300.0,
     lifespan_days: 180_000.0,
     adult_mass: 150.0,
+    // A single calf after a long carrying; twins are rare.
+    litter: Litter::new(1, 1, [0.94, 0.06, 0.0, 0.0, 0.0, 0.0]),
+    gestation_days: 540.0,
     ..super::BIOLOGY
 };
 

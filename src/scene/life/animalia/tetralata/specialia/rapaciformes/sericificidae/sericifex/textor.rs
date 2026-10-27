@@ -3,7 +3,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{curved_tube, gape},
     annulated,
-    biology::Biology,
+    biology::{Biology, Litter},
     capsule, eyes,
     genome::Gene,
     mouth, smooth_min,
@@ -30,6 +30,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.083,
     maturity_days: 90.0,
     lifespan_days: 2000.0,
+    // A few eggs tethered among the web's anchors.
+    litter: Litter::new(2, 1, [0.2, 0.35, 0.25, 0.12, 0.06, 0.02]),
+    gestation_days: 10.0,
     ..super::BIOLOGY
 };
 

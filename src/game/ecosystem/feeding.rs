@@ -88,8 +88,10 @@ pub(super) fn forage(
                 && other.position.distance_squared(position) < 225.0
         })
     {
-        // Only as much as the Pondplant's cistern still holds.
-        let water = pond.vitals.working(&pond.kind.organs(), Function::Water);
+        // Only as much as the Pondplant's basin still holds: as whole as the basin is and as full
+        // as the rain and its other drinkers have left it.
+        let water =
+            pond.vitals.working(&pond.kind.organs(), Function::Water) * pond.vitals.hydration;
         body.hydration = (body.hydration + dt * 0.2 * water).min(1.0);
         return Some(Meal {
             eater: entity,
@@ -148,6 +150,13 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
             continue;
         };
         if eater.0.health <= 0.0 || food.0.mass <= 0.0 {
+            continue;
+        }
+        // A drink from a Pondplant lowers its basin by what the drinker took, a sip for a small
+        // animal and a long draught for a giant.
+        if meal.amount == 0.0 && plant(food_kind.0) && food_kind.0.organs().has(Function::Water) {
+            let draught = eater_kind.0.biology().adult_mass / food_kind.0.biology().adult_mass;
+            food.0.hydration = (food.0.hydration - draught.min(1.0) * 0.002).max(0.0);
             continue;
         }
         let nectar = eater_kind.0.pollinates();

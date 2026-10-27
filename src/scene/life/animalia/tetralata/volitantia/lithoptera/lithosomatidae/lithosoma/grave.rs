@@ -14,7 +14,7 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
-        biology::Biology,
+        biology::{Biology, Litter},
         capsule,
         genome::Gene,
         rounded, smooth_min,
@@ -31,6 +31,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.83,
     maturity_days: 1800.0,
     lifespan_days: 60000.0,
+    // A clutch of three to eight carried on the body through the years it takes to hatch.
+    litter: Litter::new(3, 1, [0.15, 0.3, 0.3, 0.15, 0.07, 0.03]),
+    gestation_days: 90.0,
     ..super::BIOLOGY
 };
 
@@ -115,18 +118,18 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // Crystal clusters, one to a sector of the saucer, each its own size.
     // The crystals are grown from the mineral currents over its life, not inherited, so the young
     // carry only a few small ones and the old a heavy crop.
-    let sector = TAU / (5.0 + (c.identity.w * 5.0).floor());
+    let sector = TAU / (5.0 + (c.chance(4) * 5.0).floor());
     let grown = 0.3 + c.life.y * 0.5 + c.life.z * 0.4;
     let turn = (angle / sector).round();
     let at = turn * sector;
     let (sine, cosine) = at.sin_cos();
     let along = p.x * cosine + p.z * sine;
     let across = p.z * cosine - p.x * sine;
-    let seed = ((turn * 12.9898 + c.identity.x * 311.7).sin() * 43_758.547).fract_gl();
+    let seed = ((turn * 12.9898 + c.chance(5) * 311.7).sin() * 43_758.547).fract_gl();
     let out = 5.0 + seed * 4.5;
     let surface = (out / span).power(2) * upturn + 0.6;
     // Some sectors have grown no crystal at all.
-    let bare = ((turn * 7.31 + c.identity.w * 97.1).sin() * 43_758.547).fract_gl() > grown;
+    let bare = ((turn * 7.31 + c.chance(6) * 97.1).sin() * 43_758.547).fract_gl() > grown;
     for crystal in 0..3 {
         if bare {
             break;
@@ -197,10 +200,14 @@ pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+    use crate::scene::life::animalia::physiology::{Brood, Physiology, Sexes};
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         brood: Brood::Carried,
+        // Grounders are few and far apart and carry their clutch for years on the saucer's
+        // underside, which only a large one has room for: each is male while young and becomes
+        // female once grown large.
+        sexes: Sexes::Sequential,
         ..super::super::PHYSIOLOGY
     };
 }

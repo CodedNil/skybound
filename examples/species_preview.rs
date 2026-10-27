@@ -246,6 +246,10 @@ fn label(pixels: &mut [u8], size: usize, text: &str) {
             'R' => [127, 9, 25, 41, 70],
             'U' => [63, 64, 64, 64, 63],
             'H' => [127, 8, 8, 8, 127],
+            'G' => [62, 65, 73, 73, 58],
+            'A' => [126, 9, 9, 9, 126],
+            'V' => [31, 32, 64, 32, 31],
+            'I' => [0, 65, 127, 65, 0],
             _ => [0; 5],
         };
         for (x, bits) in glyph.into_iter().enumerate() {
@@ -360,13 +364,33 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
     }
     // The first grown panel of a lifecycle shows a parent with its brood, where its lineage
     // carries one.
+    let litter = species.biology().litter.mean().round().max(1.0) as u32;
     let brooding = output == Output::Lifecycle && panel == 6;
     if brooding {
-        match life::KINDS[kind].animal().map(|animal| animal.brood) {
-            Some(Brood::Carried) => c.kind.z = life::CLUTCH,
+        match species.animal().map(|animal| animal.brood) {
+            Some(Brood::Carried) => {
+                c.kind.z = life::CLUTCH;
+                c.stores.w = litter as f32;
+            }
             Some(Brood::Pouch) => c.kind.z = life::FULL_POUCH,
             _ => {}
         }
+    }
+    // The next lifecycle panel, and two individuals of each variation sheet, are carrying young,
+    // one near its time and one early on.
+    if (output == Output::Lifecycle && panel == 7) || (output == Output::Variation && panel == 4) {
+        c.carrying(litter, 0.95);
+    } else if output == Output::Variation && panel == 7 {
+        c.carrying(litter + 1, 0.55);
+    }
+    // A plant's water: a Pondplant's basin full in the reference specimen and as its life has left
+    // it across a variation sheet.
+    if species.plant().is_some() {
+        c.stores.y = if output == Output::Variation {
+            0.1 + (panel as f32 * 0.37).fract() * 0.9
+        } else {
+            0.8
+        };
     }
     let label = match output {
         Output::Lifecycle => {
@@ -377,6 +401,8 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
             };
             if brooding && c.kind.z != 0 {
                 format!("{title} BROOD")
+            } else if c.stores.z > 0.0 && species.animal().is_some() {
+                format!("{title} GRAVID")
             } else {
                 title
             }

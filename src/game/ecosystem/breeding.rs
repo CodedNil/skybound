@@ -12,7 +12,7 @@ use skybound::scene::life::{
     },
     behaviour::Senses,
     biology::Biology,
-    genome::Genome,
+    genome::{FECUNDITY, Genome},
     organs::Function,
     plantae::physiology::Propagation,
     vitals::Vitals,
@@ -198,15 +198,32 @@ pub(super) fn decompose(body: &mut Vitals, pool: &mut Pool, dt: f32, biology: Bi
     body.mass < biology.adult_mass * 0.001
 }
 
+/// Conceive once mated, carry, and give birth or lay; returns how many young are born this step.
+///
+/// A body that is ready and has mated, and that can carry young as its lineage's sexes have it,
+/// conceives a litter, as many as its species' litter sizes and its own fecundity draw. It carries
+/// them for its species' gestation, feeding them from its own reserves, and then bears them all at
+/// once, each a share of its own mass, the smaller the more of them there are.
 pub(super) fn reproduce(
     agent: Agent,
     body: &mut Vitals,
     relations: &mut Relations,
-    neighbours: &[Agent],
     now: f32,
-) -> bool {
+) -> u32 {
     let kind = agent.kind;
     let biology = kind.biology();
+    if body.expecting > 0 {
+        if body.gestation < 1.0 {
+            return 0;
+        }
+        let born = body.expecting;
+        body.expecting = 0;
+        body.gestation = 0.0;
+        body.mass -= biology.adult_mass * 0.15 * (born as f32).sqrt();
+        body.energy -= 0.2;
+        relations.last_birth = now;
+        return born;
+    }
     let maturity = f64::from(biology.maturity_days);
     let mature = body.age_days >= maturity && body.mass > biology.adult_mass * 1.15;
     let fertile = match (kind.animal(), kind.plant()) {
@@ -222,15 +239,23 @@ pub(super) fn reproduce(
     if mature
         && fertile
         && whole
+        && body.bears(kind)
         && body.energy > 0.8
         && body.hydration > 0.5
         && now - relations.last_birth > 90.0
     {
-        body.mass -= biology.adult_mass * 0.15;
-        body.energy -= 0.2;
+        let roll = unit(agent.entity.to_bits() ^ u64::from(now.to_bits()).rotate_left(17));
+        body.expecting = biology.litter.draw(roll, agent.genes.get(FECUNDITY));
+        body.gestation = 0.0;
         relations.last_birth = now;
-        let _ = neighbours;
-        return true;
     }
-    false
+    0
+}
+
+/// A repeatable value in [0, 1) from a seed: how a litter's size, or a newborn's sex, falls out.
+pub(super) fn unit(seed: u64) -> f32 {
+    let mut x = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    (x >> 40) as f32 / (1u64 << 24) as f32
 }

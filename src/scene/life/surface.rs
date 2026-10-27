@@ -805,7 +805,13 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     let surface = |point, c: &CreatureInstance| {
         let mut hit = surface(development::body_point(point, c), c);
         // Allowing for the stretch that young and individual builds put on the body.
-        hit.distance *= (1.0 - (1.0 - c.life.y) * 0.2) * 0.85;
+        hit.distance *= (1.0 - (1.0 - c.life.y) * 0.2)
+            * 0.85
+            * if c.belly.w > 0.0 {
+                1.0 - c.stores.y.min(1.0) * 0.45
+            } else {
+                1.0
+            };
         if c.kind.w > 0 {
             cutaway(&mut hit, point, c);
         }
@@ -1275,7 +1281,7 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
     // little higher or lower at rest.
     let dimensions = wing.truncate().truncate()
         * vec2(0.92 + c.gene(WINGSPAN) * 0.16, 0.95 + c.gene(BUILD) * 0.1);
-    let rest = 0.1 + (c.identity.z - 0.5) * 0.16;
+    let rest = 0.1 + (c.chance(8) - 0.5) * 0.16;
     let development = if c.proportions.x > 0.0 {
         0.25 + c.proportions.w * 0.75
     } else {

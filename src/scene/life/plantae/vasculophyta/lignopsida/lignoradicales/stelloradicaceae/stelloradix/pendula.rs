@@ -6,7 +6,7 @@ use crate::scene::life::{
 use crate::scene::{
     life::{
         CreatureInstance, Look,
-        biology::Biology,
+        biology::{Biology, Litter},
         ellipsoid,
         plantae::{count, gene, pick, rotate, speckle},
         rounded,
@@ -26,6 +26,9 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 5000.0,
     adult_mass: 7.0,
     altitude: (50.0, 800.0),
+    // A hanging star breaks into one to three pieces that each grow on.
+    litter: Litter::new(1, 1, [0.6, 0.3, 0.1, 0.0, 0.0, 0.0]),
+    gestation_days: 1.0,
 };
 
 pub const RENDER_RADIUS: f32 = 16.0;

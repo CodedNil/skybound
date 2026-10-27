@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{ORAL_PAIRS, curved_tube, gape, oral_tentacles, rig_tentacles},
-    biology::Biology,
+    biology::{Biology, Litter},
     capsule, ellipsoid,
     genome::Gene,
     rounded, smooth_min,
@@ -29,6 +29,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 75.0,
     lifespan_days: 1500.0,
     adult_mass: 0.12,
+    // A clutch of four to nine glued round the mother and guarded with acid.
+    litter: Litter::new(4, 1, [0.1, 0.2, 0.3, 0.22, 0.12, 0.06]),
+    gestation_days: 8.0,
     ..super::BIOLOGY
 };
 

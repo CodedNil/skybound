@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
+    biology::{Biology, Litter},
     ellipsoid,
     genome::Gene,
     louvres, rounded, smooth_min,
@@ -29,6 +29,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 900.0,
     lifespan_days: 18000.0,
     adult_mass: 14.0,
+    // One young, sometimes two: a stooping hunter can carry no more.
+    litter: Litter::new(1, 1, [0.75, 0.22, 0.03, 0.0, 0.0, 0.0]),
+    gestation_days: 120.0,
     ..super::BIOLOGY
 };
 

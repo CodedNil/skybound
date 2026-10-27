@@ -10,7 +10,7 @@ use crate::scene::life::{
 use crate::scene::{
     life::{
         CreatureInstance, Look,
-        biology::Biology,
+        biology::{Biology, Litter},
         capsule, eyespots,
         genome::Gene,
         rounded, smooth_min, sucker,
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 90.0,
     lifespan_days: 2400.0,
     adult_mass: 0.04,
+    // Few eggs: a mimic is only safe while it is rare.
+    litter: Litter::new(1, 1, [0.5, 0.35, 0.15, 0.0, 0.0, 0.0]),
+    gestation_days: 12.0,
     ..super::BIOLOGY
 };
 

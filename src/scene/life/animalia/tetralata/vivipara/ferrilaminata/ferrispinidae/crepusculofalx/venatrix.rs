@@ -14,7 +14,7 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-        biology::Biology,
+        biology::{Biology, Litter},
         ellipsoid,
         genome::Gene,
         louvres, prepare_pose, rounded, smooth_min,
@@ -32,6 +32,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 730.0,
     lifespan_days: 14600.0,
     adult_mass: 5.0,
+    // One or two young, rarely three or four.
+    litter: Litter::new(1, 1, [0.55, 0.35, 0.09, 0.01, 0.0, 0.0]),
+    gestation_days: 90.0,
     ..super::BIOLOGY
 };
 
@@ -119,7 +122,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     if iron > 0.02 && p.y > 0.1 && p.z < 2.6 {
         let cell = (vec2(p.x, p.z) * 2.5).round();
         let spot =
-            ((cell.dot(vec2(12.9898, 78.233)) + c.identity.x * 37.0).sin() * 43_758.547).fract_gl();
+            ((cell.dot(vec2(12.9898, 78.233)) + c.chance(3) * 37.0).sin() * 43_758.547).fract_gl();
         if spot < iron * 0.85 {
             let within = (vec2(p.x, p.z) * 2.5 - cell).length() / 2.5 - 0.17;
             hit.blend((skin - 0.06).max(within), 6, 0.03);
