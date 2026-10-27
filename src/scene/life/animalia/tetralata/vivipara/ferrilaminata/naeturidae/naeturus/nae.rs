@@ -2,7 +2,7 @@ use super::{TailFeathers, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles},
-    biology::Biology,
+    biology::{Biology, Litter},
     eyes,
     genome::Gene,
     mouth, prepare_pose, rounded, smooth_min,
@@ -30,6 +30,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 5500.0,
     lifespan_days: 44000.0,
     adult_mass: 0.3,
+    // One child, now and then two.
+    litter: Litter::new(1, 1, [0.9, 0.09, 0.01, 0.0, 0.0, 0.0]),
+    gestation_days: 300.0,
     ..super::BIOLOGY
 };
 

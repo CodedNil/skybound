@@ -14,7 +14,7 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-        biology::Biology,
+        biology::{Biology, Litter},
         capsule,
         genome::Gene,
         louvres, prepare_pose, rounded, smooth_min,
@@ -32,6 +32,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 18000.0,
     lifespan_days: 365_000.0,
     adult_mass: 200.0,
+    // A single calf in a long life; twins are all but unknown.
+    litter: Litter::new(1, 1, [0.985, 0.015, 0.0, 0.0, 0.0, 0.0]),
+    gestation_days: 900.0,
     ..super::BIOLOGY
 };
 
@@ -154,7 +157,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         for i in 0..BLADDERS {
             let f = i as f32;
             let swell = (0.75 + age * 0.25 + c.gene(SWELL) * 0.2)
-                * (1.0 + (f * 12.9898 + c.identity.x * 311.7).sin() * 0.18);
+                * (1.0 + (f * 12.9898 + c.chance(7) * 311.7).sin() * 0.18);
             let z = -7.5 + f * 4.6;
             let at = p - vec3(0.0, back(z) + 0.9 * swell, z);
             let size = vec3(3.4, 2.8, 2.5) * swell;

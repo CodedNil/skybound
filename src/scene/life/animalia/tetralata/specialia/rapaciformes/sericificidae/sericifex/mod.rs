@@ -3,9 +3,7 @@ pub use super::{BIOLOGY, render_wings};
 pub mod textor;
 
 #[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use nature::ETHOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Genus,
@@ -31,12 +29,20 @@ mod nature {
         animalia::{
             PATIENCE,
             mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still, orbit},
+            physiology::{Physiology, Sexes},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
         behaviour::{Activity, Goal},
         organs::{Strike, Wound},
     };
     use spirv_std::glam::Vec3;
+
+    /// A Weaver keeps to its own web and meets another only when one comes to its lines, so like
+    /// its silk-making ancestors each is both sexes, and any two that meet can breed.
+    pub const PHYSIOLOGY: Physiology = Physiology {
+        sexes: Sexes::Both,
+        ..super::super::PHYSIOLOGY
+    };
 
     pub const ETHOLOGY: Ethology = Ethology {
         hunt: |_, s, prey| wait(s.seen.home, prey),

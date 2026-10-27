@@ -2,7 +2,7 @@ use super::{Build, shredder};
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
+    biology::{Biology, Litter},
     genome::Gene,
     mouth, prepare_pose,
     surface::{Ray, Surface, TraceResult},
@@ -27,6 +27,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.25,
     maturity_days: 2200.0,
     lifespan_days: 42000.0,
+    // One to three young, more than its kin, for it guards a nursery rather than chasing herds.
+    litter: Litter::new(1, 1, [0.4, 0.4, 0.16, 0.04, 0.0, 0.0]),
+    gestation_days: 220.0,
     ..super::BIOLOGY
 };
 

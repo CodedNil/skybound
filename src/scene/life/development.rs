@@ -102,6 +102,17 @@ pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
     let head = (-reach).smoothstep(0.2, 0.8);
     point *= 1.0 - (c.gene(BUILD) - 0.5) * 0.32 * head;
     point.y -= (c.gene(ARCH) - 0.5) * 0.12 * reach * reach * c.opaque_bounds.y;
+    // A body carrying young swells round its brood chamber as they grow, slowly at first and most
+    // in the last of its carrying, the fuller the larger the litter, and the swelling hangs a
+    // little below the chamber under its weight.
+    if c.belly.w > 0.0 && c.stores.y > 0.0 {
+        let carried = c.stores.y * c.stores.y * (1.0 + (c.stores.z - 1.0).clamp(0.0, 4.0) * 0.2);
+        let centre = c.belly.xyz() - vec3(0.0, c.belly.w * 0.5, 0.0);
+        let reach = c.belly.w * 2.8;
+        let offset = point - centre;
+        let near = (-offset.length_squared() / (reach * reach)).exp();
+        point -= offset * near * carried * 0.45;
+    }
     point
 }
 
@@ -146,13 +157,14 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
         material.roughness += pale * 0.3;
         material.scatter *= 1.0 - pale * 0.6;
     }
-    let individual = c.identity - 0.5;
+    // Its skin a little rougher or smoother than another's, as it happened to grow.
+    let individual = c.chance(9) - 0.5;
     material.color = material
         .color
         .lerp(material.color.sqrt(), (1.0 - c.life.y) * 0.4);
     material.color = material.color.lerp(vec3(0.42, 0.34, 0.27), c.life.z * 0.35);
     material.roughness =
-        (material.roughness + individual.z * 0.12 + c.life.z * 0.18).clamp(0.04, 1.0);
+        (material.roughness + individual * 0.12 + c.life.z * 0.18).clamp(0.04, 1.0);
     material.emission *= (0.3 + c.life.y * 0.7) * (1.0 - c.life.z * 0.65);
     material
 }

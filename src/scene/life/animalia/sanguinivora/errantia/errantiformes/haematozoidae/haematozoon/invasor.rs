@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look, annulated,
-    biology::Biology,
+    biology::{Biology, Litter},
     capsule,
     genome::Gene,
     rounded, smooth_min,
@@ -25,6 +25,9 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 1.0,
     lifespan_days: 90.0,
     adult_mass: 0.001,
+    // Buds split off one to six at a time, within hours.
+    litter: Litter::new(1, 1, [0.3, 0.3, 0.2, 0.12, 0.06, 0.02]),
+    gestation_days: 0.5,
     ..super::BIOLOGY
 };
 

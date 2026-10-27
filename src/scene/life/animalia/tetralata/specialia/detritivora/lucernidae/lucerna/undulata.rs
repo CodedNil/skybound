@@ -13,7 +13,7 @@ use crate::scene::life::{
 use crate::scene::{
     life::{
         CreatureInstance, Look,
-        biology::Biology,
+        biology::{Biology, Litter},
         ellipsoid,
         genome::Gene,
         prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
@@ -30,6 +30,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.045,
     maturity_days: 60.0,
     lifespan_days: 900.0,
+    // Eggs cast loose a few at a time, as many as the ribbons' feeding can provision.
+    litter: Litter::new(3, 2, [0.15, 0.3, 0.28, 0.15, 0.08, 0.04]),
+    gestation_days: 5.0,
     ..super::BIOLOGY
 };
 

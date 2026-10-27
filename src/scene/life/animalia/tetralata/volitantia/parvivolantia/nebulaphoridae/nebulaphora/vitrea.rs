@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    biology::Biology,
+    biology::{Biology, Litter},
     eyes,
     genome::Gene,
     mouth, smooth_min,
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.063,
     maturity_days: 45.0,
     lifespan_days: 365.0,
+    // One to four eggs, each tethered beside a flower.
+    litter: Litter::new(1, 1, [0.3, 0.4, 0.2, 0.1, 0.0, 0.0]),
+    gestation_days: 4.0,
     ..super::BIOLOGY
 };
 

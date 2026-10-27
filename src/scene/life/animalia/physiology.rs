@@ -84,6 +84,8 @@ pub struct Physiology {
     pub brood: Brood,
     /// Whether it must mate to breed.
     pub mates: bool,
+    /// How its sexes are arranged, for those that mate; see [`Sexes`].
+    pub sexes: Sexes,
     /// Whether its young hatch from eggs and then fly free of whatever they were laid on.
     pub hatches: bool,
     /// The form its young take at each stage of growing up, from newborn (0) to grown (1).
@@ -182,6 +184,25 @@ pub enum Brood {
     Strings,
 }
 
+/// How a lineage's sexes are arranged.
+///
+/// Mating mixes two parents' genes, which clears away the harm that copying errors leave behind and
+/// keeps a lineage changing as fast as the parasites that prey on it, and in a sky shared with the
+/// blood-feeders that matters everywhere. Its cost is finding a mate across open air, and lineages
+/// pay it differently: where meetings are rare, every individual is both sexes and any two can
+/// breed; where they gather in swarms and herds, the sexes part, and one carries what the other
+/// cannot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sexes {
+    /// Both at once: any two can mate, and both carry young.
+    Both,
+    /// Male or female from conception, for life; only the female carries.
+    Separate,
+    /// Male while young and small, female once grown large, since a large body carries more young
+    /// and a bigger calf than a small one.
+    Sequential,
+}
+
 impl Brood {
     /// Whether the young begin as eggs.
     pub const fn eggs(self) -> bool {
@@ -226,6 +247,7 @@ pub const ANIMAL: Physiology = Physiology {
     attaches: false,
     partner: |kind, other| kind == other,
     aur: 0.0,
+    sexes: Sexes::Both,
     brood: Brood::Tethered,
     mates: true,
     hatches: false,

@@ -14,7 +14,7 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
-        biology::Biology,
+        biology::{Biology, Litter},
         genome::Gene,
         surface::{Ray, Surface, TraceResult},
     },
@@ -28,6 +28,9 @@ pub const BIOLOGY: Biology = Biology {
     size: 0.33,
     maturity_days: 400.0,
     lifespan_days: 12000.0,
+    // Few eggs, slowly made, from a long and slow life.
+    litter: Litter::new(1, 1, [0.6, 0.3, 0.1, 0.0, 0.0, 0.0]),
+    gestation_days: 30.0,
     ..super::BIOLOGY
 };
 

@@ -38,7 +38,25 @@ pub const PATTERN: Gene = Gene(3);
 pub const BUILD: Gene = Gene(4);
 pub const ARCH: Gene = Gene(5);
 
+/// How many young it bears at a time against others of its kind; see [`Litter`].
+///
+/// [`Litter`]: crate::scene::life::biology::Litter
+pub const FECUNDITY: Gene = Gene(6);
+
 impl CreatureInstance {
+    /// A value in [0, 1) that fell out by chance as this individual grew, not inherited: where a
+    /// crystal formed or an egg was glued, how long each finger of a cage came out. Each `salt`
+    /// draws another. Seed zero is the reference specimen, so it too is repeatable.
+    pub fn chance(&self, salt: u32) -> f32 {
+        let mut x = self.kind.y ^ salt.wrapping_mul(0x9e37_79b9);
+        x ^= x >> 16;
+        x = x.wrapping_mul(0x7feb_352d);
+        x ^= x >> 15;
+        x = x.wrapping_mul(0x846c_a68b);
+        x ^= x >> 16;
+        (x >> 8) as f32 / 16_777_216.0
+    }
+
     /// The value of one of its genes, as the renderer reads it.
     pub fn gene(&self, gene: Gene) -> f32 {
         let packed = self.genes[(gene.0 / 4) as usize];

@@ -271,7 +271,7 @@ mod nature {
             ETHOLOGY as ANIMAL,
             mind::{Ethology, Intent, Situation, Urges, orbit},
             nature::ROOST,
-            physiology::{Brood, Light, Physiology, flow_channels, grazes},
+            physiology::{Brood, Light, Physiology, Sexes, flow_channels, grazes},
             tetralata::{
                 FORMATION, PLAYFULNESS,
                 young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
@@ -303,6 +303,9 @@ mod nature {
         speed: 12.0,
         form: young,
         hatches: true,
+        // The tetralates gather in swarms, flocks and herds where a mate is never far, and their
+        // sexes parted early.
+        sexes: Sexes::Separate,
         ..super::super::PHYSIOLOGY
     };
 

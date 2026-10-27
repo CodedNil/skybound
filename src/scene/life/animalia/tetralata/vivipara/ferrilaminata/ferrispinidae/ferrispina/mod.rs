@@ -4,7 +4,7 @@ use crate::scene::{
         CreatureInstance,
         animalia::tetralata::{
             gape,
-            vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH},
+            vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH, PROFILE},
         },
         biology::Biology,
         capsule, cowl, eyes,
@@ -255,7 +255,10 @@ fn armour(p: Vec3, build: Build, hit: &mut Surface) {
 fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
     let length = build.length;
     let grown = (c.life.y * c.life.y).max(0.12);
-    let own = c.identity.x;
+    // Each blade grew a little off its place and lean by chance; the rise and fall of their heights
+    // along the back is inherited.
+    let own = c.chance(10);
+    let profile = c.gene(PROFILE) * TAU;
     // Its genes set how long and keen its blades grow; its life how worn they are.
     // How long its genes would grow them, as far as the iron it has gathered lets them.
     let long = (0.75 + c.gene(BLADE_LENGTH) * 0.55) * (0.45 + c.stores.x.min(1.0) * 0.55);
@@ -278,7 +281,9 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
         let height = build.height
             * long
             * (0.35 + 0.65 * shoulder)
-            * (0.8 + variety(i, 2.0, own) * 0.4)
+            * (0.8
+                + ((index * 1.9 + profile).sin() * 0.5 + 0.5) * 0.32
+                + variety(i, 2.0, own) * 0.08)
             * grown
             / (1.0 + laid * 0.6);
         let root = vec3(0.0, build.back(z) - 0.15, z);

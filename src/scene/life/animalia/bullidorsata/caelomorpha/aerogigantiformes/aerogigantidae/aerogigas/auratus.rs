@@ -1,7 +1,7 @@
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, tissue_distance},
-    biology::Biology,
+    biology::{Biology, Litter},
     genome::Gene,
     rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
@@ -27,6 +27,9 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 146_000.0,
     adult_mass: 120.0,
     altitude: (50.0, 2500.0),
+    // Spawn released in clouds of a few to a dozen.
+    litter: Litter::new(2, 2, [0.2, 0.3, 0.25, 0.15, 0.07, 0.03]),
+    gestation_days: 60.0,
 };
 
 pub const RENDER_RADIUS: f32 = 46.0;

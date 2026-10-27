@@ -86,8 +86,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let slope = 2.0 * depth * along / (edge * edge);
     let shell = (p.y - rise(along)).abs() / (1.0 + slope * slope).sqrt() - 0.12;
     let mut shape = Surface::new(shell.max(along - edge), 1);
-    // The water it holds, as full as the last rain left it.
-    let level = FLOOR + depth * (0.4 + gene(c, 6.0) * 0.55);
+    // The water it holds, as full as the rain and its drinkers have left it: not inherited but its
+    // life's, so a basin by a busy watering place runs low and one in wet cloud brims. The membrane
+    // sags into a sump that always keeps a little, which drinkers cannot reach.
+    let level = FLOOR + depth * (0.35 + c.stores.y.clamp(0.0, 1.0) * 0.6);
     let water = (p.y - level).max(rise(along) - p.y).max(along - edge);
     shape.join(water, 4);
     // The rim.

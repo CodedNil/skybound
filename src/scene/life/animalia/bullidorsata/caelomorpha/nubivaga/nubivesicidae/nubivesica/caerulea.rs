@@ -3,7 +3,7 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::{
     CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
-    biology::Biology,
+    biology::{Biology, Litter},
     ellipsoid,
     genome::Gene,
     rounded, smooth_min,
@@ -29,6 +29,9 @@ pub const BIOLOGY: Biology = Biology {
     lifespan_days: 9000.0,
     adult_mass: 3.0,
     altitude: (2500.0, 9000.0),
+    // A little spawn at a time.
+    litter: Litter::new(1, 1, [0.45, 0.35, 0.15, 0.05, 0.0, 0.0]),
+    gestation_days: 20.0,
 };
 
 pub const RENDER_RADIUS: f32 = 15.0;

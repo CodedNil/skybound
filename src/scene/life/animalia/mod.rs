@@ -91,7 +91,7 @@ pub fn with_wings(body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> S
     // outwards in uneven runs; beyond them the frame is bare skin.
     let edge = if look.edge == 6 {
         let out = (p.x.abs() / look.wings[0].x.max(0.1)).clamp(0.0, 1.0);
-        let run = ((p.x.abs() * 3.1 + c.identity.x * 17.0).sin() * 0.5 + 0.5) * 0.3;
+        let run = ((p.x.abs() * 3.1 + c.chance(1) * 17.0).sin() * 0.5 + 0.5) * 0.3;
         if out < c.stores.x * 1.1 - run { 6 } else { 0 }
     } else {
         look.edge
@@ -112,9 +112,10 @@ pub fn with_wings(body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> S
 
 /// A parent's brood, where its species carries it. A clutch is a band of eggs glued round the body,
 /// two rows deep and packed unevenly, wrapping the flanks and belly but leaving the back clear for
-/// the wings. A pouch is a fold of skin on the back opening forwards and upwards, so nothing can
-/// fall out of it towards the aur: flat when empty and swollen when full. The young in it are
-/// animals of their own, drawn where they sit.
+/// the wings, as many of them as it laid; a full band holds about eighteen. A pouch is a fold of
+/// skin on the back opening forwards and upwards, so nothing can fall out of it towards the aur:
+/// flat when empty and swollen when full. The young in it are animals of their own, drawn where
+/// they sit.
 fn brood(surface: &mut Surface, p: Vec3, c: &CreatureInstance, at: Vec4) {
     let q = p - vec3(0.0, at.x, at.y);
     if c.kind.z == CLUTCH {
@@ -129,9 +130,18 @@ fn brood(surface: &mut Surface, p: Vec3, c: &CreatureInstance, at: Vec4) {
             if around.sin() > 0.45 {
                 continue;
             }
-            let seed = ((turn * 12.9898 + row as f32 * 4.1 + c.identity.x * 311.7).sin()
+            // Where each egg sits is chance, so it is drawn from the individual's own seed.
+            let seed = ((turn * 12.9898 + row as f32 * 4.1 + c.kind.y as f32 * 0.0137).sin()
                 * 43_758.547)
                 .fract_gl();
+            let laid = if c.stores.w > 0.0 {
+                c.stores.w / 18.0
+            } else {
+                1.0
+            };
+            if ((seed * 7.31).fract_gl()) > laid {
+                continue;
+            }
             let size = at.z.min(at.w) * (0.2 + seed * 0.07);
             let centre = vec3(
                 around.cos() * (at.z + size * 0.6),
