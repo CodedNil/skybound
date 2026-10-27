@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+    animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
     ellipsoid,
     genome::Gene,
@@ -167,8 +167,43 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // Eyes: a forward pair either side of the stylet's root to judge the dive, and a pair beneath.
     hit.join((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 3);
     hit.join((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 3);
+    rasp(&mut hit, p, c);
     hit.join(oral_tentacles(p, c, MOUTH, 1.8, ORAL_PAIRS), 8);
     hit
+}
+
+/// The rasping mouth beneath the head: a round, lipped opening facing down and forward, which
+/// everts as it feeds into a short cone ringed with rows of hooked, iron-hardened teeth that it
+/// works against what its tentacles hold, tearing it apart a mouthful at a time. In flight it is
+/// drawn in, only the lip showing.
+fn rasp(hit: &mut Surface, p: Vec3, c: &CreatureInstance) {
+    let axis = vec3(0.0, -0.93, -0.37);
+    let across = vec3(1.0, 0.0, 0.0);
+    let up = axis.cross(across);
+    let q = p - MOUTH - vec3(0.0, 0.18, 0.0);
+    let along = q.dot(axis);
+    let radial = (q - axis * along).length();
+    if radial > 0.6 || along.abs() > 0.8 {
+        return;
+    }
+    let open = gape(c);
+    // The lip, a thick ring, and the cavity inside it.
+    let lip = vec2(radial - 0.2, along).length() - 0.07;
+    hit.carve(vec2(radial, along - 0.05).length() - 0.16, 0.04);
+    hit.blend(lip, 0, 0.06);
+    // The everted rasp, pushed out through the lip, its teeth in rings round it.
+    let reach = open * 0.45;
+    if reach > 0.01 {
+        let t = (along / reach).clamp(0.0, 1.0);
+        let cone = (radial - 0.16 * (1.0 - t * 0.35))
+            .max(along - reach)
+            .max(-along)
+            * 0.8;
+        let around = q.dot(up).atan2(q.dot(across));
+        let rows = ((along / 0.07).fract_gl() - 0.5).abs();
+        let teeth = (around * 9.0).sin().max(0.0) * (0.5 - rows).max(0.0) * 0.08;
+        hit.join(cone - teeth, 6);
+    }
 }
 
 const fn side_of(p: Vec3) -> Vec3 {

@@ -330,6 +330,14 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
         0
     };
     let mut c = specimen(kind, age, seed, seconds);
+    // The render sheet shows each animal feeding once a loop, mouth opening and its tentacles
+    // reaching in, while its wings keep their steady beat.
+    let species = life::KINDS[kind];
+    if output == Output::Render && species.animal().is_some() {
+        let feeding = (seconds * PI * 0.5).sin().powi(2);
+        c.dynamics = Vec4::new(seconds * species.look().flight.x * TAU, 0.68, feeding, 1.0);
+        c.previous_dynamics = c.dynamics;
+    }
     // Some hides are grazed bare, others left to grow over.
     if output == Output::Variation {
         c.scars.w = (c.scars.w * (0.3 + (panel as f32 * 0.61).fract() * 1.6)).min(1.0);

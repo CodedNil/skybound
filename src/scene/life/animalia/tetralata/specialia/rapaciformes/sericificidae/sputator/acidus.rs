@@ -1,6 +1,6 @@
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
+    animalia::tetralata::{ORAL_PAIRS, curved_tube, gape, oral_tentacles, rig_tentacles},
     biology::Biology,
     capsule, ellipsoid,
     genome::Gene,
@@ -20,7 +20,7 @@ use crate::scene::life::{
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Function, Organ, Viscera, pair, site},
 };
-use spirv_std::glam::{Vec3, vec2, vec3, vec4};
+use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -112,6 +112,16 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit.join(spout.max(-bore), 7);
     hit.join((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 3);
     hit.join((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 3);
+    // A pair of short, toothed mandibles either side of the spout, which part sideways as it
+    // feeds to shear the softened meat its acid has opened, and close over the spout's root in
+    // flight.
+    let open = gape(c);
+    let hinge = vec3(0.32, -0.42, -1.95);
+    let tip = vec3(0.1 + open * 0.42, -0.5, -2.55 + open * 0.12);
+    let bend = hinge.lerp(tip, 0.5) + vec3(0.16 + open * 0.08, -0.04, 0.0);
+    let mandible = curved_tube(side, hinge, bend, tip, 0.09);
+    let notch = ((side.z - hinge.z) / 0.12).fract_gl() - 0.5;
+    hit.join(mandible + notch.abs() * 0.02, 7);
     hit.join(oral_tentacles(p, c, MOUTH, 0.75, ORAL_PAIRS), 8);
     hit
 }

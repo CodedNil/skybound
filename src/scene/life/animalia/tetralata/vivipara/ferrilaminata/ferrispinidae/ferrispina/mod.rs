@@ -2,8 +2,9 @@ pub use super::render_wings;
 use crate::scene::{
     life::{
         CreatureInstance,
-        animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::{
-            BLADE_KEENNESS, BLADE_LENGTH,
+        animalia::tetralata::{
+            gape,
+            vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH},
         },
         biology::Biology,
         capsule, cowl, eyes,
@@ -329,11 +330,7 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
 /// meeting in a hook in front of the mouth. They part sideways and down as far as it is gaping:
 /// wide as it bites a piece from what it holds, a little as it strikes, shut in flight.
 fn jaws(p: Vec3, c: &CreatureInstance, build: Build) -> f32 {
-    let gape = if c.dynamics.w > 0.0 {
-        c.dynamics.z
-    } else {
-        0.0
-    };
+    let gape = gape(c);
     let mouth = mouth(build.length, build.head);
     let side = vec3(p.x.abs(), p.y, p.z);
     let head = build.head;

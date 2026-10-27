@@ -1,7 +1,7 @@
 pub use super::render_wings;
 use crate::scene::life::{
     CreatureInstance, Look,
-    animalia::tetralata::curved_tube,
+    animalia::tetralata::{curved_tube, gape},
     annulated,
     biology::Biology,
     capsule, eyes,
@@ -124,6 +124,22 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             4,
         );
     }
+    // Two hooked fangs folded back under the mouth, which swing down and forward as it feeds to
+    // pierce what it has reeled in and hold it while its gut juices soften it.
+    let open = gape(c);
+    let (swing, hold) = (open * 1.1).sin_cos();
+    let root = lip + vec3(0.07, -0.04, 0.0);
+    let fold = |v: Vec3| vec3(v.x, v.y * hold - v.z * swing, v.z * hold + v.y * swing);
+    hit.join(
+        curved_tube(
+            side,
+            root,
+            root + fold(vec3(0.02, -0.06, 0.14)),
+            root + fold(vec3(-0.04, -0.16, 0.22)),
+            0.035,
+        ),
+        7,
+    );
     hit.socket(eyes(p, 2.6, 0.32), 0.32 * 0.16);
     hit
 }
