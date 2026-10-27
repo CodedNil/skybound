@@ -97,7 +97,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     for lip in 0..2 {
         let height = if lip == 0 { 0.32 } else { -0.4 };
         let lure = vec3(lure_x, height, -3.45 + (lure_x * 0.6).power(2) * 0.3);
-        hit.join((rippled - lure).length() - bulb, 9);
+        hit.blend((rippled - lure).length() - bulb, 9, 0.04);
     }
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(

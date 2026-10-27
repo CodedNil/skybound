@@ -100,7 +100,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         hit.join(hoop, 0);
     }
     let facing = vec3(0.0, -0.3, -1.0).normalize();
-    hit.join(sucker(p, vec3(0.0, -0.05, -1.75), facing, 0.28), 8);
+    hit.blend(sucker(p, vec3(0.0, -0.05, -1.75), facing, 0.28), 8, 0.05);
     let mouth = p - vec3(0.0, -0.05, -1.8);
     let around = mouth.y.atan2(mouth.x);
     let sector = TAU / 8.0;

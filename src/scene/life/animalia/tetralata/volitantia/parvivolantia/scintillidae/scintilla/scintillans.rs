@@ -95,7 +95,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut hit = Surface::new(torso(p, vec3(0.2, 0.18, 0.9), 0.16), 0);
     let side = if p.x < 0.0 { -1.0 } else { 1.0 };
     let root = plume(side, 0.0, c);
-    hit.join(
+    hit.blend(
         curved_tube(
             p,
             root,
@@ -104,6 +104,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             0.03,
         ),
         4,
+        0.03,
     );
     let mut barbs = 1e6f32;
     let mut lights = 1e6f32;

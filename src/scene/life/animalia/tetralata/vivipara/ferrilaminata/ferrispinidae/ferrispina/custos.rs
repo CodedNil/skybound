@@ -84,7 +84,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let throat = vec3(p.x.abs(), -p.y, p.z);
     for plate in 0..3 {
         let f = plate as f32;
-        hit.join(
+        hit.blend(
             super::blade(
                 throat,
                 vec3(0.45, BUILD.depth * 0.35, -BUILD.length * 0.62 + f * 0.7),
@@ -96,11 +96,13 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
                 Vec2::ZERO,
             ),
             2,
+            0.08,
         );
     }
-    hit.join(
+    hit.blend(
         oral_tentacles(p, c, mouth(BUILD.length, BUILD.head), 1.1, ORAL_PAIRS),
         8,
+        0.1,
     );
     hit
 }
