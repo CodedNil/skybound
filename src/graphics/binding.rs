@@ -8,7 +8,7 @@ use bevy::{
             ColorWrites, CompareFunction, ComputePipeline, ComputePipelineDescriptor,
             DepthBiasState, DepthStencilState, FragmentState, MultisampleState, PipelineCache,
             PrimitiveState, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType,
-            ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureView,
+            ShaderStages, StencilState, TextureFormat, TextureSampleType, TextureView, VertexState,
             binding_types::{
                 sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d,
                 texture_3d, texture_depth_2d, uniform_buffer_sized,
@@ -58,6 +58,16 @@ pub struct Pass {
     pipeline: Option<CachedRenderPipelineId>,
 }
 
+/// The herd's pass: one pipeline per species, each the same quad and fragment shader with the
+/// species fixed as a specialisation constant, so the driver strips every other species' body
+/// from it. Tracing all of them in one shader takes so many registers that it runs many times
+/// slower.
+pub struct Creatures {
+    formats: &'static [TextureFormat],
+    layout: Option<BindGroupLayoutDescriptor>,
+    pipelines: Vec<Option<CachedRenderPipelineId>>,
+}
+
 /// A compute pass, queued like a [`Pass`].
 pub struct Compute {
     entry: &'static str,
@@ -78,7 +88,15 @@ impl Bind<'_> {
             Bind::Storage(_) => storage_buffer_read_only_sized(false, None),
             Bind::Output(_) => storage_buffer_sized(false, None),
         };
-        builder.build(binding, ShaderStages::FRAGMENT | ShaderStages::COMPUTE)
+        // The frame and the buffers a pass only reads are seen by vertex shaders too, which place
+        // the herd's quads.
+        let stages = match self {
+            Bind::Frame(_) | Bind::Storage(_) => {
+                ShaderStages::VERTEX | ShaderStages::FRAGMENT | ShaderStages::COMPUTE
+            }
+            _ => ShaderStages::FRAGMENT | ShaderStages::COMPUTE,
+        };
+        builder.build(binding, stages)
     }
 
     fn resource(&self) -> BindingResource<'_> {
@@ -185,6 +203,97 @@ impl Pass {
 
     pub fn get<'a>(&self, cache: &'a PipelineCache) -> Option<&'a RenderPipeline> {
         cache.get_render_pipeline(self.pipeline?)
+    }
+}
+
+impl Creatures {
+    pub const fn new(formats: &'static [TextureFormat]) -> Self {
+        Self {
+            formats,
+            layout: None,
+            pipelines: Vec::new(),
+        }
+    }
+
+    /// A bind group for the herd's pass.
+    pub fn group(&mut self, binder: &Binder, binds: &[Bind]) -> BindGroup {
+        let (layout, group) = binder.group("creature", binds);
+        self.layout = Some(layout);
+        group
+    }
+
+    /// Queue the pipelines of the species about to be drawn that have none yet. Each compiles
+    /// apart, and only once a species is met, so those in view are not kept waiting behind the
+    /// rest of the planet's.
+    pub fn want(&mut self, binder: &Binder, species: impl IntoIterator<Item = u32>) {
+        let Some(layout) = self.layout.clone() else {
+            return;
+        };
+        for kind in species {
+            let index = kind as usize;
+            if self.pipelines.len() <= index {
+                self.pipelines.resize(index + 1, None);
+            }
+            if self.pipelines[index].is_none() {
+                self.pipelines[index] = Some(self.queue(binder, &layout, kind));
+            }
+        }
+    }
+
+    fn queue(
+        &self,
+        binder: &Binder,
+        layout: &BindGroupLayoutDescriptor,
+        species: u32,
+    ) -> CachedRenderPipelineId {
+        let constants = vec![("0".into(), f64::from(species))];
+        binder
+            .cache
+            .queue_render_pipeline(RenderPipelineDescriptor {
+                label: Some(format!("creature {species}").into()),
+                layout: vec![layout.clone()],
+                immediate_size: 0,
+                vertex: VertexState {
+                    shader: binder.shader.clone(),
+                    shader_defs: Vec::new(),
+                    entry_point: Some("creature_quad".into()),
+                    buffers: Vec::new(),
+                    constants: Vec::new(),
+                },
+                primitive: PrimitiveState::default(),
+                // Reversed depth: nearer is greater, and the sky is cleared to zero.
+                depth_stencil: Some(DepthStencilState {
+                    format: TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(CompareFunction::GreaterEqual),
+                    stencil: StencilState::default(),
+                    bias: DepthBiasState::default(),
+                }),
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    shader: binder.shader.clone(),
+                    entry_point: Some("creature".into()),
+                    constants,
+                    targets: self
+                        .formats
+                        .iter()
+                        .map(|&format| {
+                            Some(ColorTargetState {
+                                format,
+                                blend: None,
+                                write_mask: ColorWrites::ALL,
+                            })
+                        })
+                        .collect(),
+                    shader_defs: Vec::new(),
+                }),
+                zero_initialize_workgroup_memory: false,
+            })
+    }
+
+    /// The pipeline for a species, once it has compiled.
+    pub fn get<'a>(&self, cache: &'a PipelineCache, species: u32) -> Option<&'a RenderPipeline> {
+        cache.get_render_pipeline((*self.pipelines.get(species as usize)?)?)
     }
 }
 

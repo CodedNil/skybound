@@ -125,28 +125,15 @@ fn reaches(ray: Ray, c: &CreatureInstance, before: f32) -> bool {
     c.position.w > 0.0 && bounds.x <= bounds.y && bounds.y > 0.0 && bounds.x < before
 }
 
-fn opaque_hit(ray: Ray, frame: &FrameUniform, creatures: &[CreatureInstance]) -> Hit {
+fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
+    // The herd is drawn after this pass, each creature by its species' own pipeline; see
+    // [`creature`]. Only the player and their mount are traced here, by their own tracers.
     let mut closest = Hit::MISS;
-    for i in 0..HERD {
-        let c = &creatures[i];
-        if reaches(ray, c, closest.distance()) {
-            let hit = life::render_opaque(
-                Ray {
-                    max_distance: closest.distance(),
-                    ..ray
-                },
-                c,
-            );
-            if hit.distance() < closest.distance() {
-                closest = hit;
-            }
-        }
-    }
     for i in 0..2 {
         let c = &frame.players[i];
         let bounds = intersect_sphere(ray.origin - c.position.xyz(), ray.direction, c.position.w);
         if c.position.w > 0.0 && bounds.x <= bounds.y && bounds.y > 0.0 {
-            let hit = life::render_opaque(
+            let hit = life::render_player(
                 Ray {
                     max_distance: closest.distance(),
                     ..ray
@@ -290,6 +277,27 @@ fn motion(position: Vec3, previous: Vec3, frame: &FrameUniform) -> Vec2 {
     }
 }
 
+/// A solid hit's colour (or a debug view of it), motion, normal and depth, as the opaque targets
+/// take them.
+fn solid_output(hit: Hit, ray: Ray, frame: &FrameUniform) -> (Vec4, Vec4, Vec4, f32) {
+    let point = ray.origin + ray.direction * hit.distance();
+    let clip = frame.view.clip_from_world * point.extend(1.0);
+    let depth = clip.z / clip.w;
+    let mv = motion(point, hit.previous_position, frame);
+    let color = match frame.view.times.z as u32 {
+        1 => Vec3::splat(depth.max(0.0).sqrt()),
+        2 => hit.normal * 0.5 + 0.5,
+        3 => (mv.abs() / frame.view.times.w.max(0.0001)).extend(0.0),
+        _ => hit.color(),
+    };
+    (
+        color.extend(1.0),
+        mv.extend(0.0).extend(0.0),
+        (hit.normal * 0.5 + 0.5).extend(1.0),
+        depth,
+    )
+}
+
 /// Solids, with the sky behind them; every pixel writes depth and motion.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
@@ -299,36 +307,115 @@ pub fn opaque(
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
     #[spirv(descriptor_set = 0, binding = 4)] sky_texture: &Image!(2D, type=f32, sampled=true),
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] creatures: &[CreatureInstance],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
     #[spirv(location = 2)] out_normal: &mut Vec4,
     #[spirv(frag_depth)] out_depth: &mut f32,
 ) {
     let ray = scene_ray(uv, frame, true);
-    let hit = opaque_hit(ray, frame, creatures);
+    let hit = opaque_hit(ray, frame);
+    if hit.is_hit() {
+        (*out_color, *out_motion, *out_normal, *out_depth) = solid_output(hit, ray, frame);
+        return;
+    }
     let point = ray.origin + ray.direction * hit.distance();
-    let (depth, mv, color) = if hit.is_hit() {
-        let clip = frame.view.clip_from_world * point.extend(1.0);
-        (
-            clip.z / clip.w,
-            motion(point, hit.previous_position, frame),
-            hit.color(),
-        )
-    } else {
-        let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
-        (0.0, motion(point, point, frame), sky)
-    };
+    let sky = atmosphere(uv, frame, sampler, sky_texture).sky;
     *out_color = match frame.view.times.z as u32 {
-        1 => Vec3::splat(depth.max(0.0).sqrt()),
+        1 => Vec3::ZERO,
         2 => hit.normal * 0.5 + 0.5,
-        3 => (mv.abs() / frame.view.times.w.max(0.0001)).extend(0.0),
-        _ => color,
+        3 => Vec3::ZERO,
+        _ => sky,
     }
     .extend(1.0);
-    *out_motion = mv.extend(0.0).extend(0.0);
-    *out_normal = (hit.normal * 0.5 + 0.5).extend(if hit.is_hit() { 1.0 } else { 0.5 });
-    *out_depth = depth;
+    *out_motion = motion(point, point, frame).extend(0.0).extend(0.0);
+    *out_normal = (hit.normal * 0.5 + 0.5).extend(0.5);
+    *out_depth = 0.0;
+}
+
+/// A creature of the herd, drawn as a quad over its bounding sphere.
+///
+/// The quad faces the camera at the sphere's centre, just wide enough to cover its outline, or
+/// covers the whole view when the camera is close enough to be inside it or nearly so. Each
+/// species is drawn by its own pipeline over the creatures of that species alone, so its fragment
+/// shader holds one species' tracer and not every one's.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
+#[spirv(vertex(entry_point_name = "creature_quad"))]
+pub fn creature_quad(
+    #[spirv(vertex_index)] vertex: u32,
+    #[spirv(instance_index)] instance: u32,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] creatures: &[CreatureInstance],
+    #[spirv(position)] out_position: &mut Vec4,
+    #[spirv(flat, location = 0)] out_instance: &mut u32,
+) {
+    *out_instance = instance;
+    let corner = vec2(
+        if vertex == 1 || vertex == 2 || vertex == 4 {
+            1.0
+        } else {
+            -1.0
+        },
+        if vertex == 2 || vertex == 4 || vertex == 5 {
+            1.0
+        } else {
+            -1.0
+        },
+    );
+    let c = &creatures[instance as usize];
+    let radius = c.position.w;
+    if radius <= 0.0 {
+        *out_position = Vec4::ZERO;
+        return;
+    }
+    let to = c.position.xyz() - frame.view.world_position.xyz();
+    let distance = to.length();
+    if distance < radius * 1.5 {
+        *out_position = corner.extend(0.5).extend(1.0);
+        return;
+    }
+    let forward = to / distance;
+    let across = if forward.y.abs() > 0.9 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
+    let right = forward.cross(across).normalize();
+    let up = right.cross(forward);
+    // Wide enough at the centre's distance to hold the cone of rays that graze the sphere.
+    let half = radius * distance / (distance * distance - radius * radius).sqrt() * 1.05;
+    let point = c.position.xyz() + (right * corner.x + up * corner.y) * half;
+    *out_position = frame.view.clip_from_world * point.extend(1.0);
+}
+
+/// The creature beneath a [`creature_quad`], traced by the tracer of the one species this
+/// pipeline is specialised to and depth-tested against the solids already drawn.
+// The game's own passes, left out of the preview module.
+#[cfg(not(feature = "preview"))]
+#[spirv(fragment(depth_replacing, entry_point_name = "creature"))]
+pub fn creature(
+    #[spirv(frag_coord)] fragment: Vec4,
+    #[spirv(flat, location = 0)] instance: u32,
+    #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] creatures: &[CreatureInstance],
+    #[spirv(spec_constant(id = 0, default = 0))] species: u32,
+    #[spirv(location = 0)] out_color: &mut Vec4,
+    #[spirv(location = 1)] out_motion: &mut Vec4,
+    #[spirv(location = 2)] out_normal: &mut Vec4,
+    #[spirv(frag_depth)] out_depth: &mut f32,
+) {
+    let uv = (fragment.xy() - frame.viewport.xy()) / frame.viewport.zw();
+    let ray = scene_ray(uv, frame, true);
+    let c = &creatures[instance as usize];
+    let hit = if reaches(ray, c, T_MAX) {
+        life::render_opaque_of(species, ray, c)
+    } else {
+        Hit::MISS
+    };
+    if !hit.is_hit() {
+        spirv_std::arch::kill();
+    }
+    (*out_color, *out_motion, *out_normal, *out_depth) = solid_output(hit, ray, frame);
 }
 
 /// The clouds along every pixel's ray, marched apart from the rest of the volume so that each
@@ -588,7 +675,7 @@ pub fn transparent(
         if interval.x > interval.y || interval.y < 0.0 || interval.x > ray.max_distance {
             continue;
         }
-        life::visit_thin(ray, c, |hit| hits.add(hit));
+        life::visit_player_thin(ray, c, |hit| hits.add(hit));
     }
     if hits.count == 0 {
         *out_color = Vec4::ZERO;

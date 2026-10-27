@@ -7,7 +7,7 @@ use crate::{
         world::WorldData,
     },
     graphics::{
-        binding::{Bind, Binder, Pass},
+        binding::{Bind, Binder, Creatures, Pass},
         light::LightVolume,
         targets::{SceneTargets, texture},
         textures::{SkyLookup, VolumeTextures},
@@ -45,7 +45,7 @@ use skybound::scene::{
     life::{CreatureInstance, HERD},
 };
 use spirv_std::glam::DVec3 as SceneDVec3;
-use std::{array::from_fn, env, sync::atomic::Ordering};
+use std::{array::from_fn, env, ops::Range, sync::atomic::Ordering};
 
 #[derive(Resource)]
 pub struct SceneBuffer {
@@ -58,6 +58,9 @@ pub struct SceneBuffer {
     /// The world's creatures drawn this frame, always `HERD` long so the buffer, and the bind
     /// groups that hold it, never change.
     creatures: RawBufferVec<CreatureInstance>,
+    /// The creatures of each species present, as runs of the buffer, which is sorted by species
+    /// so each is drawn by its own pipeline in one call.
+    species: Vec<(u32, Range<u32>)>,
     /// When the uploaded cloud index was built.
     cloud_built: f32,
 }
@@ -71,6 +74,7 @@ impl Default for SceneBuffer {
             cloud_index: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_cells: RawBufferVec::new(BufferUsages::STORAGE),
             creatures: RawBufferVec::new(BufferUsages::STORAGE),
+            species: Vec::new(),
             cloud_built: f32::NAN,
             profile: env::var("SKYBOUND_PROFILE_VOLUME")
                 .ok()
@@ -121,6 +125,7 @@ struct BindGroups {
     volume: TextureViewId,
     native: [TextureViewId; 2],
     opaque: BindGroup,
+    creature: BindGroup,
     volume_group: BindGroup,
     march_group: BindGroup,
     sky: BindGroup,
@@ -134,6 +139,7 @@ struct BindGroups {
 #[derive(Resource)]
 pub struct ScenePipeline {
     opaque: Pass,
+    creatures: Creatures,
     volume: Pass,
     clouds: Pass,
     thin: Pass,
@@ -190,6 +196,11 @@ impl FromWorld for ScenePipeline {
                 &[HALF, TextureFormat::Rg16Float, TextureFormat::Rgb10a2Unorm],
                 true,
             ),
+            creatures: Creatures::new(&[
+                HALF,
+                TextureFormat::Rg16Float,
+                TextureFormat::Rgb10a2Unorm,
+            ]),
             volume: Pass::new("volume", &[HALF, TextureFormat::Rg16Float], false),
             clouds: Pass::new("clouds", &[HALF, FULL], false),
             thin: Pass::new("transparent", &[HALF; 3], false),
@@ -283,10 +294,22 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         viewport: viewport.to_scene(),
     });
     buffer.uniform.write_buffer(&device, &queue);
+    let mut drawn: Vec<CreatureInstance> = (0..HERD)
+        .map(|index| herd.0.get(index).copied().unwrap_or_default())
+        .collect();
+    drawn.sort_by_key(|c| (c.position.w <= 0.0, c.kind.x));
+    buffer.species.clear();
+    for (index, c) in (0u32..).zip(&drawn) {
+        if c.position.w <= 0.0 {
+            break;
+        }
+        match buffer.species.last_mut() {
+            Some((kind, run)) if *kind == c.kind.x => run.end = index + 1,
+            _ => buffer.species.push((c.kind.x, index..index + 1)),
+        }
+    }
     buffer.creatures.clear();
-    buffer
-        .creatures
-        .extend((0..HERD).map(|index| herd.0.get(index).copied().unwrap_or_default()));
+    buffer.creatures.extend(drawn);
     buffer.creatures.write_buffer(&device, &queue);
     buffer.previous_clip = view
         .clip_from_world
@@ -401,6 +424,15 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         return;
     };
     let native = [view.main_texture_view(), view.main_texture_other_view()];
+    let binder = Binder {
+        device: &device,
+        cache: &cache,
+        fullscreen: &fullscreen,
+        shader: shader.0.clone(),
+    };
+    pipeline
+        .creatures
+        .want(&binder, buffer.species.iter().map(|(species, _)| *species));
     if pipeline.groups.as_ref().is_some_and(|groups| {
         groups.cloud_built.to_bits() == buffer.cloud_built.to_bits()
             && groups.depth == depth.id()
@@ -410,12 +442,6 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     }) {
         return;
     }
-    let binder = Binder {
-        device: &device,
-        cache: &cache,
-        fullscreen: &fullscreen,
-        shader: shader.0.clone(),
-    };
     let pipeline = &mut *pipeline;
     let (base, detail, shapes, transmittance) = (
         &base.texture_view,
@@ -432,9 +458,11 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Float(&sky.view),
         ]
     };
-    let mut opaque_binds = common().into_iter().collect::<Vec<_>>();
-    opaque_binds.push(Bind::Storage(creatures.clone()));
-    let opaque = pipeline.opaque.group(&binder, &opaque_binds);
+    let opaque = pipeline.opaque.group(&binder, &common());
+    let creature = pipeline.creatures.group(
+        &binder,
+        &[Bind::Frame(frame.clone()), Bind::Storage(creatures.clone())],
+    );
     // The cloud, thin-surface and volume passes all read the whole scene; the volume pass also
     // reads the clouds rebuilt before it.
     let scene = |slab: bool| {
@@ -518,6 +546,7 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         volume: targets.color.id(),
         native: native.map(TextureView::id),
         opaque,
+        creature,
         volume_group,
         march_group,
         sky: sky_group,
@@ -648,6 +677,18 @@ pub fn raymarch_pass(
             render_viewport(view, resolution),
             "opaque",
         );
+        draw_creatures(
+            &mut context,
+            world,
+            groups,
+            [
+                target.get_color_attachment(),
+                attachment(&targets.scene_motion, false),
+                attachment(normal, false),
+            ],
+            depth,
+            render_viewport(view, resolution),
+        );
         draw(
             &mut context,
             clouds,
@@ -672,6 +713,60 @@ pub fn raymarch_pass(
             UVec4::new(0, 0, targets.size.x, targets.size.y),
             "volumetrics",
         );
+    }
+}
+
+/// The herd over the solids already drawn: each species present by its own pipeline, its
+/// creatures' quads in one instanced call, depth-tested against what is in front of them.
+fn draw_creatures(
+    context: &mut RenderContext,
+    world: &World,
+    groups: &BindGroups,
+    colors: [RenderPassColorAttachment<'_>; 3],
+    depth: &TextureView,
+    viewport: UVec4,
+) {
+    let pipeline = world.resource::<ScenePipeline>();
+    let cache = world.resource::<PipelineCache>();
+    let buffer = world.resource::<SceneBuffer>();
+    let recorder = context.diagnostic_recorder();
+    let span = recorder
+        .as_ref()
+        .map(|r| r.time_span(context.command_encoder(), "creatures"));
+    let mut pass = context.begin_tracked_render_pass(RenderPassDescriptor {
+        label: Some("creatures"),
+        color_attachments: &colors.map(Some),
+        depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(Operations {
+                load: LoadOp::Load,
+                store: StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    pass.set_viewport(
+        viewport.x as f32,
+        viewport.y as f32,
+        viewport.z as f32,
+        viewport.w as f32,
+        0.0,
+        1.0,
+    );
+    pass.set_bind_group(0, &groups.creature, &[]);
+    for (species, run) in &buffer.species {
+        // A species whose pipeline is still compiling is left out until it is ready.
+        if let Some(species_pipeline) = pipeline.creatures.get(cache, *species) {
+            pass.set_render_pipeline(species_pipeline);
+            pass.draw(0..6, run.clone());
+        }
+    }
+    drop(pass);
+    if let Some(span) = span {
+        span.end(context.command_encoder());
     }
 }
 
