@@ -1,15 +1,18 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    capsule, ellipsoid,
-    plantae::{count, gene, pick, rotate, speckle},
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        capsule, ellipsoid,
+        plantae::{count, gene, pick, rotate, speckle},
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
@@ -55,12 +58,12 @@ fn sail(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
     let edge = reach
         * match pick(c, 1.0, 4) {
             0 => 1.0,
-            1 => 1.0 / (1.0 + 0.6 * angle.sin().powi(2)),
+            1 => 1.0 / (1.0 + 0.6 * angle.sin().power(2)),
             2 => {
                 let points = count(c, 2.0, 5, 8) as f32;
                 0.72 + 0.28 * (angle * points + salt).cos().abs().powf(0.6)
             }
-            _ => 1.0 / (1.0 + 2.2 * angle.sin().powi(2)),
+            _ => 1.0 / (1.0 + 2.2 * angle.sin().power(2)),
         };
     let waves = 2.0 + gene(c, 3.0) * 4.0;
     let swell = (0.1 + gene(c, 4.0) * 0.5) * (along / reach);
@@ -68,7 +71,7 @@ fn sail(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
     let height = (p.x / reach * waves + time + salt).sin()
         * (p.z / reach * waves * 0.7 - time).cos()
         * swell
-        - (along / reach).powi(2) * gene(c, 5.0) * 0.8;
+        - (along / reach).power(2) * gene(c, 5.0) * 0.8;
     let membrane = ((p.y - height).abs() * 0.8 - 0.035).max(along - edge);
     let mut shape = Surface::new(membrane, 1);
     // Glands along the margin, glowing where the light is dim.

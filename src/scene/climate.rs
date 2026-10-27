@@ -1,6 +1,6 @@
 use crate::scene::{
     PLANET_RADIUS,
-    math::{cube, lattice, square},
+    math::{Power, cube, lattice, square},
     planet::surface_frame,
 };
 use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, TAU};
@@ -252,7 +252,7 @@ impl Climate {
             light: (0.08 + cube(polar) * 0.92) * (1.0 - moisture * 0.35),
             aur: (-altitude / 1800.0).exp(),
             dust: (-altitude / 2600.0).exp()
-                * (1.0 - humidity).powi(2)
+                * (1.0 - humidity).power(2)
                 * (1.0 - polar).powf(1.5)
                 * (1.0 - convection * 0.6),
             storm,

@@ -1,6 +1,5 @@
 use crate::scene::life::biology::Biology;
 pub mod caelomorpha;
-pub mod young;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 
@@ -29,7 +28,6 @@ pub mod nature {
         Kind,
         animalia::{
             ETHOLOGY as ANIMAL,
-            bullidorsata::young::POLYP,
             mind::{Ethology, Situation},
             physiology::Physiology,
         },
@@ -39,7 +37,6 @@ pub mod nature {
     pub const PHYSIOLOGY: Physiology = Physiology {
         eats: |_, food| food == Kind::Auracoccus,
         floats: true,
-        form: |_, young| if young < 0.7 { POLYP } else { 0 },
         ..super::super::PHYSIOLOGY
     };
 

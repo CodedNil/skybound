@@ -1,12 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    capsule, ellipsoid,
-    plantae::{count, gene, pick, speckle},
-    smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
@@ -14,6 +5,18 @@ use crate::scene::life::{
         physiology::{BLADDER, FROND, ROOT, STEM},
         pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::BASIN,
     },
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        capsule, ellipsoid,
+        plantae::{count, gene, pick, speckle},
+        smooth_min,
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
@@ -61,8 +64,8 @@ fn outline(c: &CreatureInstance, angle: f32) -> f32 {
     match pick(c, 1.0, 4) {
         0 => 1.0,
         1 => 0.9 + 0.1 * (turn * count(c, 3.0, 5, 9) as f32).cos().abs(),
-        2 => 1.0 - 0.3 * (1.0 - (turn.cos() * 0.5 + 0.5)).powi(6),
-        _ => 0.82 + 0.18 * turn.cos().powi(2) + 0.25 * turn.cos().max(0.0).powi(8),
+        2 => 1.0 - 0.3 * (1.0 - (turn.cos() * 0.5 + 0.5)).power(6),
+        _ => 0.82 + 0.18 * turn.cos().power(2) + 0.25 * turn.cos().max(0.0).power(8),
     }
 }
 
@@ -79,7 +82,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let along = p.xz().length();
     let angle = p.z.atan2(p.x);
     let edge = reach * outline(c, angle);
-    let rise = |r: f32| FLOOR + depth * (r / edge).powi(2);
+    let rise = |r: f32| FLOOR + depth * (r / edge).power(2);
     let slope = 2.0 * depth * along / (edge * edge);
     let shell = (p.y - rise(along)).abs() / (1.0 + slope * slope).sqrt() - 0.12;
     let mut shape = Surface::new(shell.max(along - edge), 1);

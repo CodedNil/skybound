@@ -1,9 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    capsule, eyespots, rounded, smooth_min, sucker,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BROOD,
@@ -12,6 +6,15 @@ use crate::scene::life::{
     animalia::physiology::PUMP,
     animalia::sanguinivora::volantia::WING_MUSCLE,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        capsule, eyespots, rounded, smooth_min, sucker,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
@@ -67,7 +70,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mut body = rounded(p - vec3(0.0, 0.0, 0.4), vec3(1.45, 1.25, 2.0));
     for i in 0..7 {
         let z = i as f32 * 0.5 - 1.2;
-        let rise = 1.2 - (z - 0.4).powi(2) * 0.09;
+        let rise = 1.2 - (z - 0.4).power(2) * 0.09;
         body = smooth_min(
             body,
             rounded(p - vec3(0.0, rise, z), vec3(0.16, 0.32, 0.16)),

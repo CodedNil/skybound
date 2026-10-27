@@ -1,4 +1,4 @@
-use crate::scene::{life::CreatureInstance, planet::GRAVITY};
+use crate::scene::{life::CreatureInstance, math::Power, planet::GRAVITY};
 use core::array::from_fn;
 use spirv_std::glam::{Vec3, vec3};
 
@@ -22,7 +22,7 @@ impl Cloth {
             let twist = t * 4.5 + (t * 7.0 + phase).sin() * t * 0.6;
             let across = vec3(twist.cos(), twist.sin(), 0.0);
             anchor
-                + across * ((i % 3) as f32 - 1.0) * width * (1.0 - t.powi(2) * 0.98)
+                + across * ((i % 3) as f32 - 1.0) * width * (1.0 - t.power(2) * 0.98)
                 + vec3(
                     ((curl + phase).sin() - phase.sin()) * length * 0.18,
                     -length * t * 0.42 + curl.sin() * length * 0.07,

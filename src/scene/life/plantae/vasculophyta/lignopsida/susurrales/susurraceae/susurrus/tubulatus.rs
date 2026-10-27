@@ -1,15 +1,18 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    plantae::{count, frond, gene, rotate, speckle},
-    smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        plantae::{count, frond, gene, rotate, speckle},
+        smooth_min,
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, Vec3Swizzles, vec2, vec3};
@@ -121,7 +124,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         // The flared mouth that whistles, rolling out of the pipe.
         let along = (p - mouth).dot(axis);
         let off = (p - mouth - axis * along).length();
-        let flare = pipe * (0.9 + ((along + 1.0) / 1.0).clamp(0.0, 1.0).powi(2) * 1.5);
+        let flare = pipe * (0.9 + ((along + 1.0) / 1.0).clamp(0.0, 1.0).power(2) * 1.5);
         let bell = ((off - flare).abs() - 0.09).max(along).max(-along - 1.0) * 0.8;
         // Grown out of the trunk, its root swelling into the wood.
         shape.blend(

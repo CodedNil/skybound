@@ -1,16 +1,19 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    ellipsoid,
-    plantae::{count, gene, pick, rotate, speckle},
-    rounded,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     organs::{Viscera, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        ellipsoid,
+        plantae::{count, gene, pick, rotate, speckle},
+        rounded,
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, vec2, vec3};
@@ -68,7 +71,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             rounded(vec3(p.x / scallop, p.y, p.z / scallop), vec3(3.0, 0.9, 3.0)) * 0.7
         }
         _ => {
-            let star = 0.7 + (angle * arms as f32).cos().max(0.0).powi(2) * 0.6;
+            let star = 0.7 + (angle * arms as f32).cos().max(0.0).power(2) * 0.6;
             rounded(vec3(p.x / star, p.y, p.z / star), vec3(2.8, 1.1, 2.8)) * star.min(1.0) * 0.6
         }
     };

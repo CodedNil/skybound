@@ -1,10 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    capsule, prepare_pose, ribbons, rig_ribbons, smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BROOD,
@@ -13,6 +6,16 @@ use crate::scene::life::{
     animalia::physiology::MUSCLE,
     animalia::physiology::PUMP,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        capsule, prepare_pose, ribbons, rig_ribbons, smooth_min,
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
@@ -66,7 +69,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mirrored = vec3(p.x.abs(), p.y, p.z);
     for i in 0..6 {
         let z = i as f32 * 1.25 - 3.2;
-        let reach = 1.35 * (1.0 - (z / 4.2).powi(2)).max(0.1);
+        let reach = 1.35 * (1.0 - (z / 4.2).power(2)).max(0.1);
         hit.join(
             capsule(
                 mirrored,

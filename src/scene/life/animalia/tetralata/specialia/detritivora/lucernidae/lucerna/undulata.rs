@@ -1,10 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    biology::Biology,
-    ellipsoid, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -16,6 +9,16 @@ use crate::scene::life::{
     animalia::tetralata::CISTERN,
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Function, Organ, Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        biology::Biology,
+        ellipsoid, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
+        surface::{Ray, Surface, TraceResult},
+        tail,
+    },
+    math::Power,
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -76,7 +79,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let lure_x = ((rippled.x / 0.5).round() * 0.5).clamp(-1.5, 1.5);
     for lip in 0..2 {
         let height = if lip == 0 { 0.32 } else { -0.4 };
-        let lure = vec3(lure_x, height, -3.45 + (lure_x * 0.6).powi(2) * 0.3);
+        let lure = vec3(lure_x, height, -3.45 + (lure_x * 0.6).power(2) * 0.3);
         hit.join((rippled - lure).length() - 0.1, 9);
     }
     let side = vec3(p.x.abs(), p.y, p.z);

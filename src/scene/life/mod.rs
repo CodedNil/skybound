@@ -14,6 +14,7 @@ use crate::scene::{
         plantae::plant_material,
         surface::{Hit, Ray, Surface, TraceResult, coat, trace_material},
     },
+    math::Power,
     planet::GRAVITY,
 };
 use core::f32::consts::TAU;
@@ -129,8 +130,7 @@ impl CreatureInstance {
         prepare_instance(&mut c);
         let look = KINDS[kind as usize].look();
         if c.life.w > 0.0 {
-            // The young have forms of their own, sized from the body alone and not the
-            // adult's wingspan.
+            // Eggs and spores are sized from the body alone and not the adult's wingspan.
             c.opaque_bounds =
                 juvenile_bounds(c.life.w as u32, c.opaque_bounds.truncate()).extend(0.0);
         } else if look.family == COAT {
@@ -181,18 +181,13 @@ impl CreatureInstance {
     }
 }
 
-/// The bounds of a young form, from the half extents of the adult's body: a larva long and slender,
-/// a polyp broad and low, a string of eggs trailing far behind, and an egg or a newborn round.
-/// Plants' young keep the plant's bounds.
+/// The bounds of an egg or spore, from the half extents of the adult's body: a string of eggs
+/// trailing far behind, an egg round, and a spore in the plant's own bounds.
 fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
     let size = body.max_element();
     match form {
-        animalia::bullidorsata::young::POLYP => vec3(size, size * 0.7, size),
-        animalia::sanguinivora::young::LARVA | animalia::tetralata::young::LARVA => {
-            vec3(size * 0.45, size * 0.4, size)
-        }
         animalia::tetralata::young::EGG_STRINGS => vec3(size * 0.6, size * 0.6, size * 1.5),
-        plantae::young::SPORE | plantae::young::SPROUT | plantae::young::BUD => body,
+        plantae::young::SPORE => body,
         _ => Vec3::splat(size * 0.6),
     }
 }
@@ -683,6 +678,13 @@ pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
 
 /// The solid body of a creature of species `kind`; see [`surface_of`].
 pub fn render_opaque_of(kind: u32, ray: Ray, c: &CreatureInstance) -> Hit {
+    // Eggs and spores are drawn as such, in their own materials: an egg's shell is not an adult's
+    // fin.
+    if c.life.w > 0.0 {
+        let mut hit = development::render_juvenile(ray, c).opaque;
+        hit.transmittance = Vec3::ZERO;
+        return hit;
+    }
     let look = look_of(kind);
     if look.family == OWN && c.life.w <= 0.0 {
         return if kind == Kind::Nae as u32 {
@@ -880,7 +882,7 @@ pub fn torso(p: Vec3, size: Vec3, head: f32) -> f32 {
 /// edges, a little dihedral for stability.
 pub fn cowl(p: Vec3, length: f32, head: f32) -> f32 {
     let q = p - cowl_centre(length, head);
-    let lift = q.x * q.x / (2.2 * head).powi(2) * 0.35 * head;
+    let lift = q.x * q.x / (2.2 * head).power(2) * 0.35 * head;
     rounded(q - vec3(0.0, lift, 0.0), vec3(2.2, 0.55, 2.0) * head)
 }
 
@@ -958,7 +960,7 @@ pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
         let t = ((swept.z + 4.5) / 9.0).clamp(0.0, 1.0);
         let half = reach * 0.32 * (t * (1.0 - t) * 4.0).sqrt().max(0.08);
         let droop = swept.y + 0.35 * t * t;
-        let arch = -0.12 * half * (1.0 - (swept.x / half).powi(2)).max(0.0);
+        let arch = -0.12 * half * (1.0 - (swept.x / half).power(2)).max(0.0);
         let vane = (swept.x.abs() - half)
             .max((droop - arch).abs() - 0.035)
             .max(swept.z.abs() - 4.5)
@@ -985,7 +987,7 @@ pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
         let rim = centre
             + vec3(
                 x * 1.0,
-                x * x / (2.2 * head).powi(2) * 0.35 * head,
+                x * x / (2.2 * head).power(2) * 0.35 * head,
                 -angle.cos() * 2.0 * head,
             );
         d = d.min((q - rim).length() - 0.11 * head);

@@ -1,13 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
-    capsule,
-    genome::Gene,
-    louvres, prepare_pose, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -20,7 +10,20 @@ use crate::scene::life::{
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Viscera, pair, site},
 };
-use spirv_std::glam::{Vec3, vec2, vec3, vec4};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+        biology::Biology,
+        capsule,
+        genome::Gene,
+        louvres, prepare_pose, rounded, smooth_min,
+        surface::{Ray, Surface, TraceResult, fbm},
+        tapered_tail,
+    },
+    math::Power,
+};
+use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -104,6 +107,7 @@ fn back(z: f32) -> f32 {
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let age = c.life.z;
     let girth = girth(p.z);
+    let flank = vec3(p.x.abs(), p.y, p.z);
     let middle = vec3(p.x, p.y - girth.z, 0.0);
     let reach = vec2(middle.x / girth.x.max(0.3), middle.y / girth.y.max(0.3)).length();
     let mut body = (reach - 1.0) * girth.y.min(girth.x).max(0.3) * 0.7;
@@ -120,7 +124,6 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let pleats = (throat.x * 3.2).cos() * 0.09 * (-throat.y - 1.0).clamp(0.0, 1.0);
     body = smooth_min(body, rounded(throat, vec3(3.0, 2.5, 3.8)) + pleats, 1.3);
     // Shoulders over the roots of each pair of wings.
-    let flank = vec3(p.x.abs(), p.y, p.z);
     for pair in 0..2 {
         let (z, rise) = (-3.5 + pair as f32 * 8.0, 2.0 - pair as f32 * 0.5);
         let shoulder = rounded(flank - vec3(girth.x * 0.72, rise, z), vec3(1.9, 1.6, 2.6));
@@ -129,9 +132,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // A low keel along the belly, which steadies it and holds the streamers.
     let keel = capsule(p, vec3(0.0, -3.6, -5.0), vec3(0.0, -2.6, 9.0), 0.9);
     body = smooth_min(body, keel, 1.2);
-    // The skin creases along its length with the years, and in rings where it bends.
-    let creases = (p.y * 2.3 + (p.z * 0.4).sin()).sin() * (p.z * 0.9).cos().abs() * 0.07;
-    body += creases * (0.4 + age * 0.6);
+    body += hide(p, flank, girth, age);
     // The bladders, sunk into the back and webbed to one another.
     let mut bladders = 1e6f32;
     if p.y > 0.5 {
@@ -158,15 +159,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, bladders, 0.7);
     body = louvres(body, p - vec3(0.0, -0.4, -2.0), vec3(5.0, 3.0, 11.0));
     let mut hit = Surface::new(body, 0);
-    // Air moss settles on the backs of the oldest, in patches that the years spread.
-    let warp = vec2(p.x + (p.z * 1.7).sin() * 0.8, p.z + (p.x * 2.3).sin() * 0.6);
-    let patches = (warp.x * 0.9 + warp.y * 0.5).sin() * (warp.y * 0.7 - warp.x * 1.1).sin()
-        + (p.x * 3.7 + p.z * 2.9).sin() * (p.z * 4.1).sin() * 0.3;
-    // As much of its back as the moss has covered, the patches spreading out from the highest.
-    let mossy = (patches - 1.1 + c.scars.w * 1.3).min((p.y - 1.5) * 0.5);
-    if mossy > 0.0 {
-        hit.blend(body - mossy.min(0.12), 10, 0.08);
-    }
+    moss(&mut hit, p, girth, c.scars.w);
     hit.socket(eyes(flank), 0.3);
     if p.y > 0.0 {
         // The horns grow out of the back through their collars, skin fading into horn.
@@ -200,49 +193,113 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     hit
 }
 
-/// Two ranks of resonating horns, `p` folded onto the right flank. Each rises from a fleshy
-/// collar on the back, curves up and back, and opens in a flared bell; its bore runs from the bell
-/// down into the body, and every year of growth leaves a ring on it.
+/// Two ranks of resonating horns, `p` folded onto the right flank.
+///
+/// Each grows out of the back from a broad, fleshy base, tapering as it sweeps up and back with a
+/// slight twist, and opens at its tip in a modest lip: the hollow horn its calls resonate in. Every
+/// year of growth leaves a ridge around it, wound a little about it as the horn twists, crowded
+/// near the base and fading towards the smooth young tip.
 fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
-    let grown = 0.6 + c.life.z * 0.25 + c.gene(HORNS) * 0.3;
+    // A calf is born with only nubs where its horns will be, and they lengthen fastest as it
+    // nears maturity, when it first needs its full voice.
+    let calf = c.life.y;
+    let grown = (0.6 + c.life.z * 0.25 + c.gene(HORNS) * 0.3) * (0.12 + 0.88 * calf * calf);
+    let stout = 0.45 + 0.55 * calf;
     let mut nearest = 1e6f32;
-    for i in 0..4 {
-        let f = i as f32;
-        let z = -5.6 + f * 4.6;
-        let foot = vec3(girth(z).x * 0.62, back(z) - 1.4, z);
-        let length = (9.0 - f * 1.4) * grown;
-        let rise = foot + vec3(0.7, length * 0.55, -0.2);
-        let sweep = rise + vec3(0.4, length * 0.35, length * 0.45);
-        let tip = sweep + vec3(0.1, length * 0.1, length * 0.3);
-        if (p - rise).length() > length * 1.6 + 2.0 {
+    for rank in 0..4 {
+        let z = -5.6 + rank as f32 * 4.6;
+        let foot = vec3(girth(z).x * 0.55, back(z) - 1.2, z);
+        let length = (9.0 - rank as f32 * 1.4) * grown;
+        let bend = foot + vec3(0.9, length * 0.62, -0.4);
+        let tip = foot + vec3(1.6, length * 0.78, length * 0.62);
+        if (p - bend).length() > length * 1.1 + 2.5 {
             continue;
         }
-        let rings = |q: Vec3, a: Vec3| ((q - a).length() * 5.0).sin() * 0.04;
-        let shaft = smooth_min(
-            tapered_tail(p, foot, rise, 1.0, 0.7),
-            smooth_min(
-                tapered_tail(p, rise, sweep, 0.7, 0.5),
-                tapered_tail(p, sweep, tip, 0.5, 0.42),
-                0.3,
-            ),
-            0.3,
-        ) + rings(p, foot);
-        // The bell, flaring wide at the mouth.
-        let axis = (tip - sweep).normalize();
-        let along = (p - tip).dot(axis);
-        let off = (p - tip - axis * along).length();
-        let widening = ((along + 2.0) / 2.2).clamp(0.0, 1.0);
-        let flare = 0.4 + widening.powi(3) * 0.9;
-        let bell = ((off - flare).abs() - 0.1)
-            .max(along - 0.2)
-            .max(-along - 2.0)
-            * 0.7;
-        let bore = tapered_tail(p, foot + (rise - foot) * 0.5, tip, 0.34, 0.3);
-        let horn = smooth_min(shaft, bell, 0.25).max(-bore);
-        let collar = rounded(p - foot - vec3(0.0, 0.9, 0.0), vec3(1.7, 1.3, 1.9));
-        nearest = nearest.min(smooth_min(horn, collar, 0.6));
+        // The nearest point of the horn's curve, found by a few steps along it.
+        let linear = (bend - foot) * 2.0;
+        let quadratic = tip - bend * 2.0 + foot;
+        let mut along =
+            ((p - foot).dot(tip - foot) / (tip - foot).length_squared()).clamp(0.0, 1.0);
+        for _ in 0..4 {
+            let tangent = linear + quadratic * (2.0 * along);
+            let off = foot + linear * along + quadratic * along * along - p;
+            let curve = tangent.length_squared() + off.dot(quadratic) * 2.0;
+            along = (along - off.dot(tangent) / curve.abs().max(1e-5)).clamp(0.0, 1.0);
+        }
+        let centre = foot + linear * along + quadratic * along * along;
+        let axis = (linear + quadratic * (2.0 * along)).normalize();
+        let offset = p - centre;
+        // Its bearing about the curve, for ridges wound round it.
+        let side = axis.cross(Vec3::Y).normalize();
+        let turn = offset.dot(axis.cross(side)).atan2(offset.dot(side));
+        let radius = (1.05 * (1.0 - along * 0.68) + (along - 0.85).max(0.0) * 1.6) * stout;
+        let ridges = (along * 26.0 + turn * 0.35).sin().max(0.0) * 0.06 * (1.0 - along).sqrt();
+        let horn = (offset.length() - radius - ridges) * 0.7;
+        // The hollow inside, open at the lip.
+        let bore = (offset.length() - radius * 0.6).max(0.82 - along);
+        nearest = nearest.min(horn.max(-bore));
     }
     nearest
+}
+
+/// What the years and the bending of so great a body do to its hide, as displacement: deep folds
+/// where it bends behind the head, round the wing roots and at the tail; long grooves down the
+/// throat, as a whale's; wrinkles fanning from the eyes and the corners of the mouth; and rough,
+/// lumpy callus on the brow and snout, which every cliff of kelp it has browsed has scoured. The
+/// older it is the deeper all of it runs.
+fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32) -> f32 {
+    let depth = 0.6 + age * 0.6;
+    // Rings of folds where the body bends.
+    let fold = |at: f32, spread: f32, every: f32| {
+        let near = (-(p.z - at) * (p.z - at) / spread).exp();
+        let wobble = (p.x * 0.8 + p.y * 0.6).sin() * 0.4;
+        -((p.z - at + wobble) * every).sin().abs() * near * 0.09
+    };
+    let mut skin = fold(-9.4, 3.0, 6.0) + fold(12.5, 4.0, 5.0);
+    // Folds gathered round each wing root.
+    for pair in 0..2 {
+        let (z, rise) = (-3.5 + pair as f32 * 8.0, 2.0 - pair as f32 * 0.5);
+        let root = vec3(girth.x * 0.8, rise, z);
+        let round = (flank - root).length();
+        let near = (-round * round / 6.0).exp();
+        skin -= (round * 4.5).sin().abs() * near * 0.07;
+    }
+    // Grooves down the throat, from the chin back to the throat sac.
+    if p.y < -1.5 && p.z < -5.0 {
+        let groove = (p.x * 4.2).cos().power(8);
+        let span = (1.0 - ((p.z + 10.0) / 5.0).abs()).clamp(0.0, 1.0);
+        skin -= groove * span * 0.08;
+    }
+    // Wrinkles fanning back from the eyes and the mouth.
+    let eye = flank - vec3(4.0, 0.3, -13.8);
+    let fan = (eye.y.atan2(eye.z) * 9.0).sin().abs();
+    skin -= (1.0 - fan).power(4) * (-eye.length() * 0.9).exp() * 0.06;
+    // Callus over the brow and snout.
+    let callus = (-((flank - vec3(1.6, 2.4, -14.4)).length() - 1.8).max(0.0) * 1.5).exp();
+    let lumps = fbm(p * 1.8) - 0.45;
+    skin += lumps.max(0.0) * callus * 0.35;
+    skin * depth
+}
+
+/// Air moss over its hide, as much as has grown on it, `cover`. It takes hold where the hide faces
+/// the sky, fading out down the flanks rather than stopping at any line, and grows in thick, uneven
+/// mats, deepest where it began and thinning to a fuzz at its edges.
+fn moss(hit: &mut Surface, p: Vec3, girth: Vec3, cover: f32) {
+    if cover <= 0.01 {
+        return;
+    }
+    // How far round the body this point faces upward, from the belly to the crest of the back.
+    let facing = ((p.y - girth.z) / girth.y.max(0.3)).clamp(-1.0, 1.0);
+    let open = facing.smoothstep(-0.2, 0.7);
+    let patches = fbm(p * 0.35 + vec3(3.1, 0.0, 7.7));
+    let grown = (patches * open + cover * 0.75 - 0.75).max(0.0) * 3.0;
+    if grown <= 0.0 {
+        return;
+    }
+    let fuzz = (fbm(p * 6.0) - 0.5) * 0.05;
+    let thick = grown.min(1.0) * 0.16 + fuzz * grown.min(1.0);
+    let mat = hit.distance - thick;
+    hit.blend(mat, 10, 0.06);
 }
 
 /// Rows of small eyes along each side of the head, `p` folded onto the right, set into its
@@ -254,7 +311,7 @@ fn eyes(p: Vec3) -> f32 {
         let f = i as f32;
         let z = -15.0 + f * 0.85;
         let y = 0.55 - f * 0.12 - (i % 2) as f32 * 0.55;
-        let across = 1.0 - ((z + 12.2) / 4.4).powi(2) - ((y - 0.9) / 3.7).powi(2);
+        let across = 1.0 - ((z + 12.2) / 4.4).power(2) - ((y - 0.9) / 3.7).power(2);
         let at = vec3(4.6 * across.max(0.0).sqrt(), y, z);
         nearest = nearest.min((p - at).length() - 0.3 * (1.0 - f * 0.07));
     }
@@ -288,7 +345,7 @@ pub const LOOK: Look = Look::coat(
 )
 .hinged([vec2(5.0, 1.5), vec2(4.6, 1.3)])
 .styled([vec4(0.4, 0.9, 6.0, 0.0), vec4(0.5, 0.8, 4.0, 0.0)])
-.skinned(vec4(1.0, 1.9, 0.6, 0.10))
+.skinned(vec4(1.0, 2.6, 1.3, 0.10))
 .flying(vec4(0.18, 0.40, 0.45, 1.30))
 .marked(vec4(4.00, 4.00, 0.40, 0.42), vec3(0.98, 0.97, 0.92))
 .brooding(vec4(2.8, 12.0, 2.2, 1.6));

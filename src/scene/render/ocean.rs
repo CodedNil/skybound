@@ -6,7 +6,7 @@ use crate::scene::{
         spire_axes,
     },
     cache as grid,
-    math::{cube, fourth, rotated, smoothstep_mean, square},
+    math::{Power, cube, fourth, rotated, smoothstep_mean, square},
     planet::{light_position, surface_frame},
     render::{march::VolumeSample, textures::Textures},
 };
@@ -128,7 +128,7 @@ pub(crate) fn caustics(position: Vec2, time: f32) -> f32 {
             )
             .length();
     }
-    (1.17 - (sum / 4.0).powf(1.4)).abs().powi(8).min(1.0)
+    (1.17 - (sum / 4.0).powf(1.4)).abs().power(8).min(1.0)
 }
 
 pub(crate) fn column(point: Vec3, view: &ViewUniform, textures: &Textures) -> Column {

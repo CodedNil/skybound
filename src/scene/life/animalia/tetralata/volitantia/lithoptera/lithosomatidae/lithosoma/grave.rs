@@ -1,10 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
-    biology::Biology,
-    capsule, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -16,6 +9,16 @@ use crate::scene::life::{
     animalia::tetralata::CISTERN,
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
+        biology::Biology,
+        capsule, rounded, smooth_min,
+        surface::{Ray, Surface, TraceResult},
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Vec3, Vec4, vec2, vec3, vec4};
@@ -78,8 +81,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let scallops = 5.0 + (own.y * 5.0).floor();
     let rim = span * (1.0 + (angle * scallops).cos() * 0.05);
     let upturn = 1.6 * (0.5 + own.z);
-    let lift = (radial / span).powi(2) * upturn;
-    let thickness = 1.3 * (1.0 - (radial / rim).powi(2)).max(0.0) + 0.25;
+    let lift = (radial / span).power(2) * upturn;
+    let thickness = 1.3 * (1.0 - (radial / rim).power(2)).max(0.0) + 0.25;
     let saucer = ((p.y - lift).abs() - thickness * 0.5).max(radial - rim) * 0.6;
     let heft = 0.8 + own.w * 0.4;
     let ballast = rounded(p - vec3(0.0, -3.6 * heft, 0.5), vec3(4.0, 3.8, 5.0) * heft);
@@ -107,7 +110,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let across = p.z * cosine - p.x * sine;
     let seed = ((turn * 12.9898 + c.identity.x * 311.7).sin() * 43_758.547).fract_gl();
     let out = 5.0 + seed * 4.5;
-    let surface = (out / span).powi(2) * upturn + 0.6;
+    let surface = (out / span).power(2) * upturn + 0.6;
     // Some sectors have grown no crystal at all.
     let bare = ((turn * 7.31 + own.w * 97.1).sin() * 43_758.547).fract_gl() < 0.3;
     for crystal in 0..3 {
@@ -139,7 +142,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let eye_out = span * 0.91;
     let eye = vec3(
         cosine * eye_out,
-        (eye_out / span).powi(2) * upturn - 0.45,
+        (eye_out / span).power(2) * upturn - 0.45,
         sine * eye_out,
     );
     hit.socket((p - eye).length() - 0.32, 0.32);

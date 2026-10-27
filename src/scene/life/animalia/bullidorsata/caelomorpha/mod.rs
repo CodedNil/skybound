@@ -1,7 +1,10 @@
 pub use super::BIOLOGY;
-use crate::scene::life::{
-    CreatureInstance, ellipsoid, smooth_min,
-    surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material},
+use crate::scene::{
+    life::{
+        CreatureInstance, ellipsoid, smooth_min,
+        surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material},
+    },
+    math::Power,
 };
 use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
@@ -117,7 +120,7 @@ fn ribbon_coordinates(p: Vec3, points: &[[Vec4; 3]; 12]) -> (usize, f32, f32) {
             let uu = du.length_squared();
             let vv = dv.length_squared();
             let uv = du.dot(dv);
-            let determinant = (uu * vv - uv.powi(2)).max(1e-8);
+            let determinant = (uu * vv - uv.power(2)).max(1e-8);
             along = (along
                 + ((delta.dot(du) * vv - delta.dot(dv) * uv) / determinant).clamp(-0.3, 0.3))
             .clamp(0.0, 1.0);

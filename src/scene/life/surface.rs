@@ -1,6 +1,9 @@
-use crate::scene::life::{
-    CreatureInstance, Kind, Look, ORGAN_SLOTS, animalia::WINGSPAN, development, ellipsoid,
-    genome::BUILD, smooth_min,
+use crate::scene::{
+    life::{
+        CreatureInstance, Kind, Look, ORGAN_SLOTS, animalia::WINGSPAN, development, ellipsoid,
+        genome::BUILD, smooth_min,
+    },
+    math::Power,
 };
 use core::{
     f32::consts::{PI, TAU},
@@ -265,8 +268,8 @@ impl Material {
     }
 
     pub fn transmittance(self, cosine: f32) -> Vec3 {
-        let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).powi(2);
-        let fresnel = dielectric + (1.0 - dielectric) * (1.0 - cosine.clamp(0.0, 1.0)).powi(5);
+        let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).power(2);
+        let fresnel = dielectric + (1.0 - dielectric) * (1.0 - cosine.clamp(0.0, 1.0)).power(5);
         self.transmission * (1.0 - fresnel)
     }
     pub const fn skin(color: Vec3, roughness: f32) -> Self {
@@ -298,14 +301,14 @@ impl Material {
         let nv = normal.dot(view).abs().max(0.0001);
         let nh = normal.dot(halfway).max(0.0);
         let vh = view.dot(halfway).max(0.0);
-        let a2 = self.roughness.clamp(0.045, 1.0).powi(4);
-        let distribution = a2 / (PI * (nh * nh * (a2 - 1.0) + 1.0).powi(2)).max(1e-12);
+        let a2 = self.roughness.clamp(0.045, 1.0).power(4);
+        let distribution = a2 / (PI * (nh * nh * (a2 - 1.0) + 1.0).power(2)).max(1e-12);
         let visibility = 0.5
             / (nl * (nv * nv * (1.0 - a2) + a2).sqrt() + nv * (nl * nl * (1.0 - a2) + a2).sqrt())
                 .max(1e-6);
-        let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).powi(2);
+        let dielectric = ((self.ior - 1.0) / (self.ior + 1.0)).power(2);
         let f0 = Vec3::splat(dielectric).lerp(self.color, self.metal);
-        let fresnel = f0 + (Vec3::ONE - f0) * (1.0 - vh).powi(5);
+        let fresnel = f0 + (Vec3::ONE - f0) * (1.0 - vh).power(5);
         let specular = fresnel * distribution * visibility * nl;
         // Sky above, darker air below.
         let fill = ray.ambient * (0.72 + normal.y * 0.28);
@@ -320,15 +323,15 @@ impl Material {
         let scattered = self.color * self.color * ray.radiance * bleed.max(0.0) * self.scatter / PI
             * (1.0 - self.metal);
         // The wet film: a smooth, faint second lobe.
-        let film_a2 = 0.28f32.powi(4);
+        let film_a2 = 0.28f32.power(4);
         let film_distribution =
-            film_a2 / (PI * (nh * nh * (film_a2 - 1.0) + 1.0).powi(2)).max(1e-12);
-        let film_fresnel = 0.04 + 0.96 * (1.0 - vh).powi(5);
+            film_a2 / (PI * (nh * nh * (film_a2 - 1.0) + 1.0).power(2)).max(1e-12);
+        let film_fresnel = 0.04 + 0.96 * (1.0 - vh).power(5);
         let glint = film_fresnel * film_distribution * 0.25 * nl * self.film;
         let reflected = normal * (2.0 * normal.dot(view)) - view;
         let environment = ray.ambient * (0.72 + reflected.y * 0.28);
         let grazing = Vec3::splat(1.0 - self.roughness).max(f0);
-        let environment_fresnel = f0 + (grazing - f0) * (1.0 - nv).powi(5);
+        let environment_fresnel = f0 + (grazing - f0) * (1.0 - nv).power(5);
         diffuse
             + scattered
             + specular * ray.radiance
@@ -455,7 +458,7 @@ fn marking(pattern: Vec4, along: f32, chord: f32, cosine: f32) -> f32 {
             .abs()
             .smoothstep(0.35, 0.7),
         4 => (1.0 - chord).smoothstep(0.55, 0.95),
-        5 => (1.0 - cosine).powi(2),
+        5 => (1.0 - cosine).power(2),
         6 => ((along * pattern.y * 4.3 + (chord * 11.0).sin() * 1.7).sin()
             * (chord * pattern.y * 3.1 + (along * 7.0).sin() * 2.1).sin())
         .abs()
@@ -536,7 +539,7 @@ fn hash(p: Vec3) -> f32 {
 }
 
 /// Smooth value noise in [0, 1).
-fn noise(p: Vec3) -> f32 {
+pub fn noise(p: Vec3) -> f32 {
     let cell = p.floor();
     let f = p - cell;
     let u = f * f * (Vec3::splat(3.0) - f * 2.0);
@@ -551,7 +554,7 @@ fn noise(p: Vec3) -> f32 {
 }
 
 /// Three octaves of value noise, in about [0, 1].
-fn fbm(p: Vec3) -> f32 {
+pub fn fbm(p: Vec3) -> f32 {
     noise(p) * 0.55 + noise(p * 2.07 + 11.3) * 0.3 + noise(p * 4.13 + 27.1) * 0.15
 }
 
@@ -833,6 +836,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
     let mut occlusion = 0.0;
     let mut lit = 1.0f32;
     let mut travel = 0.0;
+    let mut last = 1e6f32;
     for _ in 0..(128 + 4 + 5 + 28) {
         let corner = match phase {
             1 => vec3(1.0, -1.0, -1.0),
@@ -878,16 +882,25 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
         } else if phase <= 9 {
             let ring = (phase - 4) as f32;
             occlusion += (ambient_scale * ring * 0.2 - sample.distance).max(0.0) / ambient_scale
-                * (0.6f32).powi((phase - 4).cast_signed());
+                * (0.6f32).power((phase - 4).cast_signed());
             phase += 1;
             if phase == 10 {
-                travel = epsilon * 3.0 + reach * 0.003;
+                // Each point starts its shadow ray a little differently, so the march's steps
+                // show as fine grain rather than bands across the body.
+                let dither = hash(point * 91.7);
+                travel = epsilon * 3.0 + reach * 0.003 * (0.5 + dither);
             }
         } else {
             // The body's own shadow: soft-edged, so limbs, wings and folds shade what lies
             // beneath them.
-            lit = lit.min(8.0 * sample.distance / travel);
-            travel += sample.distance.clamp(reach * 0.004, reach * 0.08);
+            // Estimated from where this step and the last both found the body nearest, which
+            // gives a smooth penumbra without needing small steps.
+            let d = sample.distance;
+            let along = d * d / (2.0 * last);
+            let across = (d * d - along * along).max(0.0).sqrt();
+            lit = lit.min(8.0 * across / (travel - along).max(1e-4));
+            last = d.max(1e-4);
+            travel += d.clamp(reach * 0.004, reach * 0.08);
         }
     }
     if phase == 0 {
@@ -1209,7 +1222,7 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
     let (material, coverage) = shape.membrane(
         shape.coordinates(point - offset),
         pigment,
-        surface_normal.dot(direction).abs(),
+        surface_normal.dot(normalize(direction)).abs(),
         footprint,
     );
     let normal = roll(surface_normal, shape.stroke.x);
@@ -1468,7 +1481,7 @@ pub fn visit_shell<F: FnMut(Hit)>(
             material.transmission =
                 (-(Vec3::ONE - tint) * (opacity / cosine.max(0.08))).exp() * (1.0 - opacity);
             if c.kind.x == Kind::Naetu as u32 {
-                material.emission = 0.0125 + 0.4875 * (1.0 - cosine).powi(5);
+                material.emission = 0.0125 + 0.4875 * (1.0 - cosine).power(5);
             }
             material
         },
@@ -1510,7 +1523,9 @@ pub fn visit_shell_material<M: Fn(Vec3, f32) -> Material, F: FnMut(Hit)>(
             continue;
         }
         let normal = ((point - center) / squared_radii).normalize();
-        let cosine = normal.dot(local.direction).abs();
+        // The body's own frame is scaled for a young or small body, so the ray's direction in it
+        // is measured out to unit length before it is compared with the surface.
+        let cosine = normal.dot(normalize(local.direction)).abs();
         let mut hit = make_hit(
             ray,
             c,

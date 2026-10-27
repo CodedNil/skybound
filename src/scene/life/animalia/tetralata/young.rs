@@ -1,14 +1,11 @@
-//! The young of the four-winged animals: eggs, kept as each lineage keeps them, then a grub-like
-//! larva that recalls the lineage's limbless ancestors.
+//! The eggs of the four-winged animals, kept as each lineage keeps them. What hatches is a small
+//! body of its parents' shape, drawn by the grown body's own tracer.
 
 use crate::scene::life::{ellipsoid, smooth_min, surface::Surface};
-use core::f32::consts::{PI, TAU};
+use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
-
-/// A grub-like larva.
-pub const LARVA: u32 = 3;
 
 /// An egg tethered to living vegetation.
 pub const TETHERED_EGG: u32 = 4;
@@ -21,66 +18,6 @@ pub const EGG_STRINGS: u32 = 9;
 
 /// A clutch glued together, fallen from the parent's body.
 pub const CLUTCH: u32 = 10;
-
-/// The larva, which recalls the lineage's limbless ancestors.
-///
-/// A plump, ringed grub wriggling through the vegetation it hatched in, the cowl only a bud over
-/// its blunt head, the wing pairs rounded buds folded along its back and the mouth tentacles short
-/// stubs, all growing towards the adult's as it nears its change. Two dark eyes already look down.
-pub fn larva(p: Vec3, age: f32) -> Surface {
-    let grow = ((age - 0.3) / 0.4).clamp(0.0, 1.0);
-    let mut body = 1e6f32;
-    for index in 0..9 {
-        let along = index as f32 / 8.0;
-        let radius = 0.13 + (along * PI).sin().powf(0.6) * 0.1 - along * 0.03;
-        body = smooth_min(
-            body,
-            ellipsoid(
-                p - vec3(0.0, 0.0, (along - 0.45) * 1.4),
-                vec3(radius, radius * 0.92, 0.12),
-            ),
-            0.035,
-        );
-    }
-    let head = p - vec3(0.0, 0.02, -0.68);
-    body = smooth_min(body, ellipsoid(head, vec3(0.17, 0.15, 0.14)), 0.05);
-    let cowl = ellipsoid(
-        head - vec3(0.0, 0.08, -0.04),
-        vec3(0.14 + grow * 0.12, 0.04, 0.12 + grow * 0.06),
-    );
-    body = smooth_min(body, cowl, 0.04);
-    let flank = vec3(p.x.abs(), p.y, p.z);
-    for stub in 0..2 {
-        let root = vec3(0.05 + stub as f32 * 0.05, -0.1, -0.76);
-        body = smooth_min(
-            body,
-            (flank - root - vec3(0.02, -0.05, -0.06) * ((root.z - flank.z) / 0.06).clamp(0.0, 1.0))
-                .length()
-                - 0.014,
-            0.02,
-        );
-    }
-    let mut hit = Surface::new(body, 0);
-    // Wing buds, rounded lobes lying back along the upper flanks.
-    for pair in 0..2 {
-        let lobe = flank - vec3(0.14 + grow * 0.04, 0.13, -0.32 + pair as f32 * 0.32);
-        let (sine, cosine) = 0.5f32.sin_cos();
-        let tilted = vec3(
-            lobe.x * cosine + lobe.y * sine,
-            lobe.y * cosine - lobe.x * sine,
-            lobe.z,
-        );
-        hit.join(
-            ellipsoid(tilted, vec3(0.05 + grow * 0.14, 0.04, 0.07 + grow * 0.05)),
-            2,
-        );
-    }
-    hit.join(
-        ellipsoid(flank - vec3(0.09, -0.08, -0.79), vec3(0.04, 0.035, 0.035)),
-        3,
-    );
-    hit
-}
 
 /// An egg, laid as most of the lineage lays them: tethered to living vegetation, safe from the long
 /// fall to the aur, in a leathery, ridged case.
