@@ -183,6 +183,11 @@ impl Surface {
         // The retina, lining the pit's floor deep below the skin.
         self.join(eye.abs().max(body + radius * 0.3) - radius * 0.02, 3);
     }
+
+    /// Hollow a cavity out of the body, its lips rounded over `k`: an open mouth, a pouch.
+    pub fn carve(&mut self, hollow: f32, k: f32) {
+        self.distance = -smooth_min(-self.distance, hollow, k);
+    }
 }
 
 #[derive(Clone, Copy)]

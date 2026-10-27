@@ -1,13 +1,3 @@
-use crate::scene::life::{
-    CreatureInstance, Look,
-    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::Biology,
-    ellipsoid,
-    genome::Gene,
-    louvres, prepare_pose, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
-    tapered_tail,
-};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::BREATHER,
@@ -19,6 +9,19 @@ use crate::scene::life::{
     animalia::tetralata::CISTERN,
     animalia::tetralata::FLIGHT_MUSCLE,
     organs::{Function, Organ, Viscera, pair, site},
+};
+use crate::scene::{
+    life::{
+        CreatureInstance, Look,
+        animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+        biology::Biology,
+        ellipsoid,
+        genome::Gene,
+        louvres, prepare_pose, rounded, smooth_min,
+        surface::{Ray, Surface, TraceResult},
+        tapered_tail,
+    },
+    math::Power,
 };
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -150,8 +153,35 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         ),
         3,
     );
+    maw(&mut hit, p, c);
     hit.join(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8);
     hit
+}
+
+/// The maw: a wide mouth across the front of the blunt head, closed to a thin seam in the haze, so
+/// nothing about the hunter's face gives it away, and gaping wide when it feeds on what its wings
+/// have cut down. Rows of fine, inward-hooked teeth line both jaws and hold the meat its tentacles
+/// feed to it.
+fn maw(hit: &mut Surface, p: Vec3, c: &CreatureInstance) {
+    let q = p - vec3(0.0, -0.32, -4.35);
+    if q.length() > 1.6 {
+        return;
+    }
+    let open = gape(c);
+    // Deepest at the front, the jaws meeting further back at the corners.
+    let height = 0.03 + open * 0.38 * (1.0 - (q.x / 0.95).power(2)).max(0.0);
+    let cavity = ellipsoid(q - vec3(0.0, 0.0, 0.35), vec3(0.95, height, 0.75));
+    hit.carve(cavity, 0.06);
+    // Teeth along both lips, hooked in towards the throat.
+    let spacing = 0.16;
+    let cell = (q.x / spacing).round().clamp(-5.0, 5.0) * spacing;
+    let front = -0.38 + (cell / 0.95).power(2) * 0.4;
+    for jaw in 0..2 {
+        let side = if jaw == 0 { 1.0 } else { -1.0 };
+        let root = vec3(cell, side * height, front);
+        let tip = root + vec3(0.0, -side * (0.05 + open * 0.1), 0.06);
+        hit.join(tapered_tail(q, root, tip, 0.035, 0.006), 7);
+    }
 }
 
 /// The lure gland, whose store is spent on each use and slowly made again.

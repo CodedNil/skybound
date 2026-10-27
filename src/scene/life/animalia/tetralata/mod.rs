@@ -117,11 +117,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
         };
         // Feeding, the tentacles reach forward and close round the food at the mouth, holding it
         // to the jaws; otherwise they trail, writhing a little.
-        let grasp = if c.dynamics.w > 0.0 {
-            c.dynamics.z.min(1.0)
-        } else {
-            0.0
-        };
+        let grasp = gape(c);
         let rest = |knot: usize, time: f32| {
             let t = knot as f32 / (KNOTS - 1) as f32;
             let reach_forward = root
@@ -229,6 +225,16 @@ pub fn oral_tentacles(
         }
     }
     distance * 0.9
+}
+
+/// How far its mouth gapes: wide as it bites, parted as it strikes, shut in flight or when it is
+/// drawn alone.
+pub fn gape(c: &CreatureInstance) -> f32 {
+    if c.dynamics.w > 0.0 {
+        c.dynamics.z.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// A tube curving through `control` from `root` to a tapering `tip`.
