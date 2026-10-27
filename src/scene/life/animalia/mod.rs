@@ -1,10 +1,13 @@
-use crate::scene::life::{
-    CLUTCH, CreatureInstance, FULL_POUCH, Look,
-    biology::Biology,
-    ellipsoid,
-    genome::Gene,
-    rounded, smooth_min,
-    surface::{Hit, Ray, Surface, TraceResult, trace, visit_paired_sheets, wing_bones},
+use crate::scene::{
+    life::{
+        CLUTCH, CreatureInstance, FULL_POUCH, Look,
+        biology::Biology,
+        ellipsoid,
+        genome::Gene,
+        rounded, smooth_min,
+        surface::{Hit, Ray, Surface, TraceResult, trace, visit_paired_sheets, wing_bones},
+    },
+    math::Power,
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
@@ -71,13 +74,69 @@ pub fn render_wings(
     result
 }
 
+/// What bending and the years do to a winged body's skin, as displacement, laid out from where its
+/// own wings are rooted, so every species gets it in the right places for its build.
+///
+/// The skin gathers into folds rayed round each wing root, where the flight muscles pull it every
+/// stroke; into rings of creases across the neck ahead of the fore wings and the hips behind the
+/// hind ones, where the body flexes; and everywhere into a fine net of crossing wrinkles. All of it
+/// runs deeper with age, and in proportion to the body's own size, so a giant's folds are a
+/// giant's and a sparkie's barely show.
+fn hide(p: Vec3, c: &CreatureInstance, look: Look, distance: f32) -> f32 {
+    let fore = look.hinges[0].extend(look.wings[0].z);
+    let hind = if look.wings[1].x > 0.0 {
+        look.hinges[1].extend(look.wings[1].z)
+    } else {
+        fore + vec3(0.0, 0.0, fore.x.max(0.2) * 1.5)
+    };
+    // The body's own measure: the span between its wing roots.
+    let size = (hind.z - fore.z).abs().max(fore.x * 1.2).max(0.15);
+    if distance.abs() > size * 0.3 {
+        return 0.0;
+    }
+    let age = 0.45 + c.life.z * 0.8 + c.life.y * 0.25;
+    let flank = vec3(p.x.abs(), p.y, p.z);
+    let mut skin = 0.0f32;
+    // Folds rayed round each wing root.
+    for index in 0..2 {
+        let root = if index == 0 { fore } else { hind };
+        let offset = flank - root;
+        let round = offset.length() / size;
+        let near = (-round * round * 3.0).exp();
+        let rays = (offset.y.atan2(offset.z) * 7.0 + round * 2.0).sin().abs();
+        skin -= (1.0 - rays).power(3) * near * 0.035 * size;
+        skin -= (round * 14.0).sin().abs() * near * 0.012 * size;
+    }
+    // Rings of creases across the neck and the hips.
+    let wobble = (p.x * 2.1 / size + p.y * 1.7 / size).sin() * 0.06 * size;
+    for index in 0..2 {
+        let (at, every) = if index == 0 {
+            (fore.z - size * 0.75, 11.0)
+        } else {
+            (hind.z + size * 0.8, 9.0)
+        };
+        let along = (p.z - at + wobble) / size;
+        let near = (-along * along * 6.0).exp();
+        skin -= (along * every).sin().abs().power(2) * near * 0.022 * size;
+    }
+    // A fine net of crossing wrinkles, finer than the folds.
+    let fine = 26.0 / size;
+    let first = (p.z * fine + (p.x * fine * 0.6).sin() * 1.4 + (p.y * fine * 0.5).sin()).sin();
+    let second = (p.x * fine * 0.9 - p.z * fine * 0.4 + (p.y * fine * 0.7).sin() * 1.2).sin();
+    skin -= ((1.0 - first.abs()).power(8) + (1.0 - second.abs()).power(8)) * 0.0035 * size;
+    skin * age
+}
+
 /// A grown body with its wing frames and whatever brood it carries.
 ///
 /// The frames grow out of the body, blended in at the roots so each wing visibly springs from the
 /// flank. The young have their own forms, buds and all.
-pub fn with_wings(body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> Surface {
+pub fn with_wings(mut body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> Surface {
     if c.life.w > 0.0 {
         return body;
+    }
+    if body.material == 0 {
+        body.distance += hide(p, c, look, body.distance);
     }
     let mut frame = 1e6f32;
     for index in 0..2 {
