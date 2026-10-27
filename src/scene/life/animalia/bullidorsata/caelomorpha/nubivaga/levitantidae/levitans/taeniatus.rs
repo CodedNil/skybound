@@ -4,7 +4,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::Biology,
-    ellipsoid, rounded, smooth_min,
+    ellipsoid,
+    genome::Gene,
+    rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -28,6 +30,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 25.0;
+
+/// How long its feeding ribbons trail, how finely its lens is drawn to a point, and how broad the
+/// lip they hang from.
+///
+/// Long ribbons reach further into the neighbouring streams, and a fine point turns it more readily
+/// into useful air.
+pub const RIBBONS: Gene = Gene(38);
+pub const KEEL: Gene = Gene(39);
+pub const LIP: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -70,7 +81,7 @@ pub fn animate(c: &mut CreatureInstance) {
             c,
             i,
             vec3((i as f32 - 1.0) * 2.1, -0.45, 4.5),
-            10.0 + i as f32 * 2.0,
+            (10.0 + i as f32 * 2.0) * (0.8 + c.gene(RIBBONS) * 0.4),
             1.4,
         );
     }
@@ -98,15 +109,18 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
 /// The current presses unevenly across it and turns it to face useful air; behind, it thins to a
 /// lip along which the feeding ribbons are rooted, trailing clear of the body into the
 /// neighbouring streams.
-pub fn envelope(p: Vec3, _: &CreatureInstance) -> Surface {
+pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let front = (-p.z / 4.6).clamp(0.0, 1.0);
     let radii = vec3(
-        4.3 * (1.0 - 0.75 * front * front),
+        4.3 * (1.0 - (0.6 + c.gene(KEEL) * 0.25) * front * front),
         1.9 * (1.0 - 0.55 * front),
         4.6,
     );
     let lens = rounded(p - vec3(0.0, -0.2 + p.z * p.z * 0.03, 0.0), radii) * 0.75;
-    let lip = rounded(p - vec3(0.0, -0.45, 3.9), vec3(3.6, 0.35, 0.9));
+    let lip = rounded(
+        p - vec3(0.0, -0.45, 3.9),
+        vec3(3.0 + c.gene(LIP) * 1.0, 0.35, 0.9),
+    );
     Surface::new(smooth_min(lens, lip, 0.6), 0)
 }
 

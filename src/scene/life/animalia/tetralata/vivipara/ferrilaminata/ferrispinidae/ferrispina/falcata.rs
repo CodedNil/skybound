@@ -4,6 +4,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
+    genome::Gene,
     mouth, prepare_pose,
     surface::{Ray, Surface, TraceResult},
 };
@@ -29,6 +30,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
+
+/// How many blades its crest carries and how deep its chest: more blades cut a longer wound in one
+/// pass, and a deep chest drives the wings harder, but a slim one is faster between herds.
+pub const BLADES: Gene = Gene(38);
+pub const CHEST: Gene = Gene(39);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -69,7 +75,12 @@ const BUILD: Build = Build {
 };
 
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = shredder(p, c, BUILD);
+    let build = Build {
+        blades: 5 + (c.gene(BLADES) * 2.99) as u32,
+        depth: BUILD.depth * (0.9 + c.gene(CHEST) * 0.2),
+        ..BUILD
+    };
+    let mut hit = shredder(p, c, build);
     hit.join(
         oral_tentacles(p, c, mouth(BUILD.length, BUILD.head), 1.0, ORAL_PAIRS),
         8,

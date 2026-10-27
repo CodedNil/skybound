@@ -2,6 +2,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, tissue_distance},
     biology::Biology,
+    genome::Gene,
     rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
 };
@@ -29,6 +30,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 46.0;
+
+/// How high its crown is domed, how deeply its fringe is scalloped, and how far its feeding folds
+/// hang.
+///
+/// A high dome holds more gas, a deep scallop spills gusts before they can flip it, and long folds
+/// sieve more algae from the air drawn through them.
+pub const DOME: Gene = Gene(38);
+pub const SCALLOP: Gene = Gene(39);
+pub const FOLDS: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::PHYSIOLOGY;
@@ -83,8 +93,8 @@ const CHAMBERS: [GasChamber; 6] = [
 const SECTOR: f32 = TAU / 10.0;
 
 /// The canopy's outline at an angle: a scalloped fringe.
-fn rim(angle: f32) -> f32 {
-    15.5 * (1.0 + (angle * 10.0).cos() * 0.045)
+fn rim(angle: f32, c: &CreatureInstance) -> f32 {
+    15.5 * (1.0 + (angle * 10.0).cos() * (0.02 + c.gene(SCALLOP) * 0.06))
 }
 
 /// The canopy's upper surface and its thickness at a share of the way out to the fringe, rising and
@@ -92,7 +102,10 @@ fn rim(angle: f32) -> f32 {
 fn shell(reach: f32, c: &CreatureInstance) -> (f32, f32) {
     let breathe = (c.animation.z * 0.4).sin() * 0.15;
     let crown = 1.0 - reach * reach;
-    ((4.6 + breathe) * crown, 0.35 + 2.4 * crown)
+    (
+        (3.8 + c.gene(DOME) * 1.6 + breathe) * crown,
+        0.35 + 2.4 * crown,
+    )
 }
 
 pub fn animate(c: &mut CreatureInstance) {
@@ -108,10 +121,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let (sine, cosine) = turn.sin_cos();
     let along = p.x * cosine + p.z * sine;
     let across = p.z * cosine - p.x * sine;
-    let reach = (along / rim(turn)).clamp(0.0, 1.0);
+    let reach = (along / rim(turn, c)).clamp(0.0, 1.0);
     let (top, thickness) = shell(reach, c);
     let rib = (vec2(across, p.y - (top - thickness * 0.5)).length() - 0.3 * (1.0 - reach * 0.7))
-        .max(along - rim(turn) * 0.95)
+        .max(along - rim(turn, c) * 0.95)
         .max(-along);
     Surface::new(smooth_min(core, rib, 0.8) + tissue_distance(p, 12.0), 0)
 }
@@ -124,7 +137,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
-    let edge = rim(angle);
+    let edge = rim(angle, c);
     let reach = (radial / edge).min(1.2);
     let (top, thickness) = shell(reach, c);
     let ribs = (angle * 5.0).cos().abs();
@@ -142,7 +155,7 @@ pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
     let out = (along / edge).clamp(0.0, 1.0);
     let (fold_top, fold_thickness) = shell(out, c);
     let roof = (fold_top - fold_thickness + 1.2 * out.smoothstep(0.15, 0.55)).min(fold_top - 0.3);
-    let drop = 3.0 * (out * PI).sin();
+    let drop = (2.3 + c.gene(FOLDS) * 1.4) * (out * PI).sin();
     let ripple = (along * 1.1 - c.animation.z * 0.8).sin() * 0.3 * (roof - p.y).max(0.0) / 3.0;
     let fold = ((across - ripple).abs() - 0.14)
         .max(p.y - roof)

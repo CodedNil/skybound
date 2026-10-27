@@ -11,7 +11,9 @@ use crate::scene::{
     life::{
         CreatureInstance, Look,
         biology::Biology,
-        capsule, prepare_pose, ribbons, rig_ribbons, smooth_min,
+        capsule,
+        genome::Gene,
+        prepare_pose, ribbons, rig_ribbons, smooth_min,
         surface::{Ray, Surface, TraceResult},
         tapered_tail,
     },
@@ -33,6 +35,16 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 26.0;
 
+/// How closely it passes for a torn-off leaf.
+///
+/// How deeply lobed its blade, how far its false veins reach, how cupped it is, and how long the
+/// tendrils off its stalk. Every one a different leaf, so no two hang alike among the plants they
+/// mimic.
+pub const LOBES: Gene = Gene(38);
+pub const VEINS: Gene = Gene(39);
+pub const CUP: Gene = Gene(40);
+pub const TENDRILS: Gene = Gene(41);
+
 taxon!(
     Species,
     "Fluitans crypticus",
@@ -50,16 +62,17 @@ pub fn animate(c: &mut CreatureInstance) {
     prepare_pose(c, 4.5, 9.0, 2);
     c.opaque_bounds = vec3(3.0, 3.0, 18.0).extend(0.0);
     // Tendrils off the end of the stalk, finishing the mimicry of a torn-off leaf.
-    rig_ribbons(c, 2, vec3(0.0, 0.1, 4.4), 0.5, 9.0);
+    let tendrils = 7.0 + c.gene(TENDRILS) * 4.0;
+    rig_ribbons(c, 2, vec3(0.0, 0.1, 4.4), 0.5, tendrils);
 }
 
 /// A leaf: a cupped, lance-shaped blade with a raised midrib and paired side veins, its margin
 /// lobed like the leaflets it hides among.
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let along = (p.z / 4.2).clamp(-1.0, 1.0);
-    let lobes = 1.0 + 0.14 * (p.z * 3.1).sin();
+    let lobes = 1.0 + (0.06 + c.gene(LOBES) * 0.16) * (p.z * 3.1).sin();
     let width = 1.6 * (1.0 - along * along).max(0.0).sqrt() * (1.0 - along * 0.25) * lobes;
-    let cupped = p.y - p.x * p.x * 0.09 - along * along * 0.3;
+    let cupped = p.y - p.x * p.x * (0.04 + c.gene(CUP) * 0.1) - along * along * 0.3;
     let blade = (p.x.abs() - width)
         .max(cupped.abs() - 0.07)
         .max(p.z.abs() - 4.2)
@@ -69,7 +82,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let mirrored = vec3(p.x.abs(), p.y, p.z);
     for i in 0..6 {
         let z = i as f32 * 1.25 - 3.2;
-        let reach = 1.35 * (1.0 - (z / 4.2).power(2)).max(0.1);
+        let reach = (1.1 + c.gene(VEINS) * 0.5) * (1.0 - (z / 4.2).power(2)).max(0.1);
         hit.join(
             capsule(
                 mirrored,

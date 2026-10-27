@@ -15,6 +15,7 @@ use crate::scene::{
         CreatureInstance, Look,
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
         biology::Biology,
+        genome::Gene,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -31,6 +32,14 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 26.8;
+
+/// How deeply banded its armour, how heavy its jaws, and how thick its curl.
+///
+/// Deep bands flex further round a thick branch, heavy jaws crush harder bark, and a thick curl
+/// grips harder but weighs more in flight.
+pub const PLATING: Gene = Gene(38);
+pub const JAWS: Gene = Gene(39);
+pub const GIRTH: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -87,7 +96,9 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let spine = on_curl(angle, 0.0);
     let middle = 1.0 - (angle / REACH).power(2);
     let band = (angle * 7.0).cos();
-    let radius = (0.55 + 0.45 * middle) * (1.0 - 0.07 * band * band);
+    let radius = (0.55 + 0.45 * middle)
+        * (0.9 + c.gene(GIRTH) * 0.2)
+        * (1.0 - (0.03 + c.gene(PLATING) * 0.1) * band * band);
     let body = ((p - spine).length() - radius) * 0.8;
     // Plates outside, soft tissue on the inside of the curl.
     let inward = vec2(p.y, p.z).length() < CURL - radius * 0.35;
@@ -100,7 +111,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             jaw,
             jaw + (head(1.0) - head(0.0)) * 0.9 + vec3(0.2, 0.0, 0.0),
             head(1.6) + vec3(0.05, 0.25, 0.0),
-            0.32,
+            0.26 + c.gene(JAWS) * 0.14,
         ),
         7,
     );

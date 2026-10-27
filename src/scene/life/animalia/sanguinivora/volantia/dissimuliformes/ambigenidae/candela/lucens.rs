@@ -11,7 +11,9 @@ use crate::scene::{
     life::{
         CreatureInstance, Look, annulated,
         biology::Biology,
-        capsule, eyespots, rounded, smooth_min, sucker,
+        capsule, eyespots,
+        genome::Gene,
+        rounded, smooth_min, sucker,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -30,6 +32,12 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 16.0;
+
+/// How large the lamp it carries, how heavily hooped, and how long the teeth round its mouth: a
+/// large, bare lamp draws prey from further off, and long teeth hold what comes.
+pub const LAMP_SIZE: Gene = Gene(38);
+pub const HOOPS: Gene = Gene(39);
+pub const TEETH: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -70,7 +78,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         0.1,
         0.92,
     );
-    let lamp = rounded(p - vec3(0.0, 0.1, 1.0), vec3(0.78, 0.72, 1.0));
+    let lamp_scale = 0.85 + c.gene(LAMP_SIZE) * 0.3;
+    let lamp = rounded(p - vec3(0.0, 0.1, 1.0), vec3(0.78, 0.72, 1.0) * lamp_scale);
     let mut hit = Surface::new(smooth_min(grub, lamp + 0.03, 0.2), 0);
     hit.join(lamp, 9);
     // Ribs hooping the lamp, darker than the light between them.
@@ -79,11 +88,15 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let z = rib as f32 * 0.45 - 0.68;
         let across = (1.0 - (z / 1.0).power(2)).max(0.05).sqrt();
         let hoop = vec2(
-            vec2(q.x / 0.78, q.y / 0.72).length() * across * 0.75 - across * 0.75,
-            q.z - z,
+            vec2(q.x / (0.78 * lamp_scale), q.y / (0.72 * lamp_scale)).length()
+                * across
+                * 0.75
+                * lamp_scale
+                - across * 0.75 * lamp_scale,
+            q.z - z * lamp_scale,
         )
         .length()
-            - 0.04;
+            - (0.025 + c.gene(HOOPS) * 0.035);
         hit.join(hoop, 0);
     }
     let facing = vec3(0.0, -0.3, -1.0).normalize();
@@ -98,7 +111,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         capsule(
             mouth,
             vec3(cosine * 0.25, sine * 0.25, 0.0),
-            vec3(cosine * (0.38 + sway), sine * (0.38 + sway), -0.22),
+            vec3(cosine, sine, 0.0) * (0.32 + c.gene(TEETH) * 0.16 + sway) + vec3(0.0, 0.0, -0.22),
             0.025,
         ),
         8,

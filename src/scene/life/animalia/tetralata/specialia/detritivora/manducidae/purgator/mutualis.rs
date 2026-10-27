@@ -15,7 +15,9 @@ use crate::scene::{
         CreatureInstance, Look,
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
         biology::Biology,
-        capsule, eyespots, rounded,
+        capsule, eyespots,
+        genome::Gene,
+        rounded,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -33,6 +35,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 21.6;
+
+/// How bold its signal stripe, how far its feelers reach, and how long and close-set the bristles
+/// of its sole.
+///
+/// A bolder stripe is known to hosts from further off, longer feelers find parasites sooner, and a
+/// denser sole sweeps cleaner but tires sooner.
+pub const STRIPE: Gene = Gene(38);
+pub const FEELERS: Gene = Gene(39);
+pub const BRISTLES: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -72,20 +83,26 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let body = dome.max(-(p.y + 0.35));
     let mut hit = Surface::new(body, 0);
     // Rows of bristles beneath the sole.
-    let spacing = 0.28;
+    let spacing = 0.34 - c.gene(BRISTLES) * 0.12;
+    let length = 0.52 + c.gene(BRISTLES) * 0.2;
     let cell = (vec2(p.x, p.z) / spacing).round() * spacing;
     let inside = (cell.x / 1.3).power(2) + (cell.y / 1.9).power(2) < 1.0;
     if inside && p.y < -0.2 {
         let bristle = capsule(
             p,
             vec3(cell.x, -0.35, cell.y),
-            vec3(cell.x, -0.62, cell.y + 0.08),
+            vec3(cell.x, -0.1 - length, cell.y + 0.08),
             0.035,
         );
         hit.join(bristle, 7);
     }
     hit.join(
-        capsule(p, vec3(0.0, 1.05, -1.4), vec3(0.0, 1.05, 1.5), 0.16),
+        capsule(
+            p,
+            vec3(0.0, 1.05, -1.4),
+            vec3(0.0, 1.05, 1.5),
+            0.11 + c.gene(STRIPE) * 0.11,
+        ),
         4,
     );
     let side = vec3(p.x.abs(), p.y, p.z);
@@ -94,7 +111,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             side,
             vec3(0.3, -0.15, -1.9),
             vec3(0.75, 0.15, -3.0),
-            vec3(0.55, -0.35, -3.9 - c.identity.y * 0.4),
+            vec3(0.55, -0.35, -3.6 - c.gene(FEELERS) * 0.8),
             0.06,
         ),
         8,

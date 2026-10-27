@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::curved_tube,
     biology::Biology,
-    capsule, eyes, mouth,
+    capsule, eyes,
+    genome::Gene,
+    mouth,
     surface::{Ray, Surface, TraceResult},
     torso,
 };
@@ -30,6 +32,14 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 19.8;
+
+/// How wide it spreads its plumes, how finely they are barbed, and how bright the beads along them.
+///
+/// Wide, fine plumes comb more algae from the air, and bright beads draw more of it in, and more of
+/// the hunters too.
+pub const PLUMES: Gene = Gene(38);
+pub const BARBS: Gene = Gene(39);
+pub const GLOW: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -68,8 +78,9 @@ pub fn animate(c: &mut CreatureInstance) {
 fn plume(side: f32, t: f32, c: &CreatureInstance) -> Vec3 {
     let root = mouth(0.9, 0.16) + vec3(side * 0.05, 0.0, 0.0);
     let sway = (c.animation.z * 1.7 + side).sin() * 0.06;
-    let control = vec3(side * 0.45, 0.35 + sway, -1.55);
-    let tip = vec3(side * (0.75 + sway), 0.62, -2.05);
+    let spread = 0.85 + c.gene(PLUMES) * 0.3;
+    let control = vec3(side * 0.45 * spread, 0.35 + sway, -1.55);
+    let tip = vec3(side * (0.75 * spread + sway), 0.62, -1.9 - spread * 0.18);
     root * (1.0 - t) * (1.0 - t) + control * 2.0 * (1.0 - t) * t + tip * t * t
 }
 
@@ -88,7 +99,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         curved_tube(
             p,
             root,
-            vec3(side * 0.45, 0.35, -1.55),
+            vec3(side * 0.45 * (0.85 + c.gene(PLUMES) * 0.3), 0.35, -1.55),
             plume(side, 1.0, c),
             0.03,
         ),
@@ -96,15 +107,22 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     );
     let mut barbs = 1e6f32;
     let mut lights = 1e6f32;
-    for barb in 0..7 {
-        let t = 0.3 + barb as f32 * 0.1;
+    // Finely barbed plumes carry more, shorter barbs along the same length.
+    let count = 5 + (c.gene(BARBS) * 4.99) as u32;
+    let bead = 0.022 + c.gene(GLOW) * 0.018;
+    for barb in 0..9 {
+        if barb >= count {
+            break;
+        }
+        let t = 0.3 + barb as f32 * 0.7 / count as f32;
         let at = plume(side, t, c);
         let alternate = if barb % 2 == 0 { 1.0 } else { -1.0 };
-        let tip = at + vec3(side * 0.18, 0.12 * alternate, -0.08) * (1.2 - t * 0.6);
+        let fine = 1.15 - c.gene(BARBS) * 0.3;
+        let tip = at + vec3(side * 0.18, 0.12 * alternate, -0.08) * (1.2 - t * 0.6) * fine;
         barbs = barbs.min(capsule(p, at, tip, 0.011));
-        lights = lights.min((p - tip).length() - 0.03);
+        lights = lights.min((p - tip).length() - bead);
     }
-    lights = lights.min((p - plume(side, 1.0, c)).length() - 0.05);
+    lights = lights.min((p - plume(side, 1.0, c)).length() - bead * 1.6);
     hit.join(barbs, 4);
     hit.join(lights, 9);
     hit.socket(eyes(p, 0.9, 0.16), 0.16 * 0.16);

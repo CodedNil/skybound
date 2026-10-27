@@ -3,6 +3,7 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
+    genome::Gene,
     mouth, prepare_pose,
     surface::{Ray, Surface, TraceResult},
 };
@@ -30,6 +31,11 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
+
+/// How large the ruff of gill plates at its throat, and how many blades in its rampart: a big
+/// ruff warns off more intruders before it has to fight, and fewer, broader blades stand firmer.
+pub const RUFF: Gene = Gene(38);
+pub const BLADES: Gene = Gene(39);
 
 taxon!(
     Species,
@@ -67,7 +73,13 @@ const BUILD: Build = Build {
 };
 
 pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
-    let mut hit = shredder(p, c, BUILD);
+    let blades = 4 + (c.gene(BLADES) * 2.99) as u32;
+    let build = Build {
+        blades,
+        width: BUILD.width * 5.0 / blades as f32,
+        ..BUILD
+    };
+    let mut hit = shredder(p, c, build);
     // A ruff of red gill plates at the throat, flared in threat.
     let throat = vec3(p.x.abs(), -p.y, p.z);
     for plate in 0..3 {
@@ -76,7 +88,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             super::blade(
                 throat,
                 vec3(0.45, BUILD.depth * 0.35, -BUILD.length * 0.62 + f * 0.7),
-                (1.4 - f * 0.25) * c.life.y.max(0.3),
+                (1.4 - f * 0.25) * c.life.y.max(0.3) * (0.75 + c.gene(RUFF) * 0.5),
                 0.35,
                 0.7,
                 0.7 + f * 0.15,

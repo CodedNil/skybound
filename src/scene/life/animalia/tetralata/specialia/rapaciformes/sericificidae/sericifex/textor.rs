@@ -4,7 +4,9 @@ use crate::scene::life::{
     animalia::tetralata::curved_tube,
     annulated,
     biology::Biology,
-    capsule, eyes, mouth, smooth_min,
+    capsule, eyes,
+    genome::Gene,
+    mouth, smooth_min,
     surface::{Ray, Surface, TraceResult},
     torso,
 };
@@ -32,6 +34,15 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 36.7;
+
+/// How heavy a silk gland it carries, how wide it spreads its mouth tentacles on the lines, and how
+/// many strands it pays out behind.
+///
+/// A heavy gland spins more web between meals, a wide span feels more of it, and many strands lay
+/// it faster.
+pub const GLAND: Gene = Gene(38);
+pub const SPAN: Gene = Gene(39);
+pub const STRANDS: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -68,7 +79,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         p,
         vec3(0.0, -0.2, 0.6),
         vec3(0.0, -0.55, 3.4),
-        vec3(0.5, 1.2, 0.3),
+        vec3(0.4 + c.gene(GLAND) * 0.2, 1.0 + c.gene(GLAND) * 0.4, 0.3),
         11.0,
         0.1,
         0.95,
@@ -77,12 +88,13 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let side = vec3(p.x.abs(), p.y, p.z);
     let lip = mouth(2.6, 0.32);
     let sway = (c.animation.z * 0.6).sin() * 0.08;
+    let span = 3.9 + c.gene(SPAN) * 1.4;
     hit.join(
         curved_tube(
             side,
             lip + vec3(0.08, 0.0, 0.0),
-            lip + vec3(2.2, 0.4 + sway, -1.2),
-            lip + vec3(4.6, -0.4 - sway, -0.8),
+            lip + vec3(span * 0.48, 0.4 + sway, -1.2),
+            lip + vec3(span, -0.4 - sway, -0.8),
             0.07,
         ),
         8,
@@ -95,7 +107,11 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         comb = comb.min(capsule(side, at, at + vec3(0.08, -0.3, 0.06), 0.02));
     }
     hit.join(comb, 7);
-    for strand in 0..3 {
+    let strands = 2 + (c.gene(STRANDS) * 3.0) as u32;
+    for strand in 0..5 {
+        if strand >= strands {
+            break;
+        }
         let from = vec3(0.3 + strand as f32 * 0.12, -0.9, 4.0);
         let drift = (c.animation.z * 0.7 + strand as f32).sin() * 0.3;
         hit.join(

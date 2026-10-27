@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    ellipsoid, louvres, prepare_pose, rounded, smooth_min,
+    ellipsoid,
+    genome::Gene,
+    louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -32,6 +34,16 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
+/// How many glowing threads its lure trails, how far below it the lure dangles, how thick the fur
+/// of its ruff, and how large its great eyes.
+///
+/// A full lure draws prey from further, a low one keeps the hunter further from what it draws, a
+/// thick ruff hides its outline better, and large eyes see prey sooner against the glow.
+pub const LURE_THREADS: Gene = Gene(38);
+pub const DANGLE: Gene = Gene(39);
+pub const RUFF: Gene = Gene(40);
+pub const EYES: Gene = Gene(41);
+
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
@@ -59,7 +71,7 @@ pub fn animate(c: &mut CreatureInstance) {
     // The tail hangs, so its lure dangles below the hunter.
     for i in 0..6 {
         let t = i as f32 / 5.0;
-        c.tail[i].y -= t * t * 7.0;
+        c.tail[i].y -= t * t * (6.2 + c.gene(DANGLE) * 1.6);
         c.tail[i].z -= t * t * 4.0;
     }
     c.opaque_bounds = vec3(6.0, 9.0, 21.0).extend(0.0);
@@ -78,8 +90,11 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let head = rounded(p - vec3(0.0, -0.1, -3.4), vec3(1.25, 0.85, 1.15));
     let mut d = louvres(smooth_min(body, head, 0.7), p, bulk);
     // A ruff of longer fur over the shoulders, breaking up its outline.
-    let ruff = ellipsoid(p - vec3(0.0, 0.35, -1.9), vec3(2.1, 0.75, 0.9))
-        + (p.x * 9.0).sin() * (p.z * 7.0).sin() * 0.06;
+    let fur = c.gene(RUFF);
+    let ruff = ellipsoid(
+        p - vec3(0.0, 0.35, -1.9),
+        vec3(2.1, 0.6 + fur * 0.3, 0.8 + fur * 0.2),
+    ) + (p.x * 9.0).sin() * (p.z * 7.0).sin() * (0.04 + fur * 0.04);
     d = smooth_min(d, ruff, 0.4);
     // A thin whip of a tail.
     let mut whip = 1e6f32;
@@ -110,8 +125,12 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // The lure: a bulb trailing glowing threads.
     let end = c.tail[5].truncate();
     let mut lure = ellipsoid(p - end, vec3(0.35, 0.45, 0.35));
-    for thread in 0..3 {
-        let f = thread as f32 - 1.0;
+    let threads = 2 + (c.gene(LURE_THREADS) * 3.99) as u32;
+    for thread in 0..6 {
+        if thread >= threads {
+            break;
+        }
+        let f = (thread as f32 - (threads as f32 - 1.0) * 0.5) * 2.0 / threads as f32;
         let sway = (c.animation.z * 1.7 + f * 2.0).sin() * 0.3;
         lure = lure.min(tapered_tail(
             p,
@@ -125,7 +144,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // Two great eyes beneath the head, set to look down and a little ahead.
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.join(
-        ellipsoid(side - vec3(0.6, -0.55, -3.75), vec3(0.55, 0.5, 0.6)),
+        ellipsoid(
+            side - vec3(0.6, -0.55, -3.75),
+            vec3(0.55, 0.5, 0.6) * (0.85 + c.gene(EYES) * 0.3),
+        ),
         3,
     );
     hit.join(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8);

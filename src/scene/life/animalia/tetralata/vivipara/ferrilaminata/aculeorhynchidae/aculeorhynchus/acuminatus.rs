@@ -2,7 +2,9 @@ use crate::scene::life::{
     CreatureInstance, Look,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::Biology,
-    ellipsoid, louvres, rounded, smooth_min,
+    ellipsoid,
+    genome::Gene,
+    louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -31,6 +33,16 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
+
+/// How long its stylet grows, how large its venom sac, how wide the fork of its tail, and how heavy
+/// the iron scutes along its back.
+///
+/// A long stylet strikes from further, a large sac stills bigger prey, a wide fork turns the dive
+/// tighter, and heavy scutes take a glancing blow.
+pub const STYLET: Gene = Gene(38);
+pub const VENOM_SAC: Gene = Gene(39);
+pub const FORK: Gene = Gene(40);
+pub const SCUTES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
 pub use super::ETHOLOGY;
@@ -120,7 +132,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, hood, 0.25);
     let mut hit = Surface::new(body, 0);
     // The stylet: needle-fine, each animal's its own length.
-    let length = 8.5 * grown * (0.9 + c.identity.y * 0.2);
+    let length = 8.5 * grown * (0.88 + c.gene(STYLET) * 0.24);
     let tip = ROOT + vec3(0.0, -0.08, -length);
     hit.join(
         tapered_tail(p, ROOT + vec3(0.0, 0.0, 0.3), tip, 0.075, 0.006),
@@ -128,7 +140,10 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     );
     // The venom sac beneath the head.
     hit.join(
-        ellipsoid(p - vec3(0.0, -0.36, -3.95), vec3(0.24, 0.2, 0.38)),
+        ellipsoid(
+            p - vec3(0.0, -0.36, -3.95),
+            vec3(0.24, 0.2, 0.38) * (0.85 + c.gene(VENOM_SAC) * 0.4),
+        ),
         2,
     );
     // Iron scutes along the back.
@@ -136,7 +151,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let z = -2.4 + station * 0.75;
     let scute = rounded(
         p - vec3(0.0, girth(z) * 1.08, z),
-        vec3(0.16, 0.07, 0.22) * (1.0 - station * 0.07),
+        vec3(0.16, 0.07, 0.22) * (1.0 - station * 0.07) * (0.75 + c.gene(SCUTES) * 0.5),
     );
     hit.join(scute, 6);
     // The swallow-tailed fork.
@@ -144,7 +159,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     let fork = tapered_tail(
         side,
         vec3(0.05, 0.25, 8.3),
-        vec3(1.5, 0.0, 12.2),
+        vec3(1.1 + c.gene(FORK) * 0.8, 0.0, 12.6 - c.gene(FORK) * 0.6),
         0.22,
         0.02,
     ) / 2.5;
