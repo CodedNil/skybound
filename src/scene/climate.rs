@@ -64,8 +64,9 @@ pub fn nearest_layer(altitude: f32) -> u32 {
         .clamp(0.0, (LAYERS - 1) as f32) as u32
 }
 
-/// Weather systems in flight at once.
-pub const CLOUD_SLOTS: u32 = 2048;
+/// Weather systems in flight at once, as many as keep the planet's skies as often clear as cloudy
+/// for its size.
+pub const CLOUD_SLOTS: u32 = 1024;
 
 /// Cloud map texels across one cube face. Each face carries a one texel border so that filtering
 /// never reads across a face edge.
@@ -707,9 +708,11 @@ mod tests {
         let surface = Climate::from_weather(Vec3::ZERO, 0.0, Vec3::Y, wet);
         let upper = Climate::from_weather(Vec3::Z * 6000.0, 0.0, Vec3::Y, wet);
         assert!(surface.wind.z > upper.wind.z + 8.0);
-        let north = Climate::at(vec3(0.0, 800_000.0, 15_000.0), wet);
+        // Two thirds of the way from each pole to the equator.
+        let reach = PLANET_RADIUS * FRAC_PI_2 * (2.0 / 3.0);
+        let north = Climate::at(vec3(0.0, reach, 15_000.0), wet);
         let south = Climate::at(
-            vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 * 2.0) - 800_000.0, 15_000.0),
+            vec3(0.0, PLANET_RADIUS * (FRAC_PI_2 * 2.0) - reach, 15_000.0),
             wet,
         );
         assert!(north.wind.y < 0.0 && south.wind.y > 0.0);

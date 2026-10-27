@@ -525,7 +525,9 @@ fn separate_from_mount(
     velocity: &mut Vec3,
     mount_velocity: Vec3,
 ) {
-    for _ in 0..4 {
+    // The body's distance is a conservative bound, the more so the further inside, so a few more
+    // steps may be needed from deep within.
+    for _ in 0..8 {
         let scale = development::scale(body).to_engine();
         let point = mount.rotation.inverse() * (player.translation - mount.translation) / scale;
         if point
@@ -764,15 +766,16 @@ mod tests {
             None,
         );
         let world = WorldData::default();
-        let anchor = contact(mount.transform_point(ROSETTE), &mount, &body, &world)
+        let scale = development::scale(&body).to_engine();
+        let anchor = contact(mount.transform_point(ROSETTE * scale), &mount, &body, &world)
             .expect("rosette must be reachable from the back");
         assert!(
-            anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE) < 1.5,
+            anchor.on_mount && anchor.point.as_vec3().distance(ROSETTE * scale) < 1.5,
             "perching must resolve to the physical back"
         );
         assert!(
             contact(
-                mount.transform_point(vec3(0.0, 15.1, 3.0)),
+                mount.transform_point(vec3(0.0, 15.1, 3.0) * scale),
                 &mount,
                 &body,
                 &world
@@ -794,11 +797,15 @@ mod tests {
             None,
             None,
         );
-        let mut player = Transform::from_translation(SPAWN + Vec3::X * 3.0);
+        let scale = development::scale(&body).to_engine();
+        let mut player = Transform::from_translation(SPAWN + Vec3::X * 3.0 * scale);
         let mut velocity = -Vec3::X * 10.0;
         separate_from_mount(&mut player, &mount, &body, &mut velocity, Vec3::ZERO);
+        let point = ((player.translation - SPAWN) / scale).to_scene();
         assert!(
-            naetu::surface((player.translation - SPAWN).to_scene(), &body).distance > 0.30,
+            naetu::surface(development::body_point(point, &body), &body).distance
+                * scale.min_element()
+                > 0.30,
             "Næ remains embedded in Nætu"
         );
         assert!(velocity.x >= -0.01, "collision must remove inward velocity");

@@ -53,7 +53,8 @@ pub const EJECTION_WINDOW: u32 = 384;
 // altitude. Cells are the same size everywhere, so spires never crowd towards the poles. Every
 // spire stays `SPIRE_MARGIN` inside its cell, so a cell's own spires and the distance to its border
 // bound the field.
-pub const SPIRE_CELLS: f32 = 360.0;
+// Each about 3.3 km across, wide enough to hold a spire's whole reach.
+pub const SPIRE_CELLS: f32 = 240.0;
 
 pub const SPIRE_CELL: f32 = PLANET_RADIUS * FRAC_PI_2 / SPIRE_CELLS;
 

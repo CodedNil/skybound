@@ -235,7 +235,7 @@ mod tests {
         for latitude in [-FRAC_PI_2, -FRAC_PI_4, 0.0, FRAC_PI_4, FRAC_PI_2] {
             for longitude in [-3.0, -1.0, 0.0, 2.0] {
                 let world = WorldData::at(latitude, longitude);
-                let local = vec3(40_000.0, -20_000.0, 300_000.0);
+                let local = vec3(40_000.0, -20_000.0, 30_000.0);
                 let global_down = world.basis * world.down(local).as_dvec3();
                 assert!(global_down.dot(-world.position(local).normalize()) > 0.999_999);
                 let lower = local + world.down(local) * 10.0;
