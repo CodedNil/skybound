@@ -1,5 +1,5 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Viscera;
+use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Look, Plant,
     biology::Biology,
@@ -55,7 +55,7 @@ pub fn surface(p: Vec3, _: &Plant) -> Surface {
 
 /// It is a drifting cloud of single cells, with no organs to wound.
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::NONE;
+pub const PARTS: &[Part] = &[];
 
 /// Its cells, for the world renderer.
 // Without pigment, for it feeds on aur and not light: milky, translucent cells lit by the charge

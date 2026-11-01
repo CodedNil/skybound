@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
@@ -7,18 +9,6 @@ use crate::scene::life::{
     prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Viscera, pair, site},
 };
 use core::f32::consts::TAU;
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
@@ -34,7 +24,6 @@ pub const BIOLOGY: Biology = Biology {
     litter: Litter::new(1, 1, [0.7, 0.25, 0.05, 0.0, 0.0, 0.0]),
     gestation_days: 150.0,
     altitude: (1500.0, 9000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 49.8;
@@ -118,22 +107,9 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     hit
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.62, -6.21), vec3(0.61, 0.57, 1.32)),
-    site(PUMP, vec3(0.00, -0.09, -2.36), vec3(1.36, 1.36, 1.99)),
-    site(CROP, vec3(0.00, -0.09, 1.93), vec3(1.42, 1.42, 3.83)),
-    pair(BREATHER, vec3(2.26, 0.89, -3.00), vec3(0.44, 0.44, 0.44)),
-    site(FLOAT, vec3(0.00, 3.30, -1.07), vec3(0.45, 0.45, 0.45)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(2.26, 1.61, -1.29),
-        vec3(0.37, 0.37, 0.37),
-    ),
-    site(CISTERN, vec3(0.00, -0.09, 6.64), vec3(0.91, 0.91, 1.99)),
-    site(BROOD, vec3(0.00, 0.45, 9.21), vec3(0.66, 0.62, 1.00)),
-]);
+pub const PARTS: &[Part] = &[];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

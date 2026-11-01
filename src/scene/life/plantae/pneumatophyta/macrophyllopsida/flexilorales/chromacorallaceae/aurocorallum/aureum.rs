@@ -8,7 +8,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    organs::{Viscera, pair, site},
+    organs::{Part, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
 use core::f32::consts::TAU;
@@ -117,14 +117,14 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
     shape
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// Where its organs lie in its body, each placed by its own design; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
+pub const PARTS: &[Part] = &[
     site(STEM, vec3(0.00, -1.90, 0.00), vec3(0.40, 0.18, 0.40)),
     site(BLADDER, vec3(0.00, -1.80, -0.60), vec3(0.18, 0.12, 0.18)),
     pair(FROND, vec3(0.70, -1.90, 0.10), vec3(0.18, 0.12, 0.18)),
     site(ROOT, vec3(0.00, -2.15, 0.40), vec3(0.18, 0.10, 0.18)),
-]);
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.75, 0.42, 0.07), vec3(1.0, 0.7, 0.2));

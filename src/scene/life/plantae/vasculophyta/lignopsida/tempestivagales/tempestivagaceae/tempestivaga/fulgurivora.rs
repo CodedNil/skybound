@@ -8,7 +8,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    organs::{Viscera, pair, site},
+    organs::{Part, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
 use core::f32::consts::{PI, TAU};
@@ -139,14 +139,14 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
     shape
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// Where its organs lie in its body, each placed by its own design; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
+pub const PARTS: &[Part] = &[
     site(STEM, vec3(0.00, -1.80, 0.00), vec3(0.15, 0.30, 0.15)),
     site(BLADDER, vec3(0.00, -3.20, 0.40), vec3(0.45, 0.45, 0.45)),
     pair(FROND, vec3(0.50, -3.20, 0.00), vec3(0.30, 0.30, 0.30)),
     site(ROOT, vec3(0.00, -4.00, 0.00), vec3(0.30, 0.20, 0.30)),
-]);
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 // Carbon-black and conductive, for it feeds on lightning, and arcs show blue along it.

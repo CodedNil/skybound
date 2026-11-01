@@ -4,10 +4,32 @@ use crate::scene::life::{
     animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
     biology::Biology,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::{GANGLION, PUMP},
+    organs::{Function, Organ, Part, Tissue},
+};
 use core::ops::{Deref, DerefMut};
+#[cfg(not(target_arch = "spirv"))]
+use spirv_std::glam::vec3;
 use spirv_std::glam::{Vec3, Vec4};
 pub mod errantia;
 pub mod volantia;
+
+/// The muscular sucker at the feeding end, which draws a host's fluid and holds the body fast
+/// to it.
+#[cfg(not(target_arch = "spirv"))]
+pub const SUCKER: Organ =
+    Organ::new("sucker", Function::Handling, vec3(0.66, 0.24, 0.30)).of(Tissue::Muscle);
+
+/// The blood-feeder body plan: frameless, all muscle and fluid, the sucker filling the feeding
+/// end, the nerve centre close behind it and the pump over the crop.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANATOMY: &[Part] = &[
+    Part::lobe(SUCKER, vec3(-0.95, -0.1, 0.0), vec3(0.6, 0.6, 0.08)),
+    Part::lobe(GANGLION, vec3(-0.78, 0.25, 0.0), vec3(0.35, 0.35, 0.06)),
+    Part::lobe(PUMP, vec3(-0.3, 0.3, 0.0), vec3(0.3, 0.3, 0.1)),
+];
 
 pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.05,
@@ -82,8 +104,10 @@ taxon!(
         "Fluid drawn from living hosts supplies both nutrients and water, allowing the feeding end to serve as an anchor as well as a mouth.",
         "One branch remains wingless and settles for long periods, while another has evolved a single pair of wings for repeated visits.",
         "These wings arose separately from the two ancestral pairs of Tetralata.",
+        "They have no frame: the body is a muscular sac kept in shape by its own fluid, which is why it can stretch so far round a meal.",
         "Grooming mimicry and plant mutualism developed from brief, restrained feeding, giving some descendants a lasting place in their hosts' lives.",
     ],
+    anatomy: ANATOMY,
 );
 
 #[cfg(not(target_arch = "spirv"))]

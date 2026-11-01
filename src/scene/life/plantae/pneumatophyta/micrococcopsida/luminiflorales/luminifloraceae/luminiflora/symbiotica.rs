@@ -8,7 +8,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    organs::{Function, Organ, Viscera, pair, site},
+    organs::{Function, Organ, Part, pair, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
 use core::f32::consts::TAU;
@@ -119,15 +119,15 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
 #[cfg(not(target_arch = "spirv"))]
 const GLOW: Organ = Organ::new("glow gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// Where its organs lie in its body, each placed by its own design; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
+pub const PARTS: &[Part] = &[
     site(STEM, vec3(0.00, -0.30, 0.00), vec3(0.30, 0.12, 0.30)),
     site(BLADDER, vec3(0.00, -0.25, 0.50), vec3(0.15, 0.08, 0.15)),
     pair(FROND, vec3(0.90, -0.30, 0.00), vec3(0.12, 0.06, 0.12)),
     site(ROOT, vec3(0.00, -0.48, 0.00), vec3(0.15, 0.05, 0.15)),
     site(GLOW, vec3(0.00, -0.22, -0.50), vec3(0.12, 0.06, 0.12)),
-]);
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 // Pearly and unpigmented, for it feeds on aur; only its lamps carry colour, the glow it lends its

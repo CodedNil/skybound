@@ -7,7 +7,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    organs::{Viscera, site},
+    organs::{Part, site},
     plantae::physiology::{BLADDER, FROND, ROOT, STEM},
 };
 use core::f32::consts::TAU;
@@ -116,14 +116,14 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
     shape
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// Where its organs lie in its body, each placed by its own design; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
+pub const PARTS: &[Part] = &[
     site(STEM, vec3(0.00, 0.00, 0.00), vec3(0.18, 0.18, 0.18)),
     site(BLADDER, vec3(0.00, 0.25, 0.00), vec3(0.08, 0.08, 0.08)),
     site(FROND, vec3(0.25, 0.00, 0.00), vec3(0.07, 0.07, 0.07)),
     site(ROOT, vec3(0.00, -0.25, 0.00), vec3(0.10, 0.08, 0.10)),
-]);
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 // Tan and fibrous, the colour of the wound tissue that turns the wind's work into food; there is no

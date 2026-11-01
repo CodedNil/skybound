@@ -9,7 +9,7 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    organs::{Viscera, pair, site},
+    organs::{Part, pair, site},
     plantae::{
         physiology::{BLADDER, FROND, ROOT, STEM},
         pneumatophyta::macrophyllopsida::aerothallales::laevivelaceae::lacufolium::BASIN,
@@ -166,15 +166,15 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
     shape
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// Where its organs lie in its body, each placed by its own design; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
+pub const PARTS: &[Part] = &[
     site(STEM, vec3(0.00, -2.30, 0.00), vec3(0.40, 0.20, 0.40)),
     site(BLADDER, vec3(0.00, -2.35, 0.50), vec3(0.20, 0.15, 0.20)),
     pair(FROND, vec3(1.00, -1.78, 0.00), vec3(0.08, 0.05, 0.08)),
     site(ROOT, vec3(0.00, -2.65, 0.00), vec3(0.20, 0.10, 0.20)),
     site(BASIN, vec3(0.00, -1.55, 0.00), vec3(0.20, 0.05, 0.20)),
-]);
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 // Bone-pale and unpigmented, for it feeds on aur.

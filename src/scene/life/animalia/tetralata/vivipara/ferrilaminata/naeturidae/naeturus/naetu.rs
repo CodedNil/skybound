@@ -13,16 +13,8 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
-    organs::{Viscera, pair, site},
+    organs::{Part, pair},
 };
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -37,7 +29,6 @@ pub const BIOLOGY: Biology = Biology {
     litter: Litter::new(1, 1, [0.94, 0.06, 0.0, 0.0, 0.0, 0.0]),
     gestation_days: 540.0,
     altitude: (300.0, 12000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 70.0;
@@ -262,23 +253,13 @@ fn material(point: Vec3, id: u32) -> Material {
     m
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.54, -17.18), vec3(1.11, 0.92, 1.11)),
-    site(PUMP, vec3(0.00, -1.18, -8.82), vec3(1.55, 0.99, 3.00)),
-    site(CROP, vec3(0.00, -0.75, 2.32), vec3(2.98, 1.91, 4.12)),
-    pair(BREATHER, vec3(2.75, 1.50, -10.21), vec3(0.74, 0.74, 0.74)),
-    site(FLOAT, vec3(0.00, 3.54, -0.46), vec3(0.70, 0.70, 0.70)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(2.75, 1.50, -4.64),
-        vec3(0.92, 0.92, 0.92),
-    ),
-    site(CISTERN, vec3(0.00, -0.75, 10.68), vec3(1.55, 1.34, 4.30)),
-    site(BROOD, vec3(0.00, -0.32, 16.25), vec3(1.55, 0.99, 1.69)),
-    pair(AUR_SAC, vec3(4.75, -0.21, -0.93), vec3(1.43, 0.92, 1.49)),
-]);
+pub const PARTS: &[Part] = &[pair(
+    AUR_SAC,
+    vec3(4.75, -0.21, -0.93),
+    vec3(1.43, 0.92, 1.49),
+)];
 
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;

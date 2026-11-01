@@ -1,7 +1,7 @@
 pub use super::render_wings;
 use crate::scene::life::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ};
+use crate::scene::life::organs::{Function, Organ, Part, Tissue};
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec3;
 pub mod dissimuliformes;
@@ -14,7 +14,23 @@ pub const WING_MUSCLE: Organ = Organ::new(
     "wing-sheet muscle",
     Function::Flight,
     vec3(0.60, 0.22, 0.30),
-);
+)
+.of(Tissue::Muscle);
+
+/// A single hoop of spring fibre round the body at the wing roots.
+///
+/// It is the only frame a blood-feeder has, and it arose in this class apart from the tetralates'
+/// girdles, for the same reason, once muscle had something to beat a wing against.
+#[cfg(not(target_arch = "spirv"))]
+pub const YOKE: Organ =
+    Organ::new("wing yoke", Function::Support, vec3(0.78, 0.70, 0.66)).of(Tissue::Spring);
+
+/// The fliers' wing muscle at the roots of their one pair, anchored on the yoke.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANATOMY: &[Part] = &[
+    Part::shoulder(WING_MUSCLE, 0, vec3(0.42, 0.5, 0.16)),
+    Part::girdle(YOKE, 0, 0.06),
+];
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 
@@ -29,11 +45,12 @@ taxon!(
     "Flying Ones",
     [
         "Members of this class are fluid-feeding animals with a single pair of powered wings.",
-        "The wings developed within the sucker-bearing lineage, independently of the four-winged body plan of Tetralata.",
+        "The wings developed within the sucker-bearing lineage, independently of the four-winged body plan of Tetralata, and with them a single hoop of spring fibre round the body at their roots, the class's only frame, which arose apart from the tetralates' girdles for the same work.",
         "Flight allows them to leave a host after feeding rather than depend on permanent attachment.",
         "Broad membranes favour hovering approaches, while smaller fringed wings suit gliding through cloud cover.",
         "Repeated short visits also provide the behavioural starting point for grooming mimicry and more enduring host partnerships.",
     ],
+    anatomy: ANATOMY,
 );
 
 #[cfg(not(target_arch = "spirv"))]

@@ -235,7 +235,7 @@ pub(super) fn reproduce(
         _ => true,
     };
     let brood = agent.kind.organs();
-    let whole = body.working(&brood, Function::Breeding) > 0.4;
+    let whole = body.working(brood, Function::Breeding) > 0.4;
     if mature
         && fertile
         && whole

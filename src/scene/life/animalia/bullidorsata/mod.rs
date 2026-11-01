@@ -3,8 +3,15 @@ use crate::scene::life::{
     animalia::{Animal, Creature},
     biology::Biology,
 };
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::{
+    animalia::physiology::{BREATHER, CROP, FLOAT, MUSCLE},
+    organs::{Function, Organ, Part, Tissue},
+};
 use core::ops::{Deref, DerefMut};
 use spirv_std::glam::Vec4;
+#[cfg(not(target_arch = "spirv"))]
+use spirv_std::glam::vec3;
 pub mod caelomorpha;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
@@ -50,6 +57,43 @@ impl Creature for Bubbleback {
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
+/// The gelatinous digestive tissue that stands in for a crop, spread through the body's core.
+#[cfg(not(target_arch = "spirv"))]
+pub const GEL: Organ = Organ::new("digestive gel", Function::Digestion, vec3(0.80, 0.62, 0.42));
+/// The muscle of the bladder walls, which squeezes gas from chamber to chamber to tilt and trim.
+#[cfg(not(target_arch = "spirv"))]
+pub const CHAMBER_MUSCLE: Organ =
+    Organ::new("chamber wall", Function::Movement, vec3(0.62, 0.30, 0.34)).of(Tissue::Muscle);
+/// Elastic hoops of spring fibre that hold the great bladder open against the air, as a balloon's
+/// ribs would, and let it give rather than burst.
+#[cfg(not(target_arch = "spirv"))]
+pub const HOOP: Organ =
+    Organ::new("bladder hoop", Function::Support, vec3(0.86, 0.84, 0.74)).of(Tissue::Spring);
+
+/// The bubbleback body plan.
+///
+/// One great bladder over a core of digestive gel, smaller bladders round it, breathing folds at
+/// the sides, the chamber walls' muscle in place of a body wall's, and three hoops holding the
+/// great bladder open.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANATOMY: &[Part] = &[
+    Part::lobe(GEL, vec3(0.0, -0.4, 0.0), vec3(0.45, 0.35, 0.3)).replacing(CROP),
+    Part::rod(
+        CHAMBER_MUSCLE,
+        vec3(-0.55, 0.1, 0.8),
+        vec3(0.55, 0.1, 0.8),
+        0.12,
+    )
+    .replacing(MUSCLE),
+    Part::lobe(FLOAT, vec3(-0.1, 0.35, 0.0), vec3(0.55, 0.5, 0.4)),
+    Part::lobe(FLOAT, vec3(0.45, 0.2, 0.5), vec3(0.3, 0.35, 0.22)),
+    Part::lobe(FLOAT, vec3(-0.6, 0.15, 0.5), vec3(0.28, 0.3, 0.18)),
+    Part::lobe(BREATHER, vec3(-0.35, -0.25, 0.6), vec3(0.2, 0.25, 0.12)),
+    Part::hoop(HOOP, -0.45, 0.05),
+    Part::hoop(HOOP, 0.0, 0.05),
+    Part::hoop(HOOP, 0.45, 0.05),
+];
+
 taxon!(
     Phylum,
     "Bullidorsata",
@@ -58,9 +102,10 @@ taxon!(
         "Bubblebacks descend from porous animals whose moist outer tissues both collect and digest suspended food.",
         "Several gas bladders distribute lift through the body, so local damage need not send the whole animal toward the aur ocean.",
         "Gelatinous organs exchange nutrients over short distances without the concentrated digestive crop of active flyers.",
-        "Chamber inflation and flexible membranes control orientation while the planetary updraft supplies most movement.",
+        "Chamber inflation and flexible membranes control orientation while the planetary updraft supplies most movement, and hoops of spring fibre, grown apart from any other lineage's frame, hold the great bladder open and let it give under a blow rather than burst.",
         "Their descendants divide the sky by arranging the same buoyant and absorptive tissues into compact balloons, trailing leaves or enormous feeding canopies.",
     ],
+    anatomy: ANATOMY,
 );
 
 #[cfg(not(target_arch = "spirv"))]

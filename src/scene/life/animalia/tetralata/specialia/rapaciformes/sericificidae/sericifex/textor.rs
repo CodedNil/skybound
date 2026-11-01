@@ -1,4 +1,6 @@
 pub use super::render_wings;
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::{Function, Organ, Part, site};
 use crate::scene::life::{
     Look, Tetralate,
     animalia::tetralata::{curved_tube, gape},
@@ -9,18 +11,6 @@ use crate::scene::life::{
     mouth, smooth_min,
     surface::{Ray, Surface, TraceResult},
     torso,
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -153,23 +143,9 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
 #[cfg(not(target_arch = "spirv"))]
 const SILK: Organ = Organ::new("silk gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, -0.16, -1.53), vec3(0.08, 0.08, 0.08)),
-    site(PUMP, vec3(0.00, -0.16, -0.56), vec3(0.09, 0.09, 0.09)),
-    site(CROP, vec3(0.00, -0.34, 0.72), vec3(0.17, 0.19, 0.25)),
-    pair(BREATHER, vec3(0.10, -0.19, -0.80), vec3(0.06, 0.06, 0.06)),
-    site(FLOAT, vec3(0.00, 0.03, 0.72), vec3(0.23, 0.23, 0.71)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(0.10, -0.06, -0.16),
-        vec3(0.09, 0.10, 0.14),
-    ),
-    site(CISTERN, vec3(0.00, -0.34, 1.85), vec3(0.20, 0.20, 0.57)),
-    site(BROOD, vec3(0.00, -0.16, 2.49), vec3(0.09, 0.10, 0.29)),
-    site(SILK, vec3(0.00, -0.84, 2.49), vec3(0.17, 0.17, 0.17)),
-]);
+pub const PARTS: &[Part] = &[site(SILK, vec3(0.00, -0.84, 2.49), vec3(0.17, 0.17, 0.17))];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

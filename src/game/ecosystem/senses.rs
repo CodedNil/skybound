@@ -437,7 +437,7 @@ pub(super) fn drives(agent: Agent, relations: &Relations, now: f32) -> Drives {
     let ready = youth >= 1.0
         && relations.fertile_until < now
         && now - relations.last_birth > 90.0
-        && body.working(&viscera, Function::Breeding) > 0.4;
+        && body.working(viscera, Function::Breeding) > 0.4;
     Drives {
         hunger: (1.0 - body.energy)
             * if body.gut > body.mass * 0.05 {

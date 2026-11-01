@@ -9,7 +9,7 @@ use crate::scene::{
     climate::Climate,
     life::{
         Kind, Kingdom,
-        organs::{Function, Organ, Viscera},
+        organs::{Function, Organ, Part, Tissue, Viscera},
         vitals::{Vitals, Waste},
     },
 };
@@ -38,11 +38,25 @@ pub const BREATHER: Organ = Organ::new(
 /// A store of lifting gas.
 pub const FLOAT: Organ = Organ::new("gas store", Function::Lift, vec3(0.62, 0.78, 0.86));
 
-/// The muscle of the body wall, which crawls, grips and squeezes.
-pub const MUSCLE: Organ = Organ::new("body muscle", Function::Movement, vec3(0.52, 0.16, 0.20));
+/// The muscle of the body wall, which crawls, grips, squeezes and steers.
+pub const MUSCLE: Organ =
+    Organ::new("body muscle", Function::Movement, vec3(0.52, 0.16, 0.20)).of(Tissue::Muscle);
 
 /// The brood chamber or the gonads.
 pub const BROOD: Organ = Organ::new("brood chamber", Function::Breeding, vec3(0.80, 0.68, 0.30));
+
+/// What every animal's body holds, from the porous ancestor of them all.
+///
+/// Food is held low in the
+/// middle where its weight hangs steadiest, the brood behind it, and the muscle of the body wall
+/// in a long cord down each flank. The ancestor had no frame of any kind; it kept its shape by
+/// the pressure of its own fluid against that muscle, and every frame its descendants carry
+/// arose later, in their own lineages.
+pub const ANATOMY: &[Part] = &[
+    Part::lobe(CROP, vec3(0.05, -0.35, 0.0), vec3(0.5, 0.45, 0.24)),
+    Part::lobe(BROOD, vec3(0.55, -0.35, 0.0), vec3(0.38, 0.35, 0.14)),
+    Part::rod(MUSCLE, vec3(-0.6, -0.1, 0.8), vec3(0.85, -0.05, 0.75), 0.13),
+];
 
 /// How a lineage's body works.
 #[derive(Clone, Copy)]
@@ -315,12 +329,12 @@ pub fn metabolize(body: &mut Vitals, kind: Kind, climate: Climate, effort: f32, 
     let mut waste = digest(
         body,
         (nature.digestion, kind.biology().adult_mass),
-        &viscera,
+        viscera,
         dt,
     );
     body.stunned = (body.stunned - dt).max(0.0);
-    let breather = body.working(&viscera, Function::Breathing);
-    let pump = body.working(&viscera, Function::Circulation);
+    let breather = body.working(viscera, Function::Breathing);
+    let pump = body.working(viscera, Function::Circulation);
     let circulation = pump * body.fluid;
     let exchange = (nature.breathe)(&climate) * breather.max(0.05);
     // A body with a pump drives its fluid in pulses; one without lets it seep.
@@ -342,16 +356,16 @@ pub fn metabolize(body: &mut Vitals, kind: Kind, climate: Climate, effort: f32, 
                 .unwrap_or(0.0)
                 * 0.35);
     body.hydration = (body.hydration + (climate.humidity * 0.0008 - drying) * dt).clamp(0.0, 1.0);
-    let muscle = body.locomotion(&viscera).max(0.2);
+    let muscle = body.locomotion(viscera).max(0.2);
     body.fatigue =
         (body.fatigue + (effort * 0.008 / muscle - body.breath * 0.003) * dt).clamp(0.0, 1.0);
     body.alertness = (body.alertness - dt / WAKING).max(0.0);
     circulate(body, circulation, dt);
-    body.hold_lift(&viscera, dt);
-    body.heal(&viscera, 0.0004, dt);
-    let ganglion = body.working(&viscera, Function::Coordination);
+    body.hold_lift(viscera, dt);
+    body.heal(viscera, 0.0004, dt);
+    let ganglion = body.working(viscera, Function::Coordination);
     let failing = pump < 0.15 || ganglion < 0.15 || body.fluid < 0.2;
-    let capacity = nature.aur * body.working(&viscera, Function::AurStore);
+    let capacity = nature.aur * body.working(viscera, Function::AurStore);
     let endured = body.endure(kind, climate, (failing, capacity), dt);
     waste.mass += endured.mass;
     waste
@@ -392,21 +406,27 @@ fn digest(body: &mut Vitals, (rate, adult): (f32, f32), viscera: &Viscera, dt: f
 
 impl Vitals {
     /// How well the muscles that carry it about still work: its flight muscles, if its lineage
-    /// took to the air, or else those of its body.
+    /// took to the air, helped by the steering muscles of its body and tail, or else those of its
+    /// body alone; and, in a lineage with a frame, how much of the frame they pull against is
+    /// whole, for a snapped rod gives nothing back and every stroke costs its full price.
     pub fn locomotion(&self, viscera: &Viscera) -> f32 {
-        let function = if viscera.has(Function::Flight) {
-            Function::Flight
+        let muscle = if viscera.has(Function::Flight) {
+            self.working(viscera, Function::Flight) * 0.8
+                + self.working(viscera, Function::Movement) * 0.2
         } else {
-            Function::Movement
+            self.working(viscera, Function::Movement)
         };
-        self.working(viscera, function)
+        let frame = viscera
+            .function(&self.organs, Function::Support)
+            .map_or(1.0, |whole| 0.45 + whole * 0.55);
+        muscle * frame
     }
 
     /// How hard the body can work, from its flight muscles, its breath and the fluid carrying fuel
     /// to them.
     pub fn power(&self, kind: Kind) -> f32 {
         let viscera = kind.organs();
-        (self.locomotion(&viscera) * 0.7 + 0.3)
+        (self.locomotion(viscera) * 0.7 + 0.3)
             * self.breath.clamp(0.2, 1.0)
             * self.fluid.clamp(0.3, 1.0)
             * if self.stunned > 0.0 { 0.1 } else { 1.0 }
@@ -415,7 +435,7 @@ impl Vitals {
     /// How steadily the nerve centre steers, falling as it is damaged or goes too long without
     /// sleep.
     pub fn composure(&self, kind: Kind) -> f32 {
-        self.working(&kind.organs(), Function::Coordination) * (0.5 + self.alertness * 0.5)
+        self.working(kind.organs(), Function::Coordination) * (0.5 + self.alertness * 0.5)
     }
 
     /// A night's rest, compressed: the nerve centre recovers, and so do tired muscles.
@@ -443,7 +463,7 @@ mod tests {
             let total = vitals.mass + vitals.gut;
             let rate = kind.animal().expect("an animal").digestion;
             let adult = kind.biology().adult_mass;
-            let waste = digest(&mut vitals, (rate, adult), &kind.organs(), 10.0);
+            let waste = digest(&mut vitals, (rate, adult), kind.organs(), 10.0);
             assert!(
                 (vitals.mass + vitals.gut + waste.mass - total).abs() < 1e-4,
                 "biomass created by {kind:?}"

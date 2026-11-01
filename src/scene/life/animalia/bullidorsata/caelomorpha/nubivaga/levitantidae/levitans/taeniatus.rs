@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Bubbleback, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
@@ -8,14 +10,6 @@ use crate::scene::life::{
     genome::Gene,
     rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -127,15 +121,9 @@ pub fn envelope(p: Vec3, c: &Bubbleback) -> Surface {
     Surface::new(smooth_min(lens, lip, 0.6), 0)
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(FLOAT, vec3(0.00, -0.36, 0.14), vec3(0.29, 0.29, 0.29)),
-    pair(FLOAT, vec3(1.02, -0.43, 0.28), vec3(0.19, 0.19, 0.19)),
-    site(CROP, vec3(0.00, -0.64, -0.42), vec3(0.23, 0.23, 0.23)),
-    pair(BREATHER, vec3(1.21, -0.71, -0.28), vec3(0.29, 0.15, 0.29)),
-    site(BROOD, vec3(0.00, -0.78, 0.42), vec3(0.20, 0.12, 0.20)),
-]);
+pub const PARTS: &[Part] = &[];
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);

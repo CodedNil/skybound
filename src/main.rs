@@ -4,6 +4,7 @@ use bevy::{
     prelude::*,
     window::{PresentMode, WindowPlugin},
 };
+use skybound::scene::life::organs;
 use std::env;
 
 mod benchmark;
@@ -16,6 +17,9 @@ mod snapshot;
 const DLSS_PROJECT: Uuid = Uuid::from_u128(0x106e_92de_300b_4087_a6c3_92da_af7b_284c);
 
 fn main() {
+    // Every species' anatomy is laid out in its body once, all at the same time, before anything
+    // asks for one.
+    organs::prepare();
     let mut app = App::new();
     // DLSS sets up the renderer, so it must know the game before the default plugins start it.
     app.insert_resource(DlssProjectId(DLSS_PROJECT));

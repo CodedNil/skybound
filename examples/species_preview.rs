@@ -5,7 +5,7 @@ use skybound::scene::{
     life,
     life::{
         BloodFeeder, Bubbleback, Drawn, Injury, Plant, Rank, SPECIES, SPECIES_MODULES, Taxon,
-        Tetralate, Wound, animalia::physiology::Brood, organs::Function, surface::tonemap,
+        Tetralate, Wound, animalia::physiology::Brood, surface::tonemap,
     },
     preview::PreviewView,
 };
@@ -548,8 +548,15 @@ fn save_webp(path: &Path, frames: &[RgbaImage], rate: f32) {
     fs::write(path, &*data).expect("save WebP");
 }
 
-/// An animated sheet saved as WebP.
+/// An animated sheet saved as WebP, and with `--still` its first frame as PNG beside it.
 fn save_sheet(path: &Path, frames: Vec<RgbImage>, rate: f32) {
+    if env::args().any(|arg| arg == "--still")
+        && let Some(first) = frames.first()
+    {
+        first
+            .save(path.with_extension("png"))
+            .expect("save still PNG");
+    }
     let frames: Vec<RgbaImage> = frames
         .into_iter()
         .map(|frame| DynamicImage::ImageRgb8(frame).to_rgba8())
@@ -960,16 +967,7 @@ fn cut_away(mut drawn: Drawn) -> Drawn {
     let sites = viscera.sites();
     c.kind.w = sites.len().min(life::ORGAN_SLOTS) as u32;
     for (index, site) in sites.iter().take(life::ORGAN_SLOTS).enumerate() {
-        let glow = if site.organ.function == Function::AurStore {
-            1.5
-        } else {
-            0.0
-        };
-        c.organs[index] = [
-            site.centre.extend(if site.paired { 1.0 } else { 0.0 }),
-            site.radii.extend(glow),
-            site.organ.colour.extend(0.0),
-        ];
+        c.organs[index] = site.encode();
     }
     drawn
 }

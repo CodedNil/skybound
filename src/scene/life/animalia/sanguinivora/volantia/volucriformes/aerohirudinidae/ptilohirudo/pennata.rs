@@ -1,18 +1,11 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::Part;
 use crate::scene::life::{
     BloodFeeder, Look,
     biology::{Biology, Litter},
     genome::Gene,
     rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::sanguinivora::volantia::WING_MUSCLE,
-    organs::{Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -28,7 +21,6 @@ pub const BIOLOGY: Biology = Biology {
     gestation_days: 3.0,
     // Among the Cloud Peaks.
     altitude: (5000.0, 13000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 30.4;
@@ -106,15 +98,9 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     hit
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.01, -1.00), vec3(0.05, 0.05, 0.05)),
-    site(PUMP, vec3(0.00, -0.04, -0.55), vec3(0.14, 0.08, 0.26)),
-    site(CROP, vec3(0.00, 0.01, 0.35), vec3(0.36, 0.20, 0.40)),
-    pair(WING_MUSCLE, vec3(0.32, 0.09, -0.19), vec3(0.14, 0.08, 0.17)),
-    site(BROOD, vec3(0.00, -0.04, 0.93), vec3(0.06, 0.06, 0.06)),
-]);
+pub const PARTS: &[Part] = &[];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

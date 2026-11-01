@@ -11,16 +11,8 @@ use crate::scene::life::{
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
-    organs::{Viscera, pair, site},
+    organs::{Part, pair},
 };
 use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
 #[cfg(target_arch = "spirv")]
@@ -215,23 +207,13 @@ fn material(point: Vec3, id: u32) -> Material {
     m
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.03, -0.41), vec3(0.04, 0.04, 0.04)),
-    site(PUMP, vec3(0.00, -0.05, -0.06), vec3(0.06, 0.05, 0.08)),
-    site(CROP, vec3(0.00, -0.01, 0.32), vec3(0.06, 0.06, 0.06)),
-    pair(BREATHER, vec3(0.14, -0.02, -0.04), vec3(0.06, 0.05, 0.06)),
-    site(FLOAT, vec3(0.00, 0.10, 0.28), vec3(0.04, 0.04, 0.04)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(0.11, 0.06, 0.13),
-        vec3(0.06, 0.05, 0.07),
-    ),
-    site(CISTERN, vec3(0.00, -0.03, 0.58), vec3(0.03, 0.03, 0.03)),
-    site(BROOD, vec3(0.00, -0.01, 0.49), vec3(0.04, 0.04, 0.04)),
-    pair(AUR_SAC, vec3(0.14, -0.02, 0.30), vec3(0.03, 0.03, 0.03)),
-]);
+pub const PARTS: &[Part] = &[pair(
+    AUR_SAC,
+    vec3(0.14, -0.02, 0.30),
+    vec3(0.03, 0.03, 0.03),
+)];
 
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;

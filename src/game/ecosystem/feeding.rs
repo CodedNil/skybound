@@ -31,7 +31,7 @@ pub(super) fn edible_now(kind: Kind, other: &Agent) -> bool {
 pub(super) fn grazed(plant: &mut Vitals, kind: Kind, eater: Kind, amount: f32) -> f32 {
     let viscera = kind.organs();
     if amount <= 0.0 {
-        drain(plant, &viscera, Function::Water, 0.003);
+        drain(plant, viscera, Function::Water, 0.003);
         return 0.0;
     }
     if eater.pollinates() {
@@ -42,15 +42,15 @@ pub(super) fn grazed(plant: &mut Vitals, kind: Kind, eater: Kind, amount: f32) -
     let crops = eater
         .animal()
         .map_or(Function::Gathering, |animal| animal.crops);
-    let ripe = viscera.has(Function::Fruit) && plant.working(&viscera, Function::Fruit) > 0.2;
+    let ripe = viscera.has(Function::Fruit) && plant.working(viscera, Function::Fruit) > 0.2;
     let organ = if crops == Function::Gathering && ripe {
         Function::Fruit
     } else {
         crops
     };
-    let left = plant.working(&viscera, organ);
+    let left = plant.working(viscera, organ);
     let taken = amount * left;
-    drain(plant, &viscera, organ, taken / plant.mass.max(1e-6) * 4.0);
+    drain(plant, viscera, organ, taken / plant.mass.max(1e-6) * 4.0);
     taken
 }
 
@@ -92,7 +92,7 @@ pub(super) fn forage(
         // Only as much as the Pondplant's basin still holds: as whole as the basin is and as full
         // as the rain and its other drinkers have left it.
         let water =
-            pond.vitals.working(&pond.kind.organs(), Function::Water) * pond.vitals.hydration;
+            pond.vitals.working(pond.kind.organs(), Function::Water) * pond.vitals.hydration;
         body.hydration = (body.hydration + dt * 0.2 * water).min(1.0);
         return Some(Meal {
             eater: entity,
@@ -175,7 +175,9 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
                 .ingest(grazed * food_kind.0.biology().adult_mass * 0.05, 0.0);
             continue;
         }
-        let rate = if nectar { 0.1 } else { 1.0 };
+        // A torn sucker or crushing muscle takes each mouthful slowly.
+        let handling = eater.0.working(eater_kind.0.organs(), Function::Handling);
+        let rate = if nectar { 0.1 } else { 1.0 } * (0.25 + handling * 0.75);
         let mut amount = (meal.amount * rate).min(food.0.mass * 0.05);
         if plant(food_kind.0) {
             amount = grazed(&mut food.0, food_kind.0, eater_kind.0, amount);

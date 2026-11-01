@@ -1,6 +1,9 @@
 pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ};
+use crate::scene::life::{
+    animalia::physiology::{BREATHER, FLOAT, GANGLION, PUMP},
+    organs::{Function, Organ, Part, Tissue},
+};
 use crate::scene::{
     life::{
         Body, CreatureInstance, Kind,
@@ -29,7 +32,47 @@ pub const CISTERN: Organ = Organ::new("water cistern", Function::Water, vec3(0.2
 /// The flight muscles at the roots of the four wings.
 #[cfg(not(target_arch = "spirv"))]
 pub const FLIGHT_MUSCLE: Organ =
-    Organ::new("flight muscle", Function::Flight, vec3(0.52, 0.16, 0.20));
+    Organ::new("flight muscle", Function::Flight, vec3(0.52, 0.16, 0.20)).of(Tissue::Muscle);
+/// The muscle at the base of the tail that sets it, and with it the body's heading.
+#[cfg(not(target_arch = "spirv"))]
+pub const TAIL_MUSCLE: Organ =
+    Organ::new("tail muscle", Function::Movement, vec3(0.60, 0.22, 0.24)).of(Tissue::Muscle);
+/// A rod of coiled elastic fibre down each side of the back, from the head to the tail: the
+/// flight muscles pull against it, it bows with every stroke, and it springs the stroke back.
+#[cfg(not(target_arch = "spirv"))]
+pub const SPRING_ROD: Organ =
+    Organ::new("spring rod", Function::Support, vec3(0.90, 0.86, 0.72)).of(Tissue::Spring);
+/// A hoop of the same fibre round the body at each wing pair's roots, which the rods run through
+/// and the flight muscles are anchored on.
+#[cfg(not(target_arch = "spirv"))]
+pub const GIRDLE: Organ =
+    Organ::new("wing girdle", Function::Support, vec3(0.82, 0.78, 0.64)).of(Tissue::Spring);
+
+/// The tetralate body plan.
+///
+/// A nerve centre in the head, breathing folds behind it, the pump below
+/// them, a flight muscle at the root of every wing, gas above the crop, the cistern behind, and a
+/// steering muscle at the tail's root, all hung in a frame of two spring rods and a girdle at each
+/// wing pair.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANATOMY: &[Part] = &[
+    Part::lobe(GANGLION, vec3(-0.9, 0.2, 0.0), vec3(0.4, 0.4, 0.07)),
+    Part::lobe(BREATHER, vec3(-0.62, 0.05, 0.55), vec3(0.28, 0.35, 0.09)),
+    Part::lobe(PUMP, vec3(-0.5, -0.25, 0.0), vec3(0.32, 0.35, 0.09)),
+    Part::shoulder(FLIGHT_MUSCLE, 0, vec3(0.38, 0.5, 0.13)),
+    Part::shoulder(FLIGHT_MUSCLE, 1, vec3(0.34, 0.45, 0.11)),
+    Part::lobe(FLOAT, vec3(-0.05, 0.55, 0.0), vec3(0.38, 0.3, 0.2)),
+    Part::lobe(CISTERN, vec3(0.35, 0.05, 0.0), vec3(0.36, 0.33, 0.13)),
+    Part::lobe(TAIL_MUSCLE, vec3(0.88, 0.0, 0.4), vec3(0.3, 0.45, 0.1)),
+    Part::rod(
+        SPRING_ROD,
+        vec3(-0.85, 0.6, 0.22),
+        vec3(0.95, 0.5, 0.22),
+        0.06,
+    ),
+    Part::girdle(GIRDLE, 0, 0.05),
+    Part::girdle(GIRDLE, 1, 0.05),
+];
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
 
@@ -127,7 +170,9 @@ taxon!(
         "A digestive crop and pulsatile nutrient channels support more concentrated feeding than the absorptive surfaces of bubblebacks.",
         "Pleated respiratory passages recover moisture, although vigorous flight still creates a need for drinking or humid air.",
         "Later lineages modify wing margins and feeding tentacles, with extra tentacle pairs and internal brooding evolving in the live-bearing branch.",
+        "They were the first animals to grow a frame: two rods of coiled elastic fibre down the back and a hoop of it at each pair of wing roots, which bend with every wingbeat and spring it back, so that a stroke costs less than its full price.",
     ],
+    anatomy: ANATOMY,
 );
 
 /// Knots along each simulated mouth tentacle.

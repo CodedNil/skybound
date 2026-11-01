@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::{Function, Organ, Part, site};
 use crate::scene::life::{
     Look, Tetralate,
     animalia::tetralata::curved_tube,
@@ -7,18 +9,6 @@ use crate::scene::life::{
     mouth,
     surface::{Ray, Surface, TraceResult},
     torso,
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -138,23 +128,13 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
 #[cfg(not(target_arch = "spirv"))]
 const PLUME: Organ = Organ::new("spark gland", Function::Secretion, vec3(0.55, 0.85, 0.30));
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.01, -0.72), vec3(0.04, 0.03, 0.06)),
-    site(PUMP, vec3(0.00, -0.03, -0.35), vec3(0.05, 0.03, 0.09)),
-    site(CROP, vec3(0.00, 0.01, 0.16), vec3(0.09, 0.09, 0.29)),
-    pair(BREATHER, vec3(0.17, -0.02, -0.42), vec3(0.02, 0.02, 0.02)),
-    site(FLOAT, vec3(0.00, 0.08, -0.16), vec3(0.05, 0.04, 0.05)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(0.17, 0.02, -0.14),
-        vec3(0.05, 0.03, 0.05),
-    ),
-    site(CISTERN, vec3(0.00, 0.01, 0.49), vec3(0.09, 0.09, 0.20)),
-    site(BROOD, vec3(0.00, 0.01, 0.72), vec3(0.05, 0.03, 0.10)),
-    site(PLUME, vec3(0.00, -0.01, -0.81), vec3(0.04, 0.03, 0.06)),
-]);
+pub const PARTS: &[Part] = &[site(
+    PLUME,
+    vec3(0.00, -0.01, -0.81),
+    vec3(0.04, 0.03, 0.06),
+)];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

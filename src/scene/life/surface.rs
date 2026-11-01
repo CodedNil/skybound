@@ -2,7 +2,7 @@ use crate::scene::{
     life::{
         Body, CreatureInstance, Kind, Look, ORGAN_SLOTS,
         animalia::{Flier, WINGSPAN},
-        development, ellipsoid,
+        capsule, development, ellipsoid,
         genome::BUILD,
         smooth_min,
     },
@@ -829,7 +829,7 @@ pub fn trace_material<C: Body, F: Fn(Vec3, &C) -> Surface, M: Fn(Vec3, u32) -> M
     // A cutaway's organs are coloured as their species colours them; the rest is the body's own.
     let material = |point, id: u32| {
         if id >= ORGAN_ID {
-            organ_material(c, id)
+            organ_material(c, id, point)
         } else {
             material(point, id)
         }
@@ -964,17 +964,72 @@ fn shaded(ray: Ray, occlusion: f32, lit: f32) -> Ray {
 /// Where a cutaway's organs begin among a surface's materials.
 const ORGAN_ID: u32 = 100;
 
-/// A cutaway organ's tissue, in the colour its species gives it, glowing if it stores aur.
-fn organ_material(c: &CreatureInstance, id: u32) -> Material {
+/// A cutaway organ's tissue, in the colour its species gives it: soft organs glowing if they store
+/// aur, muscle in bundles of fibre along its length, and the spring fibre of a frame pale and
+/// banded where it is coiled, darker and glinting where it is laced with iron.
+fn organ_material(c: &CreatureInstance, id: u32, point: Vec3) -> Material {
     let organ = c.organs[(id - ORGAN_ID) as usize];
-    let mut tissue = Material::skin(organ[2].truncate(), 0.35);
-    tissue.translucency = 0.2;
-    tissue.emission = organ[1].w;
-    tissue
+    let code = organ[2].w as u32;
+    let (form, tissue) = (code % 3, code / 3);
+    let local = if organ[0].w > 0.5 {
+        vec3(point.x.abs(), point.y, point.z)
+    } else {
+        point
+    };
+    let at = organ[0].truncate();
+    let extent = organ[1].truncate();
+    let mut colour = organ[2].truncate();
+    let mut tissue_material = Material::skin(colour, 0.35);
+    tissue_material.translucency = 0.2;
+    if tissue == 0 {
+        tissue_material.emission = organ[1].w;
+        return tissue_material;
+    }
+    // How far along the organ's length the point lies, and how far round or across it.
+    let (along, across) = if form == 1 {
+        let axis = extent - at;
+        let length = axis.length().max(1e-4);
+        let t = (local - at).dot(axis) / length;
+        let side = (local - at) - axis * (t / length);
+        (t, side.x + side.y * 0.7 + side.z * 0.5)
+    } else if form == 2 {
+        let q = (local - at) / extent.max(Vec3::splat(1e-4));
+        (q.y.atan2(q.x) * (extent.x + extent.y) * 0.5, (local - at).z)
+    } else {
+        let q = (local - at) / extent.max(Vec3::splat(1e-4));
+        if extent.z >= extent.x.max(extent.y) {
+            (q.z * extent.z, (q.x + q.y * 0.7) * extent.min_element())
+        } else if extent.y >= extent.x {
+            (q.y * extent.y, (q.x + q.z * 0.7) * extent.min_element())
+        } else {
+            (q.x * extent.x, (q.y + q.z * 0.7) * extent.min_element())
+        }
+    };
+    let scale = c.position.w.max(0.1) * 0.02;
+    if tissue == 1 {
+        // Fibres run the organ's length, gathered into bundles with darker sheaths between.
+        let fibre = (across / scale * 9.0).sin() * 0.5 + 0.5;
+        let bundle = (across / scale * 1.7 + fbm(local / scale * 0.3) * 2.0).sin();
+        colour *= 0.78 + fibre * 0.16 + bundle.max(0.0) * 0.1;
+        tissue_material = Material::skin(colour, 0.45);
+        tissue_material.translucency = 0.15;
+        tissue_material.scatter = 0.3;
+    } else {
+        // Spring fibre is wound in coils, which show as fine bands across the rod.
+        let coil = (along / scale * 4.0 + across / scale * 1.5).sin() * 0.5 + 0.5;
+        colour *= 0.86 + coil * 0.18;
+        tissue_material = Material::skin(colour, 0.28 - coil * 0.08);
+        tissue_material.scatter = 0.15;
+        if tissue == 3 {
+            tissue_material.metal = 0.55;
+            tissue_material.roughness = 0.32;
+        }
+    }
+    tissue_material
 }
 
 /// A creature cut away down its middle, its near half gone to show its organs inside it, each
-/// where its species carries it.
+/// where its species carries it and in its own form: masses, rods and hoops.
 fn cutaway(hit: &mut Surface, point: Vec3, c: &CreatureInstance) {
     let body = hit.distance;
     hit.distance = body.max(-point.x);
@@ -982,15 +1037,27 @@ fn cutaway(hit: &mut Surface, point: Vec3, c: &CreatureInstance) {
         if index >= c.kind.w {
             break;
         }
-        let at = c.organs[index as usize][0];
-        let size = c.organs[index as usize][1];
-        let local = if at.w > 0.5 {
+        let organ = c.organs[index as usize];
+        let at = organ[0].truncate();
+        let extent = organ[1];
+        let local = if organ[0].w > 0.5 {
             vec3(point.x.abs(), point.y, point.z)
         } else {
             point
         };
-        let organ = ellipsoid(local - at.truncate(), size.truncate()).max(body);
-        hit.join(organ, ORGAN_ID + index);
+        let form = organ[2].w as u32 % 3;
+        let shape = if form == 1 {
+            capsule(local, at, extent.truncate(), extent.w)
+        } else if form == 2 {
+            // A hoop round the body's length: its ring across, and its own thickness about that.
+            let q = local - at;
+            let span = extent.truncate().xy().max(Vec2::splat(1e-4));
+            let ring = ((q.xy() / span).length() - 1.0) * span.min_element();
+            vec2(ring, q.z).length() - extent.z
+        } else {
+            ellipsoid(local - at, extent.truncate())
+        };
+        hit.join(shape.max(body), ORGAN_ID + index);
     }
 }
 

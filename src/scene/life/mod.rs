@@ -19,8 +19,8 @@ use spirv_std::glam::{FloatExt, Quat, UVec4, Vec2, Vec3, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
-/// The most organs a cutaway shows.
-pub const ORGAN_SLOTS: usize = 12;
+/// The most organs a body has, and a cutaway shows.
+pub const ORGAN_SLOTS: usize = 20;
 
 /// What every organism drawn has, plant or animal: where it is and how it moves, what it is, how
 /// far through its life, the genes it was born with, and the wounds and scars its life has left.
@@ -519,6 +519,10 @@ pub struct Taxon {
     pub description: &'static str,
     pub rank: Rank,
     pub parent: Option<&'static Self>,
+    /// The parts of the body plan that arose in this taxon, or that it changed or lost; see
+    /// [`organs::plan`].
+    #[cfg(not(target_arch = "spirv"))]
+    pub anatomy: &'static [organs::Part],
 }
 
 impl Taxon {
@@ -538,16 +542,27 @@ impl Taxon {
 /// Taxonomic modules inherit their parent from the enclosing module. Write each description
 /// sentence as a separate string; they are joined with single spaces at compile time.
 macro_rules! taxon {
+    ($rank:ident, $name:expr, $english:expr, [$first:literal $(, $rest:literal)* $(,)?], anatomy: $anatomy:expr $(,)?) => {
+        taxon!(@make $rank, $name, $english, concat!($first $(, " ", $rest)*), $anatomy);
+    };
     ($rank:ident, $name:expr, $english:expr, [$first:literal $(, $rest:literal)* $(,)?] $(,)?) => {
-        taxon!($rank, $name, $english, concat!($first $(, " ", $rest)*));
+        taxon!(@make $rank, $name, $english, concat!($first $(, " ", $rest)*), &[]);
+    };
+    ($rank:ident, $name:expr, $english:expr, $description:expr, anatomy: $anatomy:expr $(,)?) => {
+        taxon!(@make $rank, $name, $english, $description, $anatomy);
     };
     ($rank:ident, $name:expr, $english:expr, $description:expr $(,)?) => {
+        taxon!(@make $rank, $name, $english, $description, &[]);
+    };
+    (@make $rank:ident, $name:expr, $english:expr, $description:expr, $anatomy:expr) => {
         pub const TAXON: $crate::scene::life::Taxon = $crate::scene::life::Taxon {
             name: $name,
             english_name: $english,
             description: $description,
             rank: $crate::scene::life::Rank::$rank,
             parent: taxon!(@parent $rank),
+            #[cfg(not(target_arch = "spirv"))]
+            anatomy: $anatomy,
         };
     };
     (@parent Root) => { None };
@@ -705,10 +720,16 @@ macro_rules! species {
             pub const fn look(self) -> Look {
                 match self { $(Self::$id => $($path)::+::LOOK,)* }
             }
-            /// Where the species' organs lie in its body.
+            /// Where the species' organs lie in its body: its lineage's body plan, laid out in
+            /// its own build.
             #[cfg(not(target_arch = "spirv"))]
-            pub const fn organs(self) -> organs::Viscera {
-                match self { $(Self::$id => $($path)::+::ORGANS,)* }
+            pub fn organs(self) -> &'static organs::Viscera {
+                organs::anatomy(self)
+            }
+            /// The parts of the body plan that are the species' own.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn parts(self) -> &'static [organs::Part] {
+                match self { $(Self::$id => $($path)::+::PARTS,)* }
             }
             /// The species' place in the tree of life.
             #[cfg(not(target_arch = "spirv"))]

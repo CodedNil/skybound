@@ -158,7 +158,9 @@ taxon!(
         "Moisture-recovery folds conserve water, although sustained flight can still force animals to seek Pondplants or humid currents.",
         "Lift comes from gas chambers, wings or attachment to another living body, and every lineage must find rising air strong enough to carry it.",
         "Direct exposure to concentrated aur remains lethal except within the carefully limited mist-skimming adaptations of the Nætu lineage.",
+        "No animal has rigid bone. With nothing to stand on and every blow taken in the air, a rigid frame would only snap; the first animals held their shape by fluid pressed against the muscle of the body wall, and the frames some lineages later grew are wound from elastic fibre that bends with each stroke and springs it back.",
     ],
+    anatomy: physiology::ANATOMY,
 );
 
 /// Render the body in its coat and its wing pairs; a pair of no span is absent.

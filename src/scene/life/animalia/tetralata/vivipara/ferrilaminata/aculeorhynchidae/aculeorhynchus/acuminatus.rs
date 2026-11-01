@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "spirv"))]
+use crate::scene::life::organs::{Function, Organ, Part, site};
 use crate::scene::life::{
     Look, Tetralate,
     animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
@@ -7,18 +9,6 @@ use crate::scene::life::{
     louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Function, Organ, Viscera, pair, site},
 };
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -34,7 +24,6 @@ pub const BIOLOGY: Biology = Biology {
     gestation_days: 120.0,
     // High above everything it hunts, for the length of its stoop.
     altitude: (4000.0, 14000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 41.5;
@@ -223,19 +212,9 @@ const fn side_of(p: Vec3) -> Vec3 {
 #[cfg(not(target_arch = "spirv"))]
 const VENOM: Organ = Organ::new("venom sac", Function::Secretion, vec3(0.55, 0.85, 0.30));
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.0, 0.05, -4.0), vec3(0.22, 0.2, 0.3)),
-    site(VENOM, vec3(0.0, -0.36, -3.95), vec3(0.2, 0.16, 0.32)),
-    site(PUMP, vec3(0.0, -0.15, -2.2), vec3(0.3, 0.3, 0.35)),
-    pair(BREATHER, vec3(0.35, 0.15, -2.7), vec3(0.15, 0.22, 0.4)),
-    pair(FLIGHT_MUSCLE, vec3(0.42, 0.1, -1.2), vec3(0.25, 0.4, 0.6)),
-    site(FLOAT, vec3(0.0, 0.5, -0.8), vec3(0.28, 0.22, 1.0)),
-    site(CROP, vec3(0.0, -0.2, 0.3), vec3(0.45, 0.42, 0.85)),
-    site(CISTERN, vec3(0.0, -0.1, 1.6), vec3(0.3, 0.28, 0.45)),
-    site(BROOD, vec3(0.0, 0.0, 2.8), vec3(0.22, 0.22, 0.45)),
-]);
+pub const PARTS: &[Part] = &[site(VENOM, vec3(0.0, -0.36, -3.95), vec3(0.2, 0.16, 0.32))];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

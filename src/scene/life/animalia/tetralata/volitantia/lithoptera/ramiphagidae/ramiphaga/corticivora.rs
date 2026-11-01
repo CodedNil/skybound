@@ -1,15 +1,5 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Viscera, pair, site},
-};
+use crate::scene::life::organs::Part;
 use crate::scene::{
     life::{
         Look, Tetralate,
@@ -143,22 +133,9 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     hit
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 1.17, -2.04), vec3(0.15, 0.41, 0.48)),
-    site(PUMP, vec3(0.00, 0.60, -1.32), vec3(0.10, 0.10, 0.10)),
-    site(CROP, vec3(0.00, 1.17, 0.96), vec3(0.18, 0.18, 0.18)),
-    pair(BREATHER, vec3(0.37, 1.04, -1.21), vec3(0.11, 0.11, 0.11)),
-    site(FLOAT, vec3(0.00, 2.21, 0.11), vec3(0.19, 0.54, 0.59)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(0.37, 1.69, -0.50),
-        vec3(0.15, 0.26, 0.26),
-    ),
-    site(CISTERN, vec3(0.00, 0.44, 1.46), vec3(0.10, 0.10, 0.10)),
-    site(BROOD, vec3(0.00, 0.84, 1.96), vec3(0.17, 0.44, 0.53)),
-]);
+pub const PARTS: &[Part] = &[];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

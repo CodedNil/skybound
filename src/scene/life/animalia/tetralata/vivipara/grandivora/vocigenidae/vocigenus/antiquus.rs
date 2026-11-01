@@ -1,15 +1,5 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::BREATHER,
-    animalia::physiology::BROOD,
-    animalia::physiology::CROP,
-    animalia::physiology::FLOAT,
-    animalia::physiology::GANGLION,
-    animalia::physiology::PUMP,
-    animalia::tetralata::CISTERN,
-    animalia::tetralata::FLIGHT_MUSCLE,
-    organs::{Viscera, pair, site},
-};
+use crate::scene::life::{animalia::physiology::FLOAT, organs::Part};
 use crate::scene::{
     life::{
         Look, Tetralate,
@@ -36,7 +26,6 @@ pub const BIOLOGY: Biology = Biology {
     litter: Litter::new(1, 1, [0.985, 0.015, 0.0, 0.0, 0.0, 0.0]),
     gestation_days: 900.0,
     altitude: (2500.0, 10000.0),
-    ..super::BIOLOGY
 };
 
 pub const RENDER_RADIUS: f32 = 55.6;
@@ -338,24 +327,13 @@ fn eyes(p: Vec3) -> f32 {
     nearest
 }
 
-/// Where its organs lie in its body; see [`Viscera`].
+/// The organs that are its own, beside the body plan its lineage gives it; see [`Part`]: two
+/// more gas stores fore and aft of the first, for a body this heavy needs lift along its length.
 #[cfg(not(target_arch = "spirv"))]
-pub const ORGANS: Viscera = Viscera::new(&[
-    site(GANGLION, vec3(0.00, 0.27, -10.98), vec3(0.92, 0.85, 2.71)),
-    site(PUMP, vec3(0.00, -0.27, -5.62), vec3(1.77, 1.77, 3.09)),
-    site(CROP, vec3(0.00, -0.27, 1.88), vec3(1.91, 1.70, 4.95)),
-    pair(BREATHER, vec3(3.00, 0.54, -8.04), vec3(0.80, 0.80, 0.80)),
-    site(FLOAT, vec3(0.00, 3.52, -3.48), vec3(0.63, 0.63, 0.63)),
-    pair(
-        FLIGHT_MUSCLE,
-        vec3(3.00, 1.62, -3.75),
-        vec3(0.81, 0.81, 0.81),
-    ),
-    site(CISTERN, vec3(0.00, -0.27, 7.77), vec3(1.44, 1.44, 3.09)),
-    site(BROOD, vec3(0.00, -0.27, 12.05), vec3(0.99, 0.88, 1.92)),
-    site(FLOAT, vec3(0.00, 3.52, -6.70), vec3(0.54, 0.54, 0.54)),
-    site(FLOAT, vec3(0.00, 3.52, 6.70), vec3(0.66, 0.66, 0.66)),
-]);
+pub const PARTS: &[Part] = &[
+    Part::lobe(FLOAT, vec3(-0.5, 0.6, 0.0), vec3(0.3, 0.25, 0.12)),
+    Part::lobe(FLOAT, vec3(0.45, 0.55, 0.0), vec3(0.32, 0.25, 0.13)),
+];
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(

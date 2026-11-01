@@ -121,16 +121,16 @@ pub fn metabolize(body: &mut Vitals, kind: Kind, climate: Climate, dt: f32) -> W
                 .unwrap_or(0.0)
                 * 0.35);
     body.hydration = (body.hydration + (climate.humidity * 0.0008 - drying) * dt).clamp(0.0, 1.0);
-    let frond = body.working(&viscera, Function::Gathering);
+    let frond = body.working(viscera, Function::Gathering);
     body.energy = (body.energy + (nature.powered)(&climate) * frond * 0.003 * dt).min(1.0);
     if viscera.has(Function::Nectar) {
         body.reserve = (body.reserve
-            + climate.light * body.working(&viscera, Function::Nectar) * 0.002 * dt)
+            + climate.light * body.working(viscera, Function::Nectar) * 0.002 * dt)
             .min(1.0);
     }
-    body.hold_lift(&viscera, dt);
-    body.heal(&viscera, 0.002, dt);
-    let failing = body.working(&viscera, Function::Sap) < 0.1;
+    body.hold_lift(viscera, dt);
+    body.heal(viscera, 0.002, dt);
+    let failing = body.working(viscera, Function::Sap) < 0.1;
     body.endure(kind, climate, (failing, 0.0), dt)
 }
 
@@ -147,7 +147,7 @@ pub fn grow(body: &mut Vitals, kind: Kind, climate: Climate, nutrients: f32, dt:
     let viscera = kind.organs();
     let growth = (body.mass
         * (nature.powered)(&climate)
-        * body.working(&viscera, Function::Gathering)
+        * body.working(viscera, Function::Gathering)
         * body.hydration
         * body.breath.max(0.0)
         * 0.001
@@ -156,7 +156,7 @@ pub fn grow(body: &mut Vitals, kind: Kind, climate: Climate, nutrients: f32, dt:
         .min((kind.biology().adult_mass * 1.4 - body.mass).max(0.0));
     body.mass += growth;
     body.hydration = (body.hydration
-        + climate.humidity * body.working(&viscera, Function::Drawing) * 0.0005 * dt)
+        + climate.humidity * body.working(viscera, Function::Drawing) * 0.0005 * dt)
         .min(1.0);
     growth
 }
