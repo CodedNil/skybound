@@ -971,7 +971,7 @@ impl Look {
 
 /// How many of the world's creatures are drawn at once, besides the player and their mount: those
 /// that cover the most of the screen.
-pub const HERD: usize = 24;
+pub const HERD: usize = 64;
 
 /// The instance each lineage is drawn with, as [`layout_of`] tells them apart: a plant, a gas-bag,
 /// a blood-feeder or a tetralate. The world keeps one buffer of each.

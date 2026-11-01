@@ -17,7 +17,7 @@ pub mod preview;
 #[cfg(target_arch = "spirv")]
 pub mod render;
 
-pub const PLANET_RADIUS: f32 = 500_000.0;
+pub const PLANET_RADIUS: f32 = 250_000.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]

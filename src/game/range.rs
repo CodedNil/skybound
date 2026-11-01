@@ -49,7 +49,7 @@ fn far(kind: Kind) -> f64 {
 const NEAREST_GIANT: f64 = 25_000.0;
 
 /// The most organisms lived out in full at once.
-const LIVING_LIMIT: usize = 1500;
+const LIVING_LIMIT: usize = 6000;
 
 /// Seconds between steps of the planet-wide counts, and between looking for groups to live out or
 /// fold back.
@@ -245,8 +245,8 @@ fn density(kind: Kind) -> f32 {
     let sight = PI64 * near(kind) * near(kind);
     let area = 4.0 * PI64 * f64::from(PLANET_RADIUS).powi(2) / REGIONS as f64;
     let in_sight = match kind.kingdom() {
-        Kingdom::Animalia => 14.0,
-        Kingdom::Plantae => 20.0,
+        Kingdom::Animalia => 140.0,
+        Kingdom::Plantae => 200.0,
     };
     (in_sight * area / sight) as f32 * if kind.attaches() { 0.2 } else { 1.0 }
 }
