@@ -41,14 +41,14 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 41.5;
 
-/// How many glowing threads its lure trails, how far below it the lure dangles, how thick the fur
-/// of its ruff, and how large its great eyes.
+/// How many glowing threads its lure trails, how far below it the lure dangles, how
+/// far its ragged flank frills reach, and how large its great eyes.
 ///
 /// A full lure draws prey from further, a low one keeps the hunter further from what it draws, a
-/// thick ruff hides its outline better, and large eyes see prey sooner against the glow.
+/// long frill hides its outline better, and large eyes see prey sooner against the glow.
 pub const LURE_THREADS: Gene = Gene(38);
 pub const DANGLE: Gene = Gene(39);
-pub const RUFF: Gene = Gene(40);
+pub const FRILLS: Gene = Gene(40);
 pub const EYES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
@@ -61,11 +61,11 @@ taxon!(
     "Crepusculofalx venatrix",
     "Duskslicers",
     [
-        "Duskslicers hang almost motionless in the mineral haze on broad, dust-furred wings, their mottled bodies lost in it, a glowing lure dangling far below on a whip of a tail.",
+        "Duskslicers hang almost motionless in the mineral haze on long, narrow wings held out stiff as a kite's, their flat, slate-plated bodies and ragged flank frills lost in it, a glowing lure dangling far below on a whip of a tail.",
         "Small animals drawn up to the lure's apparent feeding signal come within reach of its long mouth tentacles, which shoot out and seize them, and it hangs on in the haze to feed.",
         "It eats metal as all its order does, licking it from the haze it hangs in and taking it with every meal, and its body lays it down as scales across its back and along the leading edges of its forewings, armour against the hunters that come for so still a target, more and broader the older it is.",
         "A pair of huge eyes on the underside of the head looks down at the faint glow of the aur, against which prey shows as a shadow even in the dimmest equatorial skies, where they live.",
-        "Fringed hindwings hush the glide, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
+        "Small hind rudders trim the hang without a wingbeat to betray it, and mouth tentacles gather the meal; scavenging carries them through haze too thick for the lure to be seen.",
         "Their dim-field specialisation makes clear, brightly lit Gardens less favourable than the mineral-rich currents that many other animals only visit.",
     ],
 );
@@ -85,24 +85,43 @@ pub fn animate(c: &mut Tetralate) {
     rig_tentacles(c, MOUTH, 0.8, ORAL_PAIRS);
 }
 
-/// A haze-hanging ambusher, built to be unseen until the cut.
+/// A haze-hanging ambusher, built to be unseen until its prey is in reach.
 ///
-/// A short, broad, flattened body is furred to hold the dust it hangs in, so it takes the haze's
-/// own colour; a blunt head has two great eyes on its underside, looking down for prey against the
-/// aur's glow; and a long, thin whip of a tail hangs below, ending in a lure of glowing threads.
-/// The weapon is in the wings: the forewings' leading edges are iron, curving to a scythe point.
+/// A long, flat wedge of a body lies under overlapping slate-grey plates, widest at the shoulders,
+/// with ragged frills of crusted skin along its flanks that break its outline into the mineral
+/// haze it hangs in. A low, narrow head has two great eyes on its underside, looking down for prey
+/// against the aur's glow, and a long whip of a tail hangs below, ending in a lure of glowing
+/// threads. It hangs on long, narrow, stiff wings held out flat like a kite's, their leading edges
+/// armoured with the iron it gathers, and small hind rudders.
 pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
-    let bulk = vec3(1.9, 0.95, 3.2);
-    let body = rounded(p, bulk);
-    let head = rounded(p - vec3(0.0, -0.1, -3.4), vec3(1.25, 0.85, 1.15));
-    let mut d = louvres(smooth_min(body, head, 0.7), p, bulk);
-    // A ruff of longer fur over the shoulders, breaking up its outline.
-    let fur = c.gene(RUFF);
-    let ruff = ellipsoid(
-        p - vec3(0.0, 0.35, -1.9),
-        vec3(2.1, 0.6 + fur * 0.3, 0.8 + fur * 0.2),
-    ) + (p.x * 9.0).sin() * (p.z * 7.0).sin() * (0.04 + fur * 0.04);
-    d = smooth_min(d, ruff, 0.4);
+    // Overlapping plates, each a little narrower than the one before, from the shoulders back.
+    let mut body = 1e6f32;
+    for plate in 0..7 {
+        let f = plate as f32;
+        let taper = 1.0 - f / 7.0 * 0.55;
+        let size = vec3(1.55 * taper, 0.6 * taper.sqrt(), 0.62);
+        body = smooth_min(
+            body,
+            rounded(p - vec3(0.0, f * -0.02, -3.0 + f * 0.95), size),
+            0.12,
+        );
+    }
+    let head = rounded(p - vec3(0.0, -0.15, -3.9), vec3(0.95, 0.62, 0.95));
+    let bulk = vec3(1.5, 0.6, 3.2);
+    let mut d = louvres(smooth_min(body, head, 0.35), p, bulk);
+    // Ragged frills of crusted skin along the flanks, drooping a little, which break the body's
+    // outline into the haze; how far they reach is inherited.
+    let reach = 0.45 + c.gene(FRILLS) * 0.6;
+    let side = vec3(p.x.abs(), p.y, p.z);
+    let station = ((side.z + 2.5) / 0.9).round().clamp(0.0, 5.0);
+    let q = side - vec3(1.2 - station * 0.1, -0.1, -2.5 + station * 0.9);
+    let ragged = (q.x * 9.0 + station * 3.0).sin() * 0.08 + (q.z * 13.0 + station).sin() * 0.05;
+    let frill = ((q.y + q.x * 0.3).abs() - 0.05)
+        .max(q.z.abs() - 0.42 - ragged)
+        .max(q.x - reach - ragged)
+        .max(-q.x)
+        * 0.7;
+    d = smooth_min(d, frill, 0.08);
     // A thin whip of a tail.
     let mut whip = 1e6f32;
     for i in 0..5 {
@@ -212,15 +231,15 @@ pub const ORGANS: Viscera = Viscera::new(&[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
-    vec4(0.36, 0.32, 0.27, 0.0),
-    vec3(0.72, 0.56, 0.34),
-    [vec4(12.0, 3.6, -1.3, 0.85), vec4(7.5, 3.4, 1.9, 0.75)],
+    vec4(0.34, 0.34, 0.33, 0.0),
+    vec3(0.55, 0.38, 0.26),
+    [vec4(13.0, 2.0, -1.2, 0.85), vec4(4.5, 1.4, 2.2, 0.75)],
 )
-.hinged([vec2(1.7, 0.3), vec2(1.6, 0.2)])
-.styled([vec4(1.1, 0.05, 0.0, 0.0), vec4(0.2, 0.9, 0.0, 0.5)])
-.framed([1.15, 0.45])
+.hinged([vec2(1.4, 0.25), vec2(1.0, 0.15)])
+.styled([vec4(1.2, 0.05, 0.0, 0.0), vec4(0.6, 0.3, 0.0, 0.0)])
+.framed([1.15, 0.6])
 .edged(6)
-.skinned(vec4(3.0, 0.9, 1.8, 0.25))
+.skinned(vec4(2.0, 1.1, 1.6, 0.2))
 .flying(vec4(0.35, 0.25, 0.30, 1.30))
 .marked(vec4(6.00, 3.00, 0.70, 0.42), vec3(0.26, 0.22, 0.17));
 
