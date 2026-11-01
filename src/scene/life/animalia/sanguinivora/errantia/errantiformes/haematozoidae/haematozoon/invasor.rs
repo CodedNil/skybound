@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look, annulated,
+    BloodFeeder, Look, annulated,
     biology::{Biology, Litter},
     capsule,
     genome::Gene,
@@ -60,13 +60,13 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(1.0, 1.0, 3.1).extend(0.0);
 }
 
 /// A ringed worm swollen with blood, daughters budding from one flank and growing larger towards
 /// the tail, its proboscis armed with hooks.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let body = annulated(
         p,
         vec3(0.0, 0.0, -2.2),
@@ -129,7 +129,7 @@ pub const LOOK: Look = Look::coat(
 )
 .skinned(vec4(5.0, 1.0, 1.4, -0.30));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

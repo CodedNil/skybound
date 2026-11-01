@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, pick, speckle},
@@ -42,7 +42,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(7.0, 7.0, 7.0).extend(0.0);
 }
 
@@ -82,7 +82,7 @@ fn fan(p: Vec3, out: Vec3, form: u32, size: f32, frill: f32) -> f32 {
 /// lean out, each carrying fans that open in tiers into the air the host carries them through.
 /// Colonies grow their own way: a few stalks or many, fans as shelves, funnels, paddles or ruffs,
 /// one tier to a stalk or a stack of them, frilled finely or coarsely.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(ellipsoid(p - FOOT, vec3(1.3, 0.5, 1.3)), 0);
     let stalks = count(c, 1.0, 2, 5);
     let form = pick(c, 2.0, 4);
@@ -128,6 +128,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.75, 0.42, 0.07), vec3(1.0, 0.7, 0.2));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

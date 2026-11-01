@@ -1,7 +1,7 @@
 pub use super::{BIOLOGY, render_wings};
 use crate::scene::{
     life::{
-        CreatureInstance, ellipsoid, smooth_min,
+        Tetralate, ellipsoid, smooth_min,
         surface::{Hit, Material, Ray, Surface, local_ray, make_hit},
         tapered_tail,
     },
@@ -58,12 +58,7 @@ pub fn feather(point: Vec3, root: Vec3, length: f32, width: f32, sweep: f32) -> 
     ellipsoid(stable, vec3(width, width * 0.13, length * 0.55)) * 0.65
 }
 
-pub fn tail_shaft(
-    point: Vec3,
-    creature: &CreatureInstance,
-    scale: Vec3,
-    thickness: f32,
-) -> Surface {
+pub fn tail_shaft(point: Vec3, creature: &Tetralate, scale: Vec3, thickness: f32) -> Surface {
     // Its pieces run smoothly into one another, so the tail bends as one flexing shaft rather
     // than a string of beads.
     let mut shaft = 1e6f32;
@@ -73,8 +68,8 @@ pub fn tail_shaft(
             shaft,
             tapered_tail(
                 point,
-                creature.tail[segment].truncate() * scale,
-                creature.tail[segment + 1].truncate() * scale,
+                creature.rig.tail[segment].truncate() * scale,
+                creature.rig.tail[segment + 1].truncate() * scale,
                 thickness * (1.06 - fraction),
                 thickness * (0.86 - fraction),
             ),
@@ -106,7 +101,7 @@ fn feather_intersection(
 
 pub fn render_tail_feathers<M: Fn(Vec3, u32) -> Material>(
     ray: Ray,
-    creature: &CreatureInstance,
+    creature: &Tetralate,
     shape: TailFeathers,
     material: M,
 ) -> Hit {
@@ -121,9 +116,9 @@ pub fn render_tail_feathers<M: Fn(Vec3, u32) -> Material>(
         let radius = vec3(width, width * 0.13, length * 0.55);
         for layer in 1..=3 {
             let along = layer as f32 / 3.0;
-            let anchor = creature.tail[segment]
+            let anchor = creature.rig.tail[segment]
                 .truncate()
-                .lerp(creature.tail[segment + 1].truncate(), along)
+                .lerp(creature.rig.tail[segment + 1].truncate(), along)
                 * shape.scale;
             for side_index in 0..2 {
                 let side = if side_index == 0 { -1.0 } else { 1.0 };
@@ -145,9 +140,9 @@ pub fn render_tail_feathers<M: Fn(Vec3, u32) -> Material>(
                 let gradient = vec3(point.x - point.z * sweep, point.y, point.z - length * 0.5)
                     / (radius * radius);
                 normal = vec3(gradient.x, gradient.y, gradient.z - sweep * gradient.x).normalize();
-                previous_offset = creature.previous_tail[segment]
+                previous_offset = creature.rig.previous_tail[segment]
                     .truncate()
-                    .lerp(creature.previous_tail[segment + 1].truncate(), along)
+                    .lerp(creature.rig.previous_tail[segment + 1].truncate(), along)
                     * shape.scale
                     - anchor;
             }
@@ -169,7 +164,7 @@ pub fn render_tail_feathers<M: Fn(Vec3, u32) -> Material>(
 
 pub fn wings<F: FnMut(Hit)>(
     ray: Ray,
-    creature: &CreatureInstance,
+    creature: &Tetralate,
     root: Vec3,
     dimensions: Vec2,
     tint: Vec3,
@@ -289,6 +284,7 @@ fn wing_roots(origin: Vec2, direction: Vec2, lift: f32, curvature: f32) -> Vec2 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::life::{CreatureInstance, animalia::Animal};
     use spirv_std::glam::Vec4;
 
     #[test]
@@ -331,12 +327,18 @@ mod tests {
         for stroke in [-0.3, 0.0, 0.3] {
             for fold in [0.0, 1.0] {
                 let animation = Vec4::new(stroke, fold, 0.0, 0.0);
-                let creature = CreatureInstance {
-                    rotation: Vec4::W,
-                    previous_rotation: Vec4::W,
-                    animation,
-                    previous_animation: animation,
-                    ..CreatureInstance::default()
+                let creature = Tetralate {
+                    animal: Animal {
+                        organism: CreatureInstance {
+                            rotation: Vec4::W,
+                            previous_rotation: Vec4::W,
+                            animation,
+                            previous_animation: animation,
+                            ..CreatureInstance::default()
+                        },
+                        ..Animal::default()
+                    },
+                    ..Tetralate::default()
                 };
                 let reach = dimensions.x * (1.0 - fold * 0.6);
                 for handedness in [-1.0, 1.0] {

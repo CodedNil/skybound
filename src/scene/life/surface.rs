@@ -1,7 +1,10 @@
 use crate::scene::{
     life::{
-        CreatureInstance, Kind, Look, ORGAN_SLOTS, animalia::WINGSPAN, development, ellipsoid,
-        genome::BUILD, smooth_min,
+        Body, CreatureInstance, Kind, Look, ORGAN_SLOTS,
+        animalia::{Flier, WINGSPAN},
+        development, ellipsoid,
+        genome::BUILD,
+        smooth_min,
     },
     math::Power,
 };
@@ -784,14 +787,9 @@ pub fn make_hit(
     }
 }
 
-pub fn trace<F: Fn(Vec3, &CreatureInstance) -> Surface>(
-    ray: Ray,
-    c: &CreatureInstance,
-    surface: F,
-    look: Look,
-) -> Hit {
+pub fn trace<C: Body, F: Fn(Vec3, &C) -> Surface>(ray: Ray, c: &C, surface: F, look: Look) -> Hit {
     let mut hit = trace_material(ray, c, surface, |point, id| {
-        coat(point / (c.position.w * 0.15).max(0.7), id, look)
+        coat(point / (c.organism().position.w * 0.15).max(0.7), id, look)
     });
     hit.transmittance = Vec3::ZERO;
     hit
@@ -801,24 +799,28 @@ pub fn trace<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     clippy::too_many_lines,
     reason = "the march, normal, occlusion and shadow share one loop so the GPU inlines the surface once"
 )]
-pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32) -> Material>(
+pub fn trace_material<C: Body, F: Fn(Vec3, &C) -> Surface, M: Fn(Vec3, u32) -> Material>(
     ray: Ray,
-    c: &CreatureInstance,
+    body: &C,
     surface: F,
     material: M,
 ) -> Hit {
+    let c = body.organism();
     let local = local_ray(ray, c);
     let scale = development::scale(c).min_element();
-    let surface = |point, c: &CreatureInstance| {
-        let mut hit = surface(development::body_point(point, c), c);
-        // Allowing for the stretch that young and individual builds put on the body.
+    let (belly, stores) = body.carrying();
+    let surface = |point, body: &C| {
+        let mut hit = surface(development::body_point(point, body), body);
+        // Allowing for the stretch that young, individual builds and a swelling belly put on the
+        // body.
         hit.distance *= (1.0 - (1.0 - c.life.y) * 0.2)
             * 0.85
-            * if c.belly.w > 0.0 {
-                1.0 - c.stores.y.min(1.0) * 0.45
+            * if belly.w > 0.0 {
+                1.0 - stores.y.min(1.0) * 0.45
             } else {
                 1.0
             };
+        hit.distance += development::wound_relief(point, c);
         if c.kind.w > 0 {
             cutaway(&mut hit, point, c);
         }
@@ -877,7 +879,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
             }
             point + normal * (epsilon * 2.0) + towards * travel
         };
-        let sample = surface(query, c);
+        let sample = surface(query, body);
         if phase == 0 {
             epsilon = (ray.footprint * distance * 0.55 / scale)
                 .clamp(c.position.w * 0.000_01, c.position.w * 0.002);
@@ -939,7 +941,7 @@ pub fn trace_material<F: Fn(Vec3, &CreatureInstance) -> Surface, M: Fn(Vec3, u32
         c,
         distance,
         normal,
-        previous_point(point, c),
+        point + body.swung(point),
         material,
     )
 }
@@ -1006,27 +1008,6 @@ fn span_in_bounds(local: Ray, bounds: Vec3, max_distance: f32) -> (f32, f32) {
         near.min(far).max_element().max(0.0),
         near.max(far).min_element().min(max_distance),
     )
-}
-
-/// Where a point of the body was last frame, for motion vectors: the tail swings on its own, so a
-/// point along it moves with its posed chain.
-fn previous_point(point: Vec3, c: &CreatureInstance) -> Vec3 {
-    let tail_length = c.tail[5].z - c.tail[0].z;
-    if point.z <= c.tail[0].z || tail_length <= 0.01 {
-        return point;
-    }
-    let fraction = ((point.z - c.tail[0].z) / tail_length).clamp(0.0, 1.0) * 5.0;
-    let index = (fraction as usize).min(4);
-    let delta = c.previous_tail[index].lerp(c.previous_tail[index + 1], fraction - index as f32)
-        - c.tail[index].lerp(c.tail[index + 1], fraction - index as f32);
-    let scale = if c.kind.x == Kind::Nae as u32 {
-        vec3(0.2, 0.25, 1.0)
-    } else if c.kind.x == Kind::Naetu as u32 {
-        vec3(3.0, 3.0, 1.0)
-    } else {
-        Vec3::ONE
-    };
-    point + delta.truncate() * scale
 }
 
 /// A normal tilted by the surface's fine relief, from the slope of its height field about the
@@ -1280,7 +1261,10 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
 /// The arm turns at the shoulder, and the hand beyond the wrist follows a little behind, so the tip
 /// trails the stroke, folds in on the upstroke and flings out on the down. Each species beats at
 /// its own rate and depth, each individual a little out of step with the rest.
-pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> Sheet {
+pub fn wing_sheet<C: Flier>(body: &C, look: Look, index: usize, side: f32) -> Sheet {
+    let c = body.organism();
+    let wings = body.wings();
+    let animal = body.animal();
     let wing = look.wings[index];
     let shoulder = look.hinges[index].extend(wing.z);
     let root = vec3(shoulder.x * side, shoulder.y, shoulder.z);
@@ -1306,8 +1290,16 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
     // A weakened side must make up for it: both wings on a side that has lost or torn membrane beat
     // faster, half as fast again or twice, and deeper, giving old and battered animals gaits of
     // their own; a wing torn away leaves its fellow on that side doing the work of two.
-    let fore = if side > 0.0 { c.wear.y } else { c.wear.x };
-    let hind = if side > 0.0 { c.wear.w } else { c.wear.z };
+    let fore = if side > 0.0 {
+        wings.torn.y
+    } else {
+        wings.torn.x
+    };
+    let hind = if side > 0.0 {
+        wings.torn.w
+    } else {
+        wings.torn.z
+    };
     let weak = fore.min(1.0).midpoint(hind.min(1.0));
     let quicker = 1.0 + (weak * 2.0).round() * 0.5;
     let harder = 1.0 + weak * 0.8;
@@ -1327,12 +1319,19 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
             0.07 + push.max(0.0) * 0.06,
         )
     };
-    let (stroke, fold, flex, camber) = beat(c.animation.z, c.animation.y, c.dynamics);
+    let (stroke, fold, flex, camber) = beat(c.animation.z, c.animation.y, animal.motion);
     let (old_stroke, old_fold, old_flex, _) = beat(
         c.previous_animation.z,
         c.previous_animation.y,
-        c.previous_dynamics,
+        animal.previous_motion,
     );
+    // Each of the four wings is torn and scarred apart.
+    let own = move |wear: Vec4| match (index, side > 0.0) {
+        (0, false) => wear.x,
+        (0, true) => wear.y,
+        (_, false) => wear.z,
+        _ => wear.w,
+    };
     Sheet {
         center: root + vec3(side * reach * 0.5, 0.0, reach * 0.12),
         previous_center: root + vec3(side * old_reach * 0.5, 0.0, old_reach * 0.12),
@@ -1347,22 +1346,14 @@ pub fn wing_sheet(c: &CreatureInstance, look: Look, index: usize, side: f32) -> 
         pattern: look.pattern,
         second: look.second,
         side,
-        torn: {
-            let tears = c.wear;
-            match (index, side > 0.0) {
-                (0, false) => tears.x,
-                (0, true) => tears.y,
-                (_, false) => tears.z,
-                _ => tears.w,
-            }
-        },
-        scarred: c.scars.z,
+        torn: own(wings.torn),
+        scarred: own(wings.scarred),
     }
 }
 
-pub fn visit_paired_sheets<F: FnMut(Hit)>(
+pub fn visit_paired_sheets<C: Flier, F: FnMut(Hit)>(
     ray: Ray,
-    c: &CreatureInstance,
+    c: &C,
     look: Look,
     index: usize,
     mut emit: F,
@@ -1370,7 +1361,12 @@ pub fn visit_paired_sheets<F: FnMut(Hit)>(
     let pigment = look.accent.extend(look.wings[index].w);
     for i in 0..2 {
         let side = if i == 0 { -1.0 } else { 1.0 };
-        emit(sheet(ray, c, wing_sheet(c, look, index, side), pigment));
+        emit(sheet(
+            ray,
+            c.organism(),
+            wing_sheet(c, look, index, side),
+            pigment,
+        ));
     }
 }
 
@@ -1379,7 +1375,7 @@ pub fn visit_paired_sheets<F: FnMut(Hit)>(
 /// A thick arm runs from a fleshy root out to the wrist, a long finger on along the leading edge to
 /// the tip, and fingers fan back from the wrist to the points of the trailing edge between its
 /// scallops. A feathered wing has the arm and leading finger alone; its feathers carry the rest.
-pub fn wing_bones(p: Vec3, c: &CreatureInstance, look: Look, index: usize) -> f32 {
+pub fn wing_bones<C: Flier>(p: Vec3, c: &C, look: Look, index: usize) -> f32 {
     let style = look.styles[index];
     let weight = look.frames[index];
     let feathered = look.wings[index].w > 0.9;

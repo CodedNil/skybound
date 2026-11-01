@@ -1,5 +1,11 @@
 pub use super::render_wings;
-use crate::scene::life::biology::Biology;
+use crate::scene::life::{
+    Body, CreatureInstance,
+    animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
+    biology::Biology,
+};
+use core::ops::{Deref, DerefMut};
+use spirv_std::glam::{Vec3, Vec4};
 pub mod errantia;
 pub mod volantia;
 
@@ -7,6 +13,62 @@ pub const BIOLOGY: Biology = Biology {
     adult_mass: 0.05,
     ..super::BIOLOGY
 };
+
+/// What a blood-feeder adds to an animal: the wings its flying lineages grew, and the tail and
+/// trailing ribbons some of them pose.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct BloodFeeder {
+    pub animal: Animal,
+    pub wings: Wings,
+    pub rig: Rig,
+}
+
+impl Deref for BloodFeeder {
+    type Target = Animal;
+    fn deref(&self) -> &Animal {
+        &self.animal
+    }
+}
+
+impl DerefMut for BloodFeeder {
+    fn deref_mut(&mut self) -> &mut Animal {
+        &mut self.animal
+    }
+}
+
+impl Body for BloodFeeder {
+    fn organism(&self) -> &CreatureInstance {
+        &self.animal.organism
+    }
+    fn carrying(&self) -> (Vec4, Vec4) {
+        self.animal.carrying()
+    }
+    fn swung(&self, point: Vec3) -> Vec3 {
+        self.rig.swung(point, Vec3::ONE)
+    }
+}
+
+impl Creature for BloodFeeder {
+    fn animal(&self) -> &Animal {
+        &self.animal
+    }
+}
+
+impl Flier for BloodFeeder {
+    fn wings(&self) -> &Wings {
+        &self.wings
+    }
+}
+
+impl Rigged for BloodFeeder {
+    fn rig(&self) -> &Rig {
+        &self.rig
+    }
+    fn rigging(&mut self) -> (&mut CreatureInstance, &mut Rig) {
+        (&mut self.animal.organism, &mut self.rig)
+    }
+}
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, HOST, PHYSIOLOGY, WATERHOLE, hosts};

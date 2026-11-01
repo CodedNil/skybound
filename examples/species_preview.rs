@@ -4,8 +4,8 @@ use rayon::prelude::*;
 use skybound::scene::{
     life,
     life::{
-        CreatureInstance, Rank, SPECIES, SPECIES_MODULES, Taxon, animalia::physiology::Brood,
-        organs::Function, surface::tonemap,
+        BloodFeeder, Bubbleback, Drawn, Injury, Plant, Rank, SPECIES, SPECIES_MODULES, Taxon,
+        Tetralate, Wound, animalia::physiology::Brood, organs::Function, surface::tonemap,
     },
     preview::PreviewView,
 };
@@ -53,14 +53,14 @@ impl View {
         }
     }
 
-    fn fit(index: usize, c: &CreatureInstance) -> Self {
+    fn fit(index: usize, c: &Drawn) -> Self {
         let angle = [0.08, -0.25, 0.25, -0.5, 1.0, 0.5, 0.75, 0.0, 0.0][index] * PI;
         let elevation = [0.1f32, 0.2, 0.2, 0.0, 0.1, 0.0, 0.25, 1.25, -0.95][index];
         let origin = vec3(
             angle.sin() * elevation.cos(),
             elevation.sin(),
             -angle.cos() * elevation.cos(),
-        ) * c.position.w
+        ) * c.organism().position.w
             * 1.7;
         let forward = -origin.normalize();
         let right = forward.cross(Vec3::Y).normalize();
@@ -204,9 +204,9 @@ fn even_sky(_: Vec2) -> Vec3 {
 }
 
 /// One of a species as the previews draw it, as overgrown as one of its kind and age would be.
-fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> CreatureInstance {
+fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> Drawn {
     let species = life::KINDS[kind];
-    let mut c = CreatureInstance::specimen(
+    let mut c = Drawn::specimen(
         Vec3::ZERO.extend(species.render_radius()),
         Vec4::W,
         Vec4::new((seconds * TAU / 4.0).sin() * 0.12, 0.0, seconds, 0.0),
@@ -216,10 +216,13 @@ fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> CreatureInstance
     );
     let biology = species.biology();
     let grown = (days / biology.maturity_days).min(2.0) * 0.5 + days / biology.lifespan_days * 2.0;
-    c.scars.w = (species.overgrown() * grown).min(1.0);
-    // As much iron as one of its age has gathered, for those that gather it.
-    if species.animal().is_some_and(|animal| animal.ironclad) {
-        c.stores.x = (grown * 0.6).min(1.0);
+    let ironclad = species.animal().is_some_and(|animal| animal.ironclad);
+    if let Some(animal) = c.animal_mut() {
+        animal.hide.x = (species.overgrown() * grown).min(1.0);
+        // As much iron as one of its age has gathered, for those that gather it.
+        if ironclad {
+            animal.stores.x = (grown * 0.6).min(1.0);
+        }
     }
     c
 }
@@ -281,8 +284,8 @@ fn gpu() -> &'static Gpu {
 
 /// Tiles drawn on the GPU, each a creature in its view at its size, cut away to show its organs
 /// if `anatomy`, as tonemapped RGB rows from the top.
-fn draw(tiles: &[(CreatureInstance, &View, usize)], anatomy: bool) -> Vec<Vec<u8>> {
-    let batch: Vec<(CreatureInstance, PreviewView)> = tiles
+fn draw(tiles: &[(Drawn, &View, usize)], anatomy: bool) -> Vec<Vec<u8>> {
+    let batch: Vec<(Drawn, PreviewView)> = tiles
         .iter()
         .map(|(c, view, size)| {
             // Twice as many samples each way as pixels, averaged down.
@@ -321,7 +324,11 @@ const fn frames(_: Output) -> (usize, f32) {
 }
 
 /// One panel of a sheet at a moment: the creature as that panel shows it, and its label.
-fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureInstance, String) {
+#[expect(
+    clippy::too_many_lines,
+    reason = "each sheet's variations of its specimen read best together"
+)]
+fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (Drawn, String) {
     let biology = life::KINDS[kind].biology();
     let age = if output == Output::Lifecycle {
         life::development::grid_age(biology, panel)
@@ -337,14 +344,18 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
     // The render sheet shows each animal feeding once a loop, mouth opening and its tentacles
     // reaching in, while its wings keep their steady beat.
     let species = life::KINDS[kind];
-    if output == Output::Render && species.animal().is_some() {
+    if output == Output::Render
+        && let Some(animal) = c.animal_mut()
+    {
         let feeding = (seconds * PI * 0.5).sin().powi(2);
-        c.dynamics = Vec4::new(seconds * species.look().flight.x * TAU, 0.68, feeding, 1.0);
-        c.previous_dynamics = c.dynamics;
+        animal.motion = Vec4::new(seconds * species.look().flight.x * TAU, 0.68, feeding, 1.0);
+        animal.previous_motion = animal.motion;
     }
     // Some hides are grazed bare, others left to grow over.
-    if output == Output::Variation {
-        c.scars.w = (c.scars.w * (0.3 + (panel as f32 * 0.61).fract() * 1.6)).min(1.0);
+    if output == Output::Variation
+        && let Some(animal) = c.animal_mut()
+    {
+        animal.hide.x = (animal.hide.x * (0.3 + (panel as f32 * 0.61).fract() * 1.6)).min(1.0);
     }
     // Every third individual of a variation sheet has lived through attacks: its wings torn, some
     // tears healed to scar, its body scarred where it was struck.
@@ -352,15 +363,41 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
         let hard = 0.3 + (panel as f32 * 0.37).fract() * 0.5;
         // The worst of them has lost a hind wing outright.
         let lost = if panel % 9 == 8 { 1.0 } else { hard * 0.6 };
-        c.wear = Vec4::new(hard, hard * 0.3, lost, 0.0);
-        c.scars = Vec4::new(hard, hard * 0.5, hard * 0.8, c.scars.w);
-        let body = c.opaque_bounds.truncate();
-        c.wounds = [
-            (body * Vec3::new(0.5, 0.3, -0.2)).extend(hard),
-            (body * Vec3::new(-0.4, 0.5, 0.35)).extend(hard * 0.7),
-            (body * Vec3::new(0.1, -0.4, 0.1)).extend(hard * 0.4),
-            Vec4::ZERO,
-        ];
+        if let Some(wings) = c.wings_mut() {
+            wings.torn = Vec4::new(hard, hard * 0.3, lost, 0.0);
+            wings.scarred = Vec4::splat(hard * 0.8);
+        }
+        if let Some(animal) = c.animal_mut() {
+            animal.hide.y = hard * 0.5;
+        }
+        // Old wounds of every kind it has met: a slash healed to scar, a bite half closed, and a
+        // fresh puncture still open.
+        let organism = c.organism_mut();
+        let body = organism.opaque_bounds.truncate();
+        let reach = body.min_element();
+        organism.wounds[0] = Wound::open(
+            body * Vec3::new(0.3, 0.3, -0.2),
+            reach * 0.35 * hard,
+            Injury::Slash,
+            0.4,
+            0.5,
+        );
+        organism.wounds[0].state.x = 1.0;
+        organism.wounds[1] = Wound::open(
+            body * Vec3::new(-0.3, 0.4, 0.3),
+            reach * 0.25 * hard,
+            Injury::Bite,
+            1.2,
+            1.0,
+        );
+        organism.wounds[1].state.x = 0.5;
+        organism.wounds[2] = Wound::open(
+            body * Vec3::new(0.1, -0.3, 0.1),
+            reach * 0.15 * hard,
+            Injury::Pierce,
+            0.0,
+            1.0,
+        );
     }
     // The first grown panel of a lifecycle shows a parent with its brood, where its lineage
     // carries one.
@@ -369,10 +406,12 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
     if brooding {
         match species.animal().map(|animal| animal.brood) {
             Some(Brood::Carried) => {
-                c.kind.z = life::CLUTCH;
-                c.stores.w = litter as f32;
+                c.organism_mut().kind.z = life::CLUTCH;
+                if let Some(animal) = c.animal_mut() {
+                    animal.stores.w = litter as f32;
+                }
             }
-            Some(Brood::Pouch) => c.kind.z = life::FULL_POUCH,
+            Some(Brood::Pouch) => c.organism_mut().kind.z = life::FULL_POUCH,
             _ => {}
         }
     }
@@ -385,8 +424,8 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
     }
     // A plant's water: a Pondplant's basin full in the reference specimen and as its life has left
     // it across a variation sheet.
-    if species.plant().is_some() {
-        c.stores.y = if output == Output::Variation {
+    if let Drawn::Plant(plant) = &mut c {
+        plant.water.x = if output == Output::Variation {
             0.1 + (panel as f32 * 0.37).fract() * 0.9
         } else {
             0.8
@@ -399,9 +438,15 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (CreatureIn
             } else {
                 format!("{age:.1}D")
             };
-            if brooding && c.kind.z != 0 {
+            let carrying = match c {
+                Drawn::Tetralate(c) => c.stores.z,
+                Drawn::BloodFeeder(c) => c.stores.z,
+                Drawn::Bubbleback(c) => c.stores.z,
+                Drawn::Plant(_) => 0.0,
+            };
+            if brooding && c.organism().kind.z != 0 {
                 format!("{title} BROOD")
-            } else if c.stores.z > 0.0 && species.animal().is_some() {
+            } else if carrying > 0.0 {
                 format!("{title} GRAVID")
             } else {
                 title
@@ -431,7 +476,7 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
                 // nearer.
                 Output::Lifecycle => {
                     let own = View::fit(1, &c);
-                    if c.life.w > 0.0 && own.field < fixed.field {
+                    if c.organism().life.w > 0.0 && own.field < fixed.field {
                         View {
                             field: (own.field * 1.2).max(fixed.field / 3.0),
                             ..own
@@ -448,10 +493,10 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
     (0..count)
         .map(|frame| {
             let time = seconds + frame as f32 / rate;
-            let panels: Vec<(CreatureInstance, String)> = (0..9)
+            let panels: Vec<(Drawn, String)> = (0..9)
                 .map(|index| panel(kind, output, index, time))
                 .collect();
-            let tiles: Vec<(CreatureInstance, &View, usize)> = panels
+            let tiles: Vec<(Drawn, &View, usize)> = panels
                 .iter()
                 .zip(&views)
                 .map(|((c, _), view)| (*c, view, size))
@@ -595,7 +640,7 @@ const SHEET: u32 = 1024;
 /// each goes in the first place, scanning down the sheet and across, where its silhouette clears
 /// all those already placed by a small margin. Nothing is turned or rescaled to fit.
 fn render_lineup_at(taxon: &Taxon, size: usize, seconds: f32) -> RgbaImage {
-    let members: Vec<(CreatureInstance, View, f32)> = SPECIES
+    let members: Vec<(Drawn, View, f32)> = SPECIES
         .iter()
         .enumerate()
         .filter(|(_, species)| species.descends_from(taxon))
@@ -909,7 +954,8 @@ fn main() {
 }
 
 /// A creature carrying its species' organs, so the tracer draws it cut away to show them.
-fn cut_away(mut c: CreatureInstance) -> CreatureInstance {
+fn cut_away(mut drawn: Drawn) -> Drawn {
+    let c = drawn.organism_mut();
     let viscera = life::KINDS[c.kind.x as usize].organs();
     let sites = viscera.sites();
     c.kind.w = sites.len().min(life::ORGAN_SLOTS) as u32;
@@ -925,7 +971,7 @@ fn cut_away(mut c: CreatureInstance) -> CreatureInstance {
             site.organ.colour.extend(0.0),
         ];
     }
-    c
+    drawn
 }
 
 /// The creature tracer run on the GPU, headless: each call traces a batch of tiles, one creature
@@ -992,23 +1038,48 @@ impl Gpu {
 
     /// Trace each creature in its view at its own size, returning each tile's linear colour and
     /// coverage, row by row from the top. Every tile must be of the same species.
-    fn trace(&self, tiles: &[(CreatureInstance, PreviewView)]) -> Vec<Vec<Vec4>> {
-        let species = tiles[0].0.kind.x;
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one dispatch's buffers, bindings and readback, in order"
+    )]
+    fn trace(&self, tiles: &[(Drawn, PreviewView)]) -> Vec<Vec<Vec4>> {
+        let species = tiles[0].0.organism().kind.x;
         assert!(
-            tiles.iter().all(|(c, _)| c.kind.x == species),
+            tiles.iter().all(|(c, _)| c.organism().kind.x == species),
             "one species to a dispatch"
         );
         let pipeline = self.pipeline(species);
         let mut views: Vec<PreviewView> = Vec::with_capacity(tiles.len());
         let mut offset = 0usize;
-        let mut creatures: Vec<CreatureInstance> = Vec::with_capacity(tiles.len());
+        // Each in its lineage's buffer; the others hold one empty instance, so none is bound empty.
+        let mut plants: Vec<Plant> = Vec::new();
+        let mut bubblebacks: Vec<Bubbleback> = Vec::new();
+        let mut blood_feeders: Vec<BloodFeeder> = Vec::new();
+        let mut tetralates: Vec<Tetralate> = Vec::new();
         for (c, view) in tiles {
             let size = view.tile.x as usize;
             let mut view = *view;
             view.tile.y = offset as f32;
-            creatures.push(if view.tile.w > 0.5 { cut_away(*c) } else { *c });
+            match if view.tile.w > 0.5 { cut_away(*c) } else { *c } {
+                Drawn::Plant(c) => plants.push(c),
+                Drawn::Bubbleback(c) => bubblebacks.push(c),
+                Drawn::BloodFeeder(c) => blood_feeders.push(c),
+                Drawn::Tetralate(c) => tetralates.push(c),
+            }
             views.push(view);
             offset += size * size;
+        }
+        if plants.is_empty() {
+            plants.push(Plant::default());
+        }
+        if bubblebacks.is_empty() {
+            bubblebacks.push(Bubbleback::default());
+        }
+        if blood_feeders.is_empty() {
+            blood_feeders.push(BloodFeeder::default());
+        }
+        if tetralates.is_empty() {
+            tetralates.push(Tetralate::default());
         }
         let storage = |contents: &[u8]| {
             self.device.create_buffer_init(&BufferInitDescriptor {
@@ -1018,7 +1089,12 @@ impl Gpu {
             })
         };
         let views_buffer = storage(bytemuck::cast_slice(&views));
-        let creatures_buffer = storage(bytemuck::cast_slice(&creatures));
+        let lineages = [
+            storage(bytemuck::cast_slice(&plants)),
+            storage(bytemuck::cast_slice(&bubblebacks)),
+            storage(bytemuck::cast_slice(&blood_feeders)),
+            storage(bytemuck::cast_slice(&tetralates)),
+        ];
         let bytes = (offset * size_of::<Vec4>()) as u64;
         let pixels = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -1042,10 +1118,22 @@ impl Gpu {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: creatures_buffer.as_entire_binding(),
+                    resource: lineages[0].as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: lineages[1].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: lineages[2].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: lineages[3].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
                     resource: pixels.as_entire_binding(),
                 },
             ],

@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
         biology::{Biology, Litter},
         capsule,
@@ -83,7 +83,7 @@ const MOUTH: Vec3 = vec3(0.0, -3.1, -16.6);
 /// The bladders along the back, from the shoulders to the hips.
 const BLADDERS: u32 = 5;
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     prepare_pose(c, 22.0, 10.0, 0);
     c.opaque_bounds = vec3(13.0, 15.0, 30.0).extend(0.0);
     rig_tentacles(c, MOUTH, 3.4, ORAL_PAIRS);
@@ -117,7 +117,7 @@ fn back(z: f32) -> f32 {
 /// and behind them swells the pleated throat sac it sings through. Its bladders swell, its horns
 /// lengthen, its skin creases and air moss spreads over its back through its long life, so no two
 /// elders are alike.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let age = c.life.z;
     let girth = girth(p.z);
     let flank = vec3(p.x.abs(), p.y, p.z);
@@ -177,7 +177,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     body = smooth_min(body, bladders, 0.7);
     body = louvres(body, p - vec3(0.0, -0.4, -2.0), vec3(5.0, 3.0, 11.0));
     let mut hit = Surface::new(body, 0);
-    moss(&mut hit, p, girth, c.scars.w, c.gene(MATS));
+    moss(&mut hit, p, girth, c.hide.x, c.gene(MATS));
     hit.socket(eyes(flank), 0.3);
     if p.y > 0.0 {
         // The horns grow out of the back through their collars, skin fading into horn.
@@ -191,8 +191,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
             tail,
             tapered_tail(
                 p,
-                c.tail[i].truncate(),
-                c.tail[i + 1].truncate(),
+                c.rig.tail[i].truncate(),
+                c.rig.tail[i + 1].truncate(),
                 2.0 * (1.0 - t) + 0.4,
                 2.0 * (0.8 - t) + 0.4,
             ),
@@ -200,7 +200,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         );
     }
     // Two broad lobes at the tail's end, which it trims its long glides with.
-    let end = c.tail[5].truncate();
+    let end = c.rig.tail[5].truncate();
     let lobe = vec3((p.x - end.x).abs(), p.y - end.y, p.z - end.z);
     let fluke = rounded(
         lobe - vec3(1.7, 0.0, 0.9 + lobe.x * 0.35),
@@ -217,7 +217,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// slight twist, and opens at its tip in a modest lip: the hollow horn its calls resonate in. Every
 /// year of growth leaves a ridge around it, wound a little about it as the horn twists, crowded
 /// near the base and fading towards the smooth young tip.
-fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
+fn horns(p: Vec3, c: &Tetralate) -> f32 {
     // A calf is born with only nubs where its horns will be, and they lengthen fastest as it
     // nears maturity, when it first needs its full voice.
     let calf = c.life.y;
@@ -265,7 +265,7 @@ fn horns(p: Vec3, c: &CreatureInstance) -> f32 {
 /// throat, as a whale's; wrinkles fanning from the eyes and the corners of the mouth; and rough,
 /// lumpy callus on the brow and snout, which every cliff of kelp it has browsed has scoured. The
 /// older it is the deeper all of it runs.
-fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32, c: &CreatureInstance) -> f32 {
+fn hide(p: Vec3, flank: Vec3, girth: Vec3, age: f32, c: &Tetralate) -> f32 {
     let depth = (0.6 + age * 0.6) * (0.7 + c.gene(FOLDS) * 0.6);
     // Rings of folds where the body bends.
     let fold = |at: f32, spread: f32, every: f32| {
@@ -369,7 +369,7 @@ pub const LOOK: Look = Look::coat(
 .marked(vec4(4.00, 4.00, 0.40, 0.42), vec3(0.98, 0.97, 0.92))
 .brooding(vec4(2.8, 12.0, 2.2, 1.6));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

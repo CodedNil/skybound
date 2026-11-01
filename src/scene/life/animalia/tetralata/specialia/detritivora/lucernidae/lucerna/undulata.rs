@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         biology::{Biology, Litter},
         ellipsoid,
         genome::Gene,
@@ -66,7 +66,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     prepare_pose(c, 3.5, 5.0, 0);
     c.opaque_bounds = vec3(6.0, 6.0, 22.0).extend(0.0);
     let reach = 9.0 + c.gene(RIBBONS) * 6.0;
@@ -78,7 +78,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// It opens in front into a wide slot of a mouth combed inside with plates that catch what the
 /// current carries in. Round the scoop's lips a ring of small glowing lures draws Sparkies into it,
 /// and from beneath the body three luminous ribbons stream far behind.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let depth = 0.08 + c.gene(RIPPLE) * 0.08;
     let ripple = (p.x.abs() * 0.8 - c.animation.z * 1.5).sin() * depth * p.x.abs();
     let rippled = p - vec3(0.0, ripple, 0.0);
@@ -146,7 +146,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(0.45, 0.30, 0.60, 1.60))
 .marked(vec4(5.00, 4.00, 0.70, 0.35), vec3(0.85, 0.35, 0.90));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

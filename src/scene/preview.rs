@@ -5,7 +5,10 @@
 
 use crate::scene::life::surface::Ray;
 #[cfg(all(target_arch = "spirv", feature = "preview"))]
-use crate::scene::life::{self, CreatureInstance, surface::TraceResult};
+use crate::scene::life::{
+    self, BLOOD_FEEDER, BUBBLEBACK, BloodFeeder, Bubbleback, Plant, TETRALATE, Tetralate,
+    surface::TraceResult,
+};
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
 #[cfg(all(target_arch = "spirv", feature = "preview"))]
 use spirv_std::{glam::UVec3, spirv};
@@ -64,8 +67,11 @@ impl PreviewView {
 pub fn preview(
     #[spirv(global_invocation_id)] id: UVec3,
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] views: &[PreviewView],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] creatures: &[CreatureInstance],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] pixels: &mut [Vec4],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] plants: &[Plant],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] bubblebacks: &[Bubbleback],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] blood_feeders: &[BloodFeeder],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] tetralates: &[Tetralate],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 5)] pixels: &mut [Vec4],
     #[spirv(spec_constant(id = 0, default = 0))] species: u32,
 ) {
     let view = &views[id.z as usize];
@@ -73,13 +79,22 @@ pub fn preview(
     if id.x >= size || id.y >= size {
         return;
     }
-    let creature = &creatures[id.z as usize];
+    let index = id.z as usize;
+    let layout = life::layout_of(species);
     let uv = (vec2(id.x as f32, id.y as f32) + 0.5) / size as f32;
     let uv = vec2(uv.x, 1.0 - uv.y);
     // Traced as the game draws it, through the one tracer every species shares: its solid body,
     // then the thin membranes in front of it.
     let ray = view.ray(uv);
-    let solid = life::render_opaque_of(species, ray, creature);
+    let solid = if layout == TETRALATE {
+        life::render_tetralate(species, ray, &tetralates[index])
+    } else if layout == BLOOD_FEEDER {
+        life::render_blood_feeder(species, ray, &blood_feeders[index])
+    } else if layout == BUBBLEBACK {
+        life::render_bubbleback(species, ray, &bubblebacks[index])
+    } else {
+        life::render_plant(species, ray, &plants[index])
+    };
     let mut hit = TraceResult::opaque(solid);
     let thin = Ray {
         max_distance: if solid.is_hit() {
@@ -89,7 +104,17 @@ pub fn preview(
         },
         ..ray
     };
-    life::visit_thin_of(species, thin, creature, |layer| hit.add(layer));
+    if layout == TETRALATE {
+        life::visit_tetralate_thin(species, thin, &tetralates[index], |layer| hit.add(layer));
+    } else if layout == BLOOD_FEEDER {
+        life::visit_blood_feeder_thin(species, thin, &blood_feeders[index], |layer| {
+            hit.add(layer);
+        });
+    } else if layout == BUBBLEBACK {
+        life::visit_bubbleback_thin(species, thin, &bubblebacks[index], |layer| {
+            hit.add(layer);
+        });
+    }
     let colour = hit.composite(backdrop(1.0 - uv.y, view.tile.z > 0.5));
     let covered = if hit.is_hit() { 1.0 } else { 0.0 };
     let at = view.tile.y as u32 + id.y * size + id.x;

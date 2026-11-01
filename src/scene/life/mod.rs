@@ -1,23 +1,20 @@
 use crate::scene::{
     life::{
         animalia::{
-            bullidorsata::caelomorpha::{
-                aerogigantiformes::aerogigantidae::aerogigas::auratus,
-                gel,
-                nubivaga::{
-                    levitantidae::levitans::taeniatus, nubivesicidae::nubivesica::caerulea,
-                },
-            },
+            Animal, Flier, Rigged,
+            bullidorsata::caelomorpha::gel,
             tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
             visit_wings, with_wings,
         },
         plantae::plant_material,
-        surface::{Hit, Ray, Surface, TraceResult, coat, trace_material},
+        surface::{Hit, Ray, Surface, coat, trace_material},
     },
     math::Power,
     planet::GRAVITY,
 };
+pub use animalia::{bullidorsata::Bubbleback, sanguinivora::BloodFeeder, tetralata::Tetralate};
 use core::f32::consts::TAU;
+pub use plantae::Plant;
 use spirv_std::glam::{FloatExt, Quat, UVec4, Vec2, Vec3, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -25,6 +22,14 @@ use spirv_std::num_traits::Float;
 /// The most organs a cutaway shows.
 pub const ORGAN_SLOTS: usize = 12;
 
+/// What every organism drawn has, plant or animal: where it is and how it moves, what it is, how
+/// far through its life, the genes it was born with, and the wounds and scars its life has left.
+///
+/// Each lineage's instance holds this and adds what that lineage alone has, as the lineage itself
+/// arose from its parent: a [`plantae::Plant`] the way it bends and the water it holds, an
+/// [`animalia::Animal`] its wingbeat and stores, and so on down the tree. Each derefs to the one
+/// it extends, so `c.kind` reads the same on any of them, and a field a lineage lacks is simply
+/// not there.
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CreatureInstance {
@@ -40,63 +45,125 @@ pub struct CreatureInstance {
     pub identity: Vec4, // The first four genes; seed zero is the reference specimen.
     /// Every gene it was born with; see [`genome`].
     pub genes: [Vec4; genome::GENES / 4],
-    /// What physics did to its body this step: an animal's wingbeat phase and effort, or how far
-    /// the air bends a plant, each with whether it was set at all.
-    pub dynamics: Vec4,
-    pub previous_dynamics: Vec4,
-    /// How torn each wing is, fore left, fore right, hind left and hind right, from whole to
-    /// shredded; not inherited but suffered.
-    pub wear: Vec4,
-    /// What its life has done to its body: how scarred it is from the attacks it lived through,
-    /// how worn its edges and spines are, how scarred its wings, and how overgrown its hide.
-    pub scars: Vec4,
-    /// Where its worst wounds were, in its body's frame, each with how severe it was.
-    pub wounds: [Vec4; 4],
-    /// What it has stored or carries in its body that shows: how much iron is laid into its edges
-    /// and armour; for an animal how far through carrying young it is (or for a plant how full of
-    /// water); how many young it is carrying; and how many eggs it has glued to its body.
-    pub stores: Vec4,
-    /// Where an animal carries its young, round its brood chamber: the centre in its body's frame
-    /// and the chamber's size. Zero for a plant.
-    pub belly: Vec4,
+    pub proportions: Vec4, // Body scale and wing development.
+    pub previous_proportions: Vec4,
+    /// Every wound its body carries, open or long healed to a scar; see [`Wound`].
+    pub wounds: [Wound; WOUNDS],
     /// For a cutaway, its organs: each where it lies and whether it is one of a pair, how large it
     /// is and whether it glows, and its colour. `kind.w` holds how many there are; a creature with
     /// none is drawn whole.
     pub organs: [[Vec4; 3]; ORGAN_SLOTS],
-    pub proportions: Vec4, // Body scale and wing development.
-    pub previous_proportions: Vec4,
-    pub tail: [Vec4; 6],
-    pub previous_tail: [Vec4; 6],
-    pub ribbons: [Vec4; 30],
-    pub cloth: [[[Vec4; 3]; 12]; 3],
-    pub previous_cloth: [[[Vec4; 3]; 12]; 3],
+}
+
+/// How many wounds and scars a body shows at once; a new one replaces the slightest.
+pub const WOUNDS: usize = 6;
+
+/// A wound, open or healed, anywhere on any living body.
+///
+/// Plants and animals are wounded alike, by bites, cuts, punctures, tears, burns and crushing, and
+/// a scar is only a wound that has healed: it keeps its place, its size and the shape of whatever
+/// made it, and as it heals its raw, open tissue closes over, an animal's to pale, puckered scar
+/// and a plant's to a ridge of callus.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Wound {
+    /// Where it is in the body's own frame, and how large; zero size is no wound.
+    pub site: Vec4,
+    /// How far it has healed, from open at zero to a scar at one; what made it, as a
+    /// [`Injury`] number; the bearing of a cut or tear across the body; and how deep it went.
+    pub state: Vec4,
+}
+
+/// What made a wound, which sets how it harms the body and the shape it leaves.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Injury {
+    /// A lance, stylet or thorn driven deep along a line: a small, deep puncture.
+    Pierce = 0,
+    /// A blade drawn across the body: a long, straight, shallow cut.
+    Slash = 1,
+    /// Membrane or flesh ripped apart: a ragged tear.
+    Tear = 2,
+    /// Jaws or a rasp tearing out a mouthful: the arc of a bite's teeth.
+    Bite = 3,
+    /// Acid, or the aur, eating into the surface: a broad burn.
+    Burn = 4,
+    /// A blow that breaks nothing open: a crushed, bruised patch.
+    Crush = 5,
+    /// A parasite's sucker drawing fluid, leaving the organs whole: a small, round mark.
+    Drain = 6,
+}
+
+impl Wound {
+    pub const NONE: Self = Self {
+        site: Vec4::ZERO,
+        state: Vec4::ZERO,
+    };
+
+    pub const fn open(at: Vec3, size: f32, injury: Injury, bearing: f32, depth: f32) -> Self {
+        Self {
+            site: Vec4::new(at.x, at.y, at.z, size),
+            state: Vec4::new(0.0, injury as u32 as f32, bearing, depth),
+        }
+    }
+
+    /// How large it is; zero for no wound.
+    pub fn size(&self) -> f32 {
+        self.site.w
+    }
+
+    /// How far it has healed.
+    pub fn healed(&self) -> f32 {
+        self.state.x
+    }
+
+    pub fn injury(&self) -> u32 {
+        self.state.y as u32
+    }
+}
+
+/// What every lineage's instance can be asked, whatever it adds.
+///
+/// That is the organism it extends, and what that lineage alone has that every body's drawing
+/// needs to know of. A lineage answers for what it has; the rest are nothing.
+pub trait Body {
+    fn organism(&self) -> &CreatureInstance;
+
+    /// Where a body carrying young swells, round its brood chamber (centre and size), and how far
+    /// through its carrying it is and how many it carries; zero for none.
+    fn carrying(&self) -> (Vec4, Vec4) {
+        (Vec4::ZERO, Vec4::ZERO)
+    }
+
+    /// How far a point on the body moved since the last frame beyond the body's own motion, as a
+    /// swinging tail does.
+    fn swung(&self, _point: Vec3) -> Vec3 {
+        Vec3::ZERO
+    }
+}
+
+impl Body for CreatureInstance {
+    fn organism(&self) -> &CreatureInstance {
+        self
+    }
+}
+
+/// An organism as it is drawn, in whichever lineage's instance it is drawn with.
+#[cfg(not(target_arch = "spirv"))]
+#[derive(Clone, Copy)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "each is copied whole into its lineage's GPU buffer, so boxing would only add a step"
+)]
+pub enum Drawn {
+    Plant(Plant),
+    Bubbleback(Bubbleback),
+    BloodFeeder(BloodFeeder),
+    Tetralate(Tetralate),
 }
 
 #[cfg(not(target_arch = "spirv"))]
-impl CreatureInstance {
-    /// Mark what an animal is carrying: `expecting` young, `gestation` of the way to birth,
-    /// swelling it round its brood chamber.
-    pub fn carrying(&mut self, expecting: u32, gestation: f32) {
-        let kind = KINDS[self.kind.x as usize];
-        if kind.animal().is_none() {
-            return;
-        }
-        if let Some(chamber) = kind
-            .organs()
-            .sites()
-            .iter()
-            .find(|site| site.organ.function == organs::Function::Breeding)
-        {
-            self.belly = chamber.centre.extend(chamber.radii.max_element());
-        }
-        self.stores.y = if expecting > 0 {
-            gestation.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        self.stores.z = expecting as f32;
-    }
-
+impl Drawn {
     pub fn new(position: Vec4, rotation: Vec4, animation: Vec4, kind: u32) -> Self {
         Self::specimen(
             position,
@@ -126,7 +193,8 @@ impl CreatureInstance {
         Self::born(position, rotation, animation, kind, age_days, seed, genes)
     }
 
-    /// An individual with the genes it was born with.
+    /// An individual with the genes it was born with, in its lineage's instance, posed as its
+    /// species poses itself.
     pub fn born(
         position: Vec4,
         rotation: Vec4,
@@ -136,7 +204,8 @@ impl CreatureInstance {
         seed: u32,
         genes: genome::Genome,
     ) -> Self {
-        let mut c = Self {
+        let species = KINDS[kind as usize];
+        let mut organism = CreatureInstance {
             position,
             rotation,
             animation,
@@ -144,19 +213,36 @@ impl CreatureInstance {
             previous_position: position,
             previous_rotation: rotation,
             kind: UVec4::new(kind, 0, 0, 0),
-            ..Self::default()
+            ..CreatureInstance::default()
         };
-        development::prepare(
-            &mut c,
-            KINDS[kind as usize].biology(),
-            age_days,
-            seed,
-            genes,
-        );
-        c.previous_proportions = c.proportions;
-        c.previous_animation = c.animation;
-        prepare_instance(&mut c);
-        let look = KINDS[kind as usize].look();
+        development::prepare(&mut organism, species.biology(), age_days, seed, genes);
+        organism.previous_proportions = organism.proportions;
+        organism.previous_animation = organism.animation;
+        let animal = |organism| Animal {
+            organism,
+            ..Animal::default()
+        };
+        let mut drawn = match layout_of(kind) {
+            TETRALATE => Self::Tetralate(Tetralate {
+                animal: animal(organism),
+                ..Tetralate::default()
+            }),
+            BLOOD_FEEDER => Self::BloodFeeder(BloodFeeder {
+                animal: animal(organism),
+                ..BloodFeeder::default()
+            }),
+            BUBBLEBACK => Self::Bubbleback(Bubbleback {
+                animal: animal(organism),
+                ..Bubbleback::default()
+            }),
+            _ => Self::Plant(Plant {
+                organism,
+                ..Plant::default()
+            }),
+        };
+        animate(&mut drawn);
+        let look = species.look();
+        let c = drawn.organism_mut();
         if c.life.w > 0.0 {
             // Eggs and spores are sized from the body alone and not the adult's wingspan.
             c.opaque_bounds =
@@ -182,8 +268,7 @@ impl CreatureInstance {
         // A pouch is part of a grown parent's body, empty or not; and its brood, wherever it is
         // carried, must lie within its bounds.
         if look.brood.w > 0.0 && c.life.w <= 0.0 {
-            #[cfg(not(target_arch = "spirv"))]
-            if KINDS[kind as usize]
+            if species
                 .animal()
                 .is_some_and(|animal| animal.brood == animalia::physiology::Brood::Pouch)
                 && c.kind.z == 0
@@ -200,12 +285,170 @@ impl CreatureInstance {
                 ))
                 .extend(0.0);
         }
-        c.previous_tail = c.tail;
         // The bounds are laid out in the design's frame, and the body drawn at its species' size.
-        let size = KINDS[kind as usize].biology().size;
+        let size = species.biology().size;
         let design = (c.position.w / size).max(c.opaque_bounds.truncate().length());
-        c.position.w = design * development::scale(&c).max_element().max(size);
-        c
+        c.position.w = design * development::scale(c).max_element().max(size);
+        match &mut drawn {
+            Self::Tetralate(c) => c.rig.previous_tail = c.rig.tail,
+            Self::BloodFeeder(c) => c.rig.previous_tail = c.rig.tail,
+            _ => {}
+        }
+        drawn
+    }
+
+    /// The tetralate it is, if it is one.
+    pub const fn tetralate(self) -> Option<Tetralate> {
+        match self {
+            Self::Tetralate(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The gas-bag it is, if it is one.
+    pub const fn bubbleback(self) -> Option<Bubbleback> {
+        match self {
+            Self::Bubbleback(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// What every organism has, whatever its lineage adds.
+    pub fn organism(&self) -> &CreatureInstance {
+        match self {
+            Self::Plant(c) => c,
+            Self::Bubbleback(c) => c,
+            Self::BloodFeeder(c) => c,
+            Self::Tetralate(c) => c,
+        }
+    }
+
+    pub fn organism_mut(&mut self) -> &mut CreatureInstance {
+        match self {
+            Self::Plant(c) => c,
+            Self::Bubbleback(c) => c,
+            Self::BloodFeeder(c) => c,
+            Self::Tetralate(c) => c,
+        }
+    }
+
+    /// What an animal adds; none for a plant.
+    pub fn animal_mut(&mut self) -> Option<&mut Animal> {
+        match self {
+            Self::Plant(_) => None,
+            Self::Bubbleback(c) => Some(c),
+            Self::BloodFeeder(c) => Some(c),
+            Self::Tetralate(c) => Some(c),
+        }
+    }
+
+    /// Wings, for the lineages that fly on them.
+    pub const fn wings_mut(&mut self) -> Option<&mut animalia::Wings> {
+        match self {
+            Self::BloodFeeder(c) => Some(&mut c.wings),
+            Self::Tetralate(c) => Some(&mut c.wings),
+            _ => None,
+        }
+    }
+
+    /// Mark what an animal is carrying: `expecting` young, `gestation` of the way to birth,
+    /// swelling it round its brood chamber.
+    pub fn carrying(&mut self, expecting: u32, gestation: f32) {
+        let kind = KINDS[self.organism().kind.x as usize];
+        let Some(animal) = self.animal_mut() else {
+            return;
+        };
+        if let Some(chamber) = kind
+            .organs()
+            .sites()
+            .iter()
+            .find(|site| site.organ.function == organs::Function::Breeding)
+        {
+            animal.belly = chamber.centre.extend(chamber.radii.max_element());
+        }
+        animal.stores.y = if expecting > 0 {
+            gestation.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        animal.stores.z = expecting as f32;
+    }
+
+    /// Carry where it was last frame over from `old`, its pose then, for motion vectors: its
+    /// place, turn and stroke, and whatever its lineage poses besides.
+    pub fn follow(&mut self, old: &Self) {
+        let then = *old.organism();
+        let c = self.organism_mut();
+        c.previous_position = then.position;
+        c.previous_rotation = then.rotation;
+        c.previous_animation = then.animation;
+        c.previous_proportions = then.proportions;
+        match (self, old) {
+            (Self::Tetralate(c), Self::Tetralate(old)) => {
+                c.animal.previous_motion = old.animal.motion;
+                c.rig.previous_tail = old.rig.tail;
+                c.previous_tentacles = old.tentacles;
+            }
+            (Self::BloodFeeder(c), Self::BloodFeeder(old)) => {
+                c.animal.previous_motion = old.animal.motion;
+                c.rig.previous_tail = old.rig.tail;
+            }
+            (Self::Bubbleback(c), Self::Bubbleback(old)) => {
+                c.animal.previous_motion = old.animal.motion;
+                c.previous_curtains = old.curtains;
+            }
+            (Self::Plant(c), Self::Plant(old)) => c.previous_bend = old.bend,
+            _ => {}
+        }
+    }
+
+    /// The body's surface at a point in its own frame.
+    pub fn surface(&self, point: Vec3) -> Surface {
+        let c = self.organism();
+        if c.life.w > 0.0 {
+            return development::juvenile_surface(point, c);
+        }
+        let kind = c.kind.x;
+        match self {
+            Self::Plant(c) => plant_surface(kind, point, c),
+            Self::Bubbleback(c) => bubbleback_surface(kind, point, c),
+            Self::BloodFeeder(c) => blood_feeder_surface(kind, point, c),
+            Self::Tetralate(c) => tetralate_surface(kind, point, c),
+        }
+    }
+
+    /// Everything of the body along a ray: its solid body, and its thin membranes and envelopes in
+    /// front of it.
+    pub fn render(&self, ray: Ray) -> surface::TraceResult {
+        let solid = self.render_opaque(ray);
+        let mut result = surface::TraceResult::opaque(solid);
+        let thin = Ray {
+            max_distance: if solid.is_hit() {
+                solid.distance()
+            } else {
+                ray.max_distance
+            },
+            ..ray
+        };
+        let kind = self.organism().kind.x;
+        match self {
+            Self::Tetralate(c) => visit_tetralate_thin(kind, thin, c, |hit| result.add(hit)),
+            Self::BloodFeeder(c) => visit_blood_feeder_thin(kind, thin, c, |hit| result.add(hit)),
+            Self::Bubbleback(c) => visit_bubbleback_thin(kind, thin, c, |hit| result.add(hit)),
+            Self::Plant(_) => {}
+        }
+        result
+    }
+
+    /// The solid body along a ray.
+    pub fn render_opaque(&self, ray: Ray) -> Hit {
+        let kind = self.organism().kind.x;
+        match self {
+            Self::Plant(c) => render_plant(kind, ray, c),
+            Self::Bubbleback(c) => render_bubbleback(kind, ray, c),
+            Self::BloodFeeder(c) => render_blood_feeder(kind, ray, c),
+            Self::Tetralate(c) => render_tetralate(kind, ray, c),
+        }
     }
 }
 
@@ -220,12 +463,13 @@ fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
     }
 }
 
-fn prepare_pose(c: &mut CreatureInstance, length: f32, tail: f32, ribbons: usize) {
+fn prepare_pose<C: Rigged>(creature: &mut C, length: f32, tail: f32, ribbons: usize) {
+    let (c, rig) = creature.rigging();
     // As long as its genes have it, and growing with it.
     let tail = tail * (0.35 + c.life.y * 0.65) * (0.8 + c.gene(animalia::tetralata::TAIL) * 0.4);
     for i in 0..6 {
         let t = i as f32 / 5.0;
-        c.tail[i] = vec3(
+        rig.tail[i] = vec3(
             (c.animation.z * 2.0 - t * 4.0).sin() * t * 1.3,
             -t * 0.6,
             length * 0.6 + t * tail,
@@ -234,10 +478,10 @@ fn prepare_pose(c: &mut CreatureInstance, length: f32, tail: f32, ribbons: usize
     }
     for i in 0..ribbons {
         let lane = i as f32 - (ribbons as f32 - 1.0) * 0.5;
-        c.ribbons[i * 6] = vec3(lane * 0.8, -3.9, 0.0).extend(0.0);
+        rig.ribbons[i * 6] = vec3(lane * 0.8, -3.9, 0.0).extend(0.0);
         for j in 1..6 {
             let t = j as f32 / 5.0;
-            c.ribbons[i * 6 + j] = vec3(
+            rig.ribbons[i * 6 + j] = vec3(
                 lane * (1.0 + t * 3.5) + (c.animation.z * 1.6 - t * 5.0 + lane).sin() * t,
                 (-1.5 - (t * 3.0).sin() * 1.6) * 3.0,
                 t * (length + 12.0),
@@ -342,23 +586,33 @@ taxon!(
 
 macro_rules! species {
     (
-        animals { $($animal:ident: $($animal_path:ident)::+;)* }
+        tetralates { $($t:ident: $($tp:ident)::+;)* }
+        blood_feeders { $($b:ident: $($bp:ident)::+;)* }
+        bubblebacks { $($g:ident: $($gp:ident)::+;)* }
         plants { $($plant:ident: $($plant_path:ident)::+;)* }
     ) => {
-        species!(@all $($animal: $($animal_path)::+;)* $($plant: $($plant_path)::+;)*);
+        species!(@all $($t: $($tp)::+;)* $($b: $($bp)::+;)* $($g: $($gp)::+;)* $($plant: $($plant_path)::+;)*);
         impl Kind {
             /// The kingdom the species belongs to.
             pub const fn kingdom(self) -> Kingdom {
                 match self {
-                    $(Self::$animal => Kingdom::Animalia,)*
+                    $(Self::$t => Kingdom::Animalia,)*
+                    $(Self::$b => Kingdom::Animalia,)*
+                    $(Self::$g => Kingdom::Animalia,)*
                     $(Self::$plant => Kingdom::Plantae,)*
                 }
+            }
+            /// The instance its lineage draws it with.
+            pub const fn layout(self) -> u32 {
+                layout_of(self as u32)
             }
             /// How an animal behaves, as it inherits it down the tree of life; plants have none.
             #[cfg(not(target_arch = "spirv"))]
             pub const fn ethology(self) -> Option<animalia::mind::Ethology> {
                 match self {
-                    $(Self::$animal => Some($($animal_path)::+::ETHOLOGY),)*
+                    $(Self::$t => Some($($tp)::+::ETHOLOGY),)*
+                    $(Self::$b => Some($($bp)::+::ETHOLOGY),)*
+                    $(Self::$g => Some($($gp)::+::ETHOLOGY),)*
                     $(Self::$plant => None,)*
                 }
             }
@@ -366,7 +620,9 @@ macro_rules! species {
             #[cfg(not(target_arch = "spirv"))]
             pub const fn animal(self) -> Option<animalia::physiology::Physiology> {
                 match self {
-                    $(Self::$animal => Some($($animal_path)::+::PHYSIOLOGY),)*
+                    $(Self::$t => Some($($tp)::+::PHYSIOLOGY),)*
+                    $(Self::$b => Some($($bp)::+::PHYSIOLOGY),)*
+                    $(Self::$g => Some($($gp)::+::PHYSIOLOGY),)*
                     $(Self::$plant => None,)*
                 }
             }
@@ -374,8 +630,62 @@ macro_rules! species {
             #[cfg(not(target_arch = "spirv"))]
             pub const fn plant(self) -> Option<plantae::physiology::Physiology> {
                 match self {
-                    $(Self::$animal => None,)*
+                    $(Self::$t => None,)*
+                    $(Self::$b => None,)*
+                    $(Self::$g => None,)*
                     $(Self::$plant => Some($($plant_path)::+::PHYSIOLOGY),)*
+                }
+            }
+        }
+        /// The instance a species is drawn with, by its index: [`TETRALATE`], [`BLOOD_FEEDER`],
+        /// [`BUBBLEBACK`] or [`PLANT_LAYOUT`].
+        pub const fn layout_of(kind: u32) -> u32 {
+            $(if kind == Kind::$t as u32 { return TETRALATE; })*
+            $(if kind == Kind::$b as u32 { return BLOOD_FEEDER; })*
+            $(if kind == Kind::$g as u32 { return BUBBLEBACK; })*
+            PLANT_LAYOUT
+        }
+        /// The body of a tetralate of species `kind`. When `kind` is known as the shader is built,
+        /// as it is for each species' own pipeline, only that species' body is compiled in.
+        pub fn tetralate_surface(kind: u32, point: Vec3, c: &animalia::tetralata::Tetralate) -> Surface {
+            $(if kind == Kind::$t as u32 { return $($tp)::+::surface(point, c); })*
+            Surface::new(1e6, 0)
+        }
+        /// The body of a blood-feeder of species `kind`; see [`tetralate_surface`].
+        pub fn blood_feeder_surface(kind: u32, point: Vec3, c: &animalia::sanguinivora::BloodFeeder) -> Surface {
+            $(if kind == Kind::$b as u32 { return $($bp)::+::surface(point, c); })*
+            Surface::new(1e6, 0)
+        }
+        /// The organs of a gas-bag of species `kind`; see [`tetralate_surface`].
+        pub fn bubbleback_surface(kind: u32, point: Vec3, c: &animalia::bullidorsata::Bubbleback) -> Surface {
+            $(if kind == Kind::$g as u32 { return $($gp)::+::surface(point, c); })*
+            Surface::new(1e6, 0)
+        }
+        /// The clear envelope of a gas-bag of species `kind`.
+        pub fn bubbleback_envelope(kind: u32, point: Vec3, c: &animalia::bullidorsata::Bubbleback) -> Surface {
+            $(if kind == Kind::$g as u32 { return $($gp)::+::envelope(point, c); })*
+            Surface::new(1e6, 0)
+        }
+        /// The body of a plant of species `kind`; see [`tetralate_surface`].
+        pub fn plant_surface(kind: u32, point: Vec3, c: &plantae::Plant) -> Surface {
+            $(if kind == Kind::$plant as u32 { return $($plant_path)::+::surface(point, c); })*
+            Surface::new(1e6, 0)
+        }
+        /// Pose a newly made instance as its species poses itself.
+        #[cfg(not(target_arch = "spirv"))]
+        fn animate(drawn: &mut Drawn) {
+            match drawn {
+                Drawn::Tetralate(c) => {
+                    $(if c.kind.x == Kind::$t as u32 { $($tp)::+::animate(c); })*
+                }
+                Drawn::BloodFeeder(c) => {
+                    $(if c.kind.x == Kind::$b as u32 { $($bp)::+::animate(c); })*
+                }
+                Drawn::Bubbleback(c) => {
+                    $(if c.kind.x == Kind::$g as u32 { $($gp)::+::animate(c); })*
+                }
+                Drawn::Plant(c) => {
+                    $(if c.kind.x == Kind::$plant as u32 { $($plant_path)::+::animate(c); })*
                 }
             }
         }
@@ -410,17 +720,6 @@ macro_rules! species {
         pub const fn look_of(kind: u32) -> Look {
             match kind { $(kind if kind == Kind::$id as u32 => $($path)::+::LOOK,)* _ => Look::OWN }
         }
-        /// The body of any creature: one distance function switching on its species, so the world's
-        /// tracer is compiled once for all of them.
-        pub fn any_surface(point: Vec3, c: &CreatureInstance) -> Surface {
-            surface_of(c.kind.x, point, c)
-        }
-        /// The body of a creature of species `kind`. When `kind` is known as the shader is built,
-        /// as it is for each species' preview, only that species' body is compiled in.
-        pub fn surface_of(kind: u32, point: Vec3, c: &CreatureInstance) -> Surface {
-            if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
-            match kind { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => Surface::new(1e6, 0) }
-        }
         #[cfg(not(target_arch = "spirv"))]
         pub const SPECIES: &[&Taxon] = &[$(&$($path)::+::TAXON),*];
         #[cfg(not(target_arch = "spirv"))]
@@ -428,19 +727,6 @@ macro_rules! species {
         #[cfg(not(target_arch = "spirv"))]
         pub fn behave(kind: Kind, senses: &behaviour::Senses) -> behaviour::Controls {
             behaviour::organism(senses, kind)
-        }
-        pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
-            if c.life.w > 0.0 { return development::render_juvenile(ray, c); }
-            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::render(ray, c),)* _ => TraceResult::MISS }
-        }
-        #[cfg(not(target_arch = "spirv"))]
-        pub fn body_surface(point: Vec3, c: &CreatureInstance) -> crate::scene::life::surface::Surface {
-            if c.life.w > 0.0 { return development::juvenile_surface(point, c); }
-            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::surface(point, c),)* _ => crate::scene::life::surface::Surface::new(1e6, 0) }
-        }
-        #[cfg(not(target_arch = "spirv"))]
-        fn prepare_instance(c: &mut CreatureInstance) {
-            match c.kind.x { $(kind if kind == Kind::$id as u32 => $($path)::+::animate(c),)* _ => {} }
         }
     };
 }
@@ -456,7 +742,7 @@ pub enum Kingdom {
 }
 
 species! {
-    animals {
+    tetralates {
         Lucerna: animalia::tetralata::specialia::detritivora::lucernidae::lucerna::undulata;
         Manduca: animalia::tetralata::specialia::detritivora::manducidae::manduca::gregaria;
         Sericifex: animalia::tetralata::specialia::rapaciformes::sericificidae::sericifex::textor;
@@ -464,15 +750,6 @@ species! {
         Nebulaphora: animalia::tetralata::volitantia::parvivolantia::nebulaphoridae::nebulaphora::vitrea;
         Ramiphaga: animalia::tetralata::volitantia::lithoptera::ramiphagidae::ramiphaga::corticivora;
         Lithosoma: animalia::tetralata::volitantia::lithoptera::lithosomatidae::lithosoma::grave;
-        Aerogigas: animalia::bullidorsata::caelomorpha::aerogigantiformes::aerogigantidae::aerogigas::auratus;
-        Levitans: animalia::bullidorsata::caelomorpha::nubivaga::levitantidae::levitans::taeniatus;
-        Nubivesica: animalia::bullidorsata::caelomorpha::nubivaga::nubivesicidae::nubivesica::caerulea;
-        Haematozoon: animalia::sanguinivora::errantia::errantiformes::haematozoidae::haematozoon::invasor;
-        Adhaerens: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::adhaerens::tenax;
-        Fluitans: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::fluitans::crypticus;
-        Ambigena: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::ambigena::fallax;
-        Aerohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::aerohirudo::membranacea;
-        Ptilohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::ptilohirudo::pennata;
         Purgator: animalia::tetralata::specialia::detritivora::manducidae::purgator::mutualis;
         Sputator: animalia::tetralata::specialia::rapaciformes::sericificidae::sputator::acidus;
         Aculeorhynchus: animalia::tetralata::vivipara::ferrilaminata::aculeorhynchidae::aculeorhynchus::acuminatus;
@@ -480,11 +757,24 @@ species! {
         Ferrispina: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::falcata;
         Herbivolus: animalia::tetralata::vivipara::grandivora::herbivolidae::herbivolus::migratorius;
         Umbravola: animalia::tetralata::vivipara::grandivora::herbivolidae::umbravola::tacita;
-        Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
         Custos: animalia::tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::custos;
         Naetu: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::naetu;
         Antiquus: animalia::tetralata::vivipara::grandivora::vocigenidae::vocigenus::antiquus;
         Nae: animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::nae;
+    }
+    blood_feeders {
+        Haematozoon: animalia::sanguinivora::errantia::errantiformes::haematozoidae::haematozoon::invasor;
+        Adhaerens: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::adhaerens::tenax;
+        Fluitans: animalia::sanguinivora::errantia::errantiformes::adhaerentidae::fluitans::crypticus;
+        Ambigena: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::ambigena::fallax;
+        Aerohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::aerohirudo::membranacea;
+        Ptilohirudo: animalia::sanguinivora::volantia::volucriformes::aerohirudinidae::ptilohirudo::pennata;
+        Lucinani: animalia::sanguinivora::volantia::dissimuliformes::ambigenidae::candela::lucens;
+    }
+    bubblebacks {
+        Aerogigas: animalia::bullidorsata::caelomorpha::aerogigantiformes::aerogigantidae::aerogigas::auratus;
+        Levitans: animalia::bullidorsata::caelomorpha::nubivaga::levitantidae::levitans::taeniatus;
+        Nubivesica: animalia::bullidorsata::caelomorpha::nubivaga::nubivesicidae::nubivesica::caerulea;
     }
     plants {
         Auracoccus: plantae::pneumatophyta::micrococcopsida::auracoccales::auracoccaceae::auracoccus::communis;
@@ -683,30 +973,97 @@ impl Look {
 /// that cover the most of the screen.
 pub const HERD: usize = 24;
 
-/// The clear envelope of a drifting gas-bag, for the world renderer.
-fn any_envelope(point: Vec3, c: &CreatureInstance) -> Surface {
-    if c.kind.x == Kind::Aerogigas as u32 {
-        auratus::envelope(point, c)
-    } else if c.kind.x == Kind::Levitans as u32 {
-        taeniatus::envelope(point, c)
-    } else if c.kind.x == Kind::Nubivesica as u32 {
-        caerulea::envelope(point, c)
-    } else {
-        Surface::new(1e6, 0)
-    }
+/// The instance each lineage is drawn with, as [`layout_of`] tells them apart: a plant, a gas-bag,
+/// a blood-feeder or a tetralate. The world keeps one buffer of each.
+pub const PLANT_LAYOUT: u32 = 0;
+pub const BUBBLEBACK: u32 = 1;
+pub const BLOOD_FEEDER: u32 = 2;
+pub const TETRALATE: u32 = 3;
+
+/// An egg or a spore, drawn as such in its own materials: an egg's shell is not an adult's fin.
+fn egg(ray: Ray, c: &CreatureInstance) -> Hit {
+    let mut hit = development::render_juvenile(ray, c).opaque;
+    hit.transmittance = Vec3::ZERO;
+    hit
 }
 
-/// The solid surface of a creature along a ray, for the world's opaque pass.
-///
-/// The player and their mount are drawn by their own tracers; every other species by one tracer
-/// over [`any_surface`], in its family's materials: the same shapes and colours as its preview.
-pub fn render_opaque(ray: Ray, c: &CreatureInstance) -> Hit {
-    render_opaque_of(c.kind.x, ray, c)
+/// A winged animal's solid body in its coat, its wings' frames grown from its flanks.
+fn coated<C: Flier, F: Fn(Vec3, &C) -> Surface>(kind: u32, ray: Ray, c: &C, surface: F) -> Hit {
+    let look = look_of(kind);
+    let grain = (c.organism().position.w * 0.15).max(0.7);
+    let blunted = c.animal().hide.y;
+    let body = move |p: Vec3, c: &C| with_wings(surface(p, c), p, c, look);
+    let mut hit = trace_material(ray, c, body, move |p, id| {
+        let mut m = coat(p / grain, id, look);
+        // Grown iron is as bright as its last honing left it: keen and polished on an animal that
+        // hones often, dull and scratched on one worn by its life.
+        if id == 11 {
+            m.roughness = (m.roughness * (0.45 + blunted * 1.2)).clamp(0.08, 0.9);
+        }
+        m
+    });
+    hit.transmittance = Vec3::ZERO;
+    hit
+}
+
+/// The solid body of a tetralate of species `kind`: the player and their mount by their own
+/// tracers, every other in its coat.
+pub fn render_tetralate(kind: u32, ray: Ray, c: &Tetralate) -> Hit {
+    if c.life.w > 0.0 {
+        return egg(ray, c);
+    }
+    if kind == Kind::Nae as u32 {
+        return nae::render_opaque(ray, c);
+    }
+    if kind == Kind::Naetu as u32 {
+        return naetu::render_opaque(ray, c);
+    }
+    coated(kind, ray, c, move |p, c| tetralate_surface(kind, p, c))
+}
+
+/// The solid body of a blood-feeder of species `kind`.
+pub fn render_blood_feeder(kind: u32, ray: Ray, c: &BloodFeeder) -> Hit {
+    if c.life.w > 0.0 {
+        return egg(ray, c);
+    }
+    coated(kind, ray, c, move |p, c| blood_feeder_surface(kind, p, c))
+}
+
+/// The organs of a gas-bag of species `kind`, in their gel.
+pub fn render_bubbleback(kind: u32, ray: Ray, c: &Bubbleback) -> Hit {
+    if c.life.w > 0.0 {
+        return egg(ray, c);
+    }
+    let look = look_of(kind);
+    let mut hit = trace_material(
+        ray,
+        c,
+        move |p, c| bubbleback_surface(kind, p, c),
+        move |p, _| gel(p, look.pigment.w * 0.45, look.accent),
+    );
+    hit.transmittance = Vec3::ZERO;
+    hit
+}
+
+/// The solid body of a plant of species `kind`, bent as the air bends it.
+pub fn render_plant(kind: u32, ray: Ray, c: &Plant) -> Hit {
+    if c.life.w > 0.0 {
+        return egg(ray, c);
+    }
+    let look = look_of(kind);
+    let mut hit = trace_material(
+        ray,
+        c,
+        move |p, c| plant_surface(kind, plantae::bent(p, c), c),
+        move |p, id| plant_material(p, id, look.pigment.truncate(), look.accent),
+    );
+    hit.transmittance = Vec3::ZERO;
+    hit
 }
 
 /// The player or their mount along a ray, by their own tracers alone, so a pass that draws only
 /// them does not carry every species' body.
-pub fn render_player(ray: Ray, c: &CreatureInstance) -> Hit {
+pub fn render_player(ray: Ray, c: &Tetralate) -> Hit {
     if c.kind.x == Kind::Nae as u32 {
         nae::render_opaque(ray, c)
     } else {
@@ -715,7 +1072,7 @@ pub fn render_player(ray: Ray, c: &CreatureInstance) -> Hit {
 }
 
 /// The thin surfaces of the player or their mount; see [`render_player`].
-pub fn visit_player_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
+pub fn visit_player_thin<F: FnMut(Hit)>(ray: Ray, c: &Tetralate, emit: F) {
     if c.kind.x == Kind::Nae as u32 {
         nae::visit_thin(ray, c, emit);
     } else {
@@ -723,84 +1080,46 @@ pub fn visit_player_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F)
     }
 }
 
-/// The solid body of a creature of species `kind`; see [`surface_of`].
-pub fn render_opaque_of(kind: u32, ray: Ray, c: &CreatureInstance) -> Hit {
-    // Eggs and spores are drawn as such, in their own materials: an egg's shell is not an adult's
-    // fin.
+/// The thin, see-through surfaces of a tetralate along a ray: its wing membranes.
+pub fn visit_tetralate_thin<F: FnMut(Hit)>(kind: u32, ray: Ray, c: &Tetralate, emit: F) {
     if c.life.w > 0.0 {
-        let mut hit = development::render_juvenile(ray, c).opaque;
-        hit.transmittance = Vec3::ZERO;
-        return hit;
-    }
-    let look = look_of(kind);
-    if look.family == OWN && c.life.w <= 0.0 {
-        return if kind == Kind::Nae as u32 {
-            nae::render_opaque(ray, c)
-        } else {
-            naetu::render_opaque(ray, c)
-        };
-    }
-    let grain = (c.position.w * 0.15).max(0.7);
-    let body = |p: Vec3, c: &CreatureInstance| {
-        let surface = surface_of(kind, p, c);
-        if look.family == COAT {
-            with_wings(surface, p, c, look)
-        } else {
-            surface
-        }
-    };
-    let mut hit = trace_material(ray, c, body, |p, id| {
-        if look.family == PLANT {
-            plant_material(p, id, look.pigment.truncate(), look.accent)
-        } else if look.family == DRIFT {
-            gel(p, look.pigment.w * 0.45, look.accent)
-        } else {
-            let mut m = coat(p / grain, id, look);
-            // Grown iron is as bright as its last honing left it: keen and polished on an animal
-            // that hones often, dull and scratched on one worn by its life.
-            if id == 11 {
-                m.roughness = (m.roughness * (0.45 + c.scars.y * 1.2)).clamp(0.08, 0.9);
-            }
-            m
-        }
-    });
-    hit.transmittance = Vec3::ZERO;
-    hit
-}
-
-/// The thin, see-through surfaces of a creature along a ray, such as wing membranes and gas
-/// envelopes, for the transparent pass.
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, emit: F) {
-    visit_thin_of(c.kind.x, ray, c, emit);
-}
-
-/// The thin surfaces of a creature of species `kind`; see [`surface_of`].
-pub fn visit_thin_of<F: FnMut(Hit)>(kind: u32, ray: Ray, c: &CreatureInstance, mut emit: F) {
-    let look = look_of(kind);
-    if look.family == OWN && c.life.w <= 0.0 {
-        if kind == Kind::Nae as u32 {
-            nae::visit_thin(ray, c, emit);
-        } else {
-            naetu::visit_thin(ray, c, emit);
-        }
         return;
     }
-    if look.family == DRIFT {
-        let tint = look.accent;
-        let mut hit = trace_material(ray, c, any_envelope, |p, _| {
+    if kind == Kind::Nae as u32 || kind == Kind::Naetu as u32 {
+        visit_player_thin(ray, c, emit);
+    } else {
+        visit_wings(ray, c, look_of(kind), emit);
+    }
+}
+
+/// The wing membranes of a blood-feeder along a ray.
+pub fn visit_blood_feeder_thin<F: FnMut(Hit)>(kind: u32, ray: Ray, c: &BloodFeeder, emit: F) {
+    if c.life.w <= 0.0 {
+        visit_wings(ray, c, look_of(kind), emit);
+    }
+}
+
+/// A gas-bag's clear envelope along a ray, tinted by its gel.
+pub fn visit_bubbleback_thin<F: FnMut(Hit)>(kind: u32, ray: Ray, c: &Bubbleback, mut emit: F) {
+    if c.life.w > 0.0 {
+        return;
+    }
+    let look = look_of(kind);
+    let tint = look.accent;
+    let mut hit = trace_material(
+        ray,
+        c,
+        move |p, c| bubbleback_envelope(kind, p, c),
+        move |p, _| {
             let mut skin = gel(p, look.pigment.w, tint);
             skin.transmission = (-(Vec3::ONE - tint) * 0.2).exp() * 0.9;
             skin
-        });
-        if hit.is_hit() {
-            hit.transmittance = (-(Vec3::ONE - tint) * 0.2).exp() * 0.9;
-            hit.part = 2;
-            emit(hit);
-        }
-        return;
-    }
-    if c.life.w <= 0.0 {
-        visit_wings(ray, c, look, emit);
+        },
+    );
+    if hit.is_hit() {
+        hit.transmittance = (-(Vec3::ONE - tint) * 0.2).exp() * 0.9;
+        hit.part = 2;
+        emit(hit);
     }
 }
 
@@ -974,7 +1293,8 @@ pub fn mouth(length: f32, head: f32) -> Vec3 {
     cowl_centre(length, head) + vec3(0.0, -0.55 * head, 0.25 * head)
 }
 
-pub fn tail(p: Vec3, c: &CreatureInstance) -> f32 {
+pub fn tail<C: Rigged>(p: Vec3, creature: &C) -> f32 {
+    let c = creature.rig();
     let mut d = 1e6f32;
     for i in 0..5 {
         let t = (i + 1) as f32 / 5.0;
@@ -993,7 +1313,8 @@ pub fn tail(p: Vec3, c: &CreatureInstance) -> f32 {
     d
 }
 
-pub fn feathers(p: Vec3, c: &CreatureInstance, width: f32) -> f32 {
+pub fn feathers<C: Rigged>(p: Vec3, creature: &C, width: f32) -> f32 {
+    let c = creature.rig();
     let mut distance = 1e6f32;
     for index in 1..6 {
         let reach = width * (1.0 - index as f32 / 5.0 * 0.65);
@@ -1071,9 +1392,16 @@ pub fn gills(p: Vec3, length: f32, pairs: u32) -> f32 {
 /// a little stiffness, swinging under gravity in the animal's own frame and streaming back in the
 /// air it flies through. Settled from two starts on a fixed grid and crossfaded, so the pose moves
 /// smoothly frame to frame.
-pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: f32, length: f32) {
+pub fn rig_ribbons<C: Rigged>(
+    creature: &mut C,
+    count: usize,
+    root: Vec3,
+    spacing: f32,
+    length: f32,
+) {
     const STEP: f32 = 1.0 / 120.0;
     const SETTLE: f32 = 2.0;
+    let (c, rig) = creature.rigging();
     let turn = Quat::from_array(c.rotation.to_array()).conjugate();
     let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
     let flow = vec3(0.0, 0.0, c.animation.w.max(2.0));
@@ -1125,7 +1453,7 @@ pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: 
         let earlier = settle((grid - 1.0) * SETTLE);
         let later = settle(grid * SETTLE);
         for knot in 0..6 {
-            c.ribbons[chain * 6 + knot] = earlier[knot]
+            rig.ribbons[chain * 6 + knot] = earlier[knot]
                 .lerp(later[knot], weight)
                 .extend(length * 0.02);
         }
@@ -1139,7 +1467,8 @@ pub fn rig_ribbons(c: &mut CreatureInstance, count: usize, root: Vec3, spacing: 
 
 /// Trailing strands posed by [`rig_ribbons`]: smooth, tapering, a little flattened, blended through
 /// their knots.
-pub fn ribbons(p: Vec3, c: &CreatureInstance, count: usize) -> f32 {
+pub fn ribbons<C: Rigged>(p: Vec3, creature: &C, count: usize) -> f32 {
+    let c = creature.rig();
     let flatten = vec3(1.0, 1.6, 1.0);
     let mut distance = 1e6f32;
     for chain in 0..count {
@@ -1250,7 +1579,7 @@ mod tests {
         for (kind, taxon) in SPECIES.iter().enumerate() {
             let radius = KINDS[kind].render_radius();
             for panel in [0, 2, 3, 5, 8] {
-                let c = CreatureInstance::specimen(
+                let c = Drawn::specimen(
                     Vec3::ZERO.extend(radius),
                     Vec4::W,
                     Vec4::ZERO,
@@ -1272,7 +1601,7 @@ mod tests {
                             ambient: vec3(0.30, 0.36, 0.45),
                             radiance: Vec3::ONE,
                         };
-                        let hit = render(ray, &c).front();
+                        let hit = c.render(ray).front();
                         if hit.is_hit() {
                             hits += 1;
                             assert!(
@@ -1286,13 +1615,10 @@ mod tests {
                                 "invalid depth"
                             );
                             assert!(
-                                !render(
-                                    Ray {
-                                        max_distance: hit.distance() - 0.1,
-                                        ..ray
-                                    },
-                                    &c
-                                )
+                                !c.render(Ray {
+                                    max_distance: hit.distance() - 0.1,
+                                    ..ray
+                                })
                                 .is_hit(),
                                 "trace ignored the depth limit"
                             );
@@ -1313,7 +1639,7 @@ mod tests {
         let radius = Kind::Naetu.render_radius();
         let rotation = Quat::from_rotation_y(0.7);
         let offset = vec3(100.0, -200.0, 300.0);
-        let c = CreatureInstance::new(
+        let c = Drawn::new(
             offset.extend(radius),
             rotation.to_array().into(),
             Vec4::ZERO,
@@ -1328,7 +1654,7 @@ mod tests {
             ambient: vec3(0.30, 0.36, 0.45),
             radiance: Vec3::ONE,
         };
-        let hit = render(ray, &c).front();
+        let hit = c.render(ray).front();
         assert!(hit.is_hit(), "central ray missed transformed Naetu");
         assert!(
             hit.previous_position

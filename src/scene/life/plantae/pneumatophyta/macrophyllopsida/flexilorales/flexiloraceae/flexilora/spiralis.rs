@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, leaf, rotate, sucker_pad},
@@ -41,7 +41,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(6.0, 8.0, 6.0).extend(0.0);
 }
 
@@ -52,7 +52,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// food. Pads along the coils and at their ends hold on to a host at several points. Each plant
 /// coils its own way: one tendril or several, tight coils or loose, wound left or right, long or
 /// short, bare or set with small leaves, gripping at the tips alone or all along.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(ellipsoid(p, vec3(0.45, 0.42, 0.45)), 0);
     let tendrils = count(c, 1.0, 1, 4);
     let thick = 0.06 + gene(c, 2.0) * 0.06;
@@ -129,7 +129,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // pigment, for it does not feed on light.
 pub const LOOK: Look = Look::plant(vec3(0.62, 0.48, 0.32), vec3(0.85, 0.6, 0.35));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }
 

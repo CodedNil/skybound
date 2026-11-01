@@ -258,7 +258,7 @@ impl Creatures {
                     shader_defs: Vec::new(),
                     entry_point: Some("creature_quad".into()),
                     buffers: Vec::new(),
-                    constants: Vec::new(),
+                    constants: constants.clone(),
                 },
                 primitive: PrimitiveState::default(),
                 // Reversed depth: nearer is greater, and the sky is cleared to zero.

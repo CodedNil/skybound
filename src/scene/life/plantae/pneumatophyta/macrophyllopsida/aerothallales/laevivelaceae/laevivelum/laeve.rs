@@ -5,7 +5,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Plant,
         biology::Biology,
         capsule, ellipsoid,
         plantae::{count, gene, pick, rotate, speckle},
@@ -45,14 +45,14 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(11.0, 4.0, 11.0).extend(0.0);
 }
 
 /// One sail, `p` in its own frame centred on its hub: a thin membrane spread level in the rising
 /// air and rolling in slow waves that shed the rain, glowing glands along its edge. Its outline is
 /// round, oval, drawn into points or into a long ribbon, as the plant grew it.
-fn sail(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
+fn sail(p: Vec3, c: &Plant, reach: f32, salt: f32) -> Surface {
     let along = p.xz().length();
     let angle = p.z.atan2(p.x);
     let edge = reach
@@ -99,7 +99,7 @@ fn sail(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
 /// knot of gas floats under each and fine threads trailing below. One plant spreads a single
 /// great sail, another a stack of overlapping ones that shade and cool the air between them, and
 /// each sail rolls in waves, bears glands and ribs, and is shaped as its own.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(1e6, 1);
     let sails = count(c, 10.0, 1, 4);
     let reach = (9.5 - sails as f32 * 1.2) * (0.8 + gene(c, 11.0) * 0.25);
@@ -165,6 +165,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // veil.
 pub const LOOK: Look = Look::plant(vec3(0.72, 0.74, 0.78), vec3(0.29, 0.95, 0.7));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
         biology::{Biology, Litter},
         genome::Gene,
@@ -62,7 +62,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(4.0, 4.5, 4.0).extend(0.0);
     rig_tentacles(c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS);
 }
@@ -94,7 +94,7 @@ fn head(inward: f32) -> Vec3 {
 /// soft underside lines the inside of the C, pressed against the wood, where only a careless turn
 /// exposes it to the Bramble's charged thorns. Its wings are compact, stiff plates set on the top
 /// of the curl.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let angle = (-p.z).atan2(p.y).clamp(-REACH, REACH);
     let spine = on_curl(angle, 0.0);
     let middle = 1.0 - (angle / REACH).power(2);
@@ -171,6 +171,6 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(2.00, 0.30, 0.10, 0.60))
 .marked(vec4(1.00, 3.00, 0.50, 0.45), vec3(0.25, 0.16, 0.08));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }

@@ -7,15 +7,15 @@
 use crate::scene::{
     climate::Climate,
     life::{
-        Kind, Kingdom,
+        Injury, Kind, Kingdom, WOUNDS, Wound,
         animalia::{self, physiology::Sexes},
         biology::Biology,
         development::DAY,
-        organs::{Function, MAX, Strike, Viscera, Wound},
+        organs::{Function, MAX, Strike, Viscera},
         plantae,
     },
 };
-use spirv_std::glam::{Vec3, Vec4};
+use spirv_std::glam::Vec3;
 
 /// The state of a living body: what it has eaten and stored, how much fluid and lift it holds, how
 /// rested it is, and how whole each of its organs remains.
@@ -49,10 +49,9 @@ pub struct Vitals {
     /// that has healed into scar that never quite goes. Only suffered, never inherited.
     pub torn: [f32; 4],
     pub scarred: [f32; 4],
-    /// How scarred its body is from the wounds it has lived through, from unmarked to grizzled,
-    /// and where its worst wounds were, in its body's frame, each with how severe it was.
-    pub scars: f32,
-    pub wounds: [Vec4; 4],
+    /// The wounds its body carries, open or healed to scars, where they landed in its body's
+    /// frame; see [`Wound`]. Plant or animal, a body keeps them all its life.
+    pub wounds: [Wound; WOUNDS],
     /// How much iron it has gathered and laid into its edges and armour, from none to all it can
     /// carry: never inherited, but breathed from mineral dust and scraped from stone over a life.
     pub iron: f32,
@@ -75,7 +74,7 @@ pub struct Waste {
 
 /// What a wound did.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Injury {
+pub struct Harm {
     /// How much of the body's organs it destroyed, summed.
     pub damage: f32,
     /// Whether it destroyed the pump or the nerve centre.
@@ -174,8 +173,7 @@ impl Vitals {
             stunned: 0.0,
             torn: [0.0; 4],
             scarred: [0.0; 4],
-            scars: 0.0,
-            wounds: [Vec4::ZERO; 4],
+            wounds: [Wound::NONE; WOUNDS],
             iron: 0.0,
             overgrowth: 0.0,
             female: false,
@@ -322,6 +320,13 @@ impl Vitals {
             cost += regrowth;
         }
         self.energy = (self.energy - cost * 0.05).max(0.0);
+        // Wounds close slowly, the larger the slower, and what closes is scar for good.
+        for wound in &mut self.wounds {
+            if wound.size() > 0.0 && wound.state.x < 1.0 {
+                wound.state.x =
+                    (wound.state.x + rate * 0.2 * dt / (1.0 + wound.size() * 4.0)).min(1.0);
+            }
+        }
         // A torn wing knits slowly, and the half of each tear that heals leaves a scar.
         for (torn, scarred) in self.torn.iter_mut().zip(self.scarred.iter_mut()) {
             // A wing torn away never grows back.
@@ -340,12 +345,12 @@ impl Vitals {
 
     /// Take a wound. Organs on its path are destroyed in proportion to how squarely it reaches
     /// them, and the wound bleeds for its size against the body's, `scale` long.
-    pub fn wound(&mut self, kind: Kind, mut strike: Strike, scale: f32) -> Injury {
+    pub fn wound(&mut self, kind: Kind, mut strike: Strike, scale: f32) -> Harm {
         // Iron armour turns some of the blow.
         strike.force *= 1.0 - self.iron * 0.35;
         let viscera = kind.organs();
         let damage = viscera.struck(strike);
-        let mut injury = Injury::default();
+        let mut injury = Harm::default();
         for (index, site) in viscera.sites().iter().enumerate() {
             let lost = damage[index].min(self.organs[index]);
             self.organs[index] -= lost;
@@ -358,16 +363,21 @@ impl Vitals {
                 injury.vital = true;
             }
         }
-        if strike.wound == Wound::Drain {
+        if strike.injury == Injury::Drain {
             self.fluid = (self.fluid - strike.force * 0.01).max(0.0);
         }
         let size = (strike.radius + (strike.to - strike.from).length() * 0.3) / scale.max(1e-3);
-        self.bleeding += strike.force * strike.wound.bleeding() * size * 0.01;
-        // Every wound it lives through marks it where it landed, and a blow through a wing tears
-        // it.
-        let severity = strike.force * size * 0.004;
-        self.scars = (self.scars + severity).min(1.0);
-        self.remember_wound(strike.from.lerp(strike.to, 0.5), severity * 25.0);
+        self.bleeding += strike.force * strike.injury.bleeding() * size * 0.01;
+        // Every wound it lives through marks it where it landed, in the shape of what made it, and
+        // a blow through a wing tears it.
+        let path = strike.to - strike.from;
+        self.wound_at(
+            strike.from.lerp(strike.to, 0.5),
+            // As wide as the blow's path through the body, and wider the harder it struck.
+            size * (0.5 + (strike.force * 0.02).min(1.0)),
+            strike.injury,
+            path.z.atan2(path.x),
+        );
         for (index, torn) in self.torn.iter_mut().enumerate() {
             if *torn < 0.98 && crosses_wing(kind, index, strike) {
                 *torn = (*torn + strike.force * 0.04 * (1.0 + size)).min(1.0);
@@ -377,23 +387,42 @@ impl Vitals {
         injury
     }
 
-    /// Keep where a wound landed: added to the scar already there if it struck close by, or else
-    /// in place of the slightest of those kept.
-    fn remember_wound(&mut self, at: Vec3, severity: f32) {
-        let mut slightest = 0;
-        for index in 0..self.wounds.len() {
+    /// Keep a new wound where it landed, `size` across, made by `injury` along `bearing`: opened
+    /// afresh over an old one close by, or else in place of the slightest kept.
+    pub fn wound_at(&mut self, at: Vec3, size: f32, injury: Injury, bearing: f32) {
+        if size <= 0.0 {
+            return;
+        }
+        let mut slot = 0;
+        for index in 0..WOUNDS {
             let wound = self.wounds[index];
-            if wound.w > 0.0 && wound.truncate().distance(at) < 0.8 {
-                self.wounds[index].w = (wound.w + severity).min(1.0);
-                return;
+            if wound.size() > 0.0 && wound.site.truncate().distance(at) < wound.size().max(size) {
+                slot = index;
+                break;
             }
-            if wound.w < self.wounds[slightest].w {
-                slightest = index;
+            if wound.size() < self.wounds[slot].size() {
+                slot = index;
             }
         }
-        if severity > self.wounds[slightest].w {
-            self.wounds[slightest] = at.extend(severity.min(1.0));
+        let old = self.wounds[slot];
+        if old.size() > size && old.site.truncate().distance(at) >= old.size() {
+            return;
         }
+        let depth = match injury {
+            Injury::Pierce | Injury::Bite | Injury::Drain => 1.0,
+            Injury::Slash | Injury::Tear => 0.5,
+            Injury::Burn | Injury::Crush => 0.25,
+        };
+        self.wounds[slot] = Wound::open(at, size.max(old.size()), injury, bearing, depth);
+    }
+
+    /// How scarred its body is all told, from unmarked to grizzled, from the wounds it has kept.
+    pub fn scarring(&self) -> f32 {
+        self.wounds
+            .iter()
+            .map(|wound| wound.size() * wound.healed())
+            .sum::<f32>()
+            .min(1.0)
     }
 
     /// How whole its wings are for flying, from all four whole to all shredded, and which side is

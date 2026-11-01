@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, PLANT,
+    Body, CreatureInstance, Injury, PLANT, WOUNDS, Wound,
     animalia::tetralata::{
         self,
         young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
@@ -18,7 +18,7 @@ use crate::scene::life::{
 use core::f32::consts::TAU;
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec4;
-use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec3};
+use spirv_std::glam::{FloatExt, Vec3, Vec3Swizzles, Vec4Swizzles, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -84,7 +84,8 @@ pub fn scale(c: &CreatureInstance) -> Vec3 {
     }
 }
 
-pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
+pub fn body_point<C: Body>(mut point: Vec3, body: &C) -> Vec3 {
+    let c = body.organism();
     // The young are not small adults: the brain and eyes are nearly grown at birth while the rest
     // has far to go, so a newborn's head is large for its body and its hindquarters slight, and
     // both even out as it grows. The head swells about its own centre so it stays on the neck.
@@ -105,15 +106,72 @@ pub fn body_point(mut point: Vec3, c: &CreatureInstance) -> Vec3 {
     // A body carrying young swells round its brood chamber as they grow, slowly at first and most
     // in the last of its carrying, the fuller the larger the litter, and the swelling hangs a
     // little below the chamber under its weight.
-    if c.belly.w > 0.0 && c.stores.y > 0.0 {
-        let carried = c.stores.y * c.stores.y * (1.0 + (c.stores.z - 1.0).clamp(0.0, 4.0) * 0.2);
-        let centre = c.belly.xyz() - vec3(0.0, c.belly.w * 0.5, 0.0);
-        let reach = c.belly.w * 2.8;
+    let (belly, stores) = body.carrying();
+    if belly.w > 0.0 && stores.y > 0.0 {
+        let carried = stores.y * stores.y * (1.0 + (stores.z - 1.0).clamp(0.0, 4.0) * 0.2);
+        let centre = belly.xyz() - vec3(0.0, belly.w * 0.5, 0.0);
+        let reach = belly.w * 2.8;
         let offset = point - centre;
         let near = (-offset.length_squared() / (reach * reach)).exp();
         point -= offset * near * carried * 0.45;
     }
     point
+}
+
+/// How much of a wound covers a point, from none to its heart, in the shape of what made it.
+///
+/// A slash is a long, thin cut along its bearing; a puncture or sucker mark small and round; a tear
+/// ragged; a bite the arc of its teeth; a burn broad; and a crush a blotched bruise.
+pub fn wounded(point: Vec3, wound: Wound) -> f32 {
+    let size = wound.size();
+    if size <= 0.0 {
+        return 0.0;
+    }
+    let q = point - wound.site.xyz();
+    if q.length() > size * 2.0 {
+        return 0.0;
+    }
+    let bearing = wound.state.z;
+    let along = q.x * bearing.cos() + q.z * bearing.sin();
+    let across = (q.z * bearing.cos() - q.x * bearing.sin()).abs() + q.y.abs() * 0.3;
+    let ragged = noise_like(point * (6.0 / size));
+    let injury = wound.injury();
+    let measure = if injury == Injury::Slash as u32 {
+        vec2(along / (size * 1.6), across / (size * 0.16)).length()
+    } else if injury == Injury::Pierce as u32 {
+        q.length() / (size * 0.35)
+    } else if injury == Injury::Drain as u32 {
+        q.length() / (size * 0.5)
+    } else if injury == Injury::Tear as u32 {
+        vec2(
+            along / (size * 1.2),
+            across / (size * (0.2 + ragged * 0.35)),
+        )
+        .length()
+    } else if injury == Injury::Bite as u32 {
+        let around = q.z.atan2(q.x);
+        (q.length() - size * 0.7).abs() / (size * 0.16) + (1.0 - (around * 6.0).sin().abs()) * 1.4
+    } else if injury == Injury::Burn as u32 {
+        q.length() / (size * 1.4) + ragged * 0.4
+    } else {
+        q.length() / (size * 1.1) + ragged * 0.25
+    };
+    1.0 - measure.smoothstep(0.6, 1.0)
+}
+
+/// How a wound shapes the surface, as a distance offset: an open wound a hollow as deep as it
+/// went, a scar a little raised and puckered.
+pub fn wound_relief(point: Vec3, c: &CreatureInstance) -> f32 {
+    let mut relief = 0.0f32;
+    for index in 0..WOUNDS {
+        let wound = c.wounds[index];
+        let cover = wounded(point, wound);
+        if cover > 0.0 {
+            let healed = wound.healed().clamp(0.0, 1.0);
+            relief += cover * wound.size() * (wound.state.w * 0.2 * (1.0 - healed) - 0.04 * healed);
+        }
+    }
+    relief
 }
 
 /// A cheap, smooth wobble in about [0, 1] to break up the edges of scars.
@@ -132,19 +190,26 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
     let pigment = material.color.lerp(material.color.yzx(), hue.abs() * 0.45);
     let pattern = (point.z * (2.0 + bold * 5.0) + (point.x * 3.0 + hue * TAU).sin() * 2.0).sin();
     material.color = pigment * (1.0 + shade * 0.3 + pattern * (bold - 0.5) * 0.16);
-    // Every wound it lived through left its scar where it landed: a pale, puckered patch, the
-    // larger the worse the wound, crossed by seams where the skin knitted.
-    let mut scar = 0.0f32;
-    for index in 0..4 {
+    // Every wound it carries shows where it landed, in the shape of what made it: raw and wet
+    // while open, an animal's flesh dark red and a plant's inner tissue pale and weeping, closing
+    // as it heals to a pale, puckered scar crossed by seams where the skin knitted, or on a plant
+    // to a dark ridge of callus.
+    let plant = look_of(c.kind.x).family == PLANT;
+    for index in 0..WOUNDS {
         let wound = c.wounds[index];
-        if wound.w > 0.0 {
-            let reach = 0.4 + wound.w * 1.6;
-            let near = 1.0 - ((point - wound.truncate()).length() / reach).min(1.0);
-            let edge = noise_like(point * 2.3 + wound.w * 17.0) * 0.5;
-            scar = scar.max((near * 1.6 - edge).clamp(0.0, 1.0));
+        let cover = wounded(point, wound);
+        if cover <= 0.0 {
+            continue;
         }
-    }
-    if scar > 0.0 {
+        let healed = wound.healed().clamp(0.0, 1.0);
+        let raw = if plant {
+            vec3(0.78, 0.72, 0.55)
+        } else {
+            vec3(0.42, 0.07, 0.06)
+        };
+        material.color = material.color.lerp(raw, cover * (1.0 - healed));
+        material.roughness = material.roughness.lerp(0.25, cover * (1.0 - healed));
+        material.film += cover * (1.0 - healed) * 0.6;
         let seam = |turn: f32| {
             let across = point.x * turn.cos() + point.z * turn.sin() + point.y * 0.3;
             ((across + (point.y * 2.3 + turn * 5.0).sin() * 0.3) * 5.0)
@@ -152,10 +217,15 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
                 .abs()
         };
         let lines = 1.0 - seam(0.7).min(seam(2.3)).smoothstep(0.0, 0.12);
-        let pale = scar * (0.45 + lines * 0.55);
-        material.color = material.color.lerp(vec3(0.84, 0.77, 0.71), pale * 0.75);
-        material.roughness += pale * 0.3;
-        material.scatter *= 1.0 - pale * 0.6;
+        let mark = cover * healed * (0.45 + lines * 0.55);
+        let scar = if plant {
+            vec3(0.32, 0.24, 0.16)
+        } else {
+            vec3(0.84, 0.77, 0.71)
+        };
+        material.color = material.color.lerp(scar, mark * 0.75);
+        material.roughness += mark * 0.3;
+        material.scatter *= 1.0 - mark * 0.6;
     }
     // Its skin a little rougher or smoother than another's, as it happened to grow.
     let individual = c.chance(9) - 0.5;
@@ -239,7 +309,7 @@ pub fn render_juvenile(ray: Ray, c: &CreatureInstance) -> TraceResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::life::{KINDS, Kind};
+    use crate::scene::life::{Drawn, KINDS, Kind};
     use spirv_std::glam::Vec4;
 
     #[test]
@@ -285,7 +355,7 @@ mod tests {
             Kind::Polliniflora,
         ] {
             let make = |age, seed| {
-                CreatureInstance::specimen(
+                Drawn::specimen(
                     Vec4::W * kind.render_radius(),
                     Vec4::W,
                     Vec4::ZERO,
@@ -293,6 +363,8 @@ mod tests {
                     age,
                     seed,
                 )
+                .organism()
+                .to_owned()
             };
             let a = make(0.0, 123);
             let b = make(kind.biology().maturity_days, 123);

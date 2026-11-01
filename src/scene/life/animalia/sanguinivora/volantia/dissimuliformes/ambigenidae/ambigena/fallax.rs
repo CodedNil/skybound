@@ -9,7 +9,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        BloodFeeder, Look,
         biology::{Biology, Litter},
         capsule, eyespots,
         genome::Gene,
@@ -63,7 +63,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(3.0, 3.0, 4.0).extend(0.0);
 }
 
@@ -80,7 +80,7 @@ const CUP: Vec3 = vec3(0.0, -0.1, -2.0);
 /// the wound while the sucker takes its small, concealed meal. A short arc of eyespots crowns the
 /// cup. Like all blood-eaters it breathes through its glistening skin, and flies on a single pair
 /// of wings that grew from folds of the body wall.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let mut body = rounded(p - vec3(0.0, 0.0, 0.4), vec3(1.45, 1.25, 2.0));
     for i in 0..7 {
         let z = i as f32 * 0.5 - 1.2;
@@ -135,7 +135,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(1.20, 0.35, 0.30, 0.90))
 .marked(vec4(2.00, 4.00, 0.80, 0.42), vec3(0.25, 0.20, 0.12));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

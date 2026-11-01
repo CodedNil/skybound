@@ -11,6 +11,7 @@
 //! where its surface encloses them, so a strike that reaches one through the body does what losing
 //! that organ would.
 
+use crate::scene::life::Injury;
 use spirv_std::glam::Vec3;
 
 /// An organ, declared in the taxon where it arose: its name, the need it meets, and the colour it
@@ -205,7 +206,7 @@ impl Viscera {
                 let reach = ((near - centre) / site.radii.max(Vec3::splat(1e-3))).length();
                 let tolerance = 1.0 + strike.radius / site.radii.min_element().max(1e-3);
                 let share = (1.0 - reach / tolerance).max(0.0) / mirrors as f32;
-                damage[index] += share * strike.force * strike.wound.severity(site.organ);
+                damage[index] += share * strike.force * strike.injury.severity(site.organ);
             }
         }
         damage
@@ -219,22 +220,8 @@ impl Site {
     }
 }
 
-/// The ways a body can be wounded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Wound {
-    /// A lance or bite driven deep along a line.
-    Pierce,
-    /// A blade drawn across the body: long and shallow.
-    Slash,
-    /// Acid eating into the surface.
-    Burn,
-    /// Jaws or a rasp tearing out a mouthful.
-    Bite,
-    /// A parasite's sucker drawing fluid, leaving the organs whole.
-    Drain,
-}
-
-impl Wound {
+/// How each kind of wound harms the body, which only the simulation asks.
+impl Injury {
     /// How much this kind of wound harms an organ: a burn ruins the delicate breathing folds
     /// and gas stores near the skin but barely touches muscle, and a drain harms nothing but
     /// takes fluid.
@@ -246,7 +233,7 @@ impl Wound {
             (Self::Drain, _) => 0.0,
             (Self::Burn, Breathing | Lift | Gathering | Nectar) => 1.5,
             (Self::Burn, Movement | Flight | Sap) => 0.4,
-            (Self::Slash, Lift | Gathering) => 1.4,
+            (Self::Slash | Self::Tear, Lift | Gathering) => 1.4,
             (Self::Pierce, Circulation | Coordination) => 1.6,
             _ => 1.0,
         }
@@ -258,7 +245,9 @@ impl Wound {
             Self::Slash => 1.4,
             Self::Pierce => 1.0,
             Self::Bite => 1.2,
+            Self::Tear => 1.3,
             Self::Burn => 0.3,
+            Self::Crush => 0.2,
             Self::Drain => 0.15,
         }
     }
@@ -272,7 +261,7 @@ pub struct Strike {
     pub to: Vec3,
     pub radius: f32,
     pub force: f32,
-    pub wound: Wound,
+    pub injury: Injury,
 }
 
 fn closest_on_segment(point: Vec3, from: Vec3, to: Vec3) -> Vec3 {
@@ -284,14 +273,14 @@ fn closest_on_segment(point: Vec3, from: Vec3, to: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::life::{CreatureInstance, KINDS, body_surface};
+    use crate::scene::life::{Drawn, KINDS};
     use spirv_std::glam::{Vec4, vec3};
 
     #[test]
     fn every_organ_lies_inside_its_body() {
         for (index, kind) in KINDS.iter().enumerate() {
             let biology = kind.biology();
-            let c = CreatureInstance::specimen(
+            let c = Drawn::specimen(
                 Vec4::new(0.0, 0.0, 0.0, kind.render_radius()),
                 Vec4::W,
                 Vec4::ZERO,
@@ -303,7 +292,7 @@ mod tests {
                 let sides: &[f32] = if site.paired { &[1.0, -1.0] } else { &[1.0] };
                 for &side in sides {
                     let centre = site.centre * vec3(side, 1.0, 1.0);
-                    let inside = body_surface(centre, &c).distance;
+                    let inside = c.surface(centre).distance;
                     assert!(
                         inside < 0.0,
                         "{kind:?}'s {} at {centre} lies outside its body by {inside}",
@@ -327,7 +316,7 @@ mod tests {
             to: vec3(0.0, -3.0, 0.0),
             radius: 0.1,
             force: 1.0,
-            wound: Wound::Pierce,
+            injury: Injury::Pierce,
         });
         assert!(damage[0] > 1.0, "the lance missed the pump: {damage:?}");
         assert!(damage[1] < 1e-6, "the lance reached the breathing folds");

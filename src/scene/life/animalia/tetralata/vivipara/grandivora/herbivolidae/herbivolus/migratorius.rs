@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     eyespots, feathers,
@@ -65,7 +65,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     prepare_pose(c, 9.0, 14.0, 0);
     c.opaque_bounds = vec3(7.0, 7.0, 24.0).extend(0.0);
     rig_tentacles(c, RIM, 2.3, ORAL_PAIRS);
@@ -81,7 +81,7 @@ const RIM: Vec3 = vec3(0.0, -3.4, -14.0);
 /// of a body, swollen with a gas store over the back that cuts the cost of carrying it between
 /// streams, and its eyes run in rows along the lower flanks, watching the neighbours a herd keeps
 /// its spacing by. Each animal's funnel and store are the size its genes make them.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let flare = 0.85 + c.gene(FLARE) * 0.35;
     let barrel = rounded(p - vec3(0.0, 0.0, 1.0), vec3(3.4, 3.1, 10.0));
     let store = rounded(
@@ -147,7 +147,7 @@ pub const LOOK: Look = Look::coat(
 .marked(vec4(1.00, 9.00, 0.35, 0.42), vec3(0.35, 0.27, 0.16))
 .brooding(vec4(3.0, 6.0, 1.8, 1.3));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

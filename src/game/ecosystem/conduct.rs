@@ -6,12 +6,13 @@ use crate::{
 };
 use bevy::prelude::*;
 use skybound::scene::life::{
+    Injury,
     animalia::{
         AGILITY, PRECISION,
         mind::{Aim, Snare},
     },
     behaviour::Activity,
-    organs::{Function, Strike, Wound},
+    organs::{Function, Strike},
     vitals::Vitals,
 };
 use spirv_std::glam::Vec3 as SceneVec3;
@@ -86,7 +87,7 @@ pub(super) fn engage(
                 to: SceneVec3::ZERO,
                 radius: 0.0,
                 force: hold.drain,
-                wound: Wound::Drain,
+                injury: Injury::Drain,
             }),
             stun: hold.stun,
             carrier: None,

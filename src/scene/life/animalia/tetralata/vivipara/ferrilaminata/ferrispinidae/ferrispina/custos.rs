@@ -1,6 +1,6 @@
 use super::{Build, shredder};
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     genome::Gene,
@@ -53,7 +53,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     prepare_pose(c, 6.0, 6.5, 0);
     c.opaque_bounds = vec3(6.0, 7.5, 22.0).extend(0.0);
     rig_tentacles(c, mouth(BUILD.length, BUILD.head), 1.1, ORAL_PAIRS);
@@ -75,7 +75,7 @@ const BUILD: Build = Build {
     web: 0.95,
 };
 
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let blades = 4 + (c.gene(BLADES) * 2.99) as u32;
     let build = Build {
         blades,
@@ -139,7 +139,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(0.70, 0.36, 0.40, 1.00))
 .marked(vec4(2.00, 5.00, 0.80, 0.40), vec3(0.85, 0.60, 0.15));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

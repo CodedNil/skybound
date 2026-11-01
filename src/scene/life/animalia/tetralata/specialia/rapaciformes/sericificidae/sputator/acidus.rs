@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{ORAL_PAIRS, curved_tube, gape, oral_tentacles, rig_tentacles},
     biology::{Biology, Litter},
     capsule, ellipsoid,
@@ -64,7 +64,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(4.6, 3.2, 4.6).extend(0.0);
     rig_tentacles(c, MOUTH, 0.75, ORAL_PAIRS);
 }
@@ -78,7 +78,7 @@ const MOUTH: Vec3 = vec3(0.0, -0.55, -1.5);
 /// the shoulders where the two acid glands lie and showing through windows in the plates. The spout
 /// juts forward under the blunt head, and above it a pair of eyes looks straight ahead along the
 /// line of fire, with a second pair looking down.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let mut body = 1e6f32;
     // Heavy plates stand proud of one another at sharp steps; light ones run smoothly together.
     let heavy = c.gene(PLATES);
@@ -167,7 +167,7 @@ pub const LOOK: Look = Look::coat(
 .marked(vec4(4.00, 4.00, 0.80, 0.42), vec3(0.10, 0.16, 0.10))
 .brooding(vec4(-0.2, 0.4, 0.95, 0.62));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

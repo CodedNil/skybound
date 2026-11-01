@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{
@@ -48,7 +48,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(16.0, 22.0, 16.0).extend(0.0);
 }
 
@@ -57,7 +57,7 @@ const BODY: Vec3 = vec3(0.0, -10.0, 0.0);
 
 /// Where along the stem a point at `t` lies, from the buoyant body to the flower: rising, and
 /// bowing over towards its lean as it nears the flower's weight.
-fn stem(c: &CreatureInstance, t: f32) -> Vec3 {
+fn stem(c: &Plant, t: f32) -> Vec3 {
     let tall = 10.0 + gene(c, 1.0) * 9.0;
     let bow = gene(c, 2.0) * 0.9;
     let bearing = gene(c, 3.0) * TAU;
@@ -75,7 +75,7 @@ fn stem(c: &CreatureInstance, t: f32) -> Vec3 {
 /// flower faces out, leafless or leafy, five broad petals or a dozen narrow ones, in one whorl or
 /// three, pointed, rounded, frilled or trailing; and its body is one great float, a cluster of
 /// them, or a long gourd.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(1e6, 3);
     match pick(c, 4.0, 3) {
         0 => shape.join(ellipsoid(p - BODY, vec3(3.4, 2.8, 3.4)), 3),
@@ -165,6 +165,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.48, 0.2, 0.77), vec3(0.28, 0.85, 1.0));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

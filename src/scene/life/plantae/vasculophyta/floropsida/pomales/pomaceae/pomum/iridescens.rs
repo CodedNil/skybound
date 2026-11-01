@@ -8,7 +8,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Plant,
         biology::Biology,
         capsule, ellipsoid,
         plantae::{count, gene, leaf, pick, rotate, speckle},
@@ -48,7 +48,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(6.0, 6.0, 6.0).extend(0.0);
 }
 
@@ -88,7 +88,7 @@ fn fruit(p: Vec3, form: u32, size: f32, ripe: bool) -> Surface {
 /// rinds shimmering as they gather the dispersed aur; roots trail below. Plants bear as their
 /// seeds made them: two fruits or six, round, pear-shaped, ribbed or lobed, some already split and
 /// showing their featherpods; a crown of broad leaves or of spiky ones; few roots or many.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(ellipsoid(p - vec3(0.0, 0.4, 0.0), vec3(1.1, 1.45, 1.1)), 0);
     shape.join(
         ellipsoid(p - vec3(0.0, 2.5, 0.0), vec3(0.95, 0.85, 0.95)),
@@ -164,6 +164,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.82, 0.24, 0.055), vec3(0.95, 0.65, 0.15));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

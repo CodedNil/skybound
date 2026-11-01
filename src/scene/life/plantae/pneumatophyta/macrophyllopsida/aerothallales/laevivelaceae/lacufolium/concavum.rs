@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, pick, speckle},
@@ -46,7 +46,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(9.0, 5.0, 9.0).extend(0.0);
 }
 
@@ -63,7 +63,7 @@ const FLOOR: f32 = -1.8;
 /// drip it into the pool. Each grows its own: few ribs or many, deep or shallow, taut or slack, a
 /// mast or none, a ring of floats under the rim or one great float under the hub, and few or many
 /// roots trailing below.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let reach = 5.0 + gene(c, 4.0) * 2.8;
     let depth = 0.8 + gene(c, 5.0) * 1.4;
     let ribs = count(c, 1.0, 6, 11) as f32;
@@ -85,7 +85,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
     // The water it holds, as full as the rain and its drinkers have left it: not inherited but its
     // life's, so a basin by a busy watering place runs low and one in wet cloud brims. The membrane
     // sags into a sump that always keeps a little, which drinkers cannot reach.
-    let level = FLOOR + depth * (0.35 + c.stores.y.clamp(0.0, 1.0) * 0.6);
+    let level = FLOOR + depth * (0.35 + c.water.x.clamp(0.0, 1.0) * 0.6);
     let water = (p.y - level).max(rise(along) - p.y).max(along - edge);
     shape.join(water, 4);
     // The nearest rib, from the hub out past the membrane's edge, curling up at its tip.
@@ -179,6 +179,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // Bone-pale and unpigmented, for it feeds on aur.
 pub const LOOK: Look = Look::plant(vec3(0.62, 0.6, 0.55), vec3(0.4, 0.8, 0.9));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

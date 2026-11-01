@@ -42,7 +42,7 @@ use skybound::scene::{
     aur::{EJECTION_WINDOW, spire_origins},
     cache as volume_cache,
     climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel},
-    life::{CreatureInstance, HERD},
+    life::{BloodFeeder, Bubbleback, Drawn, HERD, Plant, Tetralate},
 };
 use spirv_std::glam::DVec3 as SceneDVec3;
 use std::{array::from_fn, env, ops::Range, sync::atomic::Ordering};
@@ -55,10 +55,15 @@ pub struct SceneBuffer {
     parcels: RawBufferVec<CloudParcel>,
     cloud_index: RawBufferVec<u32>,
     cloud_cells: RawBufferVec<Vec4>,
-    /// The world's creatures drawn this frame, always `HERD` long so the buffer, and the bind
+    /// The world's creatures drawn this frame, one buffer for each lineage's instance, each always
+    /// `HERD` long so the buffers, and the bind
     /// groups that hold it, never change.
-    creatures: RawBufferVec<CreatureInstance>,
-    /// The creatures of each species present, as runs of the buffer, which is sorted by species
+    plants: RawBufferVec<Plant>,
+    bubblebacks: RawBufferVec<Bubbleback>,
+    blood_feeders: RawBufferVec<BloodFeeder>,
+    tetralates: RawBufferVec<Tetralate>,
+    /// The creatures of each species present, as runs of their lineage's buffer, which is sorted
+    /// by species
     /// so each is drawn by its own pipeline in one call.
     species: Vec<(u32, Range<u32>)>,
     /// When the uploaded cloud index was built.
@@ -73,7 +78,10 @@ impl Default for SceneBuffer {
             parcels: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_index: RawBufferVec::new(BufferUsages::STORAGE),
             cloud_cells: RawBufferVec::new(BufferUsages::STORAGE),
-            creatures: RawBufferVec::new(BufferUsages::STORAGE),
+            plants: RawBufferVec::new(BufferUsages::STORAGE),
+            bubblebacks: RawBufferVec::new(BufferUsages::STORAGE),
+            blood_feeders: RawBufferVec::new(BufferUsages::STORAGE),
+            tetralates: RawBufferVec::new(BufferUsages::STORAGE),
             species: Vec::new(),
             cloud_built: f32::NAN,
             profile: env::var("SKYBOUND_PROFILE_VOLUME")
@@ -294,26 +302,75 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         viewport: viewport.to_scene(),
     });
     buffer.uniform.write_buffer(&device, &queue);
-    let mut drawn: Vec<CreatureInstance> = (0..HERD)
-        .map(|index| herd.0.get(index).copied().unwrap_or_default())
-        .collect();
-    drawn.sort_by_key(|c| (c.position.w <= 0.0, c.kind.x));
-    buffer.species.clear();
-    for (index, c) in (0u32..).zip(&drawn) {
-        if c.position.w <= 0.0 {
-            break;
-        }
-        match buffer.species.last_mut() {
-            Some((kind, run)) if *kind == c.kind.x => run.end = index + 1,
-            _ => buffer.species.push((c.kind.x, index..index + 1)),
-        }
-    }
-    buffer.creatures.clear();
-    buffer.creatures.extend(drawn);
-    buffer.creatures.write_buffer(&device, &queue);
+    upload_herd(&mut buffer, &herd.0, &device, &queue);
     buffer.previous_clip = view
         .clip_from_world
         .unwrap_or_else(|| view.clip_from_view * world_from_view.inverse());
+}
+
+/// The herd into its lineages' buffers, each sorted by species, and the run of each species
+/// within its lineage's buffer.
+fn upload_herd(
+    buffer: &mut SceneBuffer,
+    herd: &[Drawn],
+    device: &RenderDevice,
+    queue: &RenderQueue,
+) {
+    let mut drawn: Vec<Drawn> = herd
+        .iter()
+        .filter(|c| c.organism().position.w > 0.0)
+        .take(HERD)
+        .copied()
+        .collect();
+    drawn.sort_by_key(|c| c.organism().kind.x);
+    buffer.plants.clear();
+    buffer.bubblebacks.clear();
+    buffer.blood_feeders.clear();
+    buffer.tetralates.clear();
+    buffer.species.clear();
+    for c in &drawn {
+        let index = match c {
+            Drawn::Plant(c) => {
+                buffer.plants.push(*c);
+                buffer.plants.len()
+            }
+            Drawn::Bubbleback(c) => {
+                buffer.bubblebacks.push(*c);
+                buffer.bubblebacks.len()
+            }
+            Drawn::BloodFeeder(c) => {
+                buffer.blood_feeders.push(*c);
+                buffer.blood_feeders.len()
+            }
+            Drawn::Tetralate(c) => {
+                buffer.tetralates.push(*c);
+                buffer.tetralates.len()
+            }
+        } as u32
+            - 1;
+        let kind = c.organism().kind.x;
+        match buffer.species.last_mut() {
+            Some((species, run)) if *species == kind => run.end = index + 1,
+            _ => buffer.species.push((kind, index..index + 1)),
+        }
+    }
+    // Every buffer stays the herd's full length, so its binding never changes.
+    while buffer.plants.len() < HERD {
+        buffer.plants.push(Plant::default());
+    }
+    while buffer.bubblebacks.len() < HERD {
+        buffer.bubblebacks.push(Bubbleback::default());
+    }
+    while buffer.blood_feeders.len() < HERD {
+        buffer.blood_feeders.push(BloodFeeder::default());
+    }
+    while buffer.tetralates.len() < HERD {
+        buffer.tetralates.push(Tetralate::default());
+    }
+    buffer.plants.write_buffer(device, queue);
+    buffer.bubblebacks.write_buffer(device, queue);
+    buffer.blood_feeders.write_buffer(device, queue);
+    buffer.tetralates.write_buffer(device, queue);
 }
 
 fn camera_uniform(
@@ -406,7 +463,10 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         Some(parcels),
         Some(index),
         Some(cells),
-        Some(creatures),
+        Some(plants),
+        Some(bubblebacks),
+        Some(blood_feeders),
+        Some(tetralates),
     ) = (
         prepass.depth_only_view(),
         targets.0.as_ref(),
@@ -418,7 +478,10 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
         buffer.parcels.binding(),
         buffer.cloud_index.binding(),
         buffer.cloud_cells.binding(),
-        buffer.creatures.binding(),
+        buffer.plants.binding(),
+        buffer.bubblebacks.binding(),
+        buffer.blood_feeders.binding(),
+        buffer.tetralates.binding(),
     )
     else {
         return;
@@ -461,7 +524,13 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
     let opaque = pipeline.opaque.group(&binder, &common());
     let creature = pipeline.creatures.group(
         &binder,
-        &[Bind::Frame(frame.clone()), Bind::Storage(creatures.clone())],
+        &[
+            Bind::Frame(frame.clone()),
+            Bind::Storage(plants),
+            Bind::Storage(bubblebacks.clone()),
+            Bind::Storage(blood_feeders.clone()),
+            Bind::Storage(tetralates.clone()),
+        ],
     );
     // The cloud, thin-surface and volume passes all read the whole scene; the volume pass also
     // reads the clouds rebuilt before it.
@@ -479,7 +548,9 @@ pub(super) fn prepare_bindings(params: PrepareBindings) {
             Bind::Float(&pipeline.cloud_bounds),
             Bind::Data(&pipeline.cloud_towers),
             Bind::Volume(shapes),
-            Bind::Storage(creatures.clone()),
+            Bind::Storage(bubblebacks.clone()),
+            Bind::Storage(blood_feeders.clone()),
+            Bind::Storage(tetralates.clone()),
         ]);
         if slab {
             binds.extend([

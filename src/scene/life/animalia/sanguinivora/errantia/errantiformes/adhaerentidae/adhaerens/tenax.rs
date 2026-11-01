@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look, annulated,
+    BloodFeeder, Look, annulated,
     biology::{Biology, Litter},
     eyespots,
     genome::Gene,
@@ -58,13 +58,13 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(1.3, 1.1, 4.2).extend(0.0);
 }
 
 /// A flattened, ringed leech, narrow at the head and broad behind, gripping with a small sucker
 /// around its mouth and a broad disc at its tail.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let sway = (c.animation.z * 1.5 + p.z * 0.9).sin()
         * (0.03 + c.gene(WRITHE) * 0.04)
         * (p.z + 3.2).max(0.0);
@@ -124,6 +124,6 @@ pub const LOOK: Look = Look::coat(
 )
 .skinned(vec4(3.0, 1.0, 2.0, 0.15));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }

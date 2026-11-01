@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, leaf, pick, rotate, speckle},
@@ -46,13 +46,13 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(8.0, 8.0, 9.0).extend(0.0);
 }
 
 /// One tangle of the chain, `p` relative to its middle: woody vines wound round and round it in
 /// rings at every angle, set with charged thorns.
-fn tangle(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
+fn tangle(p: Vec3, c: &Plant, reach: f32, salt: f32) -> Surface {
     let mut shape = Surface::new(1e6, 0);
     let vines = count(c, 1.0, 5, 10);
     let thorns = 10.0 + gene(c, 2.0) * 22.0;
@@ -99,7 +99,7 @@ fn tangle(p: Vec3, c: &CreatureInstance, reach: f32, salt: f32) -> Surface {
 /// lotus-shaped leaves spread around them. A plant grows as one tangle, as a chain of tangles
 /// joined by bending vines, or as a ring; its vines few or many, thorns short and sparse or long
 /// and thick-set, leaves few and huge or many and small.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(ellipsoid(p, vec3(0.8, 0.8, 0.8)), 0);
     let form = pick(c, 5.0, 3);
     let links = if form == 1 { count(c, 6.0, 2, 3) } else { 1 };
@@ -164,6 +164,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // Pale grey and unpigmented, for it feeds on aur; its thorns glow with the charge they hold.
 pub const LOOK: Look = Look::plant(vec3(0.58, 0.56, 0.52), vec3(0.55, 0.75, 1.0));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

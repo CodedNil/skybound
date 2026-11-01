@@ -1,6 +1,6 @@
 use super::{TailFeathers, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles},
     biology::{Biology, Litter},
     eyes,
@@ -72,7 +72,7 @@ const LENGTH: f32 = 0.36;
 
 const HEAD: f32 = 0.14;
 
-pub fn animate(creature: &mut CreatureInstance) {
+pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 0.63, 1.5, 0);
     creature.opaque_bounds = vec3(0.9, 1.2, 2.4).extend(0.0);
     rig_tentacles(creature, mouth(LENGTH, HEAD), 0.5, ORAL_PAIRS);
@@ -86,7 +86,7 @@ pub fn animate(creature: &mut CreatureInstance) {
 /// things and feed. A swept crest runs back from the cowl, aur sacs glow on its flanks, and its
 /// long gripping tail trails behind. It wears one thing it made: a woven girth strap with a bronze
 /// clasp on the back.
-pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
+pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let body = torso(point, vec3(0.2, 0.17, LENGTH), HEAD);
     let crop = rounded(
         point - vec3(0.0, -0.03, 0.14),
@@ -130,7 +130,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
     hit
 }
 
-pub fn render_opaque(ray: Ray, creature: &CreatureInstance) -> Hit {
+pub fn render_opaque(ray: Ray, creature: &Tetralate) -> Hit {
     let body = trace_material(ray, creature, surface, material);
     let feathers = render_tail_feathers(
         Ray {
@@ -235,7 +235,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;
 
-pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, creature: &Tetralate) -> TraceResult {
     let mut result = TraceResult::opaque(render_opaque(ray, creature));
     let thin = render_thin(ray, creature);
     for i in 0..thin.count as usize {
@@ -244,13 +244,13 @@ pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
     result
 }
 
-pub fn render_thin(ray: Ray, creature: &CreatureInstance) -> TraceResult {
+pub fn render_thin(ray: Ray, creature: &Tetralate) -> TraceResult {
     let mut result = TraceResult::MISS;
     visit_thin(ray, creature, |hit| result.add(hit));
     result
 }
 
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &CreatureInstance, mut emit: F) {
+pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &Tetralate, mut emit: F) {
     wings(
         ray,
         creature,

@@ -9,7 +9,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look, annulated,
+        BloodFeeder, Look, annulated,
         biology::{Biology, Litter},
         eyespots,
         genome::Gene,
@@ -59,7 +59,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(1.6, 2.2, 5.8).extend(0.0);
 }
 
@@ -69,7 +69,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// body hangs behind and below it like a pendulum, keeping the cup steady as a passing host moves
 /// through the current. A row of eyespots arcs over the cup's rim, and the broad wings, folds of
 /// the body wall like all its kin's, are stretched over many fine struts.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let sway = (c.animation.z * 1.0 + p.z * 0.5).sin() * 0.08 * (p.z + 2.6).max(0.0);
     let droop = (0.006 + c.gene(DROOP) * 0.012) * (p.z + 2.6).max(0.0).power(2);
     let q = p - vec3(sway, -droop, 0.0);
@@ -129,7 +129,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(2.00, 0.40, 0.55, 1.00))
 .marked(vec4(3.00, 5.00, 0.80, 0.40), vec3(0.95, 0.80, 0.85));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

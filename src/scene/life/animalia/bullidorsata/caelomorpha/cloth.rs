@@ -1,4 +1,4 @@
-use crate::scene::{life::CreatureInstance, math::Power, planet::GRAVITY};
+use crate::scene::{life::Bubbleback, math::Power, planet::GRAVITY};
 use core::array::from_fn;
 use spirv_std::glam::{Vec3, vec3};
 
@@ -98,11 +98,11 @@ impl Cloth {
         }
     }
 
-    pub fn write(&self, c: &mut CreatureInstance, ribbon: usize) {
-        c.previous_cloth[ribbon] = c.cloth[ribbon];
+    pub fn write(&self, c: &mut Bubbleback, ribbon: usize) {
+        c.previous_curtains[ribbon] = c.curtains[ribbon];
         for row in 0..12 {
             for col in 0..3 {
-                c.cloth[ribbon][row][col] = self.points[row * 3 + col].extend(0.0);
+                c.curtains[ribbon][row][col] = self.points[row * 3 + col].extend(0.0);
                 c.opaque_bounds = c
                     .opaque_bounds
                     .truncate()
@@ -117,7 +117,7 @@ impl Cloth {
 /// world the clock runs for hours.
 const SETTLE: f32 = 3.0;
 
-pub fn prepare(c: &mut CreatureInstance, ribbon: usize, anchor: Vec3, length: f32, width: f32) {
+pub fn prepare(c: &mut Bubbleback, ribbon: usize, anchor: Vec3, length: f32, width: f32) {
     // Settled from two starts on a fixed grid, the later fading in as the earlier ages out: smooth
     // from one moment to the next, though each is simulated afresh.
     let end = 2.0 + c.animation.z.max(0.0);
@@ -135,7 +135,7 @@ pub fn prepare(c: &mut CreatureInstance, ribbon: usize, anchor: Vec3, length: f3
         *point = point.lerp(other, weight);
     }
     cloth.write(c, ribbon);
-    c.previous_cloth[ribbon] = c.cloth[ribbon];
+    c.previous_curtains[ribbon] = c.curtains[ribbon];
 }
 
 #[cfg(test)]

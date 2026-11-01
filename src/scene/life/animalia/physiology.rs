@@ -428,10 +428,7 @@ impl Vitals {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::life::{
-        KINDS,
-        organs::{Strike, Wound},
-    };
+    use crate::scene::life::{Injury, KINDS, organs::Strike};
     use spirv_std::glam::vec3;
 
     #[test]
@@ -543,7 +540,7 @@ mod tests {
                 to: pump - vec3(0.0, 1.0, 0.0),
                 radius: 0.3,
                 force: 1.0,
-                wound: Wound::Pierce,
+                injury: Injury::Pierce,
             },
             10.0,
         );
@@ -561,7 +558,7 @@ mod tests {
                 to: float + vec3(6.0, 0.0, 0.0),
                 radius: 0.6,
                 force: 1.0,
-                wound: Wound::Slash,
+                injury: Injury::Slash,
             },
             10.0,
         );

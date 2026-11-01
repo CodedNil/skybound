@@ -1,6 +1,6 @@
 use crate::scene::{
     life::{
-        CLUTCH, CreatureInstance, FULL_POUCH, Look,
+        Body, CLUTCH, CreatureInstance, FULL_POUCH, Look,
         biology::Biology,
         ellipsoid,
         genome::Gene,
@@ -9,7 +9,10 @@ use crate::scene::{
     },
     math::Power,
 };
-use core::f32::consts::TAU;
+use core::{
+    f32::consts::TAU,
+    ops::{Deref, DerefMut},
+};
 use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -22,6 +25,103 @@ pub mod sanguinivora;
 pub mod tetralata;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// What every animal adds to an organism: how its body moved this step, what its life has done to
+/// its hide short of wounding it, what it stores and carries that shows, and where it carries its
+/// young.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Animal {
+    pub organism: CreatureInstance,
+    /// What physics did to its body this step: its wingbeat phase, how hard it is working, how
+    /// wide its mouth gapes, and whether it was set at all.
+    pub motion: Vec4,
+    pub previous_motion: Vec4,
+    /// What its life has done to its hide that is no wound: how overgrown with moss and lumaweed,
+    /// and how blunted its edges and spines.
+    pub hide: Vec4,
+    /// What it stores and carries that shows: how much iron is laid into it, how far through
+    /// carrying young it is, how many it carries, and how many eggs it has glued to its body.
+    pub stores: Vec4,
+    /// Its brood chamber, where it swells as its young grow: the centre in its body's frame and
+    /// the chamber's size.
+    pub belly: Vec4,
+}
+
+impl Deref for Animal {
+    type Target = CreatureInstance;
+    fn deref(&self) -> &CreatureInstance {
+        &self.organism
+    }
+}
+
+impl DerefMut for Animal {
+    fn deref_mut(&mut self) -> &mut CreatureInstance {
+        &mut self.organism
+    }
+}
+
+impl Body for Animal {
+    fn organism(&self) -> &CreatureInstance {
+        &self.organism
+    }
+    fn carrying(&self) -> (Vec4, Vec4) {
+        (self.belly, self.stores)
+    }
+}
+
+/// Wings, as the two lineages that fly by them each grew them: how torn each is, fore left, fore
+/// right, hind left and hind right, from whole to gone, and how scarred where tears healed.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Wings {
+    pub torn: Vec4,
+    pub scarred: Vec4,
+}
+
+/// A tail and trailing ribbons, posed by simulating them each frame, with where the tail was last
+/// frame for motion vectors.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Rig {
+    pub tail: [Vec4; 6],
+    pub previous_tail: [Vec4; 6],
+    pub ribbons: [Vec4; 30],
+}
+
+impl Rig {
+    /// How far a point along the tail moved since last frame with its posed chain, the tail drawn
+    /// at `scale` of its knots' spacing.
+    pub fn swung(&self, point: Vec3, scale: Vec3) -> Vec3 {
+        let length = self.tail[5].z - self.tail[0].z;
+        if point.z <= self.tail[0].z || length <= 0.01 {
+            return Vec3::ZERO;
+        }
+        let fraction = ((point.z - self.tail[0].z) / length).clamp(0.0, 1.0) * 5.0;
+        let index = (fraction as usize).min(4);
+        let delta = self.previous_tail[index]
+            .lerp(self.previous_tail[index + 1], fraction - index as f32)
+            - self.tail[index].lerp(self.tail[index + 1], fraction - index as f32);
+        delta.truncate() * scale
+    }
+}
+
+/// An animal's instance, whatever its lineage adds.
+pub trait Creature: Body {
+    fn animal(&self) -> &Animal;
+}
+
+/// An animal that flies on wings.
+pub trait Flier: Creature {
+    fn wings(&self) -> &Wings;
+}
+
+/// An animal with a tail and trailing ribbons, posed each frame.
+pub trait Rigged: Creature {
+    fn rig(&self) -> &Rig;
+    /// The organism and its rig together, to pose one from the other.
+    fn rigging(&mut self) -> (&mut CreatureInstance, &mut Rig);
+}
 
 /// The temper every animal is born with, in its kingdom's part of the genome: how bold, how drawn
 /// to its own kind, how aggressive, how restless, how hungry by nature, how patient, and how
@@ -62,13 +162,13 @@ taxon!(
 );
 
 /// Render the body in its coat and its wing pairs; a pair of no span is absent.
-pub fn render_wings(
+pub fn render_wings<C: Flier>(
     ray: Ray,
-    c: &CreatureInstance,
-    surface: impl Fn(Vec3, &CreatureInstance) -> Surface,
+    c: &C,
+    surface: impl Fn(Vec3, &C) -> Surface,
     look: Look,
 ) -> TraceResult {
-    let body = |p: Vec3, c: &CreatureInstance| with_wings(surface(p, c), p, c, look);
+    let body = |p: Vec3, c: &C| with_wings(surface(p, c), p, c, look);
     let mut result = TraceResult::opaque(trace(ray, c, body, look));
     visit_wings(ray, c, look, |hit| result.add(hit));
     result
@@ -131,7 +231,8 @@ fn hide(p: Vec3, c: &CreatureInstance, look: Look, distance: f32) -> f32 {
 ///
 /// The frames grow out of the body, blended in at the roots so each wing visibly springs from the
 /// flank. The young have their own forms, buds and all.
-pub fn with_wings(mut body: Surface, p: Vec3, c: &CreatureInstance, look: Look) -> Surface {
+pub fn with_wings<C: Flier>(mut body: Surface, p: Vec3, creature: &C, look: Look) -> Surface {
+    let c = creature.animal();
     if c.life.w > 0.0 {
         return body;
     }
@@ -142,7 +243,7 @@ pub fn with_wings(mut body: Surface, p: Vec3, c: &CreatureInstance, look: Look) 
     for index in 0..2 {
         let wing = look.wings[index];
         if wing.x > 0.0 {
-            frame = frame.min(wing_bones(p, c, look, index));
+            frame = frame.min(wing_bones(p, creature, look, index));
         }
     }
     let joined = smooth_min(body.distance, frame, look.wings[0].y * 0.12);
@@ -175,7 +276,7 @@ pub fn with_wings(mut body: Surface, p: Vec3, c: &CreatureInstance, look: Look) 
 /// skin on the back opening forwards and upwards, so nothing can fall out of it towards the aur:
 /// flat when empty and swollen when full. The young in it are animals of their own, drawn where
 /// they sit.
-fn brood(surface: &mut Surface, p: Vec3, c: &CreatureInstance, at: Vec4) {
+fn brood(surface: &mut Surface, p: Vec3, c: &Animal, at: Vec4) {
     let q = p - vec3(0.0, at.x, at.y);
     if c.kind.z == CLUTCH {
         let angle = (q.y / at.w).atan2(q.x / at.z);
@@ -230,7 +331,7 @@ fn brood(surface: &mut Surface, p: Vec3, c: &CreatureInstance, at: Vec4) {
 }
 
 /// The wing membranes of a species' look along a ray.
-pub fn visit_wings<F: FnMut(Hit)>(ray: Ray, c: &CreatureInstance, look: Look, mut emit: F) {
+pub fn visit_wings<C: Flier, F: FnMut(Hit)>(ray: Ray, c: &C, look: Look, mut emit: F) {
     for index in 0..2 {
         let wing = look.wings[index];
         if wing.x <= 0.0 {

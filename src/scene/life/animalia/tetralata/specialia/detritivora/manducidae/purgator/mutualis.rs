@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
         biology::{Biology, Litter},
         capsule, eyespots,
@@ -66,7 +66,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(4.0, 3.0, 5.2).extend(0.0);
     rig_tentacles(c, MOUTH, 0.7, ORAL_PAIRS);
 }
@@ -81,7 +81,7 @@ const MOUTH: Vec3 = vec3(0.0, -0.45, -1.7);
 /// clear of the host. Two long feelers search ahead, and a row of eyes round the rim of the sole
 /// watches the skin beneath. Down the back runs a raised stripe in a signal colour, which hosts
 /// learn to tolerate.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let dome = rounded(p - vec3(0.0, 0.25, 0.0), vec3(1.5, 0.95, 2.1));
     let body = dome.max(-(p.y + 0.35));
     let mut hit = Surface::new(body, 0);
@@ -156,7 +156,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(3.50, 0.30, 0.30, 0.70))
 .marked(vec4(3.00, 4.00, 0.80, 0.45), vec3(0.90, 0.95, 0.90));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

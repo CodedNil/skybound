@@ -1,6 +1,6 @@
 pub use super::render_wings;
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::curved_tube,
     biology::{Biology, Litter},
     genome::Gene,
@@ -63,7 +63,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(3.6, 3.0, 3.6).extend(0.0);
 }
 
@@ -77,7 +77,7 @@ const MOUTH: Vec3 = vec3(0.0, -0.35, -1.05);
 /// five hooked fingers, curving forwards and down and in again, which closes round a drifting scrap
 /// and holds it while the animal feeds on the wing; two domed eyes beneath the head look down into
 /// the cage and the air below.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let body = tapered_tail(
         p,
         vec3(0.0, 0.05, -0.55),
@@ -145,7 +145,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(7.00, 0.50, 0.15, 0.40))
 .marked(vec4(2.00, 4.00, 0.90, 0.42), vec3(0.96, 0.92, 0.74));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

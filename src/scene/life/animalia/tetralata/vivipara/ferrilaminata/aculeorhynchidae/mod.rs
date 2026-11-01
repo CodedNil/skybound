@@ -29,13 +29,14 @@ mod nature {
     //! gliding on rising air and court spiralling up together.
 
     use crate::scene::life::{
+        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, glide_asleep, spiral},
             nature::lead,
             tetralata::{PLAY, vivipara::ETHOLOGY as LIVE_BEARER},
         },
         behaviour::{Activity, Goal},
-        organs::{Strike, Wound},
+        organs::Strike,
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
@@ -110,7 +111,7 @@ mod nature {
                 to: at + aim.along * span * 0.3,
                 radius: aim.extent.min_element() * 0.05,
                 force: 1.2,
-                wound: Wound::Pierce,
+                injury: Injury::Pierce,
             },
             stun: 25.0,
             rest: 8.0,

@@ -20,7 +20,7 @@ use bevy::{
 use skybound::scene::{
     aur,
     life::{
-        CreatureInstance, Kind,
+        Drawn, Kind, Tetralate,
         animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
         behaviour::{Motion, Senses},
         development,
@@ -34,7 +34,7 @@ const ROSETTE: Vec3 = vec3(0.0, 5.8, 2.0);
 
 #[derive(Resource, Clone, Default, ExtractResource)]
 #[extract_app(RenderApp)]
-pub struct PlayerModel(pub [CreatureInstance; 2]);
+pub struct PlayerModel(pub [Tetralate; 2]);
 
 #[derive(Component)]
 pub struct Player;
@@ -181,7 +181,7 @@ fn instance(
     world: &WorldData,
     physiology: Option<&Physiology>,
     individual: Option<&Individual>,
-) -> CreatureInstance {
+) -> Tetralate {
     let radius = if kind == Kind::Nae {
         nae::RENDER_RADIUS
     } else {
@@ -190,7 +190,7 @@ fn instance(
     let dive = (-transform.forward().dot(world.up(transform.translation))).clamp(0.0, 1.0);
     let stroke = (time * 4.0).sin() * (0.06 + (speed / 100.0).min(1.0) * 0.28) * (1.0 - dive);
     let fold = dive * 1.1;
-    CreatureInstance::specimen(
+    Drawn::specimen(
         transform.translation.extend(radius).to_scene(),
         transform.rotation.to_array().into(),
         Vec4::new(stroke, fold, time, speed).to_scene(),
@@ -201,6 +201,8 @@ fn instance(
         ),
         individual.map_or(kind as u32 + 1, |identity| identity.0),
     )
+    .tetralate()
+    .expect("the player and their mount are tetralates")
 }
 
 fn extract_player(
@@ -233,7 +235,7 @@ fn extract_player(
     ];
     for (index, mut pose) in poses.into_iter().enumerate() {
         if index == 1 && !matches!(flight.mode, ControlMode::Flying) {
-            for (knot, point) in pose.tail.iter_mut().zip([
+            for (knot, point) in pose.rig.tail.iter_mut().zip([
                 vec3(0.0, -0.08, 0.38),
                 vec3(0.0, -0.6, 0.7),
                 vec3(0.0, -1.6, 0.85),
@@ -252,7 +254,7 @@ fn extract_player(
             pose.previous_rotation = old.rotation;
             pose.previous_animation = old.animation;
             pose.previous_proportions = old.proportions;
-            pose.previous_tail = old.tail;
+            pose.rig.previous_tail = old.rig.tail;
         }
         model.0[index] = pose;
     }
@@ -297,7 +299,7 @@ fn pilot(
 fn contact(
     position: Vec3,
     mount: &Transform,
-    c: &CreatureInstance,
+    c: &Tetralate,
     world: &WorldData,
 ) -> Option<PerchAnchor> {
     let mut nearest = 1.2f32;
@@ -521,7 +523,7 @@ fn advance_companion(
 fn separate_from_mount(
     player: &mut Transform,
     mount: &Transform,
-    body: &CreatureInstance,
+    body: &Tetralate,
     velocity: &mut Vec3,
     mount_velocity: Vec3,
 ) {

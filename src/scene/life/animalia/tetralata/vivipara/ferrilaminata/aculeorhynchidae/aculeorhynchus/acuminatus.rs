@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     ellipsoid,
@@ -65,7 +65,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(4.0, 4.0, 15.0).extend(0.0);
     rig_tentacles(c, MOUTH, 1.8, ORAL_PAIRS);
 }
@@ -115,7 +115,7 @@ fn girth(z: f32) -> f32 {
 /// along the back with small iron scutes, and drawn out into a long tail ending in a swallow-tailed
 /// fork that steers the dive. Beneath the head, a rasping mouth and three pairs of long hooked
 /// tentacles catch and hold what the stylet has stilled.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let grown = 0.15 + 0.85 * c.life.y * c.life.y;
     // One smooth body of revolution, deeper than wide, for the dive.
     let narrow = vec3(p.x * 1.15, (p.y - 0.05) * 0.9, p.z);
@@ -183,7 +183,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// everts as it feeds into a short cone ringed with rows of hooked, iron-hardened teeth that it
 /// works against what its tentacles hold, tearing it apart a mouthful at a time. In flight it is
 /// drawn in, only the lip showing.
-fn rasp(hit: &mut Surface, p: Vec3, c: &CreatureInstance) {
+fn rasp(hit: &mut Surface, p: Vec3, c: &Tetralate) {
     let axis = vec3(0.0, -0.93, -0.37);
     let across = vec3(1.0, 0.0, 0.0);
     let up = axis.cross(across);
@@ -247,7 +247,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(1.10, 0.30, 0.55, 1.00))
 .marked(vec4(4.00, 4.00, 0.80, 0.45), vec3(0.06, 0.08, 0.12));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

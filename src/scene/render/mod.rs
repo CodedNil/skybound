@@ -4,7 +4,8 @@ use crate::scene::{
     aur::{CURRENT, EJECTION_CELL, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
     climate::{CLOUD_TOP, cloud_wind},
     life::{
-        self, CreatureInstance, HERD,
+        self, BLOOD_FEEDER, BUBBLEBACK, BloodFeeder, Bubbleback, CreatureInstance, HERD, Plant,
+        TETRALATE, Tetralate,
         surface::{Hit, Ray},
     },
     math::intersect_sphere,
@@ -345,7 +346,11 @@ pub fn creature_quad(
     #[spirv(vertex_index)] vertex: u32,
     #[spirv(instance_index)] instance: u32,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] creatures: &[CreatureInstance],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] plants: &[Plant],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] bubblebacks: &[Bubbleback],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] blood_feeders: &[BloodFeeder],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] tetralates: &[Tetralate],
+    #[spirv(spec_constant(id = 0, default = 0))] species: u32,
     #[spirv(position)] out_position: &mut Vec4,
     #[spirv(flat, location = 0)] out_instance: &mut u32,
 ) {
@@ -362,13 +367,24 @@ pub fn creature_quad(
             -1.0
         },
     );
-    let c = &creatures[instance as usize];
-    let radius = c.position.w;
+    // The species' own buffer, by the instance its lineage is drawn with.
+    let index = instance as usize;
+    let layout = life::layout_of(species);
+    let position = if layout == TETRALATE {
+        tetralates[index].position
+    } else if layout == BLOOD_FEEDER {
+        blood_feeders[index].position
+    } else if layout == BUBBLEBACK {
+        bubblebacks[index].position
+    } else {
+        plants[index].position
+    };
+    let radius = position.w;
     if radius <= 0.0 {
         *out_position = Vec4::ZERO;
         return;
     }
-    let to = c.position.xyz() - frame.view.world_position.xyz();
+    let to = position.xyz() - frame.view.world_position.xyz();
     let distance = to.length();
     if distance < radius * 1.5 {
         *out_position = corner.extend(0.5).extend(1.0);
@@ -384,7 +400,7 @@ pub fn creature_quad(
     let up = right.cross(forward);
     // Wide enough at the centre's distance to hold the cone of rays that graze the sphere.
     let half = radius * distance / (distance * distance - radius * radius).sqrt() * 1.05;
-    let point = c.position.xyz() + (right * corner.x + up * corner.y) * half;
+    let point = position.xyz() + (right * corner.x + up * corner.y) * half;
     *out_position = frame.view.clip_from_world * point.extend(1.0);
 }
 
@@ -397,7 +413,10 @@ pub fn creature(
     #[spirv(frag_coord)] fragment: Vec4,
     #[spirv(flat, location = 0)] instance: u32,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] creatures: &[CreatureInstance],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 1)] plants: &[Plant],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 2)] bubblebacks: &[Bubbleback],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 3)] blood_feeders: &[BloodFeeder],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 4)] tetralates: &[Tetralate],
     #[spirv(spec_constant(id = 0, default = 0))] species: u32,
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
@@ -406,11 +425,36 @@ pub fn creature(
 ) {
     let uv = (fragment.xy() - frame.viewport.xy()) / frame.viewport.zw();
     let ray = scene_ray(uv, frame, true);
-    let c = &creatures[instance as usize];
-    let hit = if reaches(ray, c, T_MAX) {
-        life::render_opaque_of(species, ray, c)
+    let index = instance as usize;
+    let layout = life::layout_of(species);
+    let hit = if layout == TETRALATE {
+        let c = &tetralates[index];
+        if reaches(ray, c, T_MAX) {
+            life::render_tetralate(species, ray, c)
+        } else {
+            Hit::MISS
+        }
+    } else if layout == BLOOD_FEEDER {
+        let c = &blood_feeders[index];
+        if reaches(ray, c, T_MAX) {
+            life::render_blood_feeder(species, ray, c)
+        } else {
+            Hit::MISS
+        }
+    } else if layout == BUBBLEBACK {
+        let c = &bubblebacks[index];
+        if reaches(ray, c, T_MAX) {
+            life::render_bubbleback(species, ray, c)
+        } else {
+            Hit::MISS
+        }
     } else {
-        Hit::MISS
+        let c = &plants[index];
+        if reaches(ray, c, T_MAX) {
+            life::render_plant(species, ray, c)
+        } else {
+            Hit::MISS
+        }
     };
     if !hit.is_hit() {
         spirv_std::arch::kill();
@@ -561,8 +605,8 @@ pub fn volume(
     #[spirv(descriptor_set = 0, binding = 14)] cloud_towers: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 15)] shapes_texture: &Image!(3D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 17)] cloud_slab: &Image!(2D, type=f32, sampled=true),
-    #[spirv(descriptor_set = 0, binding = 18)] cloud_front: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 19)] cloud_slab: &Image!(2D, type=f32, sampled=true),
+    #[spirv(descriptor_set = 0, binding = 20)] cloud_front: &Image!(2D, type=f32, sampled=true),
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_motion: &mut Vec4,
 ) {
@@ -642,7 +686,9 @@ pub fn transparent(
     #[spirv(descriptor_set = 0, binding = 15)] shapes_texture: &Image!(3D, type=f32, sampled=true),
     #[spirv(descriptor_set = 0, binding = 11)] cloud_layers: &Image!(2D, type=f32, sampled=true),
     #[spirv(storage_buffer, descriptor_set = 0, binding = 12)] _cloud_cells: &[Vec4],
-    #[spirv(storage_buffer, descriptor_set = 0, binding = 16)] creatures: &[CreatureInstance],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 16)] bubblebacks: &[Bubbleback],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 17)] blood_feeders: &[BloodFeeder],
+    #[spirv(storage_buffer, descriptor_set = 0, binding = 18)] tetralates: &[Tetralate],
     #[spirv(location = 0)] out_color: &mut Vec4,
     #[spirv(location = 1)] out_transmittance: &mut Vec4,
     #[spirv(location = 2)] out_prefix: &mut Vec4,
@@ -660,10 +706,19 @@ pub fn transparent(
         count: 0,
     };
     energy_layers(ray, &frame.view, &mut hits);
+    // Plants have no thin surfaces of their own; every other lineage's wings and envelopes.
     for i in 0..HERD {
-        let c = &creatures[i];
+        let c = &tetralates[i];
         if reaches(ray, c, ray.max_distance) {
-            life::visit_thin(ray, c, |hit| hits.add(hit));
+            life::visit_tetralate_thin(c.kind.x, ray, c, |hit| hits.add(hit));
+        }
+        let c = &blood_feeders[i];
+        if reaches(ray, c, ray.max_distance) {
+            life::visit_blood_feeder_thin(c.kind.x, ray, c, |hit| hits.add(hit));
+        }
+        let c = &bubblebacks[i];
+        if reaches(ray, c, ray.max_distance) {
+            life::visit_bubbleback_thin(c.kind.x, ray, c, |hit| hits.add(hit));
         }
     }
     for i in 0..2 {

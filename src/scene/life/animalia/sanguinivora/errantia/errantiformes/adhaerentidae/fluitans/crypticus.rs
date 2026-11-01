@@ -9,7 +9,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        BloodFeeder, Look,
         biology::{Biology, Litter},
         capsule,
         genome::Gene,
@@ -61,7 +61,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     prepare_pose(c, 4.5, 9.0, 2);
     c.opaque_bounds = vec3(3.0, 3.0, 18.0).extend(0.0);
     // Tendrils off the end of the stalk, finishing the mimicry of a torn-off leaf.
@@ -71,7 +71,7 @@ pub fn animate(c: &mut CreatureInstance) {
 
 /// A leaf: a cupped, lance-shaped blade with a raised midrib and paired side veins, its margin
 /// lobed like the leaflets it hides among.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let along = (p.z / 4.2).clamp(-1.0, 1.0);
     let lobes = 1.0 + (0.06 + c.gene(LOBES) * 0.16) * (p.z * 3.1).sin();
     let width = 1.6 * (1.0 - along * along).max(0.0).sqrt() * (1.0 - along * 0.25) * lobes;
@@ -118,7 +118,7 @@ pub const LOOK: Look = Look::coat(
 )
 .skinned(vec4(1.0, 0.6, 2.0, 0.10));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

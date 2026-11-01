@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Bubbleback, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::{Biology, Litter},
     ellipsoid,
@@ -77,7 +77,7 @@ const CHAMBERS: [GasChamber; 3] = [
 ];
 
 #[cfg(not(target_arch = "spirv"))]
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Bubbleback) {
     c.opaque_bounds = vec3(5.2, 3.5, 5.2).extend(0.0);
     for i in 0..3 {
         cloth::prepare(
@@ -90,7 +90,7 @@ pub fn animate(c: &mut CreatureInstance) {
     }
 }
 
-pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, _: &Bubbleback) -> Surface {
     let mut distance = ellipsoid(p - vec3(0.0, -0.35, 0.0), vec3(0.9, 0.4, 1.1));
     for i in -2..=2 {
         let x = i as f32;
@@ -112,7 +112,7 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
 /// The current presses unevenly across it and turns it to face useful air; behind, it thins to a
 /// lip along which the feeding ribbons are rooted, trailing clear of the body into the
 /// neighbouring streams.
-pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn envelope(p: Vec3, c: &Bubbleback) -> Surface {
     let front = (-p.z / 4.6).clamp(0.0, 1.0);
     let radii = vec3(
         4.3 * (1.0 - (0.6 + c.gene(KEEL) * 0.25) * front * front),
@@ -140,7 +140,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
     let mut result = drift_body(
         ray,
         c,

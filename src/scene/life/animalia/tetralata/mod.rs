@@ -2,11 +2,20 @@ pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
 use crate::scene::{
-    life::{CreatureInstance, biology::Biology, genome::Gene, smooth_min, tapered_tail},
+    life::{
+        Body, CreatureInstance, Kind,
+        animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
+        biology::Biology,
+        genome::Gene,
+        smooth_min, tapered_tail,
+    },
     planet::GRAVITY,
 };
-use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Quat, Vec3, vec3};
+use core::{
+    f32::consts::PI,
+    ops::{Deref, DerefMut},
+};
+use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod specialia;
@@ -23,6 +32,74 @@ pub const FLIGHT_MUSCLE: Organ =
     Organ::new("flight muscle", Function::Flight, vec3(0.52, 0.16, 0.20));
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// What a tetralate adds to an animal: its four wings, its tail and ribbons, and the knots of its
+/// mouth tentacles, which it handles food and the world with.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Tetralate {
+    pub animal: Animal,
+    pub wings: Wings,
+    pub rig: Rig,
+    /// The knots of each mouth tentacle, laid out by [`slot`], and where they were last frame.
+    pub tentacles: [[[Vec4; 3]; KNOTS]; 3],
+    pub previous_tentacles: [[[Vec4; 3]; KNOTS]; 3],
+}
+
+impl Deref for Tetralate {
+    type Target = Animal;
+    fn deref(&self) -> &Animal {
+        &self.animal
+    }
+}
+
+impl DerefMut for Tetralate {
+    fn deref_mut(&mut self) -> &mut Animal {
+        &mut self.animal
+    }
+}
+
+impl Body for Tetralate {
+    fn organism(&self) -> &CreatureInstance {
+        &self.animal.organism
+    }
+    fn carrying(&self) -> (Vec4, Vec4) {
+        self.animal.carrying()
+    }
+    fn swung(&self, point: Vec3) -> Vec3 {
+        // The Naeturidae's tail shafts are drawn wider than their knots.
+        let kind = self.kind.x;
+        let scale = if kind == Kind::Nae as u32 {
+            vec3(0.2, 0.25, 1.0)
+        } else if kind == Kind::Naetu as u32 {
+            vec3(3.0, 3.0, 1.0)
+        } else {
+            Vec3::ONE
+        };
+        self.rig.swung(point, scale)
+    }
+}
+
+impl Creature for Tetralate {
+    fn animal(&self) -> &Animal {
+        &self.animal
+    }
+}
+
+impl Flier for Tetralate {
+    fn wings(&self) -> &Wings {
+        &self.wings
+    }
+}
+
+impl Rigged for Tetralate {
+    fn rig(&self) -> &Rig {
+        &self.rig
+    }
+    fn rigging(&mut self) -> (&mut CreatureInstance, &mut Rig) {
+        (&mut self.animal.organism, &mut self.rig)
+    }
+}
 
 /// What the tetralates are born with beyond every animal's temper.
 ///
@@ -59,8 +136,7 @@ const KNOTS: usize = 12;
 /// How long a tentacle is settled for before it is drawn.
 const SETTLE: f32 = 1.5;
 
-/// Where tentacle `index` keeps its knots: the instance's cloth slots, which no four-winged animal
-/// uses for cloth.
+/// Where tentacle `index` keeps its knots among the instance's tentacle knots.
 const fn slot(index: usize) -> (usize, usize) {
     (index / 3, index % 3)
 }
@@ -91,7 +167,7 @@ fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
 /// forward and in beneath the face, but given to gravity in the animal's own frame and to the air
 /// streaming past as it flies, and writhing slowly as muscle waves run down it. Settled from that
 /// pose over the last second and a half, which is all the damping remembers.
-pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u32) {
+pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
     let turn = Quat::from_array(c.rotation.to_array()).conjugate();
@@ -180,9 +256,9 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
         let (sheet, column) = slot(index);
         for (knot, point) in points.iter().enumerate() {
             let t = knot as f32 / (KNOTS - 1) as f32;
-            c.cloth[sheet][knot][column] = point.extend(radius * (1.0 - t * 0.85));
+            c.tentacles[sheet][knot][column] = point.extend(radius * (1.0 - t * 0.85));
         }
-        c.previous_cloth[sheet] = c.cloth[sheet];
+        c.previous_tentacles[sheet] = c.tentacles[sheet];
     }
 }
 
@@ -190,7 +266,7 @@ pub fn rig_tentacles(c: &mut CreatureInstance, mouth: Vec3, scale: f32, pairs: u
 /// faintly ringed with muscle.
 pub fn oral_tentacles(
     point: Vec3,
-    creature: &CreatureInstance,
+    creature: &Tetralate,
     mouth: Vec3,
     scale: f32,
     pairs: u32,
@@ -206,15 +282,15 @@ pub fn oral_tentacles(
             break;
         }
         let (sheet, column) = slot(index);
-        let root = creature.cloth[sheet][0][column];
+        let root = creature.tentacles[sheet][0][column];
         if (point - root.truncate()).length()
             > scale * 2.6 * (0.8 + creature.gene(REACH) * 0.4) + root.w
         {
             continue;
         }
         for knot in 0..KNOTS - 1 {
-            let a = creature.cloth[sheet][knot][column];
-            let b = creature.cloth[sheet][knot + 1][column];
+            let a = creature.tentacles[sheet][knot][column];
+            let b = creature.tentacles[sheet][knot + 1][column];
             let t = knot as f32 / (KNOTS - 1) as f32;
             let rings = 1.0 + (t * PI * 14.0).sin() * 0.05;
             distance = smooth_min(
@@ -229,9 +305,9 @@ pub fn oral_tentacles(
 
 /// How far its mouth gapes: wide as it bites, parted as it strikes, shut in flight or when it is
 /// drawn alone.
-pub fn gape(c: &CreatureInstance) -> f32 {
-    if c.dynamics.w > 0.0 {
-        c.dynamics.z.clamp(0.0, 1.0)
+pub fn gape(c: &Animal) -> f32 {
+    if c.motion.w > 0.0 {
+        c.motion.z.clamp(0.0, 1.0)
     } else {
         0.0
     }

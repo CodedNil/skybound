@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, pick, rotate, speckle},
@@ -42,7 +42,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(11.0, 13.0, 11.0).extend(0.0);
 }
 
@@ -88,7 +88,7 @@ fn sail(p: Vec3, form: u32, tall: f32, wide: f32, belly: f32) -> Surface {
 /// veins to the charge, and stores what it catches in glowing nodes along the body. Plants grow
 /// two sails or five, battened triangles, rounded kites or forked tongues; tall bodies or short;
 /// few stores or many; and some raise lightning spires above the sails, singly or in a crown.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let height = 6.0 + gene(c, 1.0) * 5.0;
     let top = vec3(0.0, FLOAT.y + 1.0 + height, 0.0);
     let mut shape = Surface::new(ellipsoid(p - FLOAT, vec3(1.15, 1.25, 1.15)), 3);
@@ -150,7 +150,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // Carbon-black and conductive, for it feeds on lightning, and arcs show blue along it.
 pub const LOOK: Look = Look::plant(vec3(0.08, 0.09, 0.12), vec3(0.55, 0.7, 1.0));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }
 

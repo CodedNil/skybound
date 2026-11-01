@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, frond, gene, pick, rosette, speckle},
@@ -41,14 +41,14 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(5.0, 3.0, 5.0).extend(0.0);
 }
 
 /// How far out from the patch's middle a point lies, one at its edge. A patch spreads as the
 /// surface it grew on let it: a round cushion, a long strip along a crease of bark or shell, or a
 /// lobed mat that crept out along several ridges at once.
-fn reach(c: &CreatureInstance, at: Vec2) -> f32 {
+fn reach(c: &Plant, at: Vec2) -> f32 {
     let form = pick(c, 1.0, 3);
     let stretch = if form == 1 {
         vec2(1.35, 0.55)
@@ -72,7 +72,7 @@ fn reach(c: &CreatureInstance, at: Vec2) -> f32 {
 /// surfaces let them: some tufts open into starry rosettes, some rise as feathery fronds, some
 /// stay tight round knobs; some patches send up stalked spore capsules, and some hold beads of
 /// dew that tiny animals drink.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let height = 0.35 + gene(c, 5.0) * 0.7;
     let top = |at: Vec2| {
         let out = reach(c, at);
@@ -140,6 +140,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // the polar sunburst's light across its whole spectrum, wasting little in reflection.
 pub const LOOK: Look = Look::plant(vec3(0.28, 0.08, 0.18), vec3(0.55, 0.15, 0.3));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

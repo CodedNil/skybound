@@ -28,13 +28,14 @@ mod nature {
     //! than spit, for neither can spare it.
 
     use crate::scene::life::{
+        Injury,
         animalia::{
             AGGRESSION,
             mind::{Aim, Blow, Ethology, Intent, Mind, Sighting, Situation, Urges},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
         behaviour::{Activity, Goal},
-        organs::{Strike, Wound},
+        organs::Strike,
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
@@ -85,7 +86,7 @@ mod nature {
                 to: at - aim.toward * aim.extent.min_element() * 0.4,
                 radius: aim.extent.min_element() * 0.45,
                 force: 0.8,
-                wound: Wound::Burn,
+                injury: Injury::Burn,
             },
             stun: 2.0,
             rest: 5.0,

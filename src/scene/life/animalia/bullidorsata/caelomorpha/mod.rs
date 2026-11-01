@@ -1,7 +1,7 @@
 pub use super::BIOLOGY;
 use crate::scene::{
     life::{
-        CreatureInstance, ellipsoid, smooth_min,
+        Bubbleback, ellipsoid, smooth_min,
         surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material},
     },
     math::Power,
@@ -137,8 +137,8 @@ fn ribbon_coordinates(p: Vec3, points: &[[Vec4; 3]; 12]) -> (usize, f32, f32) {
     closest
 }
 
-pub fn ribbon_distance(p: Vec3, c: &CreatureInstance, ribbon: usize) -> f32 {
-    let points = &c.cloth[ribbon];
+pub fn ribbon_distance(p: Vec3, c: &Bubbleback, ribbon: usize) -> f32 {
+    let points = &c.curtains[ribbon];
     let (row, t, v) = ribbon_coordinates(p, points);
     (p - ribbon_point(points, row, t, v)).length() * 0.4 - 0.012
 }
@@ -147,9 +147,9 @@ pub fn ribbon_distance(p: Vec3, c: &CreatureInstance, ribbon: usize) -> f32 {
     clippy::needless_range_loop,
     reason = "shader code can't iterate arrays by value"
 )]
-pub fn skin<F: Fn(Vec3, &CreatureInstance) -> Surface, const N: usize>(
+pub fn skin<F: Fn(Vec3, &Bubbleback) -> Surface, const N: usize>(
     p: Vec3,
-    c: &CreatureInstance,
+    c: &Bubbleback,
     organs: F,
     chambers: &[GasChamber; N],
     scale: f32,
@@ -165,9 +165,9 @@ pub fn skin<F: Fn(Vec3, &CreatureInstance) -> Surface, const N: usize>(
     Surface::new(distance, 0)
 }
 
-fn closed_hits<F: Fn(Vec3, &CreatureInstance) -> Surface>(
+fn closed_hits<F: Fn(Vec3, &Bubbleback) -> Surface>(
     ray: Ray,
-    c: &CreatureInstance,
+    c: &Bubbleback,
     surface: F,
 ) -> [Hit; 2] {
     let front = trace_material(ray, c, &surface, |_, _| Material::skin(Vec3::ZERO, 1.0));
@@ -193,12 +193,12 @@ fn closed_hits<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     reason = "shader code can't iterate arrays by value"
 )]
 pub fn drift_body<
-    F: Fn(Vec3, &CreatureInstance) -> Surface,
-    G: Fn(Vec3, &CreatureInstance) -> Surface,
+    F: Fn(Vec3, &Bubbleback) -> Surface,
+    G: Fn(Vec3, &Bubbleback) -> Surface,
     const N: usize,
 >(
     ray: Ray,
-    c: &CreatureInstance,
+    c: &Bubbleback,
     envelope: F,
     organs: G,
     tint: Vec3,
@@ -209,7 +209,7 @@ pub fn drift_body<
     if !front.is_hit() {
         return TraceResult::MISS;
     }
-    let tissue = |p, c: &CreatureInstance| {
+    let tissue = |p, c: &Bubbleback| {
         let mut distance = organs(p, c)
             .distance
             .max(envelope(p, c).distance + scale * 0.025);
@@ -347,7 +347,7 @@ pub fn gel(p: Vec3, scale: f32, tint: Vec3) -> Material {
     material
 }
 
-pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: usize, tint: Vec3) {
+pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &Bubbleback, count: usize, tint: Vec3) {
     for i in 0..count {
         let mut offset = 0.0;
         for _ in 0..2 {
@@ -369,7 +369,7 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
             let cosine = hit.normal.dot(-ray.direction).abs();
             let local = local_ray(ray, c);
             let point = local.origin + local.direction * hit.distance();
-            let (row, t, v) = ribbon_coordinates(point, &c.cloth[i]);
+            let (row, t, v) = ribbon_coordinates(point, &c.curtains[i]);
             let margin = v.abs().smoothstep(0.78, 0.98);
             let midrib = 1.0 - v.abs().smoothstep(0.02, 0.07);
             let veins = ((row as f32 + t) * 4.0 + v.abs() * 7.0)
@@ -389,7 +389,7 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
             hit.transmittance = material.transmittance(cosine);
             hit.color_depth = material.shade(hit.normal, ray).extend(hit.distance());
             hit.previous_position = Quat::from_array(c.previous_rotation.to_array())
-                * ribbon_point(&c.previous_cloth[i], row, t, v)
+                * ribbon_point(&c.previous_curtains[i], row, t, v)
                 + c.previous_position.truncate();
             hit.part = 1;
             offset = hit.distance() + 0.07 / cosine.max(0.05);
@@ -401,17 +401,19 @@ pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &CreatureInstance, count: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::life::{Kind, development};
+    use crate::scene::life::{Drawn, Kind, development};
     use aerogigantiformes::aerogigantidae::aerogigas::auratus as aerogigas;
 
     #[test]
     fn twisted_cloth_has_no_gaps_between_patches() {
-        let c = CreatureInstance::new(Vec4::W * 25.0, Vec4::W, Vec4::ZERO, Kind::Levitans as u32);
+        let c = Drawn::new(Vec4::W * 25.0, Vec4::W, Vec4::ZERO, Kind::Levitans as u32)
+            .bubbleback()
+            .expect("a gas-bag");
         for ribbon in 0..3 {
             for row in 0..11 {
                 for t in [0.001, 0.25, 0.5, 0.75, 0.999] {
                     for v in [-0.9, -0.5, 0.0, 0.5, 0.9] {
-                        let point = ribbon_point(&c.cloth[ribbon], row, t, v);
+                        let point = ribbon_point(&c.curtains[ribbon], row, t, v);
                         assert!(
                             ribbon_distance(point, &c, ribbon) < 0.001,
                             "hole in cloth patch {row} at {t}, {v}"
@@ -424,12 +426,14 @@ mod tests {
 
     #[test]
     fn giant_skin_is_closed_from_above_below_and_both_sides() {
-        let c = CreatureInstance::new(
+        let c = Drawn::new(
             Vec3::ZERO.extend(46.0),
             Vec4::W,
             Vec4::ZERO,
             Kind::Aerogigas as u32,
-        );
+        )
+        .bubbleback()
+        .expect("a gas-bag");
         // The canopy is a vaulted dome, so rays from the sides are cast through its crown rather
         // than through the hollow beneath it.
         for direction in [Vec3::X, Vec3::Y, Vec3::Z, -Vec3::X, -Vec3::Y, -Vec3::Z] {

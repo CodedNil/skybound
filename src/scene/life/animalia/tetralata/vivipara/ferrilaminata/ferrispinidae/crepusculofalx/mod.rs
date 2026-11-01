@@ -27,13 +27,14 @@ mod nature {
     //! the jaws as they feed. They court by flickering their lures in the dark.
 
     use crate::scene::life::{
+        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, display_near, hang_still},
             nature::lead,
             tetralata::vivipara::ferrilaminata::ferrispinidae::ETHOLOGY as IRON_EDGED,
         },
         behaviour::{Activity, Goal},
-        organs::{Strike, Wound},
+        organs::Strike,
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
@@ -69,7 +70,7 @@ mod nature {
                 to: at - aim.toward * aim.extent.min_element() * 0.5,
                 radius: aim.extent.min_element() * 0.25,
                 force: 0.6 + aim.edge * 0.2,
-                wound: Wound::Bite,
+                injury: Injury::Bite,
             },
             stun: 3.0,
             rest: 2.0,

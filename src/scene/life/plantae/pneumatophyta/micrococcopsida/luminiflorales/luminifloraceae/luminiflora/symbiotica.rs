@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, leaf, pick, rotate, speckle},
@@ -42,7 +42,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(4.0, 3.0, 4.0).extend(0.0);
 }
 
@@ -53,7 +53,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// cluster, in a ring round the patch's first growth, or scattered over it; as round orbs, as
 /// teardrops, or as open cups whose glow lies inside; on short stalks or long; and some put out
 /// curling fronds between them.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let reach = 2.0 + gene(c, 1.0) * 1.3;
     let angle = p.z.atan2(p.x);
     let lobes = 0.85 + 0.15 * (angle * count(c, 2.0, 2, 5) as f32 + gene(c, 3.0) * TAU).sin();
@@ -133,7 +133,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // partners.
 pub const LOOK: Look = Look::plant(vec3(0.7, 0.68, 0.74), vec3(0.15, 0.95, 0.8));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }
 

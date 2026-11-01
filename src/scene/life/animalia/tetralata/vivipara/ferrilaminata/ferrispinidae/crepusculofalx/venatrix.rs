@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
         biology::{Biology, Litter},
         ellipsoid,
@@ -72,13 +72,13 @@ taxon!(
 /// Where the mouth tentacles hang, below the head.
 const MOUTH: Vec3 = vec3(0.0, -0.75, -4.1);
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     prepare_pose(c, 3.2, 18.0, 0);
     // The tail hangs, so its lure dangles below the hunter.
     for i in 0..6 {
         let t = i as f32 / 5.0;
-        c.tail[i].y -= t * t * (6.2 + c.gene(DANGLE) * 1.6);
-        c.tail[i].z -= t * t * 4.0;
+        c.rig.tail[i].y -= t * t * (6.2 + c.gene(DANGLE) * 1.6);
+        c.rig.tail[i].z -= t * t * 4.0;
     }
     c.opaque_bounds = vec3(6.0, 9.0, 21.0).extend(0.0);
     rig_tentacles(c, MOUTH, 0.8, ORAL_PAIRS);
@@ -90,7 +90,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// own colour; a blunt head has two great eyes on its underside, looking down for prey against the
 /// aur's glow; and a long, thin whip of a tail hangs below, ending in a lure of glowing threads.
 /// The weapon is in the wings: the forewings' leading edges are iron, curving to a scythe point.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let bulk = vec3(1.9, 0.95, 3.2);
     let body = rounded(p, bulk);
     let head = rounded(p - vec3(0.0, -0.1, -3.4), vec3(1.25, 0.85, 1.15));
@@ -108,8 +108,8 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         let t = (i + 1) as f32 / 5.0;
         whip = whip.min(tapered_tail(
             p,
-            c.tail[i].truncate(),
-            c.tail[i + 1].truncate(),
+            c.rig.tail[i].truncate(),
+            c.rig.tail[i + 1].truncate(),
             0.55 * (1.1 - t) + 0.05,
             0.55 * (0.9 - t) + 0.05,
         ));
@@ -129,7 +129,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
         }
     }
     // The lure: a bulb trailing glowing threads.
-    let end = c.tail[5].truncate();
+    let end = c.rig.tail[5].truncate();
     let mut lure = ellipsoid(p - end, vec3(0.35, 0.45, 0.35));
     let threads = 2 + (c.gene(LURE_THREADS) * 3.99) as u32;
     for thread in 0..6 {
@@ -165,7 +165,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// nothing about the hunter's face gives it away, and gaping wide when it feeds on what its wings
 /// have cut down. Rows of fine, inward-hooked teeth line both jaws and hold the meat its tentacles
 /// feed to it.
-fn maw(hit: &mut Surface, p: Vec3, c: &CreatureInstance) {
+fn maw(hit: &mut Surface, p: Vec3, c: &Tetralate) {
     let q = p - vec3(0.0, -0.32, -4.35);
     if q.length() > 1.6 {
         return;
@@ -223,7 +223,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(0.35, 0.25, 0.30, 1.30))
 .marked(vec4(6.00, 3.00, 0.70, 0.42), vec3(0.26, 0.22, 0.17));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

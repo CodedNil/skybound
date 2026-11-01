@@ -13,7 +13,7 @@ use crate::{
 use bevy::prelude::*;
 use rayon::prelude::*;
 use skybound::scene::life::{
-    CLUTCH, CreatureInstance, FULL_POUCH, HERD, KINDS, Kind,
+    CLUTCH, Drawn, FULL_POUCH, HERD, KINDS, Kind,
     animalia::physiology::{Brood, plant},
     behaviour::Activity,
     genome::Genome,
@@ -22,7 +22,7 @@ use skybound::scene::life::{
 use spirv_std::glam::Vec4 as SceneVec4;
 use std::{collections::HashMap, fmt::Write};
 
-pub(super) type Drawn<'a> = (
+pub(super) type Seen<'a> = (
     Entity,
     &'a Species,
     &'a Physiology,
@@ -71,7 +71,7 @@ pub(super) fn census(
 /// Which parents carry young, in what and how many, by entity; young drawn as part of their parent
 /// are marked zero.
 pub(super) fn carried(
-    organisms: &Query<Drawn, (Without<Player>, Without<Mount>)>,
+    organisms: &Query<Seen, (Without<Player>, Without<Mount>)>,
 ) -> HashMap<Entity, (u32, u32)> {
     let mut carrying: HashMap<Entity, (u32, u32)> = HashMap::new();
     for (entity, species, body, _, _, _, relations) in organisms {
@@ -101,9 +101,9 @@ pub(super) fn carried(
 /// pose along for motion vectors.
 pub(super) fn gather_herd(
     mut herd: ResMut<Herd>,
-    mut last: Local<HashMap<Entity, CreatureInstance>>,
+    mut last: Local<HashMap<Entity, Drawn>>,
     camera: Single<&GlobalTransform, With<Camera3d>>,
-    organisms: Query<Drawn, (Without<Player>, Without<Mount>)>,
+    organisms: Query<Seen, (Without<Player>, Without<Mount>)>,
     time: Res<Time>,
 ) {
     let eye = camera.translation();
@@ -167,7 +167,7 @@ pub(super) fn gather_herd(
             })
         })
         .collect();
-    let poses: Vec<(Entity, CreatureInstance)> = chosen
+    let poses: Vec<(Entity, Drawn)> = chosen
         .par_iter()
         .map(|shown| (shown.entity, pose(shown, now)))
         .collect();
@@ -175,15 +175,14 @@ pub(super) fn gather_herd(
     herd.0.clear();
     for (entity, mut pose) in poses {
         if let Some(old) = last.get(&entity)
-            && old.position.truncate().distance(pose.position.truncate()) < 100.0
+            && old
+                .organism()
+                .position
+                .truncate()
+                .distance(pose.organism().position.truncate())
+                < 100.0
         {
-            pose.previous_position = old.position;
-            pose.previous_rotation = old.rotation;
-            pose.previous_animation = old.animation;
-            pose.previous_dynamics = old.dynamics;
-            pose.previous_proportions = old.proportions;
-            pose.previous_tail = old.tail;
-            pose.previous_cloth = old.cloth;
+            pose.follow(old);
         }
         drawn.insert(entity, pose);
         herd.0.push(pose);
@@ -213,7 +212,7 @@ struct Shown {
 /// An organism's pose for the renderer, from what the simulation did to it: its wings where their
 /// beat has reached and spread as wide as it is working them, a plant bent by the air, and the
 /// tears, scars and wear its life has left on it.
-fn pose(shown: &Shown, now: f32) -> CreatureInstance {
+fn pose(shown: &Shown, now: f32) -> Drawn {
     let Shown {
         kind,
         age,
@@ -238,7 +237,7 @@ fn pose(shown: &Shown, now: f32) -> CreatureInstance {
     );
     let fold = if resting { 0.9 } else { tuck };
     let stroke = wingbeat.sin() * (0.05 + effort.min(1.0) * 0.35) * (1.0 - fold);
-    let mut pose = CreatureInstance::born(
+    let mut pose = Drawn::born(
         transform
             .translation
             .extend(kind.render_radius())
@@ -250,28 +249,31 @@ fn pose(shown: &Shown, now: f32) -> CreatureInstance {
         seed,
         genes,
     );
-    pose.dynamics = if plant(kind) {
-        bend.to_scene().extend(1.0)
-    } else {
-        // Jaws wide as it bites, parted as it strikes, shut otherwise.
-        let gape = match activity {
-            Activity::Feed => 1.0,
-            Activity::Strike => 0.4,
-            _ => 0.0,
-        };
-        SceneVec4::new(wingbeat, effort.min(1.0), gape, 1.0)
+    // Jaws wide as it bites, parted as it strikes, shut otherwise.
+    let gape = match activity {
+        Activity::Feed => 1.0,
+        Activity::Strike => 0.4,
+        _ => 0.0,
     };
-    pose.previous_dynamics = pose.dynamics;
-    pose.wear = SceneVec4::from_array(vitals.torn);
-    let scarred = vitals.scarred.iter().sum::<f32>() * 0.25;
-    pose.scars = SceneVec4::new(vitals.scars, blunted, scarred, vitals.overgrowth);
-    pose.wounds = vitals.wounds;
-    // A plant shows how full of water it is; an animal what it carries.
-    let water = if plant(kind) { vitals.hydration } else { 0.0 };
-    pose.stores = SceneVec4::new(vitals.iron, water, 0.0, held.1 as f32);
+    pose.organism_mut().wounds = vitals.wounds;
+    if let Drawn::Plant(plant) = &mut pose {
+        plant.bend = bend.to_scene().extend(1.0);
+        plant.previous_bend = plant.bend;
+        plant.water = SceneVec4::new(vitals.hydration, 0.0, 0.0, 0.0);
+    }
+    if let Some(animal) = pose.animal_mut() {
+        animal.motion = SceneVec4::new(wingbeat, effort.min(1.0), gape, 1.0);
+        animal.previous_motion = animal.motion;
+        animal.hide = SceneVec4::new(vitals.overgrowth, blunted, 0.0, 0.0);
+        animal.stores = SceneVec4::new(vitals.iron, 0.0, 0.0, held.1 as f32);
+    }
+    if let Some(wings) = pose.wings_mut() {
+        wings.torn = SceneVec4::from_array(vitals.torn);
+        wings.scarred = SceneVec4::from_array(vitals.scarred);
+    }
     pose.carrying(vitals.expecting, vitals.gestation);
     if held.0 != 0 {
-        pose.kind.z = held.0;
+        pose.organism_mut().kind.z = held.0;
     }
     pose
 }

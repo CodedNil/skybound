@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    BloodFeeder, Look,
     biology::{Biology, Litter},
     genome::Gene,
     rounded, smooth_min, sucker,
@@ -55,7 +55,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(3.6, 1.6, 3.6).extend(0.0);
 }
 
@@ -64,7 +64,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// A single finely fringed disc encircles a compact body, rippling as it steers, so it slips along
 /// the mist edge in any direction. Two large eyes flank the sucker, built for the weak aur-lit
 /// contrasts by which it finds hosts hidden in cloud.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let body = rounded(p, vec3(0.6, 0.5, 0.95));
     let radial = vec2(p.x, p.z).length();
     let around = p.z.atan2(p.x);
@@ -123,7 +123,7 @@ pub const LOOK: Look = Look::coat(
 )
 .skinned(vec4(5.0, 0.8, 1.4, -0.2));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

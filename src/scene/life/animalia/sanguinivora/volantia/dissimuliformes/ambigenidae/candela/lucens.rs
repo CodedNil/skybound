@@ -9,7 +9,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look, annulated,
+        BloodFeeder, Look, annulated,
         biology::{Biology, Litter},
         capsule, eyespots,
         genome::Gene,
@@ -60,7 +60,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(2.5, 2.0, 2.6).extend(0.0);
 }
 
@@ -71,7 +71,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// translucent sac lit from within, hooped by ribs and laced with the sap veins that feed the
 /// light. Stubby wings are enough to carry it between burrows and to beat in time with its
 /// neighbours, drawing the tree towards better air.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let grub = annulated(
         p,
         vec3(0.0, 0.0, -1.7),
@@ -151,7 +151,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(4.00, 0.40, 0.20, 0.60))
 .marked(vec4(5.00, 4.00, 0.70, 0.40), vec3(1.00, 0.85, 0.40));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

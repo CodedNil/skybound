@@ -26,6 +26,7 @@ mod nature {
     //! works slowly round the strands, paying out fresh silk, then hangs still again.
 
     use crate::scene::life::{
+        Injury,
         animalia::{
             PATIENCE,
             mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still, orbit},
@@ -33,7 +34,7 @@ mod nature {
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },
         behaviour::{Activity, Goal},
-        organs::{Strike, Wound},
+        organs::Strike,
     };
     use spirv_std::glam::Vec3;
 
@@ -99,7 +100,7 @@ mod nature {
                 to: at * 0.4,
                 radius: aim.extent.min_element() * 0.15,
                 force: 0.7,
-                wound: Wound::Bite,
+                injury: Injury::Bite,
             },
             stun: 20.0,
             rest: 3.0,

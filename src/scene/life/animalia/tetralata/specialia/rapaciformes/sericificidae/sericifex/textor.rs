@@ -1,6 +1,6 @@
 pub use super::render_wings;
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{curved_tube, gape},
     annulated,
     biology::{Biology, Litter},
@@ -65,7 +65,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(5.5, 3.5, 9.0).extend(0.0);
 }
 
@@ -76,7 +76,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// mouth tentacles grown enormously long and held spread wide, resting on the lines of its web
 /// to feel for anything caught. Combs at the tail draw out the silk, which trails behind it in
 /// pale strands.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let body = torso(p, vec3(0.32, 0.3, 2.6), 0.32);
     let gland = annulated(
         p,
@@ -182,6 +182,6 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(3.00, 0.12, 0.10, 0.50))
 .marked(vec4(2.00, 4.00, 0.90, 0.40), vec3(0.95, 0.85, 0.30));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }

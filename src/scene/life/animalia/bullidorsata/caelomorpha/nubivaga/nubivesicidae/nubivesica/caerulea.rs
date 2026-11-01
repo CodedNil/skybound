@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Bubbleback, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
     biology::{Biology, Litter},
     ellipsoid,
@@ -77,7 +77,7 @@ const CHAMBERS: [GasChamber; 3] = [
 ];
 
 #[cfg(not(target_arch = "spirv"))]
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Bubbleback) {
     c.opaque_bounds = vec3(4.7, 5.5, 4.7).extend(0.0);
     for i in 0..2 {
         let length = 4.0 + c.gene(FOLDS) * 2.0;
@@ -85,7 +85,7 @@ pub fn animate(c: &mut CreatureInstance) {
     }
 }
 
-pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, _: &Bubbleback) -> Surface {
     let mut distance = ellipsoid(p - vec3(0.0, -1.3, 0.0), vec3(0.8, 0.7, 0.7));
     for i in -2..=2 {
         let x = i as f32;
@@ -115,7 +115,7 @@ pub fn surface(p: Vec3, _: &CreatureInstance) -> Surface {
     clippy::needless_range_loop,
     reason = "shader code can't iterate arrays by value"
 )]
-pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn envelope(p: Vec3, c: &Bubbleback) -> Surface {
     let mut distance = rounded(p - vec3(0.0, 0.6, 0.3), vec3(3.0, 3.0, 2.8));
     let bulge = 1.1 + c.gene(LOBES) * 0.24;
     for index in 0..3 {
@@ -146,7 +146,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.42, 0.67, 0.24), 3.5);
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
     let mut result = drift_body(
         ray,
         c,

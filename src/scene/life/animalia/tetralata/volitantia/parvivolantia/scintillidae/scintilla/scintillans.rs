@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::curved_tube,
     biology::{Biology, Litter},
     capsule, eyes,
@@ -62,7 +62,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(1.2, 1.2, 2.6).extend(0.0);
 }
 
@@ -78,7 +78,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// points, which is how a swarm keeps together in the dim equatorial skies, and what draws the
 /// hunters that follow it. Tiny paddle wings make the constant small corrections a crowded swarm
 /// demands. The plumes' sweep from the mouth, out and up and forward.
-fn plume(side: f32, t: f32, c: &CreatureInstance) -> Vec3 {
+fn plume(side: f32, t: f32, c: &Tetralate) -> Vec3 {
     let root = mouth(0.9, 0.16) + vec3(side * 0.05, 0.0, 0.0);
     let sway = (c.animation.z * 1.7 + side).sin() * 0.06;
     let spread = 0.85 + c.gene(PLUMES) * 0.3;
@@ -94,7 +94,7 @@ fn plume(side: f32, t: f32, c: &CreatureInstance) -> Vec3 {
 /// the plumes comb them out of the air as they come. The same lights hold a swarm together through
 /// the dim phase, and draw the hunters that follow it. Behind the plumes the body is slim and
 /// smooth, and long, narrow wings beat fast enough to hold it steady among its neighbours.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let mut hit = Surface::new(torso(p, vec3(0.2, 0.18, 0.9), 0.16), 0);
     let side = if p.x < 0.0 { -1.0 } else { 1.0 };
     let root = plume(side, 0.0, c);
@@ -168,7 +168,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(8.00, 0.50, 0.25, 0.60))
 .marked(vec4(0.00, 4.00, 0.00, 0.40), vec3(0.80, 0.90, 0.50));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

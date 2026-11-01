@@ -12,7 +12,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Tetralate,
         animalia::tetralata::{ORAL_PAIRS, oral_tentacles, rig_tentacles},
         biology::{Biology, Litter},
         capsule,
@@ -67,7 +67,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(15.0, 10.0, 15.0).extend(0.0);
     rig_tentacles(c, MOUTH, 3.2, ORAL_PAIRS);
 }
@@ -86,7 +86,7 @@ const MOUTH: Vec3 = vec3(0.0, 2.2, -11.0);
 /// rasp boss rises from the saucer's leading edge, facing up and forward, to grind Root-Star tissue
 /// from below while short, thick tentacles hold the plant against it, and a ring of eyes round the
 /// underside of the rim watches the mist it must never sink into.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
     // Every Grounder's saucer is its own, as its genes have it: broader or narrower, with more or
@@ -194,7 +194,7 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(2.0, 1.8, 0.7, 0.20))
 .brooding(vec4(-3.8, 0.5, 3.5, 3.2));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

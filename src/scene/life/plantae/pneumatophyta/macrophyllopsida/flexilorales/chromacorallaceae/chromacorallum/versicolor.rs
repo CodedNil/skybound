@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, pick, rotate, speckle},
@@ -42,7 +42,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(5.0, 6.0, 5.0).extend(0.0);
 }
 
@@ -72,7 +72,7 @@ fn lattice(p: Vec3, reach: f32, branches: f32) -> f32 {
 /// and grows in one of three ways: as lattice fans netting the current, each turning on a flexible
 /// joint; as a bushy thicket of forking branches tipped with glowing buds; or as a cluster of
 /// upright pipes whose rims glow. Every colony takes one of its lineage's colours.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(ellipsoid(p - FOOT, vec3(0.6, 0.35, 0.6)), 0);
     shape.join(capsule(p, FOOT, vec3(0.0, 0.6, 0.0), 0.28), 0);
     let base = vec3(0.0, 0.6, 0.0);
@@ -159,7 +159,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 pub const LOOK: Look = Look::plant(vec3(0.42, 0.11, 0.55), vec3(0.1, 0.8, 0.95));
 
 /// The colours colonies take: green, yellow, pink, blue or purple.
-fn colour(c: &CreatureInstance) -> Vec3 {
+fn colour(c: &Plant) -> Vec3 {
     match pick(c, 20.0, 5) {
         0 => vec3(0.12, 0.52, 0.18),
         1 => vec3(0.78, 0.62, 0.08),
@@ -169,7 +169,7 @@ fn colour(c: &CreatureInstance) -> Vec3 {
     }
 }
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     let mut look = LOOK;
     let pigment = colour(c);
     look.pigment = pigment.extend(0.0);

@@ -1,7 +1,7 @@
 use crate::scene::{
     atmosphere::{get_pole_light_color, render_sky},
     aur::ambient,
-    life::CreatureInstance,
+    life::Tetralate,
     planet::{get_pole_position, surface_coordinates},
 };
 use spirv_std::glam::{Mat4, Quat, Vec2, Vec3, Vec4, Vec4Swizzles};
@@ -53,7 +53,7 @@ pub struct ViewUniform {
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct FrameUniform {
     pub view: ViewUniform,
-    pub players: [CreatureInstance; 2],
+    pub players: [Tetralate; 2],
     pub viewport: Vec4,
 }
 

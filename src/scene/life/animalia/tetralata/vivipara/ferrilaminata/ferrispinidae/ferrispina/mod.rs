@@ -1,7 +1,7 @@
 pub use super::render_wings;
 use crate::scene::{
     life::{
-        CreatureInstance,
+        Tetralate,
         animalia::tetralata::{
             gape,
             vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH, PROFILE},
@@ -137,11 +137,11 @@ impl Build {
 /// carries the animal's colours, and both are raised to their full height to court a mate or face
 /// down a rival, laid back for speed in the chase. How long and keen the blades grow is inherited;
 /// how worn they are is the life it has led since it last honed them.
-pub fn shredder(p: Vec3, c: &CreatureInstance, build: Build) -> Surface {
+pub fn shredder(p: Vec3, c: &Tetralate, build: Build) -> Surface {
     let mut hit = Surface::new(hull(p, c, build), 0);
     // The forked rudder at the tail's end.
-    let end = c.tail[5].truncate();
-    let back_of = c.tail[4].truncate();
+    let end = c.rig.tail[5].truncate();
+    let back_of = c.rig.tail[4].truncate();
     // The shader cannot use `normalize_or`, whose check for an infinite length it cannot compile.
     let heading = (end - back_of) / (end - back_of).length().max(1e-4);
     for side in 0..2 {
@@ -162,7 +162,7 @@ pub fn shredder(p: Vec3, c: &CreatureInstance, build: Build) -> Surface {
 
 /// The body itself: the deep, narrow hull with its keel and shoulders, the hooded head, the
 /// louvres, and the tail.
-fn hull(p: Vec3, c: &CreatureInstance, build: Build) -> f32 {
+fn hull(p: Vec3, c: &Tetralate, build: Build) -> f32 {
     let length = build.length;
     let girth = build.girth(p.z);
     let width = girth.x * 0.6;
@@ -207,8 +207,8 @@ fn hull(p: Vec3, c: &CreatureInstance, build: Build) -> f32 {
     let mut whip = 1e6f32;
     for i in 0..5 {
         let t = i as f32 / 5.0;
-        let from = c.tail[i].truncate();
-        let to = c.tail[i + 1].truncate();
+        let from = c.rig.tail[i].truncate();
+        let to = c.rig.tail[i + 1].truncate();
         let thick = build.depth * 0.42 * (1.0 - t * 0.75);
         whip = smooth_min(whip, tapered_tail(p, from, to, thick, thick * 0.8), 0.3);
         let spine = from.lerp(to, 0.5) + vec3(0.0, thick * 0.9, 0.0);
@@ -252,7 +252,7 @@ fn armour(p: Vec3, build: Build, hit: &mut Surface) {
 
 /// The crest: its blades, as long and keen as its genes and as worn as its life have made them,
 /// each in its socket, and the display web between them.
-fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
+fn crest(p: Vec3, c: &Tetralate, build: Build, hit: &mut Surface) {
     let length = build.length;
     let grown = (c.life.y * c.life.y).max(0.12);
     // Each blade grew a little off its place and lean by chance; the rise and fall of their heights
@@ -262,7 +262,7 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
     // Its genes set how long and keen its blades grow; its life how worn they are.
     // How long its genes would grow them, as far as the iron it has gathered lets them.
     let long = (0.75 + c.gene(BLADE_LENGTH) * 0.55) * (0.45 + c.stores.x.min(1.0) * 0.55);
-    let edge = vec2(c.gene(BLADE_KEENNESS), c.scars.y);
+    let edge = vec2(c.gene(BLADE_KEENNESS), c.hide.y);
     // Laid back by speed, raised in display.
     let laid = (c.animation.w / 60.0).clamp(0.0, 1.0) * 0.8;
     let rake = build.rake + (c.gene(RAKE) - 0.5) * 0.3 + laid;
@@ -334,7 +334,7 @@ fn crest(p: Vec3, c: &CreatureInstance, build: Build, hit: &mut Surface) {
 /// The jaws: a pair of hooked, iron-hardened mandibles beneath the hood, hinged at its back and
 /// meeting in a hook in front of the mouth. They part sideways and down as far as it is gaping:
 /// wide as it bites a piece from what it holds, a little as it strikes, shut in flight.
-fn jaws(p: Vec3, c: &CreatureInstance, build: Build) -> f32 {
+fn jaws(p: Vec3, c: &Tetralate, build: Build) -> f32 {
     let gape = gape(c);
     let mouth = mouth(build.length, build.head);
     let side = vec3(p.x.abs(), p.y, p.z);
@@ -380,6 +380,7 @@ mod nature {
     //! one another with crest and web raised, and their young hunt and play in loose groups.
 
     use crate::scene::life::{
+        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, orbit},
             nature::lead,
@@ -387,7 +388,7 @@ mod nature {
             tetralata::vivipara::ferrilaminata::ferrispinidae::ETHOLOGY as IRON_EDGED,
         },
         behaviour::{Activity, Goal},
-        organs::{Strike, Wound},
+        organs::Strike,
     };
     use spirv_std::glam::Vec3;
 
@@ -445,7 +446,7 @@ mod nature {
                 radius: aim.extent.y * 0.35,
                 // A keen crest opens the gas stores; a dull one only bruises.
                 force: 0.9 * aim.edge,
-                wound: Wound::Slash,
+                injury: Injury::Slash,
             },
             stun: 0.0,
             rest: 3.0,

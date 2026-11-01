@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Bubbleback, Look,
     animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, tissue_distance},
     biology::{Biology, Litter},
     genome::Gene,
@@ -96,13 +96,13 @@ const CHAMBERS: [GasChamber; 6] = [
 const SECTOR: f32 = TAU / 10.0;
 
 /// The canopy's outline at an angle: a scalloped fringe.
-fn rim(angle: f32, c: &CreatureInstance) -> f32 {
+fn rim(angle: f32, c: &Bubbleback) -> f32 {
     15.5 * (1.0 + (angle * 10.0).cos() * (0.02 + c.gene(SCALLOP) * 0.06))
 }
 
 /// The canopy's upper surface and its thickness at a share of the way out to the fringe, rising and
 /// falling slowly as the chambers breathe.
-fn shell(reach: f32, c: &CreatureInstance) -> (f32, f32) {
+fn shell(reach: f32, c: &Bubbleback) -> (f32, f32) {
     let breathe = (c.animation.z * 0.4).sin() * 0.15;
     let crown = 1.0 - reach * reach;
     (
@@ -111,13 +111,13 @@ fn shell(reach: f32, c: &CreatureInstance) -> (f32, f32) {
     )
 }
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Bubbleback) {
     c.opaque_bounds = vec3(17.0, 9.0, 17.0).extend(0.0);
 }
 
 /// The organs: a gelatinous mass at the heart of the crown, and amber ribs branching out through
 /// the canopy's thickness to its fringe, holding the vaults open beneath.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Bubbleback) -> Surface {
     let angle = p.z.atan2(p.x);
     let core = rounded(p - vec3(0.0, 3.2, 0.0), vec3(3.0, 0.8, 3.0));
     let turn = (angle / SECTOR).round() * SECTOR;
@@ -137,7 +137,7 @@ pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
 /// It is thickest at the crown and thins to a scalloped fringe; its underside is vaulted up into
 /// arches between the ribs, each hollow sheltering a curtain of feeding folds from drying out and
 /// from sudden gusts, rippling in the air drawn through it.
-pub fn envelope(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn envelope(p: Vec3, c: &Bubbleback) -> Surface {
     let radial = vec2(p.x, p.z).length();
     let angle = p.z.atan2(p.x);
     let edge = rim(angle, c);
@@ -181,7 +181,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.78, 0.65, 0.30), 12.0);
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
     drift_body(ray, c, envelope, surface, LOOK.accent, 12.0, &CHAMBERS)
 }
 

@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     biology::{Biology, Litter},
     eyes,
     genome::Gene,
@@ -63,7 +63,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(2.0, 2.1, 5.4).extend(0.0);
 }
 
@@ -75,7 +75,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// in its hover by a long trailing streamer. Its feeding tube is kept coiled tight as a spring
 /// beneath the cowl until a flower is reached, and a fuzzy collar behind the head gathers the
 /// pollen it carries from one bloom to the next.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let body = torso(p, vec3(0.3, 0.3, 1.6), 0.28);
     let sway = (c.animation.z * 1.1 + p.z * 0.6).sin() * 0.15 * (p.z - 1.4).max(0.0) / 3.6;
     let trail = 4.0 + c.gene(STREAMER) * 1.3;
@@ -138,7 +138,7 @@ pub const LOOK: Look = Look::coat(
 .flying(vec4(1.40, 0.40, 0.50, 1.20))
 .marked(vec4(5.00, 4.00, 0.80, 0.38), vec3(0.95, 0.50, 0.75));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

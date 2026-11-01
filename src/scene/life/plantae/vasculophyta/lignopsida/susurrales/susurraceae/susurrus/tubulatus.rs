@@ -5,7 +5,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Plant,
         biology::Biology,
         plantae::{count, frond, gene, rotate, speckle},
         smooth_min,
@@ -45,7 +45,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(15.0, 22.0, 15.0).extend(0.0);
 }
 
@@ -54,7 +54,7 @@ const FOOT: f32 = -10.0;
 
 /// The trunk's outer radius at a height, before its ridges: broad at the flared base and
 /// narrowing upwards.
-fn girth(c: &CreatureInstance, y: f32, tall: f32) -> f32 {
+fn girth(c: &Plant, y: f32, tall: f32) -> f32 {
     let flare = 0.4 + gene(c, 2.0) * 1.4;
     2.2 * (1.0 - 0.3 * ((y - FOOT) / (tall - FOOT)).clamp(0.0, 1.0))
         + 2.2 * flare * (-(y - FOOT) / 2.5).exp()
@@ -68,7 +68,7 @@ fn girth(c: &CreatureInstance, y: f32, tall: f32) -> f32 {
 /// wood the glowgnomes live. Trees grow as their histories made them: tall or squat, flared at the
 /// foot or barely, upright or leaning, with a few great whistling branches or many small ones, and
 /// more cavities the older the colony that lives in them.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let tall = 8.0 + gene(c, 1.0) * 10.0;
     let lean = (gene(c, 3.0) - 0.5) * 0.5;
     let bearing = gene(c, 4.0) * TAU;
@@ -166,6 +166,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // Silver-pale and unpigmented, for it feeds on aur.
 pub const LOOK: Look = Look::plant(vec3(0.6, 0.6, 0.58), vec3(0.35, 0.8, 0.85));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

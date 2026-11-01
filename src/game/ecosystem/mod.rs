@@ -18,7 +18,7 @@ use skybound::scene::{
     PLANET_RADIUS,
     climate::{Climate, layer_altitude},
     life::{
-        CreatureInstance, Kind,
+        Drawn, Kind,
         animalia::mind::Mind,
         behaviour::{Activity, Motion, Senses},
         genome::{FECUNDITY, Genome},
@@ -214,7 +214,7 @@ impl Default for Pool {
 /// most of the screen.
 #[derive(Resource, Clone, Default, ExtractResource)]
 #[extract_app(RenderApp)]
-pub struct Herd(pub Vec<CreatureInstance>);
+pub struct Herd(pub Vec<Drawn>);
 
 #[derive(Resource, Default)]
 pub struct Ecosystem {

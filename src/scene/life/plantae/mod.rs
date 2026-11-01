@@ -1,11 +1,14 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Body, CreatureInstance, Look,
     biology::Biology,
     genome::{Gene, HUE, PATTERN, SHADE},
     surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
 };
-use core::f32::consts::{PI, TAU};
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, vec2, vec3};
+use core::{
+    f32::consts::{PI, TAU},
+    ops::{Deref, DerefMut},
+};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod chlorophyta;
@@ -16,6 +19,37 @@ pub mod vasculophyta;
 pub mod young;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// What a plant adds to an organism: how far the air bends it, and how much water it holds.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Plant {
+    pub organism: CreatureInstance,
+    /// How far the moving air bends it, and whether that was set at all.
+    pub bend: Vec4,
+    pub previous_bend: Vec4,
+    /// How full of water it is, as a Pondplant's basin shows.
+    pub water: Vec4,
+}
+
+impl Deref for Plant {
+    type Target = CreatureInstance;
+    fn deref(&self) -> &CreatureInstance {
+        &self.organism
+    }
+}
+
+impl DerefMut for Plant {
+    fn deref_mut(&mut self) -> &mut CreatureInstance {
+        &mut self.organism
+    }
+}
+
+impl Body for Plant {
+    fn organism(&self) -> &CreatureInstance {
+        &self.organism
+    }
+}
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
@@ -118,13 +152,13 @@ pub fn sway(mut p: Vec3, c: &CreatureInstance) -> Vec3 {
 ///
 /// The bend the simulation found, as how far the top of the plant is pushed, grows from nothing at
 /// its foot to all of it at its top, as a stem bends under a load at its tip.
-pub fn bent(p: Vec3, c: &CreatureInstance) -> Vec3 {
-    if c.dynamics.w <= 0.0 {
+pub fn bent(p: Vec3, c: &Plant) -> Vec3 {
+    if c.bend.w <= 0.0 {
         return p;
     }
     let height = c.opaque_bounds.y.max(0.5);
     let up = ((p.y + height) / (2.0 * height)).clamp(0.0, 1.0);
-    p - c.dynamics.truncate() * up * up
+    p - c.bend.truncate() * up * up
 }
 
 /// Bark, leaf, glowing tissue, gloss and water: a plant's materials.
@@ -174,9 +208,9 @@ pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
     material
 }
 
-pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
+pub fn render<F: Fn(Vec3, &Plant) -> Surface>(
     ray: Ray,
-    c: &CreatureInstance,
+    c: &Plant,
     surface: F,
     look: Look,
 ) -> TraceResult {
@@ -185,7 +219,7 @@ pub fn render<F: Fn(Vec3, &CreatureInstance) -> Surface>(
     let pigment =
         pigment.lerp(pigment.zxy(), (c.gene(HUE) - 0.5) * 0.25) * (0.75 + c.gene(SHADE) * 0.5);
     let glow = look.accent.lerp(look.accent.yzx(), c.gene(PATTERN) * 0.3);
-    let surface = |p: Vec3, c: &CreatureInstance| surface(bent(p, c), c);
+    let surface = |p: Vec3, c: &Plant| surface(bent(p, c), c);
     let mut result = TraceResult::MISS;
     let mut offset = 0.0;
     for _ in 0..8 {

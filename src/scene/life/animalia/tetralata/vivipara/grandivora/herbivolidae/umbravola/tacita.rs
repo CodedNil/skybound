@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     capsule, eyespots,
@@ -64,7 +64,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(11.0, 4.0, 17.0).extend(0.0);
     rig_tentacles(c, vec3(0.0, -0.8, -1.5), 1.3, ORAL_PAIRS);
 }
@@ -78,7 +78,7 @@ pub fn animate(c: &mut CreatureInstance) {
 /// it, and the cluster of gripping tentacles slung beneath its centre tears free what it can carry,
 /// while twin streamers behind hold it steady. No two kites share a shape, and a kite's young take
 /// after it.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let width = 9.0 * (0.85 + c.gene(WIDTH) * 0.3);
     let front = 6.0 * (0.85 + c.gene(FRONT) * 0.3);
     let back = 9.0;
@@ -152,7 +152,7 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(3.0, 1.0, 1.4, 0.20))
 .brooding(vec4(0.6, 2.2, 1.4, 0.9));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
     super::render_wings(ray, c, surface, LOOK)
 }
 

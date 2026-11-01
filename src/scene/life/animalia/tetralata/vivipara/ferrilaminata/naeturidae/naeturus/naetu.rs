@@ -1,6 +1,6 @@
 use super::{TailFeathers, feather, render_tail_feathers, tail_shaft, wings};
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Tetralate,
     animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     cowl, ellipsoid, eyes,
@@ -74,7 +74,7 @@ const LENGTH: f32 = 19.0;
 
 const HEAD: f32 = 2.4;
 
-pub fn animate(creature: &mut CreatureInstance) {
+pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 20.0, 25.0, 0);
     creature.opaque_bounds = vec3(14.0, 12.0, 52.0).extend(0.0);
     rig_tentacles(creature, mouth(LENGTH, HEAD), 3.0, ORAL_PAIRS);
@@ -87,7 +87,7 @@ pub fn animate(creature: &mut CreatureInstance) {
 /// upper flanks, so no single wound can bring it down; the louvres of its breathing channels open
 /// behind the cowl, and its aur sacs glow in a row along each side, charged on its dives through
 /// the mists.
-pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
+pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let along = (point.z / LENGTH).clamp(-1.0, 1.0);
     let breadth = 7.2 * (1.0 - 0.25 * along * along);
     let mut body = rounded(point - vec3(0.0, -0.3, 0.0), vec3(breadth, 5.0, LENGTH)) * 0.9;
@@ -156,7 +156,7 @@ pub fn surface(point: Vec3, creature: &CreatureInstance) -> Surface {
 
 /// The head: the eyes around the cowl, the exchange frills fanning from behind it where the air it
 /// flies through strikes them first, and the mouth tentacles beneath.
-fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> Surface {
+fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     hit.socket(eyes(point, LENGTH, HEAD), HEAD * 0.16);
     for i in 0..3 {
@@ -187,7 +187,7 @@ fn head_surface(point: Vec3, creature: &CreatureInstance, mut hit: Surface) -> S
     hit
 }
 
-pub fn render_opaque(ray: Ray, creature: &CreatureInstance) -> Hit {
+pub fn render_opaque(ray: Ray, creature: &Tetralate) -> Hit {
     let body = trace_material(ray, creature, surface, material);
     let feathers = render_tail_feathers(
         Ray {
@@ -282,7 +282,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Drawn by its own tracers.
 pub const LOOK: Look = Look::OWN;
 
-pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, creature: &Tetralate) -> TraceResult {
     let mut result = TraceResult::opaque(render_opaque(ray, creature));
     let thin = render_thin(ray, creature);
     for i in 0..thin.count as usize {
@@ -291,13 +291,13 @@ pub fn render(ray: Ray, creature: &CreatureInstance) -> TraceResult {
     result
 }
 
-pub fn render_thin(ray: Ray, creature: &CreatureInstance) -> TraceResult {
+pub fn render_thin(ray: Ray, creature: &Tetralate) -> TraceResult {
     let mut result = TraceResult::MISS;
     visit_thin(ray, creature, |hit| result.add(hit));
     result
 }
 
-pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &CreatureInstance, mut emit: F) {
+pub fn visit_thin<F: FnMut(Hit)>(ray: Ray, creature: &Tetralate, mut emit: F) {
     wings(
         ray,
         creature,

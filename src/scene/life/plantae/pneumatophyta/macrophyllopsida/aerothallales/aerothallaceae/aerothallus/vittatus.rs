@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, speckle},
@@ -47,13 +47,13 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(12.0, 8.0, 17.0).extend(0.0);
 }
 
 /// Where the strand runs at a distance `z` along it: weaving across the currents it spans, the
 /// weave its own, swaying slowly as they shift.
-fn strand(c: &CreatureInstance, z: f32) -> Vec3 {
+fn strand(c: &Plant, z: f32) -> Vec3 {
     let weave = 0.5 + gene(c, 1.0) * 1.2;
     let sway = 1.0 + (c.animation.z * 0.3).sin() * 0.3;
     vec3(
@@ -83,11 +83,11 @@ fn fan(p: Vec3, hairs: u32, reach: f32, spread: f32, turn: f32) -> (f32, f32) {
         let around = turn + index as f32 * TAU / hairs as f32;
         let out = vec3(around.cos() * spread, -1.0, around.sin() * spread).normalize();
         // Each hair droops a little further out along its length under its own weight.
-        let bend = out * reach * 0.55 + vec3(0.0, -reach * 0.08, 0.0);
+        let elbow = out * reach * 0.55 + vec3(0.0, -reach * 0.08, 0.0);
         let tip = out * reach + vec3(out.x, 0.0, out.z) * reach * 0.15;
         hair = hair.min(
-            tapered_tail(p, Vec3::ZERO, bend, 0.05, 0.03)
-                .min(tapered_tail(p, bend, tip, 0.03, 0.012)),
+            tapered_tail(p, Vec3::ZERO, elbow, 0.05, 0.03)
+                .min(tapered_tail(p, elbow, tip, 0.03, 0.012)),
         );
         bead = bead.min((p - tip).length() - 0.06);
     }
@@ -103,7 +103,7 @@ fn fan(p: Vec3, hairs: u32, reach: f32, spread: f32, turn: f32) -> (f32, f32) {
 /// the strands around it into a forest. No two strands grow alike: each has its own length and
 /// weave, its vane broad or narrow, tight or open or missing, more beads or fewer, and fans full or
 /// sparse, long or short, and some fork into side strands of their own.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let length = 9.0 + gene(c, 4.0) * 4.5;
     let thick = 0.14 + gene(c, 5.0) * 0.14;
     let along = p.z.clamp(-length, length);
@@ -213,6 +213,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 // clear where thin, veined with the charge they carry.
 pub const LOOK: Look = Look::plant(vec3(0.66, 0.6, 0.5), vec3(0.35, 0.85, 0.9));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

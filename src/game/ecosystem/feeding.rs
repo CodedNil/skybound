@@ -3,13 +3,14 @@
 use crate::game::ecosystem::{Agent, Organisms, Pool, Relations};
 use bevy::prelude::*;
 use skybound::scene::life::{
-    Kind,
+    Injury, Kind,
     animalia::physiology::{Take, can_eat, plant},
     behaviour::Activity,
     genome::Genome,
     organs::{Function, Viscera},
     vitals::Vitals,
 };
+use spirv_std::glam::Vec3 as SceneVec3;
 
 pub(super) struct Meal {
     pub(super) eater: Entity,
@@ -178,6 +179,22 @@ pub(super) fn transfer_meals(organisms: &mut Query<Organisms>, meals: &[Meal], n
         let mut amount = (meal.amount * rate).min(food.0.mass * 0.05);
         if plant(food_kind.0) {
             amount = grazed(&mut food.0, food_kind.0, eater_kind.0, amount);
+            // Grazing leaves a bite where it fed, on the tissue the plant gathers with, as wide as
+            // the grazer's mouth is for the plant's size; it closes to callus once left alone.
+            if amount > 0.0 && !nectar {
+                let viscera = food_kind.0.organs();
+                let near = viscera.find(Function::Gathering).unwrap_or(SceneVec3::ZERO);
+                let design = food_kind.0.render_radius() / food_kind.0.biology().size;
+                let mouth = eater_kind.0.render_radius() / food_kind.0.render_radius() * design;
+                let turn = (meal.eater.to_bits() % 628) as f32 * 0.01;
+                let at = near + SceneVec3::new(turn.cos(), 0.0, turn.sin()) * design * 0.08;
+                food.0.wound_at(
+                    at,
+                    (mouth * 0.25).clamp(design * 0.02, design * 0.15),
+                    Injury::Bite,
+                    turn,
+                );
+            }
             if food_kind.0.organs().has(Function::Fruit) && !nectar {
                 // The seed rides in the gut and is passed somewhere else.
                 // A seed of this plant, fathered by whatever pollen it last took.

@@ -1,7 +1,51 @@
-use crate::scene::life::biology::Biology;
+use crate::scene::life::{
+    Body, CreatureInstance,
+    animalia::{Animal, Creature},
+    biology::Biology,
+};
+use core::ops::{Deref, DerefMut};
+use spirv_std::glam::Vec4;
 pub mod caelomorpha;
 
 pub const BIOLOGY: Biology = super::BIOLOGY;
+
+/// What a gas-bag adds to an animal: the knots of the feeding curtains it trails, three sheets of
+/// them, and where they were last frame.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Bubbleback {
+    pub animal: Animal,
+    pub curtains: [[[Vec4; 3]; 12]; 3],
+    pub previous_curtains: [[[Vec4; 3]; 12]; 3],
+}
+
+impl Deref for Bubbleback {
+    type Target = Animal;
+    fn deref(&self) -> &Animal {
+        &self.animal
+    }
+}
+
+impl DerefMut for Bubbleback {
+    fn deref_mut(&mut self) -> &mut Animal {
+        &mut self.animal
+    }
+}
+
+impl Body for Bubbleback {
+    fn organism(&self) -> &CreatureInstance {
+        &self.animal.organism
+    }
+    fn carrying(&self) -> (Vec4, Vec4) {
+        self.animal.carrying()
+    }
+}
+
+impl Creature for Bubbleback {
+    fn animal(&self) -> &Animal {
+        &self.animal
+    }
+}
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};

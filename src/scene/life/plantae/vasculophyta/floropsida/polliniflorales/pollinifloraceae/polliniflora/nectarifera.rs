@@ -1,5 +1,5 @@
 use crate::scene::life::{
-    CreatureInstance, Look,
+    Look, Plant,
     biology::Biology,
     ellipsoid,
     plantae::{
@@ -48,7 +48,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(7.0, 7.0, 7.0).extend(0.0);
 }
 
@@ -62,7 +62,7 @@ const FLOAT: Vec3 = vec3(0.0, -1.4, 0.0);
 /// one flower or five, held up on long stems or nodding on short ones, as open stars, cups,
 /// frilled rosettes or hanging bells with trailing petals, over a round float, a pear-shaped one
 /// or a pair.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let mut shape = Surface::new(1e6, 3);
     match pick(c, 1.0, 3) {
         0 => shape.join(ellipsoid(p - FLOAT, vec3(1.2, 1.0, 1.2)), 3),
@@ -156,6 +156,6 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.82, 0.16, 0.43), vec3(1.0, 0.68, 0.15));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }

@@ -5,7 +5,7 @@ use crate::scene::life::{
 };
 use crate::scene::{
     life::{
-        CreatureInstance, Look,
+        Look, Plant,
         biology::{Biology, Litter},
         ellipsoid,
         plantae::{count, gene, pick, rotate, speckle},
@@ -49,7 +49,7 @@ taxon!(
     ],
 );
 
-pub fn animate(c: &mut CreatureInstance) {
+pub fn animate(c: &mut Plant) {
     c.opaque_bounds = vec3(8.0, 12.0, 8.0).extend(0.0);
 }
 
@@ -64,7 +64,7 @@ const PIECES: u32 = 5;
 /// buds that will rise as new plants. Each grows its own: a domed crown, a flat scalloped one or a
 /// lobed star; a few long roots or many short ones, hanging straight, splaying out, or twisting
 /// round one another.
-pub fn surface(p: Vec3, c: &CreatureInstance) -> Surface {
+pub fn surface(p: Vec3, c: &Plant) -> Surface {
     let angle = p.z.atan2(p.x);
     let arms = count(c, 1.0, 5, 11);
     let crown = match pick(c, 2.0, 3) {
@@ -135,7 +135,7 @@ pub const ORGANS: Viscera = Viscera::new(&[
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.48, 0.27, 0.17), vec3(0.7, 0.54, 0.3));
 
-pub fn render(ray: Ray, c: &CreatureInstance) -> TraceResult {
+pub fn render(ray: Ray, c: &Plant) -> TraceResult {
     super::render(ray, c, surface, LOOK)
 }
 
