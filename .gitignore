@@ -1,2 +1,4 @@
 target/
 .direnv/
+# Creature previews, regenerated locally by the species_preview example.
+*.webp
