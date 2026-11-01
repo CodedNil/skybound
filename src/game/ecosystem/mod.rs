@@ -55,7 +55,7 @@ const CELL: f32 = 300.0;
 /// hunters cannot pass through their prey between steps, and drawn smoothly between them.
 const STEP: f32 = 0.05;
 
-const POPULATION_LIMIT: usize = 6400;
+const POPULATION_LIMIT: usize = 25_600;
 
 /// A call given this step: whose voice gave it, where, and how far it carries.
 #[derive(Clone, Copy)]

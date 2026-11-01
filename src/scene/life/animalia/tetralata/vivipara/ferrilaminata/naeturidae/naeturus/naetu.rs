@@ -36,6 +36,7 @@ pub const BIOLOGY: Biology = Biology {
     // A single calf after a long carrying; twins are rare.
     litter: Litter::new(1, 1, [0.94, 0.06, 0.0, 0.0, 0.0, 0.0]),
     gestation_days: 540.0,
+    altitude: (300.0, 12000.0),
     ..super::BIOLOGY
 };
 

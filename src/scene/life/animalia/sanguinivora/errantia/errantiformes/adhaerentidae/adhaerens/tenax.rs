@@ -27,6 +27,7 @@ pub const BIOLOGY: Biology = Biology {
     // A few eggs left on a host's skin.
     litter: Litter::new(2, 1, [0.25, 0.3, 0.2, 0.13, 0.08, 0.04]),
     gestation_days: 3.0,
+    altitude: (1500.0, 10000.0),
     ..super::BIOLOGY
 };
 

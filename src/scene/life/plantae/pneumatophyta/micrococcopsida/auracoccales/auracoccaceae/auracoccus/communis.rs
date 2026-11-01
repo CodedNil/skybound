@@ -14,6 +14,7 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 0.25,
     lifespan_days: 2.0,
     adult_mass: 0.001,
+    altitude: (500.0, 12000.0),
     ..super::BIOLOGY
 };
 

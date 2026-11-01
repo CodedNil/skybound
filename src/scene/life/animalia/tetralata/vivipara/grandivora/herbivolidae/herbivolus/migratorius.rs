@@ -33,6 +33,7 @@ pub const BIOLOGY: Biology = Biology {
     // Born tiny into the pouch, one at a time, twins now and then.
     litter: Litter::new(1, 1, [0.7, 0.25, 0.05, 0.0, 0.0, 0.0]),
     gestation_days: 150.0,
+    altitude: (1500.0, 9000.0),
     ..super::BIOLOGY
 };
 

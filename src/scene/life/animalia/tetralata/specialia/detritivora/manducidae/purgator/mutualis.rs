@@ -34,6 +34,7 @@ pub const BIOLOGY: Biology = Biology {
     // One string of eggs at a laying, now and then two or three.
     litter: Litter::new(1, 1, [0.6, 0.3, 0.1, 0.0, 0.0, 0.0]),
     gestation_days: 4.0,
+    altitude: (1500.0, 10000.0),
     ..super::BIOLOGY
 };
 

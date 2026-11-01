@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // One to four eggs, each tethered beside a flower.
     litter: Litter::new(1, 1, [0.3, 0.4, 0.2, 0.1, 0.0, 0.0]),
     gestation_days: 4.0,
+    altitude: (1500.0, 7000.0),
     ..super::BIOLOGY
 };
 

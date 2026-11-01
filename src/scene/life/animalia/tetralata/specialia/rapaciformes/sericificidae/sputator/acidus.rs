@@ -32,6 +32,7 @@ pub const BIOLOGY: Biology = Biology {
     // A clutch of four to nine glued round the mother and guarded with acid.
     litter: Litter::new(4, 1, [0.1, 0.2, 0.3, 0.22, 0.12, 0.06]),
     gestation_days: 8.0,
+    altitude: (1500.0, 6000.0),
     ..super::BIOLOGY
 };
 

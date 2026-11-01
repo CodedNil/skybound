@@ -33,6 +33,7 @@ pub const BIOLOGY: Biology = Biology {
     // A few eggs tethered among the web's anchors.
     litter: Litter::new(2, 1, [0.2, 0.35, 0.25, 0.12, 0.06, 0.02]),
     gestation_days: 10.0,
+    altitude: (1500.0, 6000.0),
     ..super::BIOLOGY
 };
 

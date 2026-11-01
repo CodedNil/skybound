@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // Many eggs at once, laid within a day: a swarm's numbers are its only defence.
     litter: Litter::new(4, 2, [0.1, 0.25, 0.3, 0.2, 0.1, 0.05]),
     gestation_days: 1.0,
+    altitude: (1000.0, 9000.0),
     ..super::BIOLOGY
 };
 

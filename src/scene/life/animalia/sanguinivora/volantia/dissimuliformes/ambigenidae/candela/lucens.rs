@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // Two to six eggs.
     litter: Litter::new(2, 1, [0.3, 0.3, 0.2, 0.12, 0.08, 0.0]),
     gestation_days: 2.0,
+    altitude: (3000.0, 11000.0),
     ..super::BIOLOGY
 };
 

@@ -33,6 +33,8 @@ pub const BIOLOGY: Biology = Biology {
     // Eggs cast loose a few at a time, as many as the ribbons' feeding can provision.
     litter: Litter::new(3, 2, [0.15, 0.3, 0.28, 0.15, 0.08, 0.04]),
     gestation_days: 5.0,
+    // Low over the Veilands' upper edge to feed, rising well above to rest.
+    altitude: (400.0, 5000.0),
     ..super::BIOLOGY
 };
 

@@ -31,6 +31,8 @@ pub const BIOLOGY: Biology = Biology {
     // One young to the pouch, rarely two.
     litter: Litter::new(1, 1, [0.8, 0.18, 0.02, 0.0, 0.0, 0.0]),
     gestation_days: 200.0,
+    // Circling high over the routes others travel, watching the currents below.
+    altitude: (3000.0, 13000.0),
     ..super::BIOLOGY
 };
 

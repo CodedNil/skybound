@@ -33,6 +33,7 @@ pub const BIOLOGY: Biology = Biology {
     // One child, now and then two.
     litter: Litter::new(1, 1, [0.9, 0.09, 0.01, 0.0, 0.0, 0.0]),
     gestation_days: 300.0,
+    altitude: (300.0, 12000.0),
     ..super::BIOLOGY
 };
 

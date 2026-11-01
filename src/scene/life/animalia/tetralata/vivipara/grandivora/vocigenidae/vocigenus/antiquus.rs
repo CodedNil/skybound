@@ -35,6 +35,7 @@ pub const BIOLOGY: Biology = Biology {
     // A single calf in a long life; twins are all but unknown.
     litter: Litter::new(1, 1, [0.985, 0.015, 0.0, 0.0, 0.0, 0.0]),
     gestation_days: 900.0,
+    altitude: (2500.0, 10000.0),
     ..super::BIOLOGY
 };
 

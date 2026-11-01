@@ -32,6 +32,8 @@ pub const BIOLOGY: Biology = Biology {
     // One young, sometimes two: a stooping hunter can carry no more.
     litter: Litter::new(1, 1, [0.75, 0.22, 0.03, 0.0, 0.0, 0.0]),
     gestation_days: 120.0,
+    // High above everything it hunts, for the length of its stoop.
+    altitude: (4000.0, 14000.0),
     ..super::BIOLOGY
 };
 

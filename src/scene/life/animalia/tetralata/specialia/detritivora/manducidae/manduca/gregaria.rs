@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // One string of dozens of eggs at a laying, sometimes two or three in a rich swarm.
     litter: Litter::new(1, 1, [0.55, 0.33, 0.12, 0.0, 0.0, 0.0]),
     gestation_days: 2.0,
+    altitude: (1500.0, 7000.0),
     ..super::BIOLOGY
 };
 

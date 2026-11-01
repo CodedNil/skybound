@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // Few eggs: a mimic is only safe while it is rare.
     litter: Litter::new(1, 1, [0.5, 0.35, 0.15, 0.0, 0.0, 0.0]),
     gestation_days: 12.0,
+    altitude: (1500.0, 10000.0),
     ..super::BIOLOGY
 };
 

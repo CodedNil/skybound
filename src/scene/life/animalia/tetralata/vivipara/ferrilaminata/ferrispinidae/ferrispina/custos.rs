@@ -30,6 +30,7 @@ pub const BIOLOGY: Biology = Biology {
     // One to three young, more than its kin, for it guards a nursery rather than chasing herds.
     litter: Litter::new(1, 1, [0.4, 0.4, 0.16, 0.04, 0.0, 0.0]),
     gestation_days: 220.0,
+    altitude: (2000.0, 9000.0),
     ..super::BIOLOGY
 };
 

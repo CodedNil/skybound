@@ -31,6 +31,7 @@ pub const BIOLOGY: Biology = Biology {
     // Few eggs, slowly made, from a long and slow life.
     litter: Litter::new(1, 1, [0.6, 0.3, 0.1, 0.0, 0.0, 0.0]),
     gestation_days: 30.0,
+    altitude: (1200.0, 5000.0),
     ..super::BIOLOGY
 };
 

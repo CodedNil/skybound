@@ -28,7 +28,8 @@ pub const BIOLOGY: Biology = Biology {
     maturity_days: 120.0,
     lifespan_days: 9000.0,
     adult_mass: 3.0,
-    altitude: (2500.0, 9000.0),
+    // High among the Cloud Peaks.
+    altitude: (4000.0, 14000.0),
     // A little spawn at a time.
     litter: Litter::new(1, 1, [0.45, 0.35, 0.15, 0.05, 0.0, 0.0]),
     gestation_days: 20.0,

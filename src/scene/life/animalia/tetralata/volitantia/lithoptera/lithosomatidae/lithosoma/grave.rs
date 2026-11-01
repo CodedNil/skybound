@@ -34,6 +34,7 @@ pub const BIOLOGY: Biology = Biology {
     // A clutch of three to eight carried on the body through the years it takes to hatch.
     litter: Litter::new(3, 1, [0.15, 0.3, 0.3, 0.15, 0.07, 0.03]),
     gestation_days: 90.0,
+    altitude: (60.0, 1500.0),
     ..super::BIOLOGY
 };
 

@@ -49,7 +49,7 @@ fn far(kind: Kind) -> f64 {
 const NEAREST_GIANT: f64 = 25_000.0;
 
 /// The most organisms lived out in full at once.
-const LIVING_LIMIT: usize = 6000;
+const LIVING_LIMIT: usize = 24_000;
 
 /// Seconds between steps of the planet-wide counts, and between looking for groups to live out or
 /// fold back.
@@ -242,11 +242,15 @@ impl Range {
 /// animals outnumber larger ones in any ecology; and few live fastened to others, for they are
 /// found on their hosts.
 fn density(kind: Kind) -> f32 {
+    // The Næ and their Nætu are the player and their mount alone; none live wild.
+    if matches!(kind, Kind::Nae | Kind::Naetu) {
+        return 0.0;
+    }
     let sight = PI64 * near(kind) * near(kind);
     let area = 4.0 * PI64 * f64::from(PLANET_RADIUS).powi(2) / REGIONS as f64;
     let in_sight = match kind.kingdom() {
-        Kingdom::Animalia => 140.0,
-        Kingdom::Plantae => 200.0,
+        Kingdom::Animalia => 560.0,
+        Kingdom::Plantae => 800.0,
     };
     (in_sight * area / sight) as f32 * if kind.attaches() { 0.2 } else { 1.0 }
 }
@@ -448,8 +452,8 @@ fn ranging(band: Band, kind: Kind, now: f32) -> DVec3 {
     let (low, high) = kind.biology().altitude;
     let low = low + 40.0;
     let high = (high - 40.0).max(low + 1.0);
-    // Most life keeps low, in the thick air and the strongest updraft.
-    let altitude = low + (high - low) * hash(seed, 13).powf(1.8);
+    // Anywhere in the band its kind lives in.
+    let altitude = low + (high - low) * hash(seed, 13);
     up * f64::from(PLANET_RADIUS + altitude)
 }
 
@@ -549,7 +553,12 @@ mod tests {
             let total: f32 = (0..REGIONS)
                 .map(|region| range.counts[region * kinds + index])
                 .sum();
-            assert!(total > 50.0, "{kind:?} has almost no range: {total}");
+            // The Næ and their Nætu are the player and their mount alone.
+            if matches!(kind, Kind::Nae | Kind::Naetu) {
+                assert!(total == 0.0, "{kind:?} lives wild");
+            } else {
+                assert!(total > 50.0, "{kind:?} has almost no range: {total}");
+            }
         }
         // Aur-lit animals keep to the equator's glow, and sunlit ones to the poles' light.
         let pole = region_of(DVec3::Z);

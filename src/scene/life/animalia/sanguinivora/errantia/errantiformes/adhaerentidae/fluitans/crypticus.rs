@@ -33,6 +33,7 @@ pub const BIOLOGY: Biology = Biology {
     // A few eggs hidden among the leaves it mimics.
     litter: Litter::new(1, 1, [0.3, 0.35, 0.2, 0.1, 0.05, 0.0]),
     gestation_days: 4.0,
+    altitude: (1500.0, 6000.0),
     ..super::BIOLOGY
 };
 

@@ -28,6 +28,7 @@ pub const BIOLOGY: Biology = Biology {
     // Buds split off one to six at a time, within hours.
     litter: Litter::new(1, 1, [0.3, 0.3, 0.2, 0.12, 0.06, 0.02]),
     gestation_days: 0.5,
+    altitude: (1500.0, 10000.0),
     ..super::BIOLOGY
 };
 
