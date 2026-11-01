@@ -10,7 +10,7 @@ pub use nature::PHYSIOLOGY;
 taxon!(
     Phylum,
     "Chlorophyta",
-    "Green Plants",
+    "Light Eaters",
     [
         "Members of this phylum use pigments to convert scattered aur light into chemical energy.",
         "Thin moisture-retaining tissues exchange gases and dissolved nutrients directly with the surrounding air.",

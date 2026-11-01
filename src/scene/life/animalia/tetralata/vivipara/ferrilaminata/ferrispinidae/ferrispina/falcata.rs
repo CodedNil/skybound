@@ -49,7 +49,7 @@ taxon!(
     "Ferrispina falcata",
     "Shredders",
     [
-        "Shredders are long, flexible predators with two pairs of long, swept wings and a crest of six tall iron blades raked back along the spine.",
+        "Shredders are long, flexible predators with two pairs of long, swept wings and a crest of tall iron blades raked back along the spine, five to seven of them as their parents carried.",
         "They bank past prey in curved cutting passes, rolling to draw the crest across it while keeping the vulnerable underside away from a struggling target, the blades laid back for speed until the moment of the cut.",
         "The crest is also their courtship: rivals and mates raise the blades to full height and spread the red-banded web between them, and the biggest, soundest crests win.",
         "Young animals hunt in loose coordinated groups that split feeding herds and exploit the openings created by a companion.",

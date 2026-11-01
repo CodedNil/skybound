@@ -17,7 +17,7 @@ taxon!(
     "Iron Blades",
     [
         "Members of this order descend from live-bearing four-winged animals adapted to powerful, controlled flight.",
-        "Predatory branches specialise the head, wing margins or spine into weapons suited to different aerial strikes.",
+        "Predatory branches arm the head or the spine with iron for different aerial strikes, or armour the hide with it against the hunters that come for a still ambusher.",
         "Their shared internal brooding and prolonged juvenile development also favour recognition and care of companions.",
         "In the Næ lineage, ancestral pursuit and handling abilities have shifted toward manipulation, cooperation and specialised aur protection.",
         "The order therefore retains a common flight and reproductive anatomy despite large differences in diet and adult size.",

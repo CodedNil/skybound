@@ -38,11 +38,11 @@ taxon!(
     "Lacufolium concavum",
     "Pondplants",
     [
-        "Pondplants curve a broad floating leaf into a shallow basin supported by a flexible outer rim.",
+        "Pondplants stretch a membrane over a ring of upturned ribs, and it sags between them into a pleated, star-shaped basin; many raise a combed mast from the hub that wrings water from passing cloud.",
         "Rain accumulates above the collecting membrane, providing drinking water for animals whose moisture-recovery organs cannot meet the cost of active flight.",
         "The basin flexes as its load changes, spilling excess water before the plant loses safe lift.",
         "Hygroscopic tissues supply the plant itself, while the pond remains an exposed resource visited by drinkers, cleaners and opportunistic parasites.",
-        "Grazing damage drains this shared water store, so frequent visitors benefit from keeping the living rim intact.",
+        "Grazing damage drains this shared water store, so frequent visitors benefit from keeping the living ribs and membrane intact.",
     ],
 );
 

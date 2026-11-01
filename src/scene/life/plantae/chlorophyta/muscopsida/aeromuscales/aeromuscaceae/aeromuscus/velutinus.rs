@@ -33,7 +33,7 @@ taxon!(
     "Aeromuscus velutinus",
     "Air Moss",
     [
-        "Air Moss carpets bark and rough animal shells with dense green leaves that hold dew between their tips.",
+        "Air Moss carpets bark and rough animal hides with dense, wine-dark leaves that drink in the light and hold dew between their tips.",
         "The mat uses scattered aur light and dissolved nutrients retained from dust and decaying debris.",
         "Its low profile keeps most growth within the sheltered air close to a moving host.",
         "Tiny animals find moisture and refuge among the leaves, while slow decomposition returns their waste to the plant.",

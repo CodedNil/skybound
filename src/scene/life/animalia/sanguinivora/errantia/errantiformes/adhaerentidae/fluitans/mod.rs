@@ -13,7 +13,7 @@ taxon!(
     "Floating One",
     [
         "Members of Fluitans are host-seeking parasites whose unattached stage lives among drifting vegetation.",
-        "Thin lateral folds imitate kelp and keep the body inconspicuous as the fronds move.",
+        "Thin, veined lateral folds imitate a torn scrap of the pale sail membranes around it, keeping the body inconspicuous as the plants move.",
         "Contact with a feeding animal triggers attachment rather than a prolonged chase.",
         "Once settled, the parasite uses its sucker to draw fluids and leaves dispersal to the host.",
         "This plant-associated nursery distinguishes the genus from relatives that rely mainly on chance encounters in open air.",

@@ -20,12 +20,12 @@ taxon!(
     "Ferrispinidae",
     "Iron Spines",
     [
-        "Members of this family develop hardened cutting surfaces along wing margins or the spine.",
-        "Their flexible bodies and paired wings bring those surfaces across prey during a controlled banking pass.",
-        "Camouflaged ambushers use short turns, while larger roaming hunters make wider sweeps and sometimes cooperate.",
-        "Feeding tentacles secure the result without turning the cutting surface into a grasping limb.",
+        "Members of this family lay down their iron along the spine as cutting blades, or across the back and the leading edges of the wings as armour.",
+        "The blade-bearing hunters bring their crests across prey in a controlled banking pass; the armoured ambushers hang still and let prey come to them.",
+        "Camouflaged ambushers lure prey within reach of their tentacles, while larger roaming hunters make wide sweeps and sometimes cooperate.",
+        "Feeding tentacles secure the catch and hold it to the jaws.",
         "These related approaches divide the family between mineral haze, open herd routes and the defence of moving nurseries.",
-        "Their order's iron goes here into cutting edges and armour, pushed out from bony sockets as nails grow and honed sharp again by use.",
+        "A blade is iron the body pushes out from a bony socket as a nail grows, honed sharp again by use; armour is laid down as scales, more and broader with every year of gathering.",
     ],
 );
 

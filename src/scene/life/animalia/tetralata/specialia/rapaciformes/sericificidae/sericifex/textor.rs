@@ -57,7 +57,7 @@ taxon!(
     "Sericifex textor",
     "Weavers",
     [
-        "Weavers hold themselves between kelp fronds on four wings while a pair of combs at the tail draws silk from a heavy banded gland and the mouth tentacles fasten it.",
+        "Weavers hold themselves between kelp strands on four wings while a pair of combs at the tail draws silk from a heavy banded gland and the mouth tentacles fasten it.",
         "Loose catching strands hang across feeding approaches, while stronger braided lines keep neighbouring plants from drifting beyond reach.",
         "They read changes in tension to distinguish grazing visitors from moving anchors, then reel captured prey toward the sheltered centre.",
         "Lines are loosened or replaced as currents shift, allowing the structure to breathe with a Jungle rather than resist it as a rigid net.",

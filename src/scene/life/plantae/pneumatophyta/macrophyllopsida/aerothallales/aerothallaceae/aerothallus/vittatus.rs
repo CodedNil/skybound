@@ -39,10 +39,10 @@ taxon!(
     "Aerothallus vittatus",
     "Kelp",
     [
-        "Kelp spreads long fibrous strands through the Gardens, with gas bladders supporting broad aur-collecting fronds at repeated intervals.",
+        "Kelp spreads long fibrous strands through the Gardens, wound with a thin spiral vane and hung at repeated nodes with chains of glassy gas beads above fans of glowing, charged hairs that gather aur.",
         "Each strand bends across several neighbouring currents, distributing lift instead of hanging from a single buoyant crown.",
         "Dense growth interweaves into Jungles whose sheltered interior holds animals, attached plants and Weaver corridors.",
-        "Grazers and Old Wise Ones browse the outer fronds, while broken tissue feeds smaller scavengers downstream.",
+        "Grazers and Old Wise Ones browse the outer vanes and fans, while broken tissue feeds smaller scavengers downstream.",
         "Spores establish new floating strands, allowing a forest to spread without a trunk rooted to any permanent surface.",
     ],
 );

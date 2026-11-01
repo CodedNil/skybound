@@ -53,7 +53,7 @@ taxon!(
     "Fluitans crypticus",
     "Floating Ones",
     [
-        "Floating Ones begin life among kelp, where green-brown bodies and swaying lateral folds blend with the fronds.",
+        "Floating Ones begin life in the Jungles, where pale, glassy bodies, lobed and veined like a torn-off scrap of sail membrane, hang among the plants that shed such scraps.",
         "Instead of searching open air, they wait in the narrow spaces through which feeding animals draw vegetation.",
         "A passing grazer brings the sucker within reach, allowing the parasite to leave the plant and settle permanently on the host.",
         "The trailing folds then lie against the new surface, reducing drag during travel.",
@@ -112,8 +112,8 @@ pub const ORGANS: Viscera = Viscera::new(&[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::coat(
-    vec4(0.24, 0.39, 0.19, 0.0),
-    vec3(0.53, 0.61, 0.25),
+    vec4(0.64, 0.6, 0.52, 0.0),
+    vec3(0.42, 0.74, 0.78),
     [Vec4::ZERO; 2],
 )
 .skinned(vec4(1.0, 0.6, 2.0, 0.10));

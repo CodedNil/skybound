@@ -36,7 +36,7 @@ taxon!(
     [
         "Colour Coral spreads branching fans of green, yellow, pink, blue and purple across kelp and Laevensail growth.",
         "Frilled surfaces collect dispersed aur while narrow attachments leave much of the host exposed to passing air.",
-        "Flexible junctions let each fan turn independently when a long frond twists in the current.",
+        "Flexible junctions let each fan turn independently when the plant carrying it twists in the current.",
         "A faint glow reveals living margins in the dim equatorial skies and attracts small organisms into the sheltered branches.",
         "The colony gains support and transport, while excessive growth can shade or weigh down the plant carrying it.",
     ],
