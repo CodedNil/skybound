@@ -206,7 +206,7 @@ pub(super) fn travel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skybound::scene::life::{genome::Genome, vitals::Vitals};
+    use skybound::scene::life::{behaviour::Activity, genome::Genome, vitals::Vitals};
 
     #[test]
     fn silk_holds_a_plant_until_stretched_too_far() {
@@ -219,7 +219,7 @@ mod tests {
             position,
             velocity: Vec3::ZERO,
             rotation: Quat::IDENTITY,
-            activity: skybound::scene::life::behaviour::Activity::Drift,
+            activity: Activity::Drift,
             protected: false,
             genes: Genome::TYPICAL,
             skill: 0.0,
