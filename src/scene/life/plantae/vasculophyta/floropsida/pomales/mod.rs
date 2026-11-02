@@ -1,13 +1,9 @@
-pub use super::{BIOLOGY, render};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec3;
 
 pub mod pomaceae;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 /// A fruit, which ripens to be eaten and carries its seed away.
 #[cfg(not(target_arch = "spirv"))]

@@ -10,7 +10,7 @@ use crate::scene::{
         ellipsoid,
         plantae::{count, gene, pick, rotate, speckle},
         rounded,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
         tapered_tail,
     },
     math::Power,
@@ -134,10 +134,6 @@ pub const PARTS: &[Part] = &[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.48, 0.27, 0.17), vec3(0.7, 0.54, 0.3));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

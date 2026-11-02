@@ -1,4 +1,3 @@
-pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::physiology::{BREATHER, FLOAT, GANGLION, PUMP},
@@ -8,7 +7,6 @@ use crate::scene::{
     life::{
         Body, CreatureInstance, Kind,
         animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
-        biology::Biology,
         genome::Gene,
         smooth_min, tapered_tail,
     },
@@ -73,8 +71,6 @@ pub const ANATOMY: &[Part] = &[
     Part::girdle(GIRDLE, 0, 0.05),
     Part::girdle(GIRDLE, 1, 0.05),
 ];
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// What a tetralate adds to an animal: its four wings, its tail and ribbons, and the knots of its
 /// mouth tentacles, which it handles food and the world with.

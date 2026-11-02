@@ -1,4 +1,3 @@
-pub use super::render_wings;
 use crate::scene::life::{biology::Biology, genome::Gene};
 pub mod ferrilaminata;
 pub mod grandivora;

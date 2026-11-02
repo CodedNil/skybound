@@ -1,7 +1,6 @@
 use crate::scene::life::{
     Body, CreatureInstance,
     animalia::{Animal, Creature},
-    biology::Biology,
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
@@ -13,8 +12,6 @@ use spirv_std::glam::Vec4;
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec3;
 pub mod caelomorpha;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// What a gas-bag adds to an animal: the knots of the feeding curtains it trails, three sheets of
 /// them, and where they were last frame.

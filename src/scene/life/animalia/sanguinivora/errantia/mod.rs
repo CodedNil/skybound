@@ -1,5 +1,3 @@
-pub use super::{BIOLOGY, render_wings};
-
 pub mod errantiformes;
 
 #[cfg(not(target_arch = "spirv"))]

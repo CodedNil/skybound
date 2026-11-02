@@ -1,11 +1,6 @@
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::Part;
-use crate::scene::life::{
-    Look, Plant,
-    biology::Biology,
-    ellipsoid,
-    surface::{Material, Ray, Shell, Surface, TraceResult, trace_material, visit_shell_material},
-};
+use crate::scene::life::{Look, Plant, biology::Biology, ellipsoid, surface::Surface};
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -19,9 +14,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 0.00035;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -61,38 +53,3 @@ pub const PARTS: &[Part] = &[];
 // Without pigment, for it feeds on aur and not light: milky, translucent cells lit by the charge
 // they hold.
 pub const LOOK: Look = Look::plant(vec3(0.62, 0.7, 0.72), vec3(0.3, 0.9, 0.85));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    let mut result = TraceResult::opaque(trace_material(
-        ray,
-        c,
-        |p, _| Surface::new(ellipsoid(p, Vec3::splat(0.000_035)), 0),
-        |_, _| Material::skin(vec3(0.08, 0.4, 0.12), 0.35),
-    ));
-    for cell in 0..2 {
-        let (center, radii) = if cell == 0 {
-            (Vec3::ZERO, vec3(0.85, 0.72, 0.85))
-        } else {
-            (vec3(0.75, 0.3, 0.2), vec3(0.6, 0.55, 0.6))
-        };
-        visit_shell_material(
-            ray,
-            c,
-            Shell {
-                center: center * 0.0001,
-                radii: radii * 0.0001,
-                bottom: -1.0,
-                scallop: 0.0,
-            },
-            |_, cosine| {
-                let mut cell = Material::skin(vec3(0.16, 0.56, 0.28), 0.2);
-                cell.ior = 1.36;
-                cell.translucency = 0.5;
-                cell.transmission = (-vec3(0.3, 0.06, 0.2) / cosine.max(0.15)).exp() * 0.85;
-                cell
-            },
-            |hit| result.add(hit),
-        );
-    }
-    result
-}

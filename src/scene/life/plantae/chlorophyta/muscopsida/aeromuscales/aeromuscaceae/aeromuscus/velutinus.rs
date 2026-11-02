@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, frond, gene, pick, rosette, speckle},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
@@ -25,9 +25,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 9.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -140,7 +137,3 @@ pub const PARTS: &[Part] = &[
 // The one plant that feeds on light, so the one with pigment: a deep wine-dark velvet that drinks
 // the polar sunburst's light across its whole spectrum, wasting little in reflection.
 pub const LOOK: Look = Look::plant(vec3(0.28, 0.08, 0.18), vec3(0.55, 0.15, 0.3));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

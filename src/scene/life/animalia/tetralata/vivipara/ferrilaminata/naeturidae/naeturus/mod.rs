@@ -1,6 +1,5 @@
-pub use super::{BIOLOGY, render_wings};
 use crate::scene::{
-    life::{Tetralate, ellipsoid, smooth_min, tapered_tail},
+    life::{Tetralate, smooth_min, tapered_tail},
     math::Power,
     planet::GRAVITY,
 };
@@ -9,11 +8,6 @@ use spirv_std::glam::{Quat, Vec3, vec3};
 use spirv_std::num_traits::Float;
 pub mod nae;
 pub mod naetu;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Genus,
@@ -44,57 +38,6 @@ pub fn shaft<F: Fn(u32) -> Vec3>(point: Vec3, joint: F, count: u32, start: f32, 
         );
     }
     distance
-}
-
-/// One feather vane of a tail: a long, flat blade from `root` along `direction` (of unit length),
-/// lying flat across the air as the tail does, widest a third of the way out and narrowing to a
-/// rounded tip.
-pub fn vane(point: Vec3, root: Vec3, direction: Vec3, length: f32, width: f32) -> f32 {
-    let flat = vec3(direction.z, 0.0, -direction.x);
-    let across = flat / flat.length().max(1e-4);
-    let up = direction.cross(across);
-    let q = point - root;
-    let along = q.dot(direction);
-    let t = (along / length).clamp(0.0, 1.0);
-    // The edge breaks into fine barbs rather than running clean, as a feather's does.
-    let barbs = 1.0 - (along / length.max(1e-4) * 70.0).sin().abs() * 0.06;
-    let breadth = width * (0.45 + 0.55 * (t * 3.0).min(1.0)) * (1.0 - t * t * 0.7) * barbs;
-    let local = vec3(q.dot(across), q.dot(up), along - length * 0.5);
-    ellipsoid(local, vec3(breadth, width * 0.1, length * 0.5)) * 0.8
-}
-
-/// A streamer of the genus's train.
-///
-/// A long, narrow vane from `root` along `direction` (of unit length), forked at its tip, with a
-/// pale raised rib down its middle and three beads along the rib towards the tip, which the aur
-/// sacs light from within with a trickle of their charge. Returns the vane, the beads and the rib.
-///
-/// The train is for one another: the genus greets and courts by spreading and rippling it, and in
-/// the dim equatorial sky a herd's trains glow like strings of lamps, a sign of full, healthy sacs.
-pub fn feather(point: Vec3, root: Vec3, direction: Vec3, length: f32, width: f32) -> Vec3 {
-    let flat = vec3(direction.z, 0.0, -direction.x);
-    let across = flat / flat.length().max(1e-4);
-    let up = direction.cross(across);
-    let q = point - root;
-    let local = vec3(q.dot(across), q.dot(up), q.dot(direction));
-    let notch = ellipsoid(
-        local - vec3(0.0, 0.0, length * 0.98),
-        vec3(width * 0.28, width, length * 0.14),
-    );
-    let blade = vane(point, root, direction, length, width).max(-notch);
-    let rib = tapered_tail(
-        point,
-        root,
-        root + direction * length * 0.9,
-        width * 0.14,
-        width * 0.06,
-    );
-    let mut beads = 1e6f32;
-    for index in 0..3 {
-        let at = vec3(0.0, 0.0, length * (0.55 + index as f32 * 0.14));
-        beads = beads.min((local - at).length() - width * (0.17 - index as f32 * 0.02));
-    }
-    vec3(blade, beads, rib)
 }
 
 /// A flat strip from `a` to `b`, tapering from `start` to `end` wide, lying across `normal` (of

@@ -6,7 +6,7 @@ use crate::scene::life::{
         count, gene, pick, rotate, speckle,
         vasculophyta::floropsida::polliniflorales::pollinifloraceae::{Flower, flower},
     },
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -32,9 +32,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 11.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -156,7 +153,3 @@ pub const PARTS: &[Part] = &[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.82, 0.16, 0.43), vec3(1.0, 0.68, 0.15));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

@@ -1,8 +1,4 @@
-pub use super::render_wings;
-use crate::scene::life::biology::Biology;
 pub mod lucerna;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};

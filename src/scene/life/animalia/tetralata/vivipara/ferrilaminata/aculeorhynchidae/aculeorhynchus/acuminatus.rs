@@ -7,7 +7,7 @@ use crate::scene::life::{
     ellipsoid,
     genome::Gene,
     louvres, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 use core::f32::consts::FRAC_PI_2;
@@ -39,8 +39,6 @@ pub const VENOM_SAC: Gene = Gene(39);
 pub const FORK: Gene = Gene(40);
 pub const SCUTES: Gene = Gene(41);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -260,10 +258,6 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(5.0, 0.4, 2.0, -0.10))
 .flying(vec4(1.10, 0.30, 0.55, 1.00))
 .marked(vec4(4.00, 4.00, 0.80, 0.45), vec3(0.06, 0.08, 0.12));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

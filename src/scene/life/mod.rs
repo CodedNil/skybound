@@ -1,3 +1,7 @@
+#![allow(
+    hidden_glob_reexports,
+    reason = "every taxon inherits all its parent has, and anything it defines itself overrides it"
+)]
 use crate::scene::{
     life::{
         animalia::{
@@ -545,7 +549,8 @@ impl Taxon {
     }
 }
 
-/// Taxonomic modules inherit their parent from the enclosing module. Write each description
+/// Taxonomic modules inherit their parent from the enclosing module, and with it everything the
+/// parent has. Write each description
 /// sentence as a separate string; they are joined with single spaces at compile time.
 macro_rules! taxon {
     ($rank:ident, $name:expr, $english:expr, [$first:literal $(, $rest:literal)* $(,)?], anatomy: $anatomy:expr $(,)?) => {
@@ -561,6 +566,7 @@ macro_rules! taxon {
         taxon!(@make $rank, $name, $english, $description, &[]);
     };
     (@make $rank:ident, $name:expr, $english:expr, $description:expr, $anatomy:expr) => {
+        taxon!(@inherit $rank);
         pub const TAXON: $crate::scene::life::Taxon = $crate::scene::life::Taxon {
             name: $name,
             english_name: $english,
@@ -570,6 +576,14 @@ macro_rules! taxon {
             #[cfg(not(target_arch = "spirv"))]
             anatomy: $anatomy,
         };
+    };
+    // Every taxon below the root takes all its parent has, as its own unless it defines its own:
+    // its biology, physiology and ethology, its genes and organs, its shared code. A taxon names
+    // only what changed where it arose.
+    (@inherit Root) => {};
+    (@inherit $rank:ident) => {
+        #[allow(unused_imports, reason = "a taxon inherits all its parent has, whether it uses it or not")]
+        pub use super::*;
     };
     (@parent Root) => { None };
     (@parent $rank:ident) => { Some(&super::TAXON) };
@@ -1432,22 +1446,6 @@ pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     }
     let below = centre + vec3(0.68 * head, -0.62 * head, 0.35 * head);
     d.min((q - below).length() - 0.21 * head)
-}
-
-pub fn gills(p: Vec3, length: f32, pairs: u32) -> f32 {
-    let p = vec3(p.x.abs(), p.y, p.z);
-    let mut d = 1e6f32;
-    for i in 0..pairs {
-        let f = i as f32;
-        let root = vec3(1.4, 0.3 + f * 0.4, -length + f * 0.5);
-        let tip = vec3(4.8 - f * 0.65, 1.0 + f * 1.25, -length + 3.0 + f * 0.6);
-        d = d.min(capsule(p, root, tip, 0.18));
-        for j in 1..4 {
-            let branch = root.lerp(tip, j as f32 * 0.23);
-            d = d.min(capsule(p, branch, branch + vec3(0.7, 0.8, 0.85), 0.12));
-        }
-    }
-    d
 }
 
 /// Pose trailing strands by simulating them.

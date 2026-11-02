@@ -1,8 +1,4 @@
-pub use super::render;
-use crate::scene::life::biology::Biology;
 pub mod muscopsida;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;

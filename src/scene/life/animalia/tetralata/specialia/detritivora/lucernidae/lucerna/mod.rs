@@ -1,11 +1,4 @@
-pub use super::{BIOLOGY, render_wings};
-
 pub mod undulata;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Genus,

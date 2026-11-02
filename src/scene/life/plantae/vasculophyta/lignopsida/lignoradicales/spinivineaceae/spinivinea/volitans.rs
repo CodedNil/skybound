@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, leaf, pick, rotate, speckle},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -164,7 +164,3 @@ pub const PARTS: &[Part] = &[
 /// Colouring and wings, shared by the preview and the world renderer.
 // Pale grey and unpigmented, for it feeds on aur; its thorns glow with the charge they hold.
 pub const LOOK: Look = Look::plant(vec3(0.58, 0.56, 0.52), vec3(0.55, 0.75, 1.0));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

@@ -1,5 +1,3 @@
-pub use super::render;
-use crate::scene::life::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
 #[cfg(not(target_arch = "spirv"))]
@@ -10,8 +8,6 @@ pub mod pomales;
 /// A flower, which makes nectar for its pollinators.
 #[cfg(not(target_arch = "spirv"))]
 pub const BLOOM: Organ = Organ::new("bloom", Function::Nectar, vec3(0.92, 0.45, 0.70));
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;

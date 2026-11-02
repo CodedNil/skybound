@@ -1,23 +1,17 @@
-pub use super::BIOLOGY;
 use crate::scene::{
     life::{
         Bubbleback, ellipsoid, smooth_min,
-        surface::{Hit, Material, Ray, Surface, TraceResult, local_ray, trace_material},
+        surface::{Material, Surface},
     },
     math::Power,
 };
-use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
+use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod aerogigantiformes;
 #[cfg(not(target_arch = "spirv"))]
 pub mod cloth;
 pub mod nubivaga;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Class,
@@ -165,138 +159,6 @@ pub fn skin<F: Fn(Vec3, &Bubbleback) -> Surface, const N: usize>(
     Surface::new(distance, 0)
 }
 
-fn closed_hits<F: Fn(Vec3, &Bubbleback) -> Surface>(
-    ray: Ray,
-    c: &Bubbleback,
-    surface: F,
-) -> [Hit; 2] {
-    let front = trace_material(ray, c, &surface, |_, _| Material::skin(Vec3::ZERO, 1.0));
-    if !front.is_hit() {
-        return [Hit::MISS; 2];
-    }
-    let end = (c.position.truncate() - ray.origin).dot(ray.direction) + c.position.w * 1.1;
-    let reverse = Ray {
-        origin: ray.origin + ray.direction * end,
-        direction: -ray.direction,
-        max_distance: end,
-        ..ray
-    };
-    let mut back = trace_material(reverse, c, surface, |_, _| Material::skin(Vec3::ZERO, 1.0));
-    if back.is_hit() {
-        back.color_depth.w = end - back.distance();
-    }
-    [front, back]
-}
-
-#[expect(
-    clippy::needless_range_loop,
-    reason = "shader code can't iterate arrays by value"
-)]
-pub fn drift_body<
-    F: Fn(Vec3, &Bubbleback) -> Surface,
-    G: Fn(Vec3, &Bubbleback) -> Surface,
-    const N: usize,
->(
-    ray: Ray,
-    c: &Bubbleback,
-    envelope: F,
-    organs: G,
-    tint: Vec3,
-    scale: f32,
-    chambers: &[GasChamber; N],
-) -> TraceResult {
-    let [front, back] = closed_hits(ray, c, &envelope);
-    if !front.is_hit() {
-        return TraceResult::MISS;
-    }
-    let tissue = |p, c: &Bubbleback| {
-        let mut distance = organs(p, c)
-            .distance
-            .max(envelope(p, c).distance + scale * 0.025);
-        for index in 0..N {
-            distance = distance.max(-chambers[index].distance(p));
-        }
-        Surface::new(distance, 0)
-    };
-    let mut result = TraceResult::MISS;
-    let local = local_ray(ray, c);
-    let [tissue_front, tissue_back] = closed_hits(ray, c, tissue);
-    let depth = (tissue_back.distance() - tissue_front.distance()).max(0.0) / scale;
-    for side in 0..2 {
-        let mut hit = if side == 0 { tissue_front } else { tissue_back };
-        if !hit.is_hit() {
-            continue;
-        }
-        let point = local.origin + local.direction * hit.distance();
-        let patches = mottling(point / scale * 9.0).smoothstep(-0.35, 0.5);
-        let mut material = gel(point, scale * 0.45, tint * (0.55 + patches * 0.45));
-        material.roughness = 0.3;
-        material.transmission = (-(Vec3::ONE - tint * 0.6) * (0.8 + depth * 2.0)).exp();
-        if hit.normal.dot(ray.direction) > 0.0 {
-            hit.normal = -hit.normal;
-        }
-        hit.transmittance = material.transmittance(hit.normal.dot(ray.direction).abs());
-        hit.color_depth = material.shade(hit.normal, ray).extend(hit.distance());
-        result.add(hit);
-    }
-    let thickness = if back.is_hit() {
-        (back.distance() - front.distance()).max(0.0) / scale
-    } else {
-        0.0
-    };
-    for index in 0..2 {
-        let mut hit = if index == 0 { front } else { back };
-        if !hit.is_hit() || hit.distance() <= 0.0 || hit.distance() >= ray.max_distance {
-            continue;
-        }
-        let point = local.origin + local.direction * hit.distance();
-        let q = point / scale;
-        let food = mottling(q * 11.0).smoothstep(0.05, 0.65) * (1.0 - q.y.smoothstep(-0.25, 0.3));
-        let ivory = vec3(0.88, 0.86, 0.61);
-        let mut material = gel(point, scale, ivory.lerp(tint, 0.55 + food * 0.35));
-        material.roughness = 0.19 + food * 0.22;
-        let absorb = (Vec3::ONE - tint) * (0.12 + food * 0.3 + thickness * 0.08);
-        material.transmission = (-absorb).exp() * (0.92 - food * 0.18);
-        if hit.normal.dot(ray.direction) > 0.0 {
-            hit.normal = -hit.normal;
-        }
-        let cosine = hit.normal.dot(ray.direction).abs();
-        hit.transmittance = material.transmittance(cosine);
-        hit.color_depth = material.shade(hit.normal, ray).extend(hit.distance());
-        hit.part = 2;
-        if index == 0 || back.distance() > front.distance() + scale * 0.001 {
-            result.add(hit);
-        }
-    }
-    for chamber in 0..N {
-        let hits = closed_hits(ray, c, |p, _| {
-            Surface::new(chambers[chamber].distance(p), 0)
-        });
-        for side in 0..2 {
-            let mut hit = hits[side];
-            if hit.is_hit()
-                && hit.distance() > 0.0
-                && hit.distance() < result.opaque.distance().min(ray.max_distance)
-            {
-                let point = local.origin + local.direction * hit.distance();
-                if hit.normal.dot(ray.direction) > 0.0 {
-                    hit.normal = -hit.normal;
-                }
-                let cosine = hit.normal.dot(ray.direction).abs();
-                let mut material = gel(point, scale * 0.8, tint.lerp(vec3(0.95, 0.88, 0.53), 0.65));
-                material.roughness = 0.23;
-                material.transmission =
-                    (-(Vec3::ONE - tint) * (0.045 / cosine.max(0.1))).exp() * 0.97;
-                hit.color_depth = material.shade(hit.normal, ray).extend(hit.distance());
-                hit.transmittance = material.transmittance(cosine);
-                hit.part = 2;
-                result.add(hit);
-            }
-        }
-    }
-    result
-}
-
 pub fn mottling(p: Vec3) -> f32 {
     (p.x + (p.z * 0.73).sin()).sin()
         * (p.y * 1.17 + p.x.sin()).sin()
@@ -347,62 +209,35 @@ pub fn gel(p: Vec3, scale: f32, tint: Vec3) -> Material {
     material
 }
 
-pub fn ribbons(result: &mut TraceResult, ray: Ray, c: &Bubbleback, count: usize, tint: Vec3) {
-    for i in 0..count {
-        let mut offset = 0.0;
-        for _ in 0..2 {
-            let segment = Ray {
-                origin: ray.origin + ray.direction * offset,
-                max_distance: ray.max_distance.min(result.opaque.distance()) - offset,
-                ..ray
-            };
-            let mut hit = trace_material(
-                segment,
-                c,
-                |p, c| Surface::new(ribbon_distance(p, c, i), 0),
-                |_, _| Material::skin(tint, 0.3),
-            );
-            if !hit.is_hit() {
-                break;
-            }
-            hit.color_depth.w += offset;
-            let cosine = hit.normal.dot(-ray.direction).abs();
-            let local = local_ray(ray, c);
-            let point = local.origin + local.direction * hit.distance();
-            let (row, t, v) = ribbon_coordinates(point, &c.curtains[i]);
-            let margin = v.abs().smoothstep(0.78, 0.98);
-            let midrib = 1.0 - v.abs().smoothstep(0.02, 0.07);
-            let veins = ((row as f32 + t) * 4.0 + v.abs() * 7.0)
-                .sin()
-                .abs()
-                .smoothstep(0.95, 0.995);
-            let mut material = gel(
-                point,
-                3.0,
-                tint.lerp(
-                    vec3(0.92, 0.83, 0.35),
-                    (margin + midrib + veins * 0.4).min(1.0) * 0.55,
-                ),
-            );
-            material.transmission =
-                (-vec3(0.35, 0.10, 0.6) * ((0.09 + margin * 0.1) / cosine.max(0.15))).exp() * 0.93;
-            hit.transmittance = material.transmittance(cosine);
-            hit.color_depth = material.shade(hit.normal, ray).extend(hit.distance());
-            hit.previous_position = Quat::from_array(c.previous_rotation.to_array())
-                * ribbon_point(&c.previous_curtains[i], row, t, v)
-                + c.previous_position.truncate();
-            hit.part = 1;
-            offset = hit.distance() + 0.07 / cosine.max(0.05);
-            result.add(hit);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scene::life::{Drawn, Kind, development};
     use aerogigantiformes::aerogigantidae::aerogigas::auratus as aerogigas;
+
+    /// Where a ray enters a closed body and where it leaves, traced from both ends.
+    fn closed_hits<F: Fn(Vec3, &Bubbleback) -> Surface>(
+        ray: Ray,
+        c: &Bubbleback,
+        surface: F,
+    ) -> [Hit; 2] {
+        let front = trace_material(ray, c, &surface, |_, _| Material::skin(Vec3::ZERO, 1.0));
+        if !front.is_hit() {
+            return [Hit::MISS; 2];
+        }
+        let end = (c.position.truncate() - ray.origin).dot(ray.direction) + c.position.w * 1.1;
+        let reverse = Ray {
+            origin: ray.origin + ray.direction * end,
+            direction: -ray.direction,
+            max_distance: end,
+            ..ray
+        };
+        let mut back = trace_material(reverse, c, surface, |_, _| Material::skin(Vec3::ZERO, 1.0));
+        if back.is_hit() {
+            back.color_depth.w = end - back.distance();
+        }
+        [front, back]
+    }
 
     #[test]
     fn twisted_cloth_has_no_gaps_between_patches() {

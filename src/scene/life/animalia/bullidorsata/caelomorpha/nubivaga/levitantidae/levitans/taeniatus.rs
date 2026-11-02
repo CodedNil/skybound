@@ -4,12 +4,12 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Bubbleback, Look,
-    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
+    animalia::bullidorsata::caelomorpha::tissue_distance,
     biology::{Biology, Litter},
     ellipsoid,
     genome::Gene,
     rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
@@ -37,11 +37,6 @@ pub const RIBBONS: Gene = Gene(38);
 pub const KEEL: Gene = Gene(39);
 pub const LIP: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
-
 taxon!(
     Species,
     "Levitans taeniatus",
@@ -54,21 +49,6 @@ taxon!(
         "Their broad altitude range lets them follow suspended food upward and settle toward richer air when it thins.",
     ],
 );
-
-const CHAMBERS: [GasChamber; 3] = [
-    GasChamber {
-        center: vec3(-1.65, 0.55, 0.0),
-        radii: vec3(0.8, 1.05, 1.65),
-    },
-    GasChamber {
-        center: vec3(0.0, 0.65, -0.35),
-        radii: vec3(0.95, 1.2, 1.8),
-    },
-    GasChamber {
-        center: vec3(1.7, 0.45, 0.3),
-        radii: vec3(0.8, 1.0, 1.5),
-    },
-];
 
 #[cfg(not(target_arch = "spirv"))]
 pub fn animate(c: &mut Bubbleback) {
@@ -127,17 +107,3 @@ pub const PARTS: &[Part] = &[];
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);
-
-pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
-    let mut result = drift_body(
-        ray,
-        c,
-        envelope,
-        surface,
-        vec3(0.38, 0.66, 0.19),
-        3.8,
-        &CHAMBERS,
-    );
-    ribbons(&mut result, ray, c, 3, vec3(0.42, 0.66, 0.16));
-    result
-}

@@ -6,7 +6,7 @@ use crate::scene::life::{
     capsule,
     genome::Gene,
     rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
@@ -35,8 +35,6 @@ pub const BUDS: Gene = Gene(38);
 pub const RINGS: Gene = Gene(39);
 pub const HOOKS: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -115,10 +113,6 @@ pub const LOOK: Look = Look::coat(
     [Vec4::ZERO; 2],
 )
 .skinned(vec4(5.0, 1.0, 1.4, -0.30));
-
-pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

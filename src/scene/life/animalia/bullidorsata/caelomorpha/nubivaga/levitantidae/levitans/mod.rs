@@ -1,9 +1,5 @@
-pub use super::BIOLOGY;
-
 pub mod taeniatus;
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::ETHOLOGY;
 

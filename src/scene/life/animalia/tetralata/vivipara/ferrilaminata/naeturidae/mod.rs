@@ -1,7 +1,6 @@
-pub use super::render_wings;
+use crate::scene::life::genome::Gene;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ};
-use crate::scene::life::{biology::Biology, genome::Gene};
 #[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::vec3;
 pub mod naeturus;
@@ -9,8 +8,6 @@ pub mod naeturus;
 /// A sac that holds aur safely, found only in the Nætu lineage.
 #[cfg(not(target_arch = "spirv"))]
 pub const AUR_SAC: Organ = Organ::new("aur sac", Function::AurStore, vec3(0.38, 0.85, 0.95));
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// How strong the bonds of the Nætu line are: how far one will let a companion or the herd draw
 /// away before it calls after them, and how closely it keeps to its rider.

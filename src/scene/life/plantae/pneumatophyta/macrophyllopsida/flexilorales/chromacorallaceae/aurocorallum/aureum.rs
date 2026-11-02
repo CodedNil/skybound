@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, pick, speckle},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -26,9 +26,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 13.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -128,7 +125,3 @@ pub const PARTS: &[Part] = &[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.75, 0.42, 0.07), vec3(1.0, 0.7, 0.2));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

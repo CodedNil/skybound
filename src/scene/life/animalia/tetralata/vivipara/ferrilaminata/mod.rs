@@ -1,5 +1,3 @@
-pub use super::render_wings;
-use crate::scene::life::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::SPRING_ROD,
@@ -10,8 +8,6 @@ use spirv_std::glam::vec3;
 pub mod aculeorhynchidae;
 pub mod ferrispinidae;
 pub mod naeturidae;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// The spring rods of the metal-eaters, their fibre laced with iron laid down over a life: stiffer
 /// and heavier, giving back a harder stroke, and turning blows that would cut a plain rod.
@@ -29,8 +25,6 @@ pub const ANATOMY: &[Part] = &[Part::rod(
 )
 .replacing(SPRING_ROD)];
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 

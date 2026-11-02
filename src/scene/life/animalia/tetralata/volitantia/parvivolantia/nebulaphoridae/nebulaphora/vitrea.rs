@@ -6,7 +6,7 @@ use crate::scene::life::{
     eyes,
     genome::Gene,
     mouth, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail, torso,
 };
 use core::f32::consts::{PI, TAU};
@@ -36,8 +36,6 @@ pub const STREAMER: Gene = Gene(38);
 pub const COIL: Gene = Gene(39);
 pub const COLLAR: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -116,10 +114,6 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(3.0, 0.6, 3.0, 0.15))
 .flying(vec4(1.40, 0.40, 0.50, 1.20))
 .marked(vec4(5.00, 4.00, 0.80, 0.38), vec3(0.95, 0.50, 0.75));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

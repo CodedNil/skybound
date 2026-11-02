@@ -1,5 +1,3 @@
-pub use super::render_wings;
-use crate::scene::life::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ, Part, Tissue};
 #[cfg(not(target_arch = "spirv"))]
@@ -32,10 +30,6 @@ pub const ANATOMY: &[Part] = &[
     Part::girdle(YOKE, 0, 0.06),
 ];
 
-pub const BIOLOGY: Biology = super::BIOLOGY;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 

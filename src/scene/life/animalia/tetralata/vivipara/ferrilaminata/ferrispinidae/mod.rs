@@ -1,4 +1,3 @@
-pub use super::{BIOLOGY, render_wings};
 use crate::scene::life::genome::Gene;
 pub mod crepusculofalx;
 pub mod ferrispina;

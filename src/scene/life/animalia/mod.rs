@@ -1,11 +1,9 @@
 use crate::scene::{
     life::{
-        Body, CLUTCH, CreatureInstance, FULL_POUCH, Look,
-        biology::Biology,
-        ellipsoid,
+        Body, CLUTCH, CreatureInstance, FULL_POUCH, Look, ellipsoid,
         genome::Gene,
         rounded, smooth_min,
-        surface::{Hit, Ray, Surface, TraceResult, trace, visit_paired_sheets, wing_bones},
+        surface::{Hit, Ray, Surface, visit_paired_sheets, wing_bones},
     },
     math::Power,
 };
@@ -23,8 +21,6 @@ pub mod mind;
 pub mod physiology;
 pub mod sanguinivora;
 pub mod tetralata;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// What every animal adds to an organism: how its body moved this step, what its life has done to
 /// its hide short of wounding it, what it stores and carries that shows, and where it carries its
@@ -169,19 +165,6 @@ taxon!(
     ],
     anatomy: physiology::ANATOMY,
 );
-
-/// Render the body in its coat and its wing pairs; a pair of no span is absent.
-pub fn render_wings<C: Flier>(
-    ray: Ray,
-    c: &C,
-    surface: impl Fn(Vec3, &C) -> Surface,
-    look: Look,
-) -> TraceResult {
-    let body = |p: Vec3, c: &C| with_wings(surface(p, c), p, c, look);
-    let mut result = TraceResult::opaque(trace(ray, c, body, look));
-    visit_wings(ray, c, look, |hit| result.add(hit));
-    result
-}
 
 /// What bending and the years do to a winged body's skin, as displacement, laid out from where its
 /// own wings are rooted, so every species gets it in the right places for its build.

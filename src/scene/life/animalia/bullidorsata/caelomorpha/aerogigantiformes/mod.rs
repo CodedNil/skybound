@@ -1,11 +1,4 @@
-pub use super::BIOLOGY;
-
 pub mod aerogigantidae;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Order,

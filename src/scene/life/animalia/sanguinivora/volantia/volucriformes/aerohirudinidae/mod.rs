@@ -1,10 +1,6 @@
-pub use super::{BIOLOGY, render_wings};
-
 pub mod aerohirudo;
 pub mod ptilohirudo;
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 

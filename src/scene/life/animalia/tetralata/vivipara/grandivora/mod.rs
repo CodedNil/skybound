@@ -1,5 +1,3 @@
-pub use super::render_wings;
-use crate::scene::life::biology::Biology;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::{Function, Organ, Part, Tissue};
 #[cfg(not(target_arch = "spirv"))]
@@ -7,8 +5,6 @@ use spirv_std::glam::vec3;
 
 pub mod herbivolidae;
 pub mod vocigenidae;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// A second pair of spring rods slung low along the belly, which carries the weight of a gut and
 /// a brood too heavy for the back's rods alone.
@@ -25,8 +21,6 @@ pub const ANATOMY: &[Part] = &[Part::rod(
     0.05,
 )];
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 

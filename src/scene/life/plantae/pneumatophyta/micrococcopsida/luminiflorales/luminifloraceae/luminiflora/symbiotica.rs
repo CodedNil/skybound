@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, leaf, pick, rotate, speckle},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -133,10 +133,6 @@ pub const PARTS: &[Part] = &[
 // Pearly and unpigmented, for it feeds on aur; only its lamps carry colour, the glow it lends its
 // partners.
 pub const LOOK: Look = Look::plant(vec3(0.7, 0.68, 0.74), vec3(0.15, 0.95, 0.8));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

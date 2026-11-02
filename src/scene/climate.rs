@@ -57,13 +57,6 @@ pub const fn layer_depth(layer: u32) -> f32 {
     }
 }
 
-/// The layer nearest an altitude.
-pub fn nearest_layer(altitude: f32) -> u32 {
-    ((altitude - LAYER_BASE) / LAYER_SPACING)
-        .round()
-        .clamp(0.0, (LAYERS - 1) as f32) as u32
-}
-
 /// Weather systems in flight at once, as many as keep the planet's skies as often clear as cloudy
 /// for its size.
 pub const CLOUD_SLOTS: u32 = 224;

@@ -7,7 +7,7 @@ use crate::scene::{
         capsule,
         genome::Gene,
         prepare_pose, ribbons, rig_ribbons, smooth_min, sucker,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
         tapered_tail,
     },
     math::Power,
@@ -111,10 +111,6 @@ pub const LOOK: Look = Look::coat(
     [Vec4::ZERO; 2],
 )
 .skinned(vec4(1.0, 0.6, 2.0, 0.10));
-
-pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

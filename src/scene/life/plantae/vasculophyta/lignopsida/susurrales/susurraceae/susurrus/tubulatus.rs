@@ -9,7 +9,7 @@ use crate::scene::{
         biology::Biology,
         plantae::{count, frond, gene, rotate, speckle},
         smooth_min,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
         tapered_tail,
     },
     math::Power,
@@ -29,9 +29,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 32.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -166,7 +163,3 @@ pub const PARTS: &[Part] = &[
 /// Colouring and wings, shared by the preview and the world renderer.
 // Silver-pale and unpigmented, for it feeds on aur.
 pub const LOOK: Look = Look::plant(vec3(0.6, 0.6, 0.58), vec3(0.35, 0.8, 0.85));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

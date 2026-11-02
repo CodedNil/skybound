@@ -2,11 +2,11 @@
 use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Bubbleback, Look,
-    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, tissue_distance},
+    animalia::bullidorsata::caelomorpha::tissue_distance,
     biology::{Biology, Litter},
     genome::Gene,
     rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 use core::f32::consts::{PI, TAU};
 #[cfg(not(target_arch = "spirv"))]
@@ -37,9 +37,6 @@ pub const DOME: Gene = Gene(38);
 pub const SCALLOP: Gene = Gene(39);
 pub const FOLDS: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
-
 taxon!(
     Species,
     "Aerogigas auratus",
@@ -52,39 +49,6 @@ taxon!(
         "Where the updraft slackens, the canopy settles lower and its moist underside becomes a refuge for smaller drifters.",
     ],
 );
-
-/// The canopy's lift: a ring of chambers in the crown's thickness around a larger one at its heart,
-/// so a torn chamber costs only part of the lift.
-#[expect(
-    clippy::approx_constant,
-    reason = "6.28 is where two chambers sit on the ring, not a turn"
-)]
-const CHAMBERS: [GasChamber; 6] = [
-    GasChamber {
-        center: vec3(0.0, 3.7, 0.0),
-        radii: vec3(3.6, 1.1, 3.6),
-    },
-    GasChamber {
-        center: vec3(6.6, 2.9, 0.0),
-        radii: vec3(2.5, 0.95, 2.5),
-    },
-    GasChamber {
-        center: vec3(2.04, 2.9, 6.28),
-        radii: vec3(2.5, 0.95, 2.5),
-    },
-    GasChamber {
-        center: vec3(-5.34, 2.9, 3.88),
-        radii: vec3(2.5, 0.95, 2.5),
-    },
-    GasChamber {
-        center: vec3(-5.34, 2.9, -3.88),
-        radii: vec3(2.5, 0.95, 2.5),
-    },
-    GasChamber {
-        center: vec3(2.04, 2.9, -6.28),
-        radii: vec3(2.5, 0.95, 2.5),
-    },
-];
 
 /// Ribs and the hollows between them, around the canopy.
 const SECTOR: f32 = TAU / 10.0;
@@ -168,10 +132,6 @@ pub const PARTS: &[Part] = &[];
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.78, 0.65, 0.30), 12.0);
-
-pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
-    drift_body(ray, c, envelope, surface, LOOK.accent, 12.0, &CHAMBERS)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

@@ -1,4 +1,3 @@
-pub use super::{BIOLOGY, render};
 use crate::scene::life::{
     capsule, ellipsoid,
     plantae::{frond, leaf, rotate},
@@ -11,9 +10,6 @@ use spirv_std::num_traits::Float;
 
 pub mod gigantiflora;
 pub mod polliniflora;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Family,

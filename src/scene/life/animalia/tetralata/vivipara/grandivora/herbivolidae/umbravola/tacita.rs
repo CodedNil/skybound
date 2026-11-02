@@ -7,7 +7,7 @@ use crate::scene::life::{
     capsule, eyespots,
     genome::Gene,
     louvres,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
@@ -38,8 +38,6 @@ pub const FRONT: Gene = Gene(39);
 pub const WHISKERS: Gene = Gene(40);
 pub const STREAMERS: Gene = Gene(41);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -134,10 +132,6 @@ pub const LOOK: Look = Look::coat(
 .styled([vec4(0.3, 0.9, 0.0, 0.7), vec4(0.3, 0.9, 0.0, 0.7)])
 .skinned(vec4(3.0, 1.0, 1.4, 0.20))
 .brooding(vec4(0.6, 2.2, 1.4, 0.9));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

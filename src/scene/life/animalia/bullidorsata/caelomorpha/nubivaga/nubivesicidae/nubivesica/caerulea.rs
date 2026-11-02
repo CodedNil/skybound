@@ -4,12 +4,12 @@ use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
 use crate::scene::life::organs::Part;
 use crate::scene::life::{
     Bubbleback, Look,
-    animalia::bullidorsata::caelomorpha::{GasChamber, drift_body, ribbons, tissue_distance},
+    animalia::bullidorsata::caelomorpha::{GasChamber, tissue_distance},
     biology::{Biology, Litter},
     ellipsoid,
     genome::Gene,
     rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::ETHOLOGY;
@@ -39,9 +39,6 @@ pub const RENDER_RADIUS: f32 = 15.0;
 pub const LOBES: Gene = Gene(38);
 pub const FOLDS: Gene = Gene(39);
 pub const CREASE: Gene = Gene(40);
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -134,20 +131,6 @@ pub const PARTS: &[Part] = &[];
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.42, 0.67, 0.24), 3.5);
-
-pub fn render(ray: Ray, c: &Bubbleback) -> TraceResult {
-    let mut result = drift_body(
-        ray,
-        c,
-        envelope,
-        surface,
-        vec3(0.42, 0.67, 0.24),
-        3.5,
-        &CHAMBERS,
-    );
-    ribbons(&mut result, ray, c, 2, vec3(0.38, 0.62, 0.16));
-    result
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

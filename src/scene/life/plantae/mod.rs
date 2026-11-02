@@ -1,14 +1,13 @@
 use crate::scene::life::{
-    Body, CreatureInstance, Look,
-    biology::Biology,
-    genome::{Gene, HUE, PATTERN, SHADE},
-    surface::{Material, RINGED, Ray, Surface, TraceResult, trace_material},
+    Body, CreatureInstance,
+    genome::Gene,
+    surface::{Material, RINGED},
 };
 use core::{
     f32::consts::{PI, TAU},
     ops::{Deref, DerefMut},
 };
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4, vec2, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod chlorophyta;
@@ -17,8 +16,6 @@ pub mod physiology;
 pub mod pneumatophyta;
 pub mod vasculophyta;
 pub mod young;
-
-pub const BIOLOGY: Biology = super::BIOLOGY;
 
 /// What a plant adds to an organism: how far the air bends it, and how much water it holds.
 #[repr(C)]
@@ -206,49 +203,6 @@ pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
         _ => {}
     }
     material
-}
-
-pub fn render<F: Fn(Vec3, &Plant) -> Surface>(
-    ray: Ray,
-    c: &Plant,
-    surface: F,
-    look: Look,
-) -> TraceResult {
-    // Each individual's colouring is its own: darker or paler, warmer or cooler, its glow shifted.
-    let pigment = look.pigment.truncate();
-    let pigment =
-        pigment.lerp(pigment.zxy(), (c.gene(HUE) - 0.5) * 0.25) * (0.75 + c.gene(SHADE) * 0.5);
-    let glow = look.accent.lerp(look.accent.yzx(), c.gene(PATTERN) * 0.3);
-    let surface = |p: Vec3, c: &Plant| surface(bent(p, c), c);
-    let mut result = TraceResult::MISS;
-    let mut offset = 0.0;
-    for _ in 0..8 {
-        let mut hit = trace_material(
-            Ray {
-                origin: ray.origin + ray.direction * offset,
-                max_distance: ray.max_distance - offset,
-                ..ray
-            },
-            c,
-            surface,
-            |p, id| plant_material(p, id, pigment, glow),
-        );
-        if !hit.is_hit() {
-            break;
-        }
-        hit.color_depth.w += offset;
-        if hit.transmittance.max_element() < 0.01 {
-            result.opaque = hit;
-            break;
-        }
-        offset =
-            hit.distance() + c.position.w * 0.008 / hit.normal.dot(ray.direction).abs().max(0.15);
-        result.add(hit);
-        if offset >= ray.max_distance {
-            break;
-        }
-    }
-    result
 }
 
 #[cfg(not(target_arch = "spirv"))]

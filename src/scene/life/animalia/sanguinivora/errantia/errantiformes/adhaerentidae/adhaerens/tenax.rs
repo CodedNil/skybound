@@ -6,7 +6,7 @@ use crate::scene::life::{
     eyespots,
     genome::Gene,
     sucker,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
 #[cfg(target_arch = "spirv")]
@@ -32,11 +32,6 @@ pub const RENDER_RADIUS: f32 = 20.0;
 pub const SUCKERS: Gene = Gene(38);
 pub const SEGMENTS: Gene = Gene(39);
 pub const WRITHE: Gene = Gene(40);
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -110,7 +105,3 @@ pub const LOOK: Look = Look::coat(
     [Vec4::ZERO; 2],
 )
 .skinned(vec4(3.0, 1.0, 2.0, 0.15));
-
-pub fn render(ray: Ray, c: &BloodFeeder) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}

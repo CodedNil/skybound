@@ -1,5 +1,3 @@
-pub use super::{BIOLOGY, render};
-
 pub mod aurocorallum;
 pub mod chromacorallum;
 

@@ -7,7 +7,7 @@ use crate::scene::{
         ellipsoid,
         genome::Gene,
         louvres, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
         tail,
     },
     math::Power,
@@ -40,8 +40,6 @@ pub const LURES: Gene = Gene(39);
 pub const RIBBONS: Gene = Gene(40);
 pub const RIPPLE: Gene = Gene(41);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -134,10 +132,6 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(5.0, 1.0, 1.2, -0.25))
 .flying(vec4(0.45, 0.30, 0.60, 1.60))
 .marked(vec4(5.00, 4.00, 0.70, 0.35), vec3(0.85, 0.35, 0.90));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

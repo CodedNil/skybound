@@ -1,4 +1,3 @@
-pub use super::render_wings;
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::organs::Part;
 use crate::scene::life::{
@@ -7,7 +6,7 @@ use crate::scene::life::{
     biology::{Biology, Litter},
     genome::Gene,
     louvres, rounded, smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 use spirv_std::glam::{Vec3, vec2, vec3, vec4};
@@ -36,8 +35,6 @@ pub const CAGE: Gene = Gene(38);
 pub const GRIP: Gene = Gene(39);
 pub const PLUMP: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -123,10 +120,6 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(1.0, 1.0, 2.2, 0.05))
 .flying(vec4(7.00, 0.50, 0.15, 0.40))
 .marked(vec4(2.00, 4.00, 0.90, 0.42), vec3(0.96, 0.92, 0.74));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

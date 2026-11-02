@@ -7,7 +7,7 @@ use crate::scene::{
         biology::{Biology, Litter},
         genome::Gene,
         louvres,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
     },
     math::Power,
 };
@@ -35,11 +35,6 @@ pub const RENDER_RADIUS: f32 = 26.8;
 pub const PLATING: Gene = Gene(38);
 pub const JAWS: Gene = Gene(39);
 pub const GIRTH: Gene = Gene(40);
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -155,7 +150,3 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(2.0, 1.6, 1.4, 0.15))
 .flying(vec4(2.00, 0.30, 0.10, 0.60))
 .marked(vec4(1.00, 3.00, 0.50, 0.45), vec3(0.25, 0.16, 0.08));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}

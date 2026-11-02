@@ -1,9 +1,5 @@
-pub use super::{BIOLOGY, render_wings};
-
 pub mod grave;
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::ETHOLOGY;
 

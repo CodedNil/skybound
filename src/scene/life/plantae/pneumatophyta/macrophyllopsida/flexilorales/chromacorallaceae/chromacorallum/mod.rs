@@ -1,9 +1,4 @@
-pub use super::{BIOLOGY, render};
-
 pub mod versicolor;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Genus,

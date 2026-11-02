@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     capsule, ellipsoid,
     plantae::{count, gene, pick, rotate, speckle},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -26,9 +26,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 10.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -158,22 +155,3 @@ pub const PARTS: &[Part] = &[
 
 /// Colouring and wings, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::plant(vec3(0.42, 0.11, 0.55), vec3(0.1, 0.8, 0.95));
-
-/// The colours colonies take: green, yellow, pink, blue or purple.
-fn colour(c: &Plant) -> Vec3 {
-    match pick(c, 20.0, 5) {
-        0 => vec3(0.12, 0.52, 0.18),
-        1 => vec3(0.78, 0.62, 0.08),
-        2 => vec3(0.85, 0.25, 0.45),
-        3 => vec3(0.12, 0.32, 0.78),
-        _ => vec3(0.42, 0.11, 0.55),
-    }
-}
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    let mut look = LOOK;
-    let pigment = colour(c);
-    look.pigment = pigment.extend(0.0);
-    look.accent = pigment.lerp(vec3(0.9, 0.95, 1.0), 0.55);
-    super::render(ray, c, surface, look)
-}

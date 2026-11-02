@@ -8,7 +8,7 @@ use crate::scene::{
         capsule, eyespots,
         genome::Gene,
         louvres, rounded,
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
     },
     math::Power,
 };
@@ -38,8 +38,6 @@ pub const STRIPE: Gene = Gene(38);
 pub const FEELERS: Gene = Gene(39);
 pub const BRISTLES: Gene = Gene(40);
 
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 
@@ -138,10 +136,6 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(1.0, 1.2, 1.4, 0.10))
 .flying(vec4(3.50, 0.30, 0.30, 0.70))
 .marked(vec4(3.00, 4.00, 0.80, 0.45), vec3(0.90, 0.95, 0.90));
-
-pub fn render(ray: Ray, c: &Tetralate) -> TraceResult {
-    super::render_wings(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

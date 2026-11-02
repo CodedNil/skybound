@@ -432,12 +432,6 @@ impl Vitals {
             * if self.stunned > 0.0 { 0.1 } else { 1.0 }
     }
 
-    /// How steadily the nerve centre steers, falling as it is damaged or goes too long without
-    /// sleep.
-    pub fn composure(&self, kind: Kind) -> f32 {
-        self.working(kind.organs(), Function::Coordination) * (0.5 + self.alertness * 0.5)
-    }
-
     /// A night's rest, compressed: the nerve centre recovers, and so do tired muscles.
     pub fn sleep(&mut self, dt: f32) {
         self.alertness = (self.alertness + dt / 420.0).min(1.0);

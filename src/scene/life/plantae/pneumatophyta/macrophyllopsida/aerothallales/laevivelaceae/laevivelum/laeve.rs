@@ -9,7 +9,7 @@ use crate::scene::{
         biology::Biology,
         capsule, ellipsoid,
         plantae::{count, gene, pick, rotate, speckle},
-        surface::{Ray, Surface, TraceResult},
+        surface::Surface,
         tapered_tail,
     },
     math::Power,
@@ -29,9 +29,6 @@ pub const BIOLOGY: Biology = Biology {
 };
 
 pub const RENDER_RADIUS: f32 = 17.0;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Species,
@@ -165,7 +162,3 @@ pub const PARTS: &[Part] = &[
 // Nacre-pale, for it feeds on aur and needs no pigment; its sheen is the layered structure of the
 // veil.
 pub const LOOK: Look = Look::plant(vec3(0.72, 0.74, 0.78), vec3(0.29, 0.95, 0.7));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}

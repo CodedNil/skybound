@@ -431,15 +431,6 @@ impl Vitals {
         self.wounds[slot] = Wound::open(at, size.max(old.size()), injury, bearing, depth);
     }
 
-    /// How scarred its body is all told, from unmarked to grizzled, from the wounds it has kept.
-    pub fn scarring(&self) -> f32 {
-        self.wounds
-            .iter()
-            .map(|wound| wound.size() * wound.healed())
-            .sum::<f32>()
-            .min(1.0)
-    }
-
     /// How whole its wings are for flying, from all four whole to all shredded, and which side is
     /// the weaker, from the left (below zero) to the right. A scar is stiffer than whole membrane
     /// and bears a little less; a tear lets the air through.

@@ -1,4 +1,3 @@
-pub use super::{BIOLOGY, render_wings};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::SPRING_ROD,
@@ -40,11 +39,6 @@ pub const ANATOMY: &[Part] = &[
 
 pub mod lithosomatidae;
 pub mod ramiphagidae;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
-#[cfg(not(target_arch = "spirv"))]
-pub use super::PHYSIOLOGY;
 
 taxon!(
     Order,

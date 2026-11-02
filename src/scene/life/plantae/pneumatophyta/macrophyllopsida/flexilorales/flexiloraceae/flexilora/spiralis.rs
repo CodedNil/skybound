@@ -3,7 +3,7 @@ use crate::scene::life::{
     biology::Biology,
     ellipsoid,
     plantae::{count, gene, leaf, rotate, sucker_pad},
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
 };
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
@@ -129,10 +129,6 @@ pub const PARTS: &[Part] = &[
 // Tan and fibrous, the colour of the wound tissue that turns the wind's work into food; there is no
 // pigment, for it does not feed on light.
 pub const LOOK: Look = Look::plant(vec3(0.62, 0.48, 0.32), vec3(0.85, 0.6, 0.35));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {

@@ -31,16 +31,6 @@ pub fn surface_coordinates(point: Vec3) -> Vec3 {
     )
 }
 
-pub fn surface_point(coordinates: Vec3) -> Vec3 {
-    let longitude = coordinates.x / PLANET_RADIUS;
-    let colatitude = coordinates.y / PLANET_RADIUS;
-    vec3(
-        colatitude.sin() * longitude.cos(),
-        colatitude.sin() * longitude.sin(),
-        colatitude.cos(),
-    ) * (PLANET_RADIUS + coordinates.z)
-}
-
 pub fn surface_frame(point: Vec3) -> Mat3 {
     let up = point / point.length().max(1e-8);
     let east = vec3(-up.y, up.x, 0.0);

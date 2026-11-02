@@ -1,11 +1,5 @@
-pub use super::render_wings;
-use crate::scene::life::biology::Biology;
 pub mod sericificidae;
 
-pub const BIOLOGY: Biology = super::BIOLOGY;
-
-#[cfg(not(target_arch = "spirv"))]
-pub use super::ETHOLOGY;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::PHYSIOLOGY;
 

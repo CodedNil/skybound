@@ -1,4 +1,3 @@
-pub use super::render_wings;
 use crate::scene::life::{
     Body, CreatureInstance,
     animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},

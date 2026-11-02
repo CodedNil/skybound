@@ -4,7 +4,7 @@ use crate::scene::life::{
     ellipsoid,
     plantae::{count, gene, speckle},
     smooth_min,
-    surface::{Ray, Surface, TraceResult},
+    surface::Surface,
     tapered_tail,
 };
 #[cfg(not(target_arch = "spirv"))]
@@ -213,7 +213,3 @@ pub const PARTS: &[Part] = &[
 // Glassy, unpigmented membranes, for it feeds on aur: pale horn where they are thick and nearly
 // clear where thin, veined with the charge they carry.
 pub const LOOK: Look = Look::plant(vec3(0.66, 0.6, 0.5), vec3(0.35, 0.85, 0.9));
-
-pub fn render(ray: Ray, c: &Plant) -> TraceResult {
-    super::render(ray, c, surface, LOOK)
-}
