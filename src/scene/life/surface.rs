@@ -461,7 +461,7 @@ fn intact(uv: Vec2, side: f32, torn: f32, which: f32) -> bool {
 /// second colour at a glancing view, or a camouflage mottle.
 fn marking(pattern: Vec4, along: f32, chord: f32, cosine: f32) -> f32 {
     match pattern.x as u32 {
-        1 => (along * pattern.y * PI).sin().smoothstep(0.2, 0.5),
+        1 => ((along * pattern.y * PI).sin() * 0.5 + 0.5).smoothstep(0.3, 1.0) * 0.8,
         2 => {
             let spot = vec2((along - 0.7) * 2.2, chord - 0.45).length();
             spot.smoothstep(0.24, 0.2) - spot.smoothstep(0.12, 0.08) * 0.6
@@ -594,7 +594,7 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     let accent = look.accent;
     let warp = vec3(fbm(p * 0.6), fbm(p * 0.6 + 17.0), fbm(p * 0.6 + 31.0)) - 0.5;
     let blotches = fbm(vec3(p.x * 0.8, p.y * 0.8, p.z * 0.45) + warp * 2.2);
-    let mottle = fbm(p * 3.7 + 5.0);
+    let mottle = fbm(p * 2.6 + 5.0);
     let grain = noise(p * 19.0);
     let dorsal = (p.y * 0.30 + 0.5).saturate();
     let markings = blotches.smoothstep(0.5, 0.64) * dorsal.smoothstep(0.25, 0.75);
@@ -611,8 +611,8 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
         belly
             .lerp(back, dorsal.smoothstep(0.2, 0.8))
             .lerp(accent * 0.6 + vec3(0.22, 0.04, 0.08), vein * 0.22)
-            * (0.84 + mottle * 0.24)
-            * (0.95 + grain * 0.08),
+            * (0.9 + mottle * 0.14)
+            * (0.98 + grain * 0.03),
         0.55 + mottle * 0.18,
     );
     m.emission = pigment.w;
@@ -624,7 +624,7 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     } else {
         WRINKLED
     };
-    m.relief = 0.35 * skin.y;
+    m.relief = 0.24 * skin.y;
     m.grain = skin.z;
     m.roughness = (m.roughness + skin.w).clamp(0.05, 1.0);
     // Living skin: light scatters through it and a thin film of moisture glints on it.
@@ -1122,7 +1122,7 @@ fn relieved(
     }
     let slope = slope / (4.0 * step);
     let resolve = 1.0 - (footprint * material.grain * 4.0).smoothstep(0.3, 1.5);
-    normalize(normal - (slope - normal * slope.dot(normal)) * material.relief * 0.12 * resolve)
+    normalize(normal - (slope - normal * slope.dot(normal)) * material.relief * 0.09 * resolve)
 }
 
 pub fn tonemap(color: Vec3) -> Vec3 {

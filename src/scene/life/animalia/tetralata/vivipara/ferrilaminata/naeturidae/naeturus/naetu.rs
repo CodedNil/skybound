@@ -1,4 +1,4 @@
-use super::{shaft, vane};
+use super::{feather, plume, shaft};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
@@ -19,7 +19,6 @@ use crate::scene::{
             FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, local_ray, make_hit,
             trace_material,
         },
-        tapered_tail,
     },
     math::{Power, intersect_sphere},
 };
@@ -60,7 +59,7 @@ taxon!(
     "Naetu",
     "Nætu",
     [
-        "Nætu are enormous four-winged carriers with broad flat backs, a blunt head under a heavy brow, external exchange frills and a long tail that spreads into a fan of feather vanes.",
+        "Nætu are enormous four-winged carriers, built round their wings with great shoulders and haunches, broad flat backs, a heavy-browed face over a jutting muzzle, feathery exchange plumes fanning behind the cheeks and a long tail trailing a train of eyed feathers wide as a second wing.",
         "Three pairs of mouth tentacles gather vegetation, while redundant gas lobes along the upper flanks and pleated breathing channels reduce the cost of slow flight; the belly is pleated lengthwise round the great crop, and the folds open as it fills.",
         "Their wings are broad and stalked thick, for a carrier cruises rather than hovers, and beat slowly enough to count.",
         "A raised ridge rings the back, and in it sit the aur sacs, sheathed in iron: from its twentieth year a Nætu can let their charge out along the ridge as a shimmering dome over its back, brightest where it leaves the ridge, which turns the wind and the spray of the mists from everything that lives there.",
@@ -72,11 +71,11 @@ taxon!(
 );
 
 /// The head: its centre and half extents.
-const HEAD: Vec3 = vec3(0.0, 0.4, -13.5);
-const HEAD_SIZE: Vec3 = vec3(5.6, 4.4, 5.6);
+const HEAD: Vec3 = vec3(0.0, 1.0, -13.5);
+const HEAD_SIZE: Vec3 = vec3(5.2, 4.2, 5.0);
 
 /// Where the mouth opens beneath the head, and its tentacles with it.
-const MOUTH: Vec3 = vec3(0.0, -2.1, -17.7);
+const MOUTH: Vec3 = vec3(0.0, -1.9, -18.8);
 
 /// How far the mouth tentacles reach, as a share of the lineage's usual reach.
 const REACH: f32 = 2.6;
@@ -108,7 +107,7 @@ fn on_head(direction: Vec3, inset: f32) -> Vec3 {
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 20.0, 25.0, 0);
-    creature.opaque_bounds = vec3(16.0, 14.0, 58.0).extend(0.0);
+    creature.opaque_bounds = vec3(26.0, 18.0, 76.0).extend(0.0);
     rig_tentacles(creature, MOUTH, REACH, ORAL_PAIRS);
 }
 
@@ -116,51 +115,67 @@ pub fn animate(creature: &mut Tetralate) {
 fn tail_joint(creature: &Tetralate, index: u32) -> Vec3 {
     let t = index as f32 / 7.0;
     let sway = (creature.animation.z * 1.2 - t * 3.0).sin() * t * 2.0;
-    vec3(sway, 0.5 - t * 1.6, 15.0 + t * 30.0)
+    vec3(sway, 0.5 - t * 3.0, 15.0 + t * 28.0)
 }
 
 /// A flying island: a broad, flat-backed carrier.
 ///
-/// A blunt head under a heavy brow, its eyes set low to look forwards and down, the exchange
-/// frills fanning behind them; a wide body whose back is flat where the dorsal fibres grow and
-/// the Næ build, ringed by the raised ridge that holds the aur sacs; gas lobes swelling along the
-/// upper flanks so no single wound brings it down; a belly pleated lengthwise round the crop; and a
-/// long tail flowing straight out of the body into a fan of feather vanes.
+/// Its body is built round its wings: great shoulders at the fore pair's roots and haunches at the
+/// hind pair's, a narrower waist between them, a back broad and flat where the dorsal fibres grow
+/// and the Næ build, ringed by the raised ridge that holds the aur sacs, gas lobes swelling along
+/// the upper flanks so no single wound brings it down, a crease running the flank from cheek to
+/// tail, and beneath it all a keel, the belly pleated either side of it round the crop. The tail
+/// flows straight out of the body under a train of eyed feathers.
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let head = rounded(point - HEAD, HEAD_SIZE);
-    let torso = rounded(point - vec3(0.0, 0.0, -1.0), vec3(7.6, 5.0, 13.0));
-    let hind = rounded(point - vec3(0.0, 0.4, 10.0), vec3(5.6, 4.0, 8.0));
-    let slab = rounded(point - vec3(0.0, 3.0, 0.0), vec3(6.6, 2.2, 12.5));
-    let mut d = smooth_min(smooth_min(torso, hind, 3.0), slab, 2.5);
-    d = smooth_min(d, head, 3.0);
+    let torso = rounded(point - vec3(0.0, 0.2, -0.5), vec3(6.2, 4.8, 13.5));
+    let shoulders = rounded(mirrored - vec3(5.2, 1.4, -6.0), vec3(3.6, 3.6, 5.0));
+    let haunches = rounded(mirrored - vec3(4.6, 0.8, 7.0), vec3(3.0, 3.0, 4.4));
+    let slab = rounded(point - vec3(0.0, 3.0, 0.5), vec3(6.4, 2.2, 12.0));
+    let mut d = smooth_min(torso, slab, 2.5);
+    d = smooth_min(d, shoulders, 2.4);
+    d = smooth_min(d, haunches, 2.2);
+    // The keel along the belly.
+    let keel = rounded(point - vec3(0.0, -3.6, 0.0), vec3(2.2, 2.0, 10.5));
+    d = smooth_min(d, keel, 2.0);
     // The back flattened, a smooth shoulder down to the flanks.
     d = -smooth_min(-d, -(point.y - 5.15), 0.8);
-    // A heavy brow over the eyes.
-    let brow = rounded(point - vec3(0.0, 3.4, -15.0), vec3(5.2, 1.5, 4.4));
-    d = smooth_min(d, brow, 1.5);
-    // Gas lobes along the upper flanks, each its own size, scalloping the outline from above.
+    // Gas lobes along the upper flanks between shoulder and haunch, scalloping the outline.
     let lobes = 0.85 + creature.gene(CHAMBERS) * 0.3;
     for index in 0..3 {
-        let z = index as f32 * 8.0 - 7.0;
-        let size = 1.0 + (index as f32 - 1.0).abs() * -0.1 + if index == 1 { 0.1 } else { 0.0 };
+        let z = index as f32 * 4.5 - 3.5;
+        let size = if index == 1 { 1.1 } else { 0.95 };
         let lobe = rounded(
-            mirrored - vec3(6.2, 2.6, z),
-            vec3(2.6, 1.9, 4.0) * lobes * size,
+            mirrored - vec3(5.6, 2.8, z),
+            vec3(2.0, 1.6, 2.6) * lobes * size,
         );
-        d = smooth_min(d, lobe, 1.4);
+        d = smooth_min(d, lobe, 1.2);
     }
-    let tail = shaft(point, |index| tail_joint(creature, index), 8, 3.4, 0.7);
+    d = smooth_min(d, face(point), 2.6);
+    let tail = shaft(point, |index| tail_joint(creature, index), 8, 3.4, 0.6);
     d = smooth_min(d, tail, 3.0);
-    // The belly pleated lengthwise round the crop.
+    // The crease along each flank, from behind the cheek to the haunch.
+    if point.z > -12.0 && point.z < 12.0 {
+        let line = 0.4 + point.z * 0.03;
+        let crease = (point.y - line).abs();
+        d += (1.0 - crease / 0.5).max(0.0).power(2)
+            * 0.18
+            * ((point.x.abs() - 4.0) / 2.0).clamp(0.0, 1.0);
+    }
+    // The belly pleated lengthwise either side of the keel.
     if point.y < -1.0 && point.x.abs() < 6.5 && point.z > -14.0 && point.z < 12.0 {
         let groove = (1.0 - (point.x * 1.4).sin().abs()).power(6);
-        d += groove * 0.18 * ((-1.0 - point.y) / 1.5).clamp(0.0, 1.0);
+        d += groove * 0.16 * ((-1.0 - point.y) / 1.5).clamp(0.0, 1.0);
     }
-    // The mouth, a wide slit beneath the head.
-    let slit = rounded(point - MOUTH - vec3(0.0, 0.1, 0.4), vec3(2.6, 0.3, 0.9));
-    d = d.max(-slit);
-    d = louvres(d, point - vec3(0.0, 0.0, -4.0), vec3(8.0, 5.0, 10.0));
+    // The mouth, a wide line curving round the front of the muzzle.
+    let lip = vec2(
+        (vec2(point.x / 3.0, (point.z + 18.4) / 2.6).length() - 1.0) * 2.4,
+        point.y + 1.75 + point.x * point.x * 0.03,
+    )
+    .length()
+        - 0.18;
+    d = d.max(-lip.max(point.z + 17.6));
+    d = louvres(d, point - vec3(0.0, 0.0, -4.0), vec3(7.5, 5.0, 10.0));
     // The ridge round the back, grown up out of it, that the shield is let out along.
     let ring = ring_distance(point);
     let ridge = vec2(ring, point.y - ring_height(point.z)).length() - 0.45;
@@ -181,31 +196,7 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     };
     let mut hit = with_wings(Surface::new(d, material), point, creature, LOOK);
     hit = head_surface(point, creature, hit);
-    // The tail's fan of feather vanes, spread across the air from its tip, and a smaller pair
-    // before it.
-    let tip = tail_joint(creature, 7);
-    let onward = tip - tail_joint(creature, 6);
-    let heading = onward.x.atan2(onward.z);
-    for index in 0..7 {
-        let spread = (index as f32 - 3.0) * 0.22;
-        let angle = heading + spread;
-        let direction = vec3(angle.sin(), -0.05, angle.cos());
-        let length = 13.0 * (1.0 - spread.abs() * 0.3);
-        let root = tail_joint(creature, 6).lerp(tip, 0.5);
-        hit.join(
-            vane(point, root, direction / direction.length(), length, 1.8),
-            1,
-        );
-    }
-    let before = tail_joint(creature, 5);
-    for side in 0..2 {
-        let sign = if side == 0 { -1.0 } else { 1.0 };
-        let direction = vec3(sign * 0.75, -0.05, 0.66);
-        hit.join(
-            vane(point, before, direction / direction.length(), 6.0, 1.0),
-            1,
-        );
-    }
+    hit = train(point, creature, hit);
     // The aur sacs set in the ridge, four to a side, glowing through iron collars thicker the more
     // iron it has gathered: the organs the shield is let out from.
     let sheath = 1.06 + creature.stores.x.min(1.0) * 0.14;
@@ -229,42 +220,81 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     hit
 }
 
-/// The head: the eyes set low under the brow, the exchange frills fanning behind them where the
-/// air it flies through strikes them first, and the mouth tentacles beneath.
+/// The face: a broad rounded cranium, a muzzle jutting forwards and a little down, full cheeks
+/// either side, and a heavy ridge over each eye, so it reads as a calm, heavy-browed face rather
+/// than the front of a sack.
+fn face(point: Vec3) -> f32 {
+    let mirrored = vec3(point.x.abs(), point.y, point.z);
+    let cranium = rounded(point - HEAD, HEAD_SIZE);
+    let muzzle = rounded(point - vec3(0.0, -0.7, -17.8), vec3(3.4, 2.4, 3.4));
+    let cheeks = rounded(mirrored - vec3(4.0, -0.4, -14.5), vec3(2.0, 2.2, 2.6));
+    let brows = rounded(mirrored - vec3(2.7, 2.4, -16.4), vec3(2.2, 1.1, 2.2));
+    let chin = rounded(point - vec3(0.0, -2.6, -16.0), vec3(2.4, 1.2, 2.6));
+    let mut d = smooth_min(cranium, muzzle, 2.0);
+    d = smooth_min(d, cheeks, 1.5);
+    d = smooth_min(d, brows, 1.0);
+    smooth_min(d, chin, 1.2)
+}
+
+/// The head's own parts: the eyes set low under the brows, the feathery exchange plumes fanning
+/// back from behind the cheeks where the air it flies through strikes them first, and the mouth
+/// tentacles beneath.
 fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     if point.z > -4.0 {
         return hit;
     }
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let eye = (mirrored - on_head(vec3(0.55, -0.12, -0.82), 0.93)).length() - 0.8;
-    hit.socket(eye, 0.8);
-    let low = (mirrored - on_head(vec3(0.4, -0.85, -0.35), 0.97)).length() - 0.4;
-    hit.socket(low, 0.4);
-    for i in 0..3 {
-        let index = i as f32;
-        let root = on_head(vec3(1.0, 0.1 + index * 0.25, 0.3 + index * 0.15), 0.95);
-        let tip = root
-            + vec3(5.0 - index * 0.8, 1.2 + index * 1.0, 4.5) * (0.8 + creature.gene(FRILLS) * 0.4);
-        let axis = (tip - root).normalize();
-        let across = axis.cross(Vec3::Z).normalize();
-        let normal = axis.cross(across);
-        let relative = mirrored - root;
-        let along = relative.dot(axis);
-        let serration = 1.0 - (along * 5.0).sin().abs() * 0.22;
-        let frond = vec3(
-            relative.dot(across) / serration,
-            relative.dot(normal),
-            along - (tip - root).length() * 0.5,
+    let eye = (mirrored - on_head(vec3(0.55, 0.05, -0.83), 0.98)).length() - 1.0;
+    hit.socket(eye, 1.0);
+    let low = (mirrored - vec3(2.0, -2.9, -17.0)).length() - 0.35;
+    hit.socket(low, 0.35);
+    let full = 0.8 + creature.gene(FRILLS) * 0.4;
+    let stir = (creature.animation.z * 0.6).sin() * 0.4;
+    for index in 0..3 {
+        let lane = index as f32;
+        let root = vec3(5.4, 1.0 - lane * 1.2, -13.0 + lane * 0.8);
+        let bend = root + vec3(3.6, 3.0 - lane * 1.6 + stir, 2.4) * full;
+        let tip = bend + vec3(2.4, 2.2 - lane * 1.8 + stir, 6.0 - lane * 0.8) * full;
+        hit.blend(
+            plume(mirrored, root, bend, tip, 0.5, 2.2 * full, 10.0),
+            16,
+            0.4,
         );
-        let membrane = ellipsoid(frond, vec3(0.85, 0.12, (tip - root).length() * 0.55)) * 0.65;
-        let stem = tapered_tail(mirrored, root, tip, 0.3, 0.04);
-        hit.blend(smooth_min(membrane, stem, 0.1), 2, 0.3);
     }
     hit.blend(
         oral_tentacles(point, creature, MOUTH, REACH, ORAL_PAIRS),
         2,
         0.3,
     );
+    hit
+}
+
+/// The train: long eyed feathers fanned from the last half of the tail, longest at its end,
+/// spread wide across the air like a second, trailing wing.
+fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    if (point - tail_joint(creature, 5)).length() > 48.0 {
+        return hit;
+    }
+    let mut vanes = 1e6f32;
+    let mut rings = 1e6f32;
+    let mut centres = 1e6f32;
+    for joint in 3..7 {
+        let root = tail_joint(creature, joint);
+        let ahead = tail_joint(creature, joint + 1) - root;
+        let ahead = ahead / ahead.length();
+        let reach = 15.0 + (joint as f32 - 3.0) * 5.0;
+        for lane in 0..4 {
+            let spread = (lane as f32 - 1.5) * (0.35 + (joint as f32 - 3.0) * 0.1);
+            let direction = ahead + vec3(spread, -0.1 - spread.abs() * 0.1, 0.0);
+            let parts = feather(point, root, direction / direction.length(), reach, 4.2);
+            vanes = vanes.min(parts.x);
+            rings = rings.min(parts.y);
+            centres = centres.min(parts.z);
+        }
+    }
+    hit.join(vanes, 1);
+    hit.join(rings, 13);
+    hit.join(centres, 14);
     hit
 }
 
@@ -287,9 +317,10 @@ fn material(point: Vec3, id: u32) -> Material {
     let pleat = (1.0 - (point.x * 1.4).sin().abs()).power(6) * (-1.5 - point.y).clamp(0.0, 1.0);
     let mut m = Material::skin(colour.lerp(vec3(0.62, 0.58, 0.48), pleat * 0.7), 0.45);
     m.texture = WRINKLED;
-    m.relief = 0.3;
-    m.grain = 0.45;
-    m.scatter = 0.5;
+    m.relief = 0.14;
+    m.grain = 0.35;
+    m.scatter = 0.6;
+    m.film = 0.35;
     match id {
         1 => {
             // Feather vanes, deep teal shading to gold at the tips.
@@ -350,7 +381,7 @@ pub const LOOK: Look = Look::coat(
 .stalked([vec2(0.6, 0.18), vec2(0.55, 0.18)])
 .styled([vec4(0.5, 0.8, 6.0, 0.0), vec4(0.45, 0.8, 5.0, 0.0)])
 .flying(vec4(0.2, 0.35, 0.45, 1.3))
-.marked(vec4(1.0, 3.0, 0.35, 0.42), vec3(0.72, 0.58, 0.28));
+.marked(vec4(4.0, 1.0, 0.35, 0.42), vec3(0.72, 0.58, 0.28));
 
 pub fn render(ray: Ray, creature: &Tetralate) -> TraceResult {
     let mut result = TraceResult::opaque(render_opaque(ray, creature));
