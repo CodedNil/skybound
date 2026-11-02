@@ -19,8 +19,10 @@ use std::{
     io::BufWriter,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
+    thread,
     time::SystemTime,
 };
+use webp_animation::{Encoder, EncoderOptions, EncodingConfig, EncodingType, LossyEncodingConfig};
 use wgpu::util::{BufferInitDescriptor, DeviceExt, make_spirv};
 
 const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
@@ -294,27 +296,28 @@ fn draw(tiles: &[(Drawn, &View, usize)], anatomy: bool) -> Vec<Vec<u8>> {
             (*c, view)
         })
         .collect();
-    gpu()
-        .trace(&batch)
-        .into_par_iter()
-        .zip(tiles.par_iter())
-        .map(|(samples, (_, _, size))| {
-            let size = *size;
-            (0..size * size)
-                .flat_map(|index| {
-                    let (x, y) = (index % size * 2, index / size * 2);
-                    let at = |dx: usize, dy: usize| samples[(y + dy) * size * 2 + x + dx];
-                    let pixel = (at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) * 0.25;
+    gpu().trace_with(&batch, |samples, view| {
+        let size = view.tile.x as usize / 2;
+        let wide = size * 2;
+        let mut pixels = vec![0u8; size * size * 3];
+        // Each row of pixels from its two rows of samples, the rows side by side.
+        pixels
+            .par_chunks_mut(size * 3)
+            .enumerate()
+            .for_each(|(y, row)| {
+                let above = &samples[y * 2 * wide..(y * 2 + 1) * wide];
+                let below = &samples[(y * 2 + 1) * wide..(y * 2 + 2) * wide];
+                for x in 0..size {
+                    let pixel =
+                        (above[x * 2] + above[x * 2 + 1] + below[x * 2] + below[x * 2 + 1]) * 0.25;
                     let colour = tonemap(pixel.truncate());
-                    [
-                        (colour.x * 255.0).round() as u8,
-                        (colour.y * 255.0).round() as u8,
-                        (colour.z * 255.0).round() as u8,
-                    ]
-                })
-                .collect()
-        })
-        .collect()
+                    row[x * 3] = (colour.x * 255.0).round() as u8;
+                    row[x * 3 + 1] = (colour.y * 255.0).round() as u8;
+                    row[x * 3 + 2] = (colour.z * 255.0).round() as u8;
+                }
+            });
+        pixels
+    })
 }
 
 /// How many frames an animated sheet runs to, and how many it shows a second: a two-second loop,
@@ -523,22 +526,19 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
         .collect()
 }
 
-/// Frames saved as a looping animated GIF, shown `rate` a second, at half the size they were
-/// traced at, which smooths their edges and keeps the files small. GIF rather than WebP because
+/// Frames saved as a looping animated GIF, shown `rate` a second. GIF rather than WebP because
 /// editors that preview images, Zed among them, animate GIF and show only an animated WebP's first
 /// frame.
 fn save_gif(path: &Path, frames: Vec<RgbImage>, rate: f32) {
     let (width, height) = frames[0].dimensions();
-    let (width, height) = (width / 2, height / 2);
     // Each frame is reduced to its own palette in parallel, the slow part, then written in turn.
     let palettes: Vec<gif::Frame<'static>> = frames
         .into_par_iter()
         .map(|frame| {
-            let small = imageops::resize(&frame, width, height, imageops::FilterType::Triangle);
             let mut encoded = gif::Frame::from_rgb_speed(
                 u16::try_from(width).expect("GIF width"),
                 u16::try_from(height).expect("GIF height"),
-                small.as_raw(),
+                frame.as_raw(),
                 10,
             );
             encoded.delay = (100.0 / rate).round() as u16;
@@ -557,6 +557,25 @@ fn save_gif(path: &Path, frames: Vec<RgbImage>, rate: f32) {
     for frame in &palettes {
         encoder.write_frame(frame).expect("encode GIF frame");
     }
+}
+
+/// A still saved as lossy WebP, much smaller than PNG for a sheet of soft-shaded creatures on a
+/// clear ground.
+fn save_webp(path: &Path, image: &RgbaImage) {
+    let options = EncoderOptions {
+        encoding_config: Some(EncodingConfig {
+            encoding_type: EncodingType::Lossy(LossyEncodingConfig::default()),
+            quality: 82.0,
+            method: 4,
+        }),
+        ..EncoderOptions::default()
+    };
+    let mut encoder = Encoder::new_with_options(image.dimensions(), options).expect("WebP encoder");
+    encoder
+        .add_frame(image.as_raw(), 0)
+        .expect("encode WebP still");
+    let data = encoder.finalize(0).expect("finish WebP");
+    fs::write(path, &*data).expect("save WebP");
 }
 
 /// An animated sheet saved as GIF, and with `--still` its first frame as PNG beside it.
@@ -618,7 +637,7 @@ fn taxon_folder(taxon: &Taxon) -> PathBuf {
 /// Every species below a taxon on a clear square sheet `SHEET` pixels across, drawn as large as
 /// will fit: measured once at a trial size, then drawn again at the size that fills the square.
 fn render_lineup(taxon: &Taxon, seconds: f32) -> RgbaImage {
-    const TRIAL: usize = 400;
+    const TRIAL: usize = 220;
     let trial = render_lineup_at(taxon, TRIAL, seconds);
     let fill = SHEET as f32 / trial.width().max(trial.height()) as f32;
     let mut sheet = render_lineup_at(taxon, (TRIAL as f32 * fill * 0.98) as usize, seconds);
@@ -841,7 +860,20 @@ fn pack(shapes: &[Silhouette], order: &[usize], width: u32) -> (Vec<(u32, u32)>,
 }
 
 /// A lineup beside every fork in the tree, or in `output`, for the forks `selected` names.
-fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool) {
+/// One preview to draw: a still lineup of every species below a taxon, or one of a species'
+/// animated sheets.
+enum Job {
+    Lineup(&'static Taxon, PathBuf),
+    Sheet(usize, Output, PathBuf),
+}
+
+/// How many previews are drawn at once: enough that the GPU traces one while the processor labels
+/// and encodes another, few enough that their buffers fit beside one another.
+const WORKERS: usize = 3;
+
+/// The lineups older than the species in them, to be drawn again.
+fn lineups(output: Option<&str>, selected: Option<&str>, all: bool) -> Vec<Job> {
+    let mut jobs = Vec::new();
     for taxon in forks() {
         if selected.is_some_and(|filter| {
             !filter
@@ -851,14 +883,14 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
             continue;
         }
         let path = output.map_or_else(
-            || taxon_folder(taxon).join(format!("{}.png", slug(taxon.name))),
+            || taxon_folder(taxon).join(format!("{}.webp", slug(taxon.name))),
             |output| {
                 let name = if taxon.parent.is_some() {
                     filename(taxon)
                 } else {
                     slug(taxon.name)
                 };
-                Path::new(output).join(format!("{name}.png"))
+                Path::new(output).join(format!("{name}.webp"))
             },
         );
         let since = SPECIES
@@ -868,26 +900,70 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
             .map(|(kind, _)| sources(kind))
             .max()
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        if !all && fresh(&path, since) {
-            continue;
+        if all || !fresh(&path, since) {
+            jobs.push(Job::Lineup(taxon, path));
         }
-        render_lineup(taxon, seconds)
-            .save(&path)
-            .expect("save lineup PNG");
-        println!("{}: {}", taxon.name, path.display());
     }
+    jobs
+}
+
+/// Draw every job, a few at once: each species' pipeline first, side by side, then the previews
+/// themselves from one queue, so the GPU traces one while the processor labels and encodes another.
+fn run(jobs: Vec<Job>, tile: usize, seconds: f32) {
+    let mut needed: Vec<u32> = jobs
+        .iter()
+        .flat_map(|job| match job {
+            Job::Lineup(taxon, _) => SPECIES
+                .iter()
+                .enumerate()
+                .filter(|(_, species)| species.descends_from(taxon))
+                .map(|(kind, _)| kind as u32)
+                .collect::<Vec<_>>(),
+            Job::Sheet(kind, _, _) => vec![*kind as u32],
+        })
+        .collect();
+    needed.sort_unstable();
+    needed.dedup();
+    needed.par_iter().for_each(|&species| {
+        gpu().pipeline(species);
+    });
+    let queue = Mutex::new(jobs.into_iter());
+    thread::scope(|scope| {
+        for _ in 0..WORKERS {
+            scope.spawn(|| {
+                loop {
+                    let job = queue.lock().expect("job queue").next();
+                    match job {
+                        None => break,
+                        Some(Job::Lineup(taxon, path)) => {
+                            save_webp(&path, &render_lineup(taxon, seconds));
+                            println!("{}: {}", taxon.name, path.display());
+                        }
+                        Some(Job::Sheet(kind, output, path)) => {
+                            save_sheet(
+                                &path,
+                                render_sheet(kind, tile, output, seconds),
+                                frames(output).1,
+                            );
+                            println!("{}: {}", SPECIES[kind].name, path.display());
+                        }
+                    }
+                }
+            });
+        }
+    });
 }
 
 fn main() {
     if env::args().any(|arg| arg == "--help") {
         println!(
-            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,lineup]\nBy default, writes all four animated sheets (GIF, traced on the GPU but for anatomy) beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a still lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
+            "species_preview [--size 384] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,lineup]\nBy default, writes all four animated sheets (GIF, traced on the GPU, several at once) beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a still lineup (WebP) of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
         );
         return;
     }
     let tile: usize = option("--size")
         .or_else(|| env::args().nth(1).filter(|v| !v.starts_with('-')))
-        .map_or(768, |value| {
+        .map_or(384, |value| {
             value.parse().expect("tile size must be an integer")
         });
     assert!(
@@ -921,9 +997,11 @@ fn main() {
             _ => panic!("unknown output: {name}"),
         })
         .collect();
-    if outputs.contains(&Output::Lineup) {
-        lineups(output.as_deref(), selected.as_deref(), seconds, all);
-    }
+    let mut jobs = if outputs.contains(&Output::Lineup) {
+        lineups(output.as_deref(), selected.as_deref(), all)
+    } else {
+        Vec::new()
+    };
     let outputs: Vec<_> = outputs
         .into_iter()
         .filter(|&output| output != Output::Lineup)
@@ -952,17 +1030,12 @@ fn main() {
                     .trim_end_matches("_render"),
                 output.name()
             ));
-            if !all && fresh(&path, since) {
-                continue;
+            if all || !fresh(&path, since) {
+                jobs.push(Job::Sheet(kind, output, path));
             }
-            save_sheet(
-                &path,
-                render_sheet(kind, tile, output, seconds),
-                frames(output).1,
-            );
-            println!("{}: {}", taxon.name, path.display());
         }
     }
+    run(jobs, tile, seconds);
     assert!(
         count > 0 || outputs.is_empty(),
         "no species matched the filter"
@@ -1023,33 +1096,48 @@ impl Gpu {
 
     /// The pipeline for one species, its body the only one compiled in.
     fn pipeline(&self, species: u32) -> wgpu::ComputePipeline {
-        let mut pipelines = self.pipelines.lock().expect("pipelines");
-        pipelines
+        if let Some(pipeline) = self.pipelines.lock().expect("pipelines").get(&species) {
+            return pipeline.clone();
+        }
+        // Built outside the lock, so species being drawn at once build theirs side by side.
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("preview"),
+                layout: None,
+                module: &self.module,
+                entry_point: Some("preview"),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[("0", f64::from(species))],
+                    ..wgpu::PipelineCompilationOptions::default()
+                },
+                cache: None,
+            });
+        self.pipelines
+            .lock()
+            .expect("pipelines")
             .entry(species)
-            .or_insert_with(|| {
-                self.device
-                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("preview"),
-                        layout: None,
-                        module: &self.module,
-                        entry_point: Some("preview"),
-                        compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[("0", f64::from(species))],
-                            ..wgpu::PipelineCompilationOptions::default()
-                        },
-                        cache: None,
-                    })
-            })
+            .or_insert(pipeline)
             .clone()
     }
 
     /// Trace each creature in its view at its own size, returning each tile's linear colour and
     /// coverage, row by row from the top. Every tile must be of the same species.
+    fn trace(&self, tiles: &[(Drawn, PreviewView)]) -> Vec<Vec<Vec4>> {
+        self.trace_with(tiles, |samples, _| samples.to_vec())
+    }
+
+    /// Trace as [`Gpu::trace`] does, handing each tile's samples, straight from the readback
+    /// without copying them out first, to `finish`.
     #[expect(
         clippy::too_many_lines,
         reason = "one dispatch's buffers, bindings and readback, in order"
     )]
-    fn trace(&self, tiles: &[(Drawn, PreviewView)]) -> Vec<Vec<Vec4>> {
+    fn trace_with<T: Send, F: Fn(&[Vec4], &PreviewView) -> T + Sync>(
+        &self,
+        tiles: &[(Drawn, PreviewView)],
+        finish: F,
+    ) -> Vec<T> {
         let species = tiles[0].0.organism().kind.x;
         assert!(
             tiles.iter().all(|(c, _)| c.organism().kind.x == species),
@@ -1171,11 +1259,11 @@ impl Gpu {
         let data = slice.get_mapped_range().expect("previews mapped");
         let all: &[Vec4] = bytemuck::cast_slice(&data);
         views
-            .iter()
+            .par_iter()
             .map(|view| {
                 let size = view.tile.x as usize;
                 let start = view.tile.y as usize;
-                all[start..start + size * size].to_vec()
+                finish(&all[start..start + size * size], view)
             })
             .collect()
     }
