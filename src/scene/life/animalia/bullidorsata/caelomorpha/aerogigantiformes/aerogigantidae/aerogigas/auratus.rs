@@ -1,19 +1,5 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::life::{
-    Bubbleback, Look,
-    animalia::bullidorsata::caelomorpha::tissue_distance,
-    biology::{Biology, Litter},
-    genome::Gene,
-    rounded, smooth_min,
-    surface::Surface,
-};
-use core::f32::consts::{PI, TAU};
-#[cfg(not(target_arch = "spirv"))]
 pub use nature::ETHOLOGY;
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     size: 1.75,

@@ -23,10 +23,9 @@ mod nature {
     //! Wind and struggling prey tear a web, so a Weaver's idle hours alternate with mending: it
     //! works slowly round the strands, paying out fresh silk, then hangs still again.
 
+    use super::*;
     use crate::scene::life::{
-        Injury,
         animalia::{
-            PATIENCE,
             mind::{Aim, Blow, Ethology, Hold, Sighting, Snare, hang_still, orbit},
             physiology::{Physiology, Sexes},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
@@ -34,7 +33,6 @@ mod nature {
         behaviour::{Activity, Goal},
         organs::Strike,
     };
-    use spirv_std::glam::Vec3;
 
     /// A Weaver keeps to its own web and meets another only when one comes to its lines, so like
     /// its silk-making ancestors each is both sexes, and any two that meet can breed.

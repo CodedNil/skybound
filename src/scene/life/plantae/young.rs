@@ -3,8 +3,6 @@
 
 use crate::scene::life::{ellipsoid, smooth_min, surface::Surface};
 use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 /// A spore under its sail.
 pub const SPORE: u32 = 5;

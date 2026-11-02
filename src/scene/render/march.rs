@@ -138,7 +138,6 @@ impl CloudMarch {
     fn advance(
         &mut self,
         point: Vec3,
-        t: f32,
         footprint: f32,
         view: &ViewUniform,
         textures: &Textures,
@@ -204,7 +203,6 @@ impl CloudMarch {
         &mut self,
         overhead: &clouds::CloudColumn,
         point: Vec3,
-        step: f32,
         footprint: f32,
         view: &ViewUniform,
         textures: &Textures,
@@ -427,12 +425,12 @@ pub fn march_clouds(
         let end = boundary(shell.xy(), t, boundary(shell.zw(), t, limit));
         let point = ro + rd * t;
         let footprint = (t * angle).max(0.25);
-        let (stride, cloudy, overhead) = sky.advance(point, t, footprint, view, textures, cells);
+        let (stride, cloudy, overhead) = sky.advance(point, footprint, view, textures, cells);
         let step = stride.min(end - t).max(0.0625);
         let distance = t + step * 0.5;
         let sample_point = ro + rd * distance;
         if cloudy {
-            let cloud = sky.sample(&overhead, sample_point, step, footprint, view, textures);
+            let cloud = sky.sample(&overhead, sample_point, footprint, view, textures);
             if cloud.retry {
                 continue;
             }

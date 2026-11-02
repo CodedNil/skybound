@@ -24,7 +24,8 @@ pub mod entry {
 pub mod preview_entry {
     include!(concat!(env!("OUT_DIR"), "/preview.rs"));
 }
-#[cfg(target_arch = "spirv")]
+/// The game's passes, which the previewer's tracer has no use for.
+#[cfg(all(target_arch = "spirv", not(feature = "preview")))]
 pub mod render;
 
 pub const PLANET_RADIUS: f32 = 250_000.0;

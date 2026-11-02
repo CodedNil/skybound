@@ -1,32 +1,7 @@
-use super::{KNOTS, Train, plumage, rig_train, shaft, strip, tail_knot};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
-    organs::{Part, pair},
-};
 use crate::scene::{
-    life::{
-        Look, Tetralate,
-        animalia::{
-            tetralata::{DRAPE_KNOTS, DRAPES, oral_grasping, rig_grasping, vivipara::ORAL_PAIRS},
-            visit_wings, with_wings,
-        },
-        biology::{Biology, Litter},
-        ellipsoid,
-        genome::Gene,
-        louvres, prepare_pose, rounded, smooth_min,
-        surface::{
-            FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, local_ray, make_hit,
-            trace_material,
-        },
-        tapered_tail,
-    },
-    math::{Power, intersect_sphere},
+    life::surface::{FURRED, WRINKLED, local_ray, make_hit},
+    math::intersect_sphere,
 };
-use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.7,
@@ -139,7 +114,7 @@ struct Drape {
 
 /// How many strands of cloth hang from it, as its Næ have dressed it.
 fn drapes(creature: &Tetralate) -> usize {
-    3 + (creature.chance(200) * 5.99) as usize
+    3 + (creature.chance(200) * 4.99) as usize
 }
 
 /// Strand `index` of the cloth hung from it.
@@ -227,7 +202,12 @@ fn rig_drapes(creature: &mut Tetralate) {
 /// Stretch `knot` of strand `index` of cloth: where it starts and ends, the normal to the band's
 /// face, and the band's breadth, turning down the strand by the strand's twist. The band starts
 /// broad side to the air streaming past, as it is tied.
-fn band(creature: &Tetralate, strand: &Drape, index: usize, knot: usize) -> (Vec3, Vec3, Vec3, Vec3) {
+fn band(
+    creature: &Tetralate,
+    strand: &Drape,
+    index: usize,
+    knot: usize,
+) -> (Vec3, Vec3, Vec3, Vec3) {
     let a = creature.drapes[index][knot].truncate();
     let b = creature.drapes[index][knot + 1].truncate();
     let axis = (b - a) / (b - a).length().max(1e-6);
@@ -785,11 +765,11 @@ mod nature {
     //! chambers and carrying across a hundred kilometres of open sky. A herd strung out across the
     //! clouds keeps together by it, and the Næ who live on them ask them to call for them.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Mind, Situation},
             physiology::Physiology,
-            tetralata::{FOLLOW, vivipara::ferrilaminata::naeturidae::LOYALTY},
         },
         behaviour::Goal,
     };

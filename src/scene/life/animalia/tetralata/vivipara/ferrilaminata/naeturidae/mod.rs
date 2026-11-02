@@ -1,8 +1,3 @@
-use crate::scene::life::genome::Gene;
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
 pub mod naeturus;
 
 /// A sac that holds aur safely, found only in the Nætu lineage.
@@ -34,14 +29,11 @@ mod nature {
     //! The Nætu lineage is curious and playful: the young chase one another, and anything new is
     //! worth a closer look.
 
+    use super::*;
     use crate::scene::life::animalia::{
-        CURIOSITY,
         mind::{Ethology, Situation, Urges},
         physiology::{Physiology, Take, omnivore},
-        tetralata::{
-            INVESTIGATE,
-            vivipara::{ETHOLOGY as LIVE_BEARER, sociable},
-        },
+        tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {

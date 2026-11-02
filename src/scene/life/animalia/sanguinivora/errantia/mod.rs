@@ -21,11 +21,12 @@ mod nature {
     //! The wanderers ride their hosts or drift between them: they sleep slack, and breed by
     //! releasing spawn where their kind crowd.
 
+    use super::*;
     use crate::scene::life::animalia::{
         bullidorsata::nature::{spawn, torpor},
         mind::Ethology,
         physiology::Physiology,
-        sanguinivora::{ETHOLOGY as BLOOD_FEEDER, hosts},
+        sanguinivora::ETHOLOGY as BLOOD_FEEDER,
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {

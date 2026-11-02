@@ -23,20 +23,18 @@ mod nature {
     //! by the glow of their lures. A hungry Shimmeray that sees a swarm of Sparkies goes still and
     //! answers their flashes with its lure until they come to it.
 
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
-            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near,
             },
             physiology::{Physiology, Take},
-            tetralata::{ETHOLOGY as TETRALATE, FOLLOW},
+            tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
     };
-    use spirv_std::glam::Vec3;
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         eats: |_, food| matches!(food, Kind::Auracoccus | Kind::Scintilla),

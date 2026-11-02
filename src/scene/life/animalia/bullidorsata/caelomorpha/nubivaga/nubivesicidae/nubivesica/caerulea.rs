@@ -1,21 +1,5 @@
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::animalia::bullidorsata::caelomorpha::cloth;
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::life::{
-    Bubbleback, Look,
-    animalia::bullidorsata::caelomorpha::{GasChamber, tissue_distance},
-    biology::{Biology, Litter},
-    ellipsoid,
-    genome::Gene,
-    rounded, smooth_min,
-    surface::Surface,
-};
-#[cfg(not(target_arch = "spirv"))]
 pub use nature::ETHOLOGY;
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.55,

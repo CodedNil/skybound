@@ -17,6 +17,9 @@ fn build(manifest_dir: &str, features: &[&str], folder: &str, name: &str) {
         .uniform_buffer_standard_layout(true)
         .relax_block_layout(true)
         .scalar_block_layout(true)
+        // A shader build's warnings are lost in the build script's output, so they fail it instead:
+        // code only one side of a `cfg` uses must not go unseen.
+        .deny_warnings(true)
         .build()
         .expect("Failed to build rust-gpu shader");
     let built_shader = result.module.unwrap_single();

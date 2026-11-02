@@ -1,10 +1,3 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::tetralata::SPRING_ROD,
-    organs::{Function, Organ, Part, Tissue},
-};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
 pub mod aculeorhynchidae;
 pub mod ferrispinidae;
 pub mod naeturidae;

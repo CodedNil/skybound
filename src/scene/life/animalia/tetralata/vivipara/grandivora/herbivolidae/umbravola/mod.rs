@@ -22,6 +22,7 @@ mod nature {
     //! onto a carcass in slow spirals. They know who kills: a hungry Shadowing that sights a hunter
     //! on the hunt follows it, high above and well behind, and is first to its leavings.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{
@@ -29,7 +30,7 @@ mod nature {
                 glide_asleep, orbit,
             },
             nature::{RIDE, SCAVENGE},
-            tetralata::vivipara::{ETHOLOGY as LIVE_BEARER, herd},
+            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
     };

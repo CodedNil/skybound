@@ -1,17 +1,5 @@
-use super::{Build, shredder};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::life::{
-    Look, Tetralate,
-    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::{Biology, Litter},
-    genome::Gene,
-    mouth, prepare_pose,
-    surface::Surface,
-};
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
-use spirv_std::glam::{Vec2, Vec3, vec2, vec3, vec4};
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.25,
@@ -120,14 +108,12 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            AGGRESSION,
             mind::{Ethology, Intent, Mind, Situation, Urges},
             physiology::{Light, Physiology},
-            tetralata::vivipara::{
-                DEVOTION, YOUNG, ferrilaminata::ferrispinidae::ferrispina::ETHOLOGY as IRON_SPINE,
-            },
+            tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::ETHOLOGY as IRON_SPINE,
         },
         behaviour::{Activity, Goal},
     };

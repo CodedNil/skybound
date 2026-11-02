@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod detritivora;
 pub mod rapaciformes;
 

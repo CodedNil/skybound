@@ -1,13 +1,4 @@
-use crate::scene::{
-    life::{
-        Bubbleback, ellipsoid, smooth_min,
-        surface::{Material, Surface},
-    },
-    math::Power,
-};
-use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::Bubbleback;
 pub mod aerogigantiformes;
 #[cfg(not(target_arch = "spirv"))]
 pub mod cloth;

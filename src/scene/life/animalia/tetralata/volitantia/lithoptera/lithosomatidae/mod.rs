@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod lithosoma;
 
 pub const BIOLOGY: Biology = Biology {
@@ -25,7 +24,9 @@ taxon!(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::{Kind, animalia::physiology::Physiology, organs::Function};
+    use super::*;
+    use crate::scene::life::animalia::physiology::Physiology;
+
     pub const PHYSIOLOGY: Physiology = Physiology {
         crops: Function::Drawing,
         speed: 1.0,

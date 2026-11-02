@@ -1,7 +1,7 @@
 use crate::scene::{
     FrameUniform, PLANET_RADIUS, ViewUniform,
     atmosphere::{render_sky, sky_direction, sky_uv},
-    aur::{CURRENT, EJECTION_CELL, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
+    aur::{CURRENT, EJECTION_WINDOW, ejection, ejection_clearance, energy_color},
     climate::{CLOUD_TOP, cloud_wind},
     life::{
         self, BLOOD_FEEDER, BUBBLEBACK, BloodFeeder, Bubbleback, CreatureInstance, HERD, Plant,
@@ -9,7 +9,7 @@ use crate::scene::{
         surface::{Hit, Ray},
     },
     math::intersect_sphere,
-    planet::{surface_coordinates, surface_frame},
+    planet::surface_frame,
     render::{
         clouds::short_volume,
         textures::{AtmosphereData, Textures},
@@ -59,7 +59,6 @@ impl ThinLayers {
 }
 
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn ejection_lookup(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -301,7 +300,6 @@ fn solid_output(hit: Hit, ray: Ray, frame: &FrameUniform) -> (Vec4, Vec4, Vec4, 
 
 /// Solids, with the sky behind them; every pixel writes depth and motion.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment(depth_replacing))]
 pub fn opaque(
     #[spirv(location = 0)] uv: Vec2,
@@ -340,7 +338,6 @@ pub fn opaque(
 /// species is drawn by its own pipeline over the creatures of that species alone, so its fragment
 /// shader holds one species' tracer and not every one's.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(vertex)]
 pub fn creature_quad(
     #[spirv(vertex_index)] vertex: u32,
@@ -407,7 +404,6 @@ pub fn creature_quad(
 /// The creature beneath a [`creature_quad`], traced by the tracer of the one species this
 /// pipeline is specialised to and depth-tested against the solids already drawn.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment(depth_replacing))]
 pub fn creature(
     #[spirv(frag_coord)] fragment: Vec4,
@@ -465,7 +461,6 @@ pub fn creature(
 /// The clouds along every pixel's ray, marched apart from the rest of the volume so that each
 /// shader stays small.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn clouds(
     #[spirv(frag_coord)] fragment: Vec4,
@@ -535,7 +530,6 @@ pub fn clouds(
 /// every pixel. The view's motion follows whichever the pixel mostly shows: an upscaler given the
 /// solids' motion beneath a cloud smears the cloud.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn volume_composite(
     #[spirv(location = 0)] uv: Vec2,
@@ -586,7 +580,6 @@ pub fn volume_composite(
 /// The aur, its arcs and the pole lights, with the clouds slotted in: along the same jittered ray
 /// as the solids at every pixel, so an upscaler is given the whole scene alike.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn volume(
     #[spirv(location = 0)] uv: Vec2,
@@ -666,7 +659,6 @@ pub fn volume(
 }
 
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn transparent(
     #[spirv(location = 0)] uv: Vec2,
@@ -788,7 +780,6 @@ pub fn transparent(
 }
 
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn sky(
     #[spirv(location = 0)] uv: Vec2,

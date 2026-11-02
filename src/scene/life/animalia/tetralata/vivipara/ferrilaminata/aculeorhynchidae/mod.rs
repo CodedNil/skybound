@@ -25,12 +25,12 @@ mod nature {
     //! the stylet's head, shed to get free. They sleep gliding on rising air and court spiralling
     //! up together.
 
+    use super::*;
     use crate::scene::life::{
-        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, glide_asleep, spiral},
             nature::lead,
-            tetralata::{PLAY, vivipara::ETHOLOGY as LIVE_BEARER},
+            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
         organs::Strike,

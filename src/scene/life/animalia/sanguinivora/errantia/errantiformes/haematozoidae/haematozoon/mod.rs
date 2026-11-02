@@ -22,10 +22,11 @@ mod nature {
     //! air is the short, desperate one between hosts: a juvenile cast loose has reserves for only a
     //! little while, and makes for the nearest crowd of animals it can find.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Intent, Situation, Urges},
-            sanguinivora::{ETHOLOGY as WANDERER, HOST},
+            sanguinivora::ETHOLOGY as WANDERER,
         },
         behaviour::{Activity, Goal},
     };

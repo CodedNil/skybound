@@ -1,21 +1,4 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{animalia::physiology::FLOAT, organs::Part};
-use crate::scene::{
-    life::{
-        Look, Tetralate,
-        animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-        biology::{Biology, Litter},
-        capsule,
-        genome::Gene,
-        louvres, prepare_pose, rounded, smooth_min,
-        surface::{Surface, fbm},
-        tapered_tail,
-    },
-    math::Power,
-};
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::{Tetralate, surface::fbm};
 
 pub const BIOLOGY: Biology = Biology {
     size: 2.16,
@@ -349,10 +332,8 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::{
-        Kind,
-        animalia::physiology::{Light, Physiology},
-    };
+    use super::*;
+    use crate::scene::life::animalia::physiology::{Light, Physiology};
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,

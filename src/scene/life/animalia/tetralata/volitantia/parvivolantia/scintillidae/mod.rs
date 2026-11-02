@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod scintilla;
 
 pub const BIOLOGY: Biology = Biology {
@@ -30,17 +29,16 @@ mod nature {
     //! on it, every Sparky flaring at once as they whirl, so the hunter cannot fix on any one;
     //! and in a storm they crowd under the canopy of an Air Giant, out of the rain.
 
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
-            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near, orbit,
             },
             nature::{SHELTER, panic},
             physiology::Physiology,
-            tetralata::{ETHOLOGY as TETRALATE, FOLLOW},
+            tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
     };

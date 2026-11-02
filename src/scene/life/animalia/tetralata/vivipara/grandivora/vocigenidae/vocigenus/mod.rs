@@ -25,15 +25,12 @@ mod nature {
     //! great animals, each calling in turn, the chorus rolling out across the sky for hours, and
     //! answered from far off by others of their kind.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            CURIOSITY,
             mind::{Ethology, Intent, Situation, Urges, orbit},
             physiology::{Physiology, Sexes},
-            tetralata::{
-                INVESTIGATE,
-                vivipara::{CALL, CHATTINESS, ETHOLOGY as LIVE_BEARER, sociable},
-            },
+            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
     };

@@ -22,10 +22,11 @@ mod nature {
     //! through it. A Nibbler that sees its fellows feeding cannot help but join them, so the find
     //! of one becomes a frenzy, the swarm pouring onto it from all sides.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, spiral},
-            tetralata::{PLAY, specialia::detritivora::manducidae::ETHOLOGY as MANDUCID},
+            tetralata::specialia::detritivora::manducidae::ETHOLOGY as MANDUCID,
         },
         behaviour::{Activity, Goal},
     };

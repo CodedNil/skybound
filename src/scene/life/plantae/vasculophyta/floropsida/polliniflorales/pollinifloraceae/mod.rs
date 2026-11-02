@@ -1,13 +1,3 @@
-use crate::scene::life::{
-    capsule, ellipsoid,
-    plantae::{frond, leaf, rotate},
-    surface::Surface,
-};
-use core::f32::consts::TAU;
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
-
 pub mod gigantiflora;
 pub mod polliniflora;
 

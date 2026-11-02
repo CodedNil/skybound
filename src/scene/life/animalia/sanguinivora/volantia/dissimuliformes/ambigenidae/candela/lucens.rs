@@ -1,20 +1,4 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ, Part, site};
-use crate::scene::{
-    life::{
-        BloodFeeder, Look, annulated,
-        biology::{Biology, Litter},
-        capsule, eyespots,
-        genome::Gene,
-        rounded, smooth_min, sucker,
-        surface::Surface,
-    },
-    math::Power,
-};
-use core::f32::consts::TAU;
-use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::BloodFeeder;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.1,
@@ -138,11 +122,12 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
+    use super::*;
     use crate::scene::life::{
         Kind,
         animalia::physiology::{Light, Physiology},
-        organs::Function,
     };
+
     pub const PHYSIOLOGY: Physiology = Physiology {
         crops: Function::Sap,
         light: Light::Aurlit,

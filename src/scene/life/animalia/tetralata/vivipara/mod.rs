@@ -1,4 +1,3 @@
-use crate::scene::life::{biology::Biology, genome::Gene};
 pub mod ferrilaminata;
 pub mod grandivora;
 
@@ -40,17 +39,16 @@ mod nature {
     //! together, keep track of one another by call, and court by song that carries across open sky.
     //! A resting herd sleeps together, but one in five keeps watch, the watch passing round.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            CURIOSITY, SOCIABILITY, VIGILANCE,
             mind::{Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges},
             nature::{COURT, SLEEP},
             physiology::{Brood, Physiology},
-            tetralata::{ETHOLOGY as TETRALATE, FOLLOW, PLAY, PLAYFULNESS, shade},
+            tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
     };
-    use spirv_std::glam::Vec3;
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         brood: Brood::Live,

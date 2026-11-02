@@ -1,22 +1,6 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::{
-    life::{
-        BloodFeeder, Look,
-        biology::{Biology, Litter},
-        capsule,
-        genome::Gene,
-        prepare_pose, ribbons, rig_ribbons, smooth_min, sucker,
-        surface::Surface,
-        tapered_tail,
-    },
-    math::Power,
-};
+use crate::scene::life::BloodFeeder;
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
-use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.04,

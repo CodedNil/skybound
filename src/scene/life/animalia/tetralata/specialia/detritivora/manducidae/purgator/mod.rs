@@ -23,14 +23,12 @@ mod nature {
     //! the player among them. A Sweeper advertises: when a large animal passes, it rises to meet it
     //! in a bobbing, side-to-side dance that every animal of the sky has learnt means a cleaner.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            CURIOSITY,
             mind::{Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges},
             nature::FORAGE,
-            tetralata::{
-                FOLLOW, INVESTIGATE, specialia::detritivora::manducidae::ETHOLOGY as MANDUCID,
-            },
+            tetralata::specialia::detritivora::manducidae::ETHOLOGY as MANDUCID,
         },
         behaviour::{Activity, Goal},
     };

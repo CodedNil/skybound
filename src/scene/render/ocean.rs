@@ -206,7 +206,7 @@ fn arc_traits(seed: f32) -> Vec4 {
 /// A prominence: braided strands twisting around the loop, a sheath, and bright plasma draining
 /// from the apex down both legs. Each loop draws its own number of strands, their twist and
 /// thickness, how knotted its plasma is, its brightness and its tint, from its seed.
-pub(crate) fn ejections(
+pub(super) fn ejections(
     planet_point: Vec3,
     view: &ViewUniform,
     footprint: f32,
@@ -308,7 +308,7 @@ pub(crate) fn wrap(point: Vec3, offset: Vec3, view: &ViewUniform, footprint: f32
     }
 }
 
-pub fn sample_body(
+pub(super) fn sample_body(
     planet_point: Vec3,
     view: &ViewUniform,
     footprint: f32,
@@ -411,7 +411,6 @@ pub fn sample(point: Vec3, view: &ViewUniform, footprint: f32, textures: &Textur
 }
 
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn column_cache(
     #[spirv(frag_coord)] pixel: Vec4,

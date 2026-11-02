@@ -2,26 +2,43 @@
     hidden_glob_reexports,
     reason = "every taxon inherits all its parent has, and anything it defines itself overrides it"
 )]
+#![allow(
+    clippy::wildcard_imports,
+    reason = "a taxon's behaviour sees all its taxon has, as the taxon sees all its parent has"
+)]
 use crate::scene::{
     life::{
         animalia::{
-            Animal, Flier, Rigged,
+            Flier, Rigged,
             bullidorsata::caelomorpha::gel,
             tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
             visit_wings, with_wings,
         },
         plantae::plant_material,
-        surface::{Hit, Ray, Surface, coat, trace_material},
+        surface::coat,
     },
-    math::Power,
     planet::GRAVITY,
 };
+/// The vocabulary every taxon draws, grows and describes its bodies in, which it inherits with
+/// all else its parents have.
+pub use crate::scene::{
+    life::{
+        biology::{Biology, Litter},
+        genome::Gene,
+        surface::{Hit, Material, Ray, Surface, TraceResult, trace_material},
+    },
+    math::Power,
+};
+#[cfg(not(target_arch = "spirv"))]
+pub use crate::scene::life::organs::{Function, Organ, Part, Tissue, pair, site};
 pub use animalia::{bullidorsata::Bubbleback, sanguinivora::BloodFeeder, tetralata::Tetralate};
-use core::f32::consts::TAU;
+pub use core::f32::consts::{FRAC_PI_2, PI, TAU};
 pub use plantae::Plant;
-use spirv_std::glam::{FloatExt, Quat, UVec4, Vec2, Vec3, Vec4, vec2, vec3};
+pub use spirv_std::glam::{
+    FloatExt, Quat, UVec4, Vec2, Vec3, Vec3Swizzles, Vec4, vec2, vec3, vec4,
+};
 #[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+pub use spirv_std::num_traits::Float;
 
 /// The most organs a body has, and a cutaway shows.
 pub const ORGAN_SLOTS: usize = 20;
@@ -228,9 +245,9 @@ impl Drawn {
         development::prepare(&mut organism, species.biology(), age_days, seed, genes);
         organism.previous_proportions = organism.proportions;
         organism.previous_animation = organism.animation;
-        let animal = |organism| Animal {
+        let animal = |organism| animalia::Animal {
             organism,
-            ..Animal::default()
+            ..animalia::Animal::default()
         };
         let mut drawn = match layout_of(kind) {
             TETRALATE => Self::Tetralate(Tetralate {
@@ -343,7 +360,7 @@ impl Drawn {
     }
 
     /// What an animal adds; none for a plant.
-    pub fn animal_mut(&mut self) -> Option<&mut Animal> {
+    pub fn animal_mut(&mut self) -> Option<&mut animalia::Animal> {
         match self {
             Self::Plant(_) => None,
             Self::Bubbleback(c) => Some(c),
@@ -464,6 +481,7 @@ impl Drawn {
 
 /// The bounds of an egg or spore, from the half extents of the adult's body: a string of eggs
 /// trailing far behind, an egg round, and a spore in the plant's own bounds.
+#[cfg(not(target_arch = "spirv"))]
 fn juvenile_bounds(form: u32, body: Vec3) -> Vec3 {
     let size = body.max_element();
     match form {
@@ -1457,10 +1475,11 @@ pub fn air_frame(c: &CreatureInstance, least: f32) -> (Vec3, Vec3) {
     )
 }
 
-/// A pose simulated up to `end`, smooth from one frame to the next though each is simulated
-/// afresh: `settle` runs from two starts on a fixed grid `span` apart, and the later fades in as
-/// the earlier ages out. Damping forgets anything older than a span, and in the world the clock
-/// runs for hours. Returns the earlier pose, the later, and how far the later has faded in.
+/// A pose simulated up to `end`, smooth from one frame to the next though each is simulated afresh.
+///
+/// `settle` runs from two starts on a fixed grid `span` apart, and the later fades in as the
+/// earlier ages out. Damping forgets anything older than a span, and in the world the clock runs
+/// for hours. Returns the earlier pose, the later, and how far the later has faded in.
 pub fn settled<T>(end: f32, span: f32, settle: impl Fn(f32) -> T) -> (T, T, f32) {
     let window = (end / span).floor();
     (

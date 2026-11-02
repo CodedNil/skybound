@@ -210,24 +210,19 @@ impl FromWorld for ScenePipeline {
                 TextureFormat::Rg16Float,
                 TextureFormat::Rgb10a2Unorm,
             ]),
-            volume: Pass::new(
-                entry::VOLUME, &[HALF, TextureFormat::Rg16Float], false),
-            clouds: Pass::new(
-                entry::CLOUDS, &[HALF, FULL], false),
-            thin: Pass::new(
-                entry::TRANSPARENT, &[HALF; 3], false),
-            sky: Pass::new(
-                entry::SKY, &[HALF], false),
-            ejection_lookup: Pass::new(
-                entry::EJECTION_LOOKUP, &[FULL], false),
-            columns: Pass::new(
-                entry::COLUMN_CACHE, &[HALF], false),
-            cloud_map: Pass::new(
-                entry::CLOUD_MAP, &[HALF, HALF, FULL], false),
-            cloud_bounds_pass: Pass::new(
-                entry::CLOUD_BOUNDS, &[HALF], false),
+            volume: Pass::new(entry::VOLUME, &[HALF, TextureFormat::Rg16Float], false),
+            clouds: Pass::new(entry::CLOUDS, &[HALF, FULL], false),
+            thin: Pass::new(entry::TRANSPARENT, &[HALF; 3], false),
+            sky: Pass::new(entry::SKY, &[HALF], false),
+            ejection_lookup: Pass::new(entry::EJECTION_LOOKUP, &[FULL], false),
+            columns: Pass::new(entry::COLUMN_CACHE, &[HALF], false),
+            cloud_map: Pass::new(entry::CLOUD_MAP, &[HALF, HALF, FULL], false),
+            cloud_bounds_pass: Pass::new(entry::CLOUD_BOUNDS, &[HALF], false),
             composite: Pass::new(
-                entry::VOLUME_COMPOSITE, &[HALF, TextureFormat::Rg16Float], false),
+                entry::VOLUME_COMPOSITE,
+                &[HALF, TextureFormat::Rg16Float],
+                false,
+            ),
             ejections: texture(
                 device,
                 UVec2::new(EJECTION_WINDOW * 3, EJECTION_WINDOW),

@@ -22,8 +22,8 @@ mod nature {
     //! comes near, then lunging to seize it in their mouth tentacles and bite it, holding it to
     //! the jaws as they feed. They court by flickering their lures in the dark.
 
+    use super::*;
     use crate::scene::life::{
-        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, display_near, hang_still},
             nature::lead,

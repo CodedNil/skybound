@@ -1,7 +1,3 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
 pub mod polliniflorales;
 pub mod pomales;
 

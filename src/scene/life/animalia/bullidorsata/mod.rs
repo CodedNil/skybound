@@ -1,16 +1,5 @@
-use crate::scene::life::{
-    Body, CreatureInstance,
-    animalia::{Animal, Creature},
-};
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::{BREATHER, CROP, FLOAT, MUSCLE},
-    organs::{Function, Organ, Part, Tissue},
-};
-use core::ops::{Deref, DerefMut};
-use spirv_std::glam::Vec4;
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
+use crate::scene::life::animalia::physiology::{BREATHER, CROP, FLOAT, MUSCLE};
 pub mod caelomorpha;
 
 /// What a gas-bag adds to an animal: the knots of the feeding curtains it trails, three sheets of

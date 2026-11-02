@@ -22,10 +22,11 @@ mod nature {
     //! broad wings off a drinking-plant's edge, where hosts come to them, and dart in for a meal
     //! as one passes.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Intent, Situation, Urges},
-            sanguinivora::{ETHOLOGY as BLOOD_FEEDER, WATERHOLE},
+            sanguinivora::ETHOLOGY as BLOOD_FEEDER,
         },
         behaviour::{Activity, Goal},
     };

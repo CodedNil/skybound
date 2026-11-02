@@ -1,21 +1,6 @@
-use crate::scene::life::{
-    Look, Plant,
-    biology::Biology,
-    ellipsoid,
-    plantae::{count, gene, speckle},
-    smooth_min,
-    surface::Surface,
-    tapered_tail,
-};
+use crate::scene::life::Plant;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    organs::{Part, site},
-    plantae::physiology::{BLADDER, FROND, Physiology, ROOT, STEM},
-};
-use core::f32::consts::TAU;
-use spirv_std::glam::{Vec3, vec2, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::plantae::physiology::{BLADDER, FROND, Physiology, ROOT, STEM};
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.9,

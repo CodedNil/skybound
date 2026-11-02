@@ -1,11 +1,3 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::tetralata::SPRING_ROD,
-    organs::{Function, Organ, Part, Tissue},
-};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
-
 /// The spring rods of the stone wings, thickened and crusted with the mineral grit they eat with
 /// their food, to carry their armour.
 #[cfg(not(target_arch = "spirv"))]

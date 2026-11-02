@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod manduca;
 pub mod purgator;
 
@@ -29,13 +28,13 @@ mod nature {
     //! a cloud rather than one animal. Fear runs through a swarm all at once, the murmuration
     //! that makes it hard to follow, and the boldest gang together to harry a hunter.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            BOLDNESS, SOCIABILITY,
             mind::{Ethology, Intent, Mind, Situation, Urges, orbit},
             nature::panic,
             physiology::Physiology,
-            tetralata::{ETHOLOGY as TETRALATE, FOLLOW},
+            tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
     };

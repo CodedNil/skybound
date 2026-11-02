@@ -1,10 +1,4 @@
-use crate::scene::{
-    life::{Tetralate, smooth_min, tapered_tail},
-    math::Power,
-};
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::Tetralate;
 pub mod nae;
 pub mod naetu;
 
@@ -151,7 +145,6 @@ impl Train {
 /// from two starts on a fixed grid and crossfaded, so the pose moves smoothly from frame to frame.
 /// The tail goes in the first chain of the rig's ribbons and the strands in the next four.
 #[expect(
-    clippy::too_many_lines,
     clippy::needless_range_loop,
     reason = "the tail, the strands and the ties across them are stepped together, by knot and \
               strand, as the rest of the shader crate does"
@@ -210,7 +203,12 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
                     let drag = (flow + gust + flutter - velocity / STEP) * 1.2;
                     let pull =
                         (rest_strand(tail[TRAIN_KNOT], strand, knot) - train[strand][knot]) * 12.0;
-                    swing(&mut train[strand][knot], velocity, gravity + drag + pull, STEP);
+                    swing(
+                        &mut train[strand][knot],
+                        velocity,
+                        gravity + drag + pull,
+                        STEP,
+                    );
                 }
             }
             for _ in 0..3 {

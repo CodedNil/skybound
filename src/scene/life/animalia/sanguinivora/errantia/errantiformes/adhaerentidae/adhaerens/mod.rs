@@ -21,10 +21,11 @@ mod nature {
     //! The young of the Attached Ones do not search the open air for a host: they wait where hosts
     //! must come, hanging in the still air beside a Pondplant until a herd crowds in to drink.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Intent, Situation, Urges},
-            sanguinivora::{ETHOLOGY as WANDERER, HOST, WATERHOLE},
+            sanguinivora::ETHOLOGY as WANDERER,
         },
         behaviour::{Activity, Goal},
     };

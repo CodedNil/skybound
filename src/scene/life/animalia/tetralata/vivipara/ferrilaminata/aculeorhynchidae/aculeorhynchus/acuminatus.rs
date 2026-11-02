@@ -1,19 +1,4 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::{Function, Organ, Part, site};
-use crate::scene::life::{
-    Look, Tetralate,
-    animalia::tetralata::{gape, oral_grasping, rig_grasping, vivipara::ORAL_PAIRS},
-    biology::{Biology, Litter},
-    ellipsoid,
-    genome::Gene,
-    louvres, rounded, smooth_min,
-    surface::Surface,
-    tapered_tail,
-};
-use core::f32::consts::FRAC_PI_2;
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::Tetralate;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.33,

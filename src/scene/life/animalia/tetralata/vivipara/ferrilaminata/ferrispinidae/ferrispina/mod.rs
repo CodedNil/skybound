@@ -1,23 +1,4 @@
-use crate::scene::{
-    life::{
-        Tetralate,
-        animalia::tetralata::{
-            gape,
-            vivipara::ferrilaminata::ferrispinidae::{BLADE_KEENNESS, BLADE_LENGTH, PROFILE},
-        },
-        biology::Biology,
-        capsule, cowl, eyes,
-        genome::Gene,
-        louvres, mouth, rounded, smooth_min,
-        surface::Surface,
-        tapered_tail,
-    },
-    math::Power,
-};
-use core::f32::consts::TAU;
-use spirv_std::glam::{FloatExt, Vec2, Vec3, vec2, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::Tetralate;
 pub mod custos;
 pub mod falcata;
 
@@ -378,8 +359,8 @@ mod nature {
     //! the prey's back as they roll past, cutting into its gas stores. They court by circling
     //! one another with crest and web raised, and their young hunt and play in loose groups.
 
+    use super::*;
     use crate::scene::life::{
-        Injury,
         animalia::{
             mind::{Aim, Blow, Ethology, Mind, Sighting, Situation, orbit},
             nature::lead,
@@ -389,7 +370,6 @@ mod nature {
         behaviour::{Activity, Goal},
         organs::Strike,
     };
-    use spirv_std::glam::Vec3;
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         speed: 65.0,

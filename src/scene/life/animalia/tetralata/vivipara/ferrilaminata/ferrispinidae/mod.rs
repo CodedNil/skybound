@@ -1,4 +1,3 @@
-use crate::scene::life::genome::Gene;
 pub mod crepusculofalx;
 pub mod ferrispina;
 
@@ -38,8 +37,8 @@ mod nature {
     //! with the grooves of generations of them.
 
     pub use super::super::PHYSIOLOGY;
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
             mind::{Ethology, Glimpse, Intent, Interest, Perception, Situation, Urges, orbit},
             tetralata::vivipara::ETHOLOGY as LIVE_BEARER,

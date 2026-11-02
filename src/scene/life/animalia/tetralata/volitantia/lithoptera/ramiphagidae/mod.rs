@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod ramiphaga;
 
 pub const BIOLOGY: Biology = Biology {
@@ -27,8 +26,8 @@ mod nature {
     //! Bark-strippers feed by girdling: they work round and round a stem as they strip it, so a
     //! feeding one spirals slowly up its food plant rather than gnawing one spot bare.
 
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
             mind::{Ethology, Mind, Situation, orbit},
             nature::FORAGE,
@@ -36,7 +35,6 @@ mod nature {
             tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
-        organs::Function,
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {

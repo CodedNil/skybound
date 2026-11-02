@@ -1,31 +1,4 @@
-use super::{
-    KNOTS, TRAIN_FEATHERS, Train, feather_strip, plumage, rig_train, shaft, tail_knot,
-    train_feather, train_knot,
-};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
-    organs::{Part, pair},
-};
-use crate::scene::{
-    life::{
-        Look, Tetralate,
-        animalia::{
-            tetralata::{oral_grasping, rig_grasping, tentacle_tip},
-            visit_wings, with_wings,
-        },
-        biology::{Biology, Litter},
-        genome::Gene,
-        louvres, prepare_pose, rounded, smooth_min,
-        surface::{Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material},
-        tapered_tail,
-    },
-    math::Power,
-};
-use core::f32::consts::TAU;
-use spirv_std::glam::{FloatExt, Quat, Vec2, Vec3, vec2, vec3, vec4};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::surface::WRINKLED;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 5500.0,
@@ -800,19 +773,15 @@ mod nature {
     //! shreds it. Beyond sight they speak through their Nætu, asking them for the deep calls that
     //! carry across the sky, and they read those calls in turn: each helps the other.
 
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
-            SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges,
                 display_near,
             },
             physiology::Physiology,
-            tetralata::{
-                FOLLOW,
-                vivipara::{CALL, CHATTINESS, ferrilaminata::naeturidae::LOYALTY, notice as hear},
-            },
+            tetralata::vivipara::notice as hear,
         },
         behaviour::{Activity, Goal},
     };

@@ -1,9 +1,4 @@
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::life::{Look, Plant, biology::Biology, ellipsoid, surface::Surface};
-use spirv_std::glam::{Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::Plant;
 
 pub const BIOLOGY: Biology = Biology {
     maturity_days: 0.25,

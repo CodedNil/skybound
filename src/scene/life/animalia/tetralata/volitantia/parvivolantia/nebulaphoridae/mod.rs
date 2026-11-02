@@ -1,4 +1,3 @@
-use crate::scene::life::biology::Biology;
 pub mod nebulaphora;
 
 pub const BIOLOGY: Biology = Biology {
@@ -29,12 +28,12 @@ mod nature {
     //! the cloud gives: a thirsty Misting in wet air hangs still and sips the beads of dew that
     //! gather on its wings.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
-            CURIOSITY,
             mind::{Ethology, Intent, Situation, Urges, spiral},
             physiology::Physiology,
-            tetralata::{ETHOLOGY as TETRALATE, INVESTIGATE},
+            tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
         plantae::physiology::Propagation,

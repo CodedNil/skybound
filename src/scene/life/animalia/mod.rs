@@ -1,19 +1,5 @@
-use crate::scene::{
-    life::{
-        Body, CLUTCH, CreatureInstance, FULL_POUCH, Look, ellipsoid,
-        genome::Gene,
-        rounded, smooth_min,
-        surface::{Hit, Ray, Surface, visit_paired_sheets, wing_bones},
-    },
-    math::Power,
-};
-use core::{
-    f32::consts::TAU,
-    ops::{Deref, DerefMut},
-};
-use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::surface::{visit_paired_sheets, wing_bones};
+use core::ops::{Deref, DerefMut};
 pub mod bullidorsata;
 #[cfg(not(target_arch = "spirv"))]
 pub mod mind;
@@ -340,10 +326,10 @@ pub mod nature {
     //! It flees what would eat it, drinks, sleeps, rests, feeds, mates, ranges about, and goes back
     //! to the light and the air it lives in. Lineages below build their own ways on these.
 
+    use super::*;
     use crate::scene::life::{
         Kind,
         animalia::{
-            AGGRESSION, BOLDNESS, CURIOSITY, RESTLESSNESS, SOCIABILITY,
             mind::{
                 Ethology, Glimpse, Intent, Interest, Mind, Perception, Sighting, Situation, Urges,
                 orbit,
@@ -352,7 +338,6 @@ pub mod nature {
         },
         behaviour::{Activity, Goal},
     };
-    use spirv_std::glam::Vec3;
 
     pub const PHYSIOLOGY: Physiology = ANIMAL;
 

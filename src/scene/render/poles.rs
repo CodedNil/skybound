@@ -5,7 +5,7 @@ use crate::scene::{
     render::{march::VolumeSample, textures::Textures},
 };
 use spirv_std::{
-    glam::{FloatExt, Vec2, Vec3, Vec4Swizzles, vec2, vec3},
+    glam::{Vec2, Vec3, Vec4Swizzles, vec2, vec3},
     num_traits::Float,
 };
 

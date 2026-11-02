@@ -23,10 +23,9 @@ mod nature {
     //! post and drives off any other Spitfire that strays near it, with threat displays rather
     //! than spit, for neither can spare it.
 
+    use super::*;
     use crate::scene::life::{
-        Injury,
         animalia::{
-            AGGRESSION,
             mind::{Aim, Blow, Ethology, Intent, Mind, Sighting, Situation, Urges},
             tetralata::specialia::rapaciformes::sericificidae::ETHOLOGY as SILK_MAKER,
         },

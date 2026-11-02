@@ -1,17 +1,5 @@
-use crate::scene::life::{
-    Body, CreatureInstance,
-    animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
-    biology::Biology,
-};
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::{GANGLION, PUMP},
-    organs::{Function, Organ, Part, Tissue},
-};
-use core::ops::{Deref, DerefMut};
-#[cfg(not(target_arch = "spirv"))]
-use spirv_std::glam::vec3;
-use spirv_std::glam::{Vec3, Vec4};
+use crate::scene::life::animalia::physiology::{GANGLION, PUMP};
 pub mod errantia;
 pub mod volantia;
 
@@ -117,6 +105,7 @@ mod nature {
     //! The blood-feeders hunt by fastening onto a far larger host and drawing its fluid, leaving
     //! its organs whole so it lives to carry them.
 
+    use super::*;
     use crate::scene::life::{
         Kind,
         animalia::{
@@ -128,7 +117,6 @@ mod nature {
             physiology::{Physiology, flow_channels, plant},
         },
         behaviour::{Activity, Goal},
-        organs::Function,
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {

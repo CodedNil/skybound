@@ -1,15 +1,5 @@
-use crate::scene::life::{
-    Body, CreatureInstance,
-    genome::Gene,
-    surface::{Material, RINGED},
-};
-use core::{
-    f32::consts::{PI, TAU},
-    ops::{Deref, DerefMut},
-};
-use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4, vec2, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::surface::RINGED;
+use core::ops::{Deref, DerefMut};
 pub mod chlorophyta;
 #[cfg(not(target_arch = "spirv"))]
 pub mod physiology;

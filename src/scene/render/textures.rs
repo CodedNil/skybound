@@ -14,7 +14,7 @@ use crate::scene::{
 };
 use spirv_std::{
     Image, Sampler,
-    glam::{IVec2, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles},
+    glam::{IVec2, Vec2, Vec3, Vec4, Vec4Swizzles},
     num_traits::Float,
 };
 

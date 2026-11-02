@@ -1263,7 +1263,6 @@ pub fn short_volume(
 /// Splat the weather systems over each column of the planet: the cover of each layer and the top of
 /// the convection.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn cloud_map(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -1349,7 +1348,6 @@ pub fn cloud_map(
 /// Which layers hold cloud near each column, the highest any convection near it climbs, and the
 /// lowest and highest the swell lifts the layers there.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(fragment)]
 pub fn cloud_bounds(
     #[spirv(frag_coord)] pixel: Vec4,
@@ -1407,7 +1405,6 @@ pub fn cloud_bounds(
 /// pole light beyond each sample's own near shadow and in full, and down to the aur. Each layer's
 /// stretch of the ray is integrated whole, so shadows are smooth however low the light.
 // The game's own passes, left out of the preview module.
-#[cfg(not(feature = "preview"))]
 #[spirv(compute(threads(8, 8, 1)))]
 pub fn cloud_shadow(
     #[spirv(global_invocation_id)] id: UVec3,

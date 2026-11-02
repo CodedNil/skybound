@@ -16,6 +16,7 @@
 //! its wings have been torn, is not inherited; that is kept with its body and its mind.
 
 use crate::scene::life::CreatureInstance;
+#[cfg(not(target_arch = "spirv"))]
 use spirv_std::glam::Vec4;
 
 /// How many genes every genome holds.

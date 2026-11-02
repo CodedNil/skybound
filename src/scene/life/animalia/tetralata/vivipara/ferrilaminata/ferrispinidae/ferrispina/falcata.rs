@@ -1,16 +1,3 @@
-use super::{Build, shredder};
-#[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::organs::Part;
-use crate::scene::life::{
-    Look, Tetralate,
-    animalia::tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
-    biology::{Biology, Litter},
-    genome::Gene,
-    mouth, prepare_pose,
-    surface::Surface,
-};
-use spirv_std::glam::{Vec3, vec2, vec3, vec4};
-
 pub const BIOLOGY: Biology = Biology {
     size: 0.2,
     maturity_days: 1800.0,

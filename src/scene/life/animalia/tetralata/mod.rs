@@ -1,23 +1,6 @@
+use crate::scene::life::Kind;
 #[cfg(not(target_arch = "spirv"))]
-use crate::scene::life::{
-    animalia::physiology::{BREATHER, FLOAT, GANGLION, PUMP},
-    organs::{Function, Organ, Part, Tissue},
-};
-use crate::scene::{
-    life::{
-        Body, CreatureInstance, Kind,
-        animalia::{Animal, Creature, Flier, Rig, Rigged, Wings},
-        genome::Gene,
-        smooth_min, tapered_tail,
-    },
-};
-use core::{
-    f32::consts::PI,
-    ops::{Deref, DerefMut},
-};
-use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::animalia::physiology::{BREATHER, FLOAT, GANGLION, PUMP};
 pub mod specialia;
 pub mod vivipara;
 pub mod volitantia;
@@ -89,8 +72,8 @@ pub struct Tetralate {
 
 /// How many strands of cloth a tetralate can have hung on it, and how many knots each is
 /// simulated with.
-pub const DRAPES: usize = 8;
-pub const DRAPE_KNOTS: usize = 10;
+pub const DRAPES: usize = 7;
+pub const DRAPE_KNOTS: usize = 8;
 
 impl Deref for Tetralate {
     type Target = Animal;
@@ -415,17 +398,14 @@ mod nature {
     //! The four-winged animals sleep clinging to plants, wings folded, and where they choose to
     //! follows the light they live in. Their young play.
 
+    use super::*;
     use crate::scene::life::{
-        Kind,
         animalia::{
             ETHOLOGY as ANIMAL,
             mind::{Ethology, Intent, Situation, Urges, orbit},
             nature::ROOST,
             physiology::{Brood, Light, Physiology, Sexes, flow_channels, grazes},
-            tetralata::{
-                FORMATION, PLAYFULNESS,
-                young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
-            },
+            tetralata::young::{CLUTCH, DRIFTING_EGG, EGG_STRINGS, TETHERED_EGG},
         },
         behaviour::{Activity, Goal},
     };
@@ -443,8 +423,6 @@ mod nature {
             _ => 0,
         }
     }
-
-    use spirv_std::glam::Vec3;
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         eats: grazes,

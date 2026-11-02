@@ -22,10 +22,11 @@ mod nature {
     //! A content herd migrates: it keeps to the band of light it lives in and travels along it,
     //! round the pole with the sunset, grazing as it goes, so no stream is cropped to nothing.
 
+    use super::*;
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Intent, Mind, Situation, Urges},
-            tetralata::{FOLLOW, vivipara::ETHOLOGY as LIVE_BEARER},
+            tetralata::vivipara::ETHOLOGY as LIVE_BEARER,
         },
         behaviour::{Activity, Goal},
     };
