@@ -68,24 +68,28 @@ const HEAD_SIZE: Vec3 = vec3(0.165, 0.14, 0.185);
 const BODY: Vec3 = vec3(0.0, -0.01, 0.07);
 const BODY_SIZE: Vec3 = vec3(0.128, 0.13, 0.18);
 
-/// Where the mouth opens, under the front of the snout, and its tentacles with it.
-const MOUTH: Vec3 = vec3(0.0, -0.075, -0.235);
+/// Where the mouth opens, on the underside of the muzzle near its front, and its tentacles with it.
+const MOUTH: Vec3 = vec3(0.0, -0.102, -0.28);
+
+/// Where the mouth tentacles grow from: just behind the mouth, so it opens in front of them.
+const TENTACLES: Vec3 = vec3(0.0, -0.106, -0.25);
 
 /// How far the mouth tentacles reach, as a share of the lineage's usual reach, and how much longer
 /// again the outer, working pair grows.
 const REACH: f32 = 0.22;
 const GRIP: f32 = 1.1;
 
-/// A point on the skull's surface, `inset` of the way out along `direction` from its centre: found
-/// by stepping in from outside along that line until the skull is met.
-fn on_head(direction: Vec3, inset: f32) -> Vec3 {
-    let direction = direction / direction.length();
-    let mut at = HEAD + direction * 0.4;
-    for _ in 0..8 {
-        at -= direction * skull(at);
-    }
-    HEAD + (at - HEAD) * inset
-}
+/// Where each eye of the circlet sits on the skull, front to back, and the downward eye on the side
+/// of the jaw beneath them: each where its line of sight leaves the head (a test checks them).
+const EYES: [Vec3; 3] = [
+    vec3(0.0796, 0.0383, -0.2957),
+    vec3(0.1128, 0.055, -0.2306),
+    vec3(0.141, 0.0128, -0.1743),
+];
+const DOWNWARD_EYE: Vec3 = vec3(0.0817, -0.0634, -0.229);
+
+/// Where the crest of feathers is rooted, on the crown of the hood.
+const TUFT_ROOT: Vec3 = vec3(0.0, 0.14, -0.2);
 
 /// Eye `index` of the circlet on each side, from the front round to behind: where it lies, how
 /// large it is, and which way it looks. They run in a rough line along the head, the forward pair
@@ -93,18 +97,24 @@ fn on_head(direction: Vec3, inset: f32) -> Vec3 {
 /// the rear pair a little lower to look a little down, so between them they cover above and below
 /// as well as all round.
 fn circlet(index: u32) -> (Vec3, f32, Vec3) {
-    let angle = 0.3 + index as f32 * 0.48;
+    let angle = 0.5 + index as f32 * 0.45;
     let rise = if index == 0 {
-        0.12
+        0.05
     } else if index == 1 {
-        0.26
+        0.18
     } else {
-        -0.18
+        -0.12
     };
     let looking = vec3(angle.sin(), rise, -angle.cos());
     let looking = looking / looking.length();
-    let radius = if index == 0 { 0.034 } else { 0.021 };
-    (on_head(looking, 0.97), radius, looking)
+    let (at, radius) = if index == 0 {
+        (EYES[0], 0.032)
+    } else if index == 1 {
+        (EYES[1], 0.021)
+    } else {
+        (EYES[2], 0.021)
+    };
+    (at, radius, looking)
 }
 
 /// How many eyes ring each side of the head.
@@ -114,13 +124,13 @@ const CIRCLET: u32 = 3;
 fn downward() -> (Vec3, f32, Vec3) {
     let looking = vec3(0.35, -0.85, -0.42);
     let looking = looking / looking.length();
-    (on_head(looking, 0.97), 0.016, looking)
+    (DOWNWARD_EYE, 0.016, looking)
 }
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 0.4, 0.8, 0);
     creature.opaque_bounds = vec3(0.7, 0.9, 1.5).extend(0.0);
-    rig_grasping(creature, MOUTH, REACH, ORAL_PAIRS, GRIP);
+    rig_grasping(creature, TENTACLES, REACH, ORAL_PAIRS, GRIP);
     rig_train(creature, TRAIN_SHAPE);
 }
 
@@ -164,33 +174,31 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     // A throat pouch behind the mouth that swells as it drinks.
     let throat = rounded(point - vec3(0.0, -0.11, -0.1), vec3(0.085, 0.06, 0.13));
     d = smooth_min(d, throat, 0.04);
-    // The body reaches out to each pair of wings: a slender shoulder drawn out past the fore
-    // wing's root, so the root stands out from the flank on it, and a narrower haunch to the hind,
-    // the body narrowing between them to a waist.
-    let shoulder = rounded(mirrored - vec3(0.09, 0.05, 0.0), vec3(0.05, 0.045, 0.065));
+    // The body swells out to each pair of wings, broad at the shoulders and narrower at the
+    // haunches, flowing out from the flank to carry each wing's root clear of it, the body
+    // narrowing between them to a waist.
     let fore = tapered_tail(
         mirrored,
-        vec3(0.06, 0.055, -0.005),
-        vec3(0.215, 0.078, -0.02),
-        0.045,
-        0.026,
+        vec3(0.04, 0.05, 0.0),
+        vec3(0.165, 0.07, -0.015),
+        0.065,
+        0.034,
     );
-    let haunch = rounded(mirrored - vec3(0.08, 0.03, 0.15), vec3(0.045, 0.04, 0.05));
     let hind = tapered_tail(
         mirrored,
-        vec3(0.055, 0.03, 0.15),
-        vec3(0.19, 0.05, 0.15),
-        0.038,
-        0.022,
+        vec3(0.04, 0.03, 0.15),
+        vec3(0.15, 0.048, 0.15),
+        0.055,
+        0.03,
     );
-    d = smooth_min(d, shoulder.min(fore), 0.02);
-    d = smooth_min(d, haunch.min(hind), 0.02);
+    d = smooth_min(d, fore, 0.06);
+    d = smooth_min(d, hind, 0.05);
     // Fine pleats along the belly, as all its genus has, that open as the crop fills.
     if point.y < -0.08 && point.z > -0.1 && point.z < 0.2 {
         d += (1.0 - (point.x * 90.0).sin().abs()).power(6) * 0.003;
     }
     // The mouth, a soft round opening under the front of the snout, among the tentacle roots.
-    let opening = (point - vec3(0.0, -0.092, -0.24)).length() - 0.017;
+    let opening = (point - (MOUTH + vec3(0.0, 0.01, 0.0))).length() - 0.025;
     d = d.max(-opening);
     d = louvres(d, point - vec3(0.0, 0.0, 0.08), vec3(0.15, 0.13, 0.18));
     // The tail as the simulation left it, and the bare hook its tip curls into, below the train.
@@ -218,11 +226,11 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mut hit = with_wings(Surface::new(d, plumage), point, creature, LOOK);
     // Its lip, a soft rosy ring round the mouth.
     let lip = vec2(
-        vec2(point.x, point.z + 0.24).length() - 0.022,
-        point.y + 0.082,
+        vec2(point.x - MOUTH.x, point.z - MOUTH.z).length() - 0.03,
+        point.y - MOUTH.y,
     )
     .length()
-        - 0.008;
+        - 0.009;
     hit.blend(lip, 17, 0.01);
     // The circlet of eyes round the head, and the downward pair beneath it.
     for index in 0..CIRCLET {
@@ -286,7 +294,7 @@ fn hood(point: Vec3) -> f32 {
 /// little apart, that close on whatever it holds.
 fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit.blend(
-        oral_grasping(point, creature, MOUTH, REACH, ORAL_PAIRS, GRIP),
+        oral_grasping(point, creature, TENTACLES, REACH, ORAL_PAIRS, GRIP),
         2,
         0.04,
     );
@@ -322,32 +330,38 @@ fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
 /// over the crown, the middle one longest, as long as its genes have them and longer in the sex
 /// that courts.
 fn tuft(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    if (point - vec3(0.0, 0.25, -0.12)).length() > 0.3 {
+    if (point - vec3(0.0, 0.28, -0.1)).length() > 0.32 {
         return hit;
     }
     let long = (0.85 + creature.gene(CREST) * 0.3) * if creature.sex.x > 1.5 { 1.2 } else { 1.0 };
-    let stir = (creature.animation.z * 2.5).sin() * 0.01;
+    let stir = (creature.animation.z * 2.5).sin() * 0.1;
     let mut feathers = 1e6f32;
     for index in 0..3 {
         let lane = index as f32 - 1.0;
         let length = (0.24 - lane.abs() * 0.05) * long;
-        let root = vec3(lane * 0.018, 0.14, -0.215);
-        let rise = vec3(lane * 0.35, 0.85, 0.45);
-        let bend = root + rise / rise.length() * length * 0.5;
-        let back = vec3(lane * 0.45, 0.25 + stir * 10.0, 1.0);
-        let tip = bend + back / back.length() * length * 0.5;
-        for half in 0..2 {
-            let (a, b) = if half == 0 { (root, bend) } else { (bend, tip) };
-            let normal = (b - a).cross(Vec3::Y);
+        // Rooted side by side on the crown of the hood, rising steeply and curving back over the
+        // head in one smooth arc, the outer two leaning a little apart.
+        let root = TUFT_ROOT + vec3(lane * 0.022, 0.0, lane.abs() * 0.012);
+        let rise = vec3(lane * 0.3, 1.0, -0.2);
+        let back = vec3(lane * 0.45, -0.15 + stir, 1.0);
+        let control = root + rise / rise.length() * length * 0.6;
+        let tip = control + back / back.length() * length * 0.6;
+        let curve = |t: f32| root * (1.0 - t).power(2) + control * (2.0 * t * (1.0 - t)) + tip * (t * t);
+        let width = |u: f32| 0.004 + 0.016 * (u * 3.0).min(1.0) * (1.0 - u.power(3));
+        for segment in 0..5 {
+            let (from, to) = (segment as f32 / 5.0, (segment + 1) as f32 / 5.0);
+            let (a, b) = (curve(from), curve(to));
+            let along = (b - a) / (b - a).length().max(1e-5);
+            // Its face turned to the side, so the vane stands upright along the arc.
+            let side = vec3(1.0, 0.0, -lane * 0.3);
+            let normal = side - along * side.dot(along);
             let normal = normal / normal.length().max(1e-5);
-            let width = |at: f32| 0.004 + 0.016 * (at * 3.0).min(1.0) * (1.0 - at.power(3));
-            let start = half as f32 * 0.5;
             feathers = feathers.min(feather_strip(
                 point,
                 a,
                 b,
-                start * length,
-                (width(start), width(start + 0.5)),
+                from * length,
+                (width(from), width(to)),
                 normal,
                 10.0,
             ));
@@ -470,10 +484,11 @@ fn jewellery(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
             break;
         }
         let salt = 40 + index * 11;
-        let (root, across, reach) =
-            train_feather((creature.chance(salt) * TRAIN_FEATHERS as f32) as u32);
+        // Strings hang from the tail's own feathers, not the coverts on the back.
+        let (along, across, reach) =
+            train_feather(4 + (creature.chance(salt) * (TRAIN_FEATHERS - 4) as f32) as u32);
         let knot = 1 + (creature.chance(salt + 1) * 2.0) as usize;
-        let base = tail_knot(creature, root);
+        let base = feather_root(creature, TRAIN_SHAPE, along, across);
         let from =
             base + (train_knot(creature, across, knot) - train_knot(creature, across, 0)) * reach;
         // Long strings, swinging a little as the train moves.
@@ -720,7 +735,7 @@ pub const LOOK: Look = Look::coat(
     vec3(0.24, 0.56, 0.58),
     [vec4(0.72, 0.3, -0.02, 0.98), vec4(0.52, 0.24, 0.15, 0.98)],
 )
-.hinged([vec2(0.175, 0.068), vec2(0.155, 0.045)])
+.hinged([vec2(0.205, 0.072), vec2(0.185, 0.05)])
 .stalked([vec2(0.22, 0.65), vec2(0.22, 0.65)])
 .styled([vec4(0.35, 0.4, 0.0, 0.0), vec4(0.25, 0.4, 0.0, 0.0)])
 .framed([0.35, 0.3])
@@ -854,5 +869,30 @@ mod nature {
     /// Courting in mist-script, close by, with no song to carry it.
     fn court(s: &Situation) -> Goal {
         display_near(s.seen, 1.5, s.seen.mark(CALL))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The jaw and throat beneath the skull, which the mouth and the downward eye sit on.
+    fn jaw(p: Vec3) -> f32 {
+        smooth_min(
+            skull(p),
+            rounded(p - vec3(0.0, -0.11, -0.1), vec3(0.085, 0.06, 0.13)),
+            0.04,
+        )
+    }
+
+    #[test]
+    fn eyes_mouth_and_crest_sit_on_the_head() {
+        for eye in EYES {
+            assert!(skull(eye).abs() < 0.01, "an eye is off the skull: {eye}");
+        }
+        assert!(jaw(DOWNWARD_EYE).abs() < 0.01, "the downward eye is off the jaw");
+        assert!(jaw(MOUTH).abs() < 0.01, "the mouth is off the jaw");
+        let crown = smooth_min(skull(TUFT_ROOT), hood(TUFT_ROOT), 0.07);
+        assert!(crown < 0.0 && crown > -0.02, "the crest is not rooted in the crown");
     }
 }

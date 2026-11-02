@@ -261,32 +261,49 @@ pub fn train_knot(creature: &Tetralate, across: f32, knot: usize) -> Vec3 {
     a.lerp(b, between)
 }
 
-/// How many feathers make the train.
-pub const TRAIN_FEATHERS: u32 = 10;
+/// How many feathers make the train: five rows of four.
+pub const TRAIN_FEATHERS: u32 = 20;
 
-/// Train feather `index`: the tail knot it roots at, where across the sheet it lies, and how long
-/// it is as a share of the longest.
+/// Train feather `index`: how far along the tail it roots, in tail knots, the first row up on the
+/// back before the tail begins; where across the sheet it lies; and how long it is as a share of
+/// the longest.
 ///
-/// Three rows, staggered so each falls between those of the row
-/// before: short coverts at the tail's root, longer feathers past its middle, and the longest at
-/// its end.
-pub fn train_feather(index: u32) -> (usize, f32, f32) {
-    if index < 3 {
-        (1, 0.15 + index as f32 * 0.35, 0.45)
-    } else if index < 6 {
-        (2, (index - 3) as f32 * 0.5, 0.75)
-    } else {
-        (3, 0.1 + (index - 6) as f32 * 0.27, 1.0)
+/// Five rows, each staggered to fall between the feathers of the row before, growing from short
+/// coverts on the back to the long feathers at the tail's end.
+pub fn train_feather(index: u32) -> (f32, f32, f32) {
+    let row = index / 4;
+    let slot = index % 4;
+    let stagger = if row.is_multiple_of(2) { -0.2 } else { 0.2 };
+    let across = ((slot as f32 + 0.5 + stagger) / 4.0).clamp(0.0, 1.0);
+    (row as f32 - 1.0, across, 0.3 + row as f32 * 0.175)
+}
+
+/// Where a train feather `along` the tail and `across` the sheet is rooted: on the tail's side or
+/// top as its place across has it, never inside it, or up on the back for the coverts before the
+/// tail begins.
+pub fn feather_root(creature: &Tetralate, shape: Train, along: f32, across: f32) -> Vec3 {
+    let side = (across - 0.5) * 2.0;
+    let knot = along.max(0.0) as usize;
+    let thick = (0.075 - 0.011 * knot as f32) * shape.scale;
+    let out = vec3(side * thick * 0.95, (1.0 - side.abs()) * thick * 0.8, 0.0);
+    if along >= 0.0 {
+        return tail_knot(creature, knot) + out;
     }
+    let forward = tail_knot(creature, 0) - tail_knot(creature, 1);
+    let forward = forward / forward.length().max(1e-6);
+    tail_knot(creature, 0) + forward * (-along) * shape.tail_step() + out * 1.25
 }
 
 /// The train's feathers.
 ///
-/// Three rows rooted one after another along the tail, short coverts nearest the body and the
-/// long tail feathers at its end, each lying across the simulated sheet as it
-/// billows, narrow at its quill, widest past its middle and rounded at its tip, with barbs angled
-/// back from a pale shaft and beads along the shaft lit by the aur sacs. `long` stretches them as
-/// an animal's genes have them. Returns the vanes, the shafts and the beads.
+/// Five rows rooted one after another from the back down the tail, short coverts nearest the body
+/// and the long tail feathers at its end. Each follows the simulated sheet from its own root, as it
+/// billows, fanned out across it as its place in the row has it and a little more or less by
+/// chance, but always in the sheet's own plane, so the feathers lie over one another as a tail does
+/// and never twist through it. Each is narrow at its quill, widest past its middle and rounded at
+/// its tip, with barbs angled back from a pale shaft and beads along the shaft lit by the aur sacs.
+/// `long` stretches them as an animal's genes have them. Returns the vanes, the shafts and the
+/// beads.
 pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Vec3 {
     let middle = train_knot(creature, 0.5, 2);
     if (point - middle).length() > shape.scale {
@@ -296,49 +313,46 @@ pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Ve
     let mut ribs = 1e6f32;
     let mut beads = 1e6f32;
     for feather in 0..TRAIN_FEATHERS {
-        let (root, across, reach) = train_feather(feather);
-        // Each feather is rooted on the tail's side or top as its place across the train has it,
-        // never inside it, and each grew a little off true, turned and sized by chance.
-        let thick = (0.075 - 0.011 * root as f32) * shape.scale;
-        let side = (across - 0.5) * 2.0;
-        let base = tail_knot(creature, root)
-            + vec3(side * thick * 0.95, (1.0 - side.abs()) * thick * 0.8, 0.0);
+        let (along, across, reach) = train_feather(feather);
+        let reach = reach * (0.92 + creature.chance(620 + feather) * 0.16);
+        let base = feather_root(creature, shape, along, across);
         let start = train_knot(creature, across, 0);
-        let turn = (creature.chance(600 + feather) - 0.5) * 1.3;
-        let reach = reach * (0.9 + creature.chance(620 + feather) * 0.2);
-        let (lean, upright) = turn.sin_cos();
-        let last = (((KNOTS - 1) as f32 * reach * long) as usize).clamp(2, KNOTS - 1);
+        let splay = (across - 0.5) * 0.35 + (creature.chance(600 + feather) - 0.5) * 0.2;
+        let last = (((KNOTS - 1) as f32 * reach * long).round() as usize).clamp(2, KNOTS - 1);
         // A feather's width a share of the way along it: a quill at the root, widest beyond the
         // middle, and closing to a rounded tip.
         let width = |knot: usize| {
             let u = knot as f32 / last as f32;
-            (0.006 + 0.055 * reach * (u * 3.0).min(1.0) * (1.0 - u.power(3))) * shape.scale
+            (0.006 + 0.05 * reach * (u * 3.0).min(1.0) * (1.0 - u.power(3))) * shape.scale
         };
-        // Each follows the sheet's shape, but from its own root along the tail.
+        // Across the sheet at a knot, from its first strand to its last.
+        let breadth = |knot: usize| {
+            let across = train_knot(creature, 1.0, knot) - train_knot(creature, 0.0, knot);
+            across / across.length().max(1e-6)
+        };
         let at = |knot: usize| {
             let offset = (train_knot(creature, across, knot) - start) * reach;
-            base + vec3(
-                offset.x * upright + offset.z * lean,
-                offset.y,
-                offset.z * upright - offset.x * lean,
-            )
+            base + offset + breadth(knot) * splay * offset.length()
         };
+        let tip = at(last);
+        if (point - base.lerp(tip, 0.5)).length()
+            > (tip - base).length() * 0.6 + 0.06 * reach * shape.scale
+        {
+            continue;
+        }
         for knot in 0..KNOTS - 1 {
             if knot >= last {
                 break;
             }
             let a = at(knot);
             let b = at(knot + 1);
-            // The sheet's own normal here, across it from strand to strand.
-            let side = train_knot(creature, (across + 0.1).min(1.0), knot)
-                - train_knot(creature, (across - 0.1).max(0.0), knot);
-            let normal = (b - a).cross(side);
+            let normal = (b - a).cross(breadth(knot));
             let normal = normal / normal.length().max(1e-6);
             vanes = vanes.min(feather_strip(
                 point,
                 a,
                 b,
-                knot as f32 * shape.train_step(),
+                knot as f32 * shape.train_step() * reach,
                 (width(knot), width(knot + 1)),
                 normal,
                 10.0,
