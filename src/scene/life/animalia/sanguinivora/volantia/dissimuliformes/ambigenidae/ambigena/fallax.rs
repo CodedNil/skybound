@@ -116,6 +116,7 @@ pub const LOOK: Look = Look::coat(
     [vec4(6.0, 2.3, 0.2, 0.35), Vec4::ZERO],
 )
 .hinged([vec2(1.35, 0.4), Vec2::ZERO])
+.stalked([vec2(1.00, 0.10), vec2(1.00, 0.10)])
 .styled([vec4(0.7, 0.8, 0.0, 0.6), vec4(0.7, 0.8, 0.0, 0.6)])
 .framed([0.3, 0.3])
 .skinned(vec4(5.0, 1.0, 1.2, -0.25))

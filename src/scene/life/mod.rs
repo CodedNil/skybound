@@ -830,6 +830,9 @@ pub struct Look {
     /// Where each wing pair's shoulder is: out on the flank and up it, so the wing turns there
     /// rather than about the body's midline.
     pub hinges: [Vec2; 2],
+    /// Each wing pair's stalk: how much of the chord its root keeps where it meets the shoulder,
+    /// and how far the wing twists about its spar through each stroke, in radians.
+    pub stalks: [Vec2; 2],
     /// Each wing pair's style; see [`surface::PLAIN_WING`].
     pub styles: [Vec4; 2],
     /// How heavy each wing pair's frame of bones is: one for a working flyer, much less for wings
@@ -863,6 +866,10 @@ pub const EMPTY_POUCH: u32 = 3;
 /// Animals in a living coat, with membrane or feathered wings.
 pub const COAT: u32 = 0;
 
+/// A tetralate's wing stalk unless its species says otherwise: a root a third of the chord wide,
+/// twisting a third of a radian through the stroke.
+pub const STALK: Vec2 = Vec2::new(0.33, 0.35);
+
 /// Plants, in bark, leaf and glowing tissue.
 pub const PLANT: u32 = 1;
 
@@ -880,6 +887,7 @@ impl Look {
             accent,
             wings,
             hinges: [Vec2::ZERO; 2],
+            stalks: [STALK; 2],
             styles: [surface::PLAIN_WING; 2],
             frames: [1.0; 2],
             skin: Vec4::new(0.0, 1.0, 1.0, 0.0),
@@ -894,6 +902,11 @@ impl Look {
     /// The same look, with its wing pairs hinged at these shoulders.
     pub const fn hinged(self, hinges: [Vec2; 2]) -> Self {
         Self { hinges, ..self }
+    }
+
+    /// The same look, with its wing pairs on these stalks; see [`Look::stalks`].
+    pub const fn stalked(self, stalks: [Vec2; 2]) -> Self {
+        Self { stalks, ..self }
     }
 
     /// The same look, with its wing pairs in these styles.
@@ -943,6 +956,7 @@ impl Look {
             accent: glow,
             wings: [Vec4::ZERO; 2],
             hinges: [Vec2::ZERO; 2],
+            stalks: [STALK; 2],
             styles: [surface::PLAIN_WING; 2],
             frames: [1.0; 2],
             skin: Vec4::new(0.0, 1.0, 1.0, 0.0),
@@ -962,6 +976,7 @@ impl Look {
             accent: tint,
             wings: [Vec4::ZERO; 2],
             hinges: [Vec2::ZERO; 2],
+            stalks: [STALK; 2],
             styles: [surface::PLAIN_WING; 2],
             frames: [1.0; 2],
             skin: Vec4::new(0.0, 1.0, 1.0, 0.0),
@@ -979,6 +994,7 @@ impl Look {
         accent: Vec3::ZERO,
         wings: [Vec4::ZERO; 2],
         hinges: [Vec2::ZERO; 2],
+        stalks: [STALK; 2],
         styles: [surface::PLAIN_WING; 2],
         frames: [1.0; 2],
         skin: Vec4::new(0.0, 1.0, 1.0, 0.0),
@@ -1288,20 +1304,40 @@ pub fn slit(body: f32, p: Vec3, length: f32, head: f32) -> f32 {
     body.max(-slit)
 }
 
-/// A body with slanted louvres cut into its flanks behind the cowl, over the pleated
-/// breathing passages.
+/// A body with its breathing louvres set into each flank behind the cowl.
+///
+/// Over the pleated breathing passages lies a patch of overlapping blades, each rising gently from
+/// front to back to a lip that overhangs the slit behind it, as a louvred shutter does, so that air
+/// is drawn in under the lips and the damp breath let out the same way is wrung dry against the
+/// blades.
+///
+/// The blades follow the body's own surface rather than cutting into it: the slits run only a
+/// little way in, they bow and slant with the flank, and the whole patch fades out at its edges.
 pub fn louvres(body: f32, p: Vec3, size: Vec3) -> f32 {
-    let mut d = body;
     let flank = vec3(p.x.abs(), p.y, p.z);
-    for i in 0..5 {
-        let z = -size.z * 0.72 + i as f32 * size.z * 0.11;
-        let slant = flank.z - z - flank.y * 0.35;
-        let louvre = (slant.abs() - size.z * 0.016)
-            .max(flank.y.abs() - size.y * 0.42)
-            .max(size.x * 0.55 - flank.x);
-        d = d.max(-louvre);
+    let reach = size.z * 0.25;
+    let up = flank.y / (size.y * 0.42);
+    // Along the patch, slanted back towards the top and bowed, so the slits curve with the flank.
+    let along = (flank.z + size.z * 0.5 + flank.y * 0.35 + up * up * reach * 0.12) / reach;
+    let patch = 1.0 - along * along - up * up;
+    let thickness = size.x.min(size.y);
+    if patch <= 0.0 || body > thickness * 0.3 {
+        return body;
     }
-    d
+    let outward = ((flank.x / size.x - 0.2) / 0.4).clamp(0.0, 1.0);
+    let mask = patch.min(0.35) / 0.35 * outward * outward * (3.0 - 2.0 * outward);
+    let count = 5.0;
+    let phase = f32::midpoint(along, 1.0) * count;
+    let blade = phase - phase.floor();
+    let spacing = reach * 2.0 / count;
+    // Each blade swells towards its rear lip, then drops into the next slit.
+    let swell = blade * blade * (3.0 - 2.0 * blade) * spacing * 0.22 * mask;
+    let shingled = body - swell;
+    let slit = (1.0 - blade).min(blade * 3.0) * spacing;
+    let width = spacing * 0.14 * mask;
+    let depth = spacing * 0.7 * mask;
+    let groove = (slit - width).max(-(body + depth));
+    shingled.max(-groove)
 }
 
 /// The centre of a tetralate's cowl, ahead of a body `length` long.

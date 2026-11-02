@@ -167,6 +167,7 @@ taxon!(
     [
         "Tetralata descend from elongated, limbless animals with two pairs of wings and a pair of muscular mouth tentacles.",
         "Wings control movement through the updraft, while the tentacles gather food, hold anchors and manipulate objects without walking limbs.",
+        "The updraft and the gas stores carry the body, so the wings are oars and rudders rather than lifting surfaces: each grows from a short, muscular stalk on the shoulder about which the whole wing twists, square to the air to drive on the downstroke and feathered edge-on to slip back on the up, and turned to steer in a glide. A wing joined to the flank along its length, as the blood-feeders' are, could not turn so; the stalk is narrowest in hoverers and divers, broadest in the heavy cruisers.",
         "A digestive crop and pulsatile nutrient channels support more concentrated feeding than the absorptive surfaces of bubblebacks.",
         "Pleated respiratory passages recover moisture, although vigorous flight still creates a need for drinking or humid air.",
         "Later lineages modify wing margins and feeding tentacles, with extra tentacle pairs and internal brooding evolving in the live-bearing branch.",
@@ -175,8 +176,11 @@ taxon!(
     anatomy: ANATOMY,
 );
 
-/// Knots along each simulated mouth tentacle.
+/// Knots drawn along each mouth tentacle.
 const KNOTS: usize = 12;
+
+/// The knot halfway along a tentacle, which with its root and tip is all that is simulated.
+const MIDDLE: usize = (KNOTS - 1) / 2;
 
 /// How long a tentacle is settled for before it is drawn.
 const SETTLE: f32 = 1.5;
@@ -208,10 +212,11 @@ fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
 
 /// Pose the mouth tentacles by simulating them.
 ///
-/// Each is a chain of knots held at the mouth, pulled by its own muscle towards a pose reaching
-/// forward and in beneath the face, but given to gravity in the animal's own frame and to the air
-/// streaming past as it flies, and writhing slowly as muscle waves run down it. Settled from that
-/// pose over the last second and a half, which is all the damping remembers.
+/// Each is a root held at the mouth, a middle and a tip, pulled by its own muscle towards a pose
+/// reaching forward and in beneath the face, but given to gravity in the animal's own frame and to
+/// the air streaming past as it flies, and writhing slowly as muscle waves run down it. Settled
+/// from that pose over the last second and a half, which is all the damping remembers, and drawn
+/// along one smooth curve through the three.
 pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
@@ -223,7 +228,7 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
         let (root, reach, side) = tentacle_root(mouth, scale, index);
         let reach = reach * (0.8 + c.gene(REACH) * 0.4);
         let lane = (index / 2) as f32;
-        let length = reach / (KNOTS - 1) as f32;
+        let length = reach * 0.5;
         // At rest they hang forward and down beneath the head like loosely held arms, bent a
         // little at the middle, each moving slowly on its own.
         let trailing = |knot: usize, time: f32| {
@@ -250,36 +255,35 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
             trailing(knot, time).lerp(reach_forward, grasp)
         };
         let end = c.animation.z.max(0.0);
+        // Only the middle and the tip are simulated: a tentacle is one muscle, which bends in a
+        // single smooth arc, and a chain of many knots kinks into zigzags no tentacle makes.
         let settle = |start: f32| {
             let start = start.max(0.0);
-            let mut points = [Vec3::ZERO; KNOTS];
-            for (knot, point) in points.iter_mut().enumerate() {
-                *point = rest(knot, start);
-            }
+            let mut points = [root, rest(MIDDLE, start), rest(KNOTS - 1, start)];
             let mut previous = points;
             let steps = ((end - start) / STEP) as usize;
             for step in 0..steps {
                 let time = start + step as f32 * STEP;
                 let last = previous;
                 previous = points;
-                for knot in 1..KNOTS {
-                    let t = knot as f32 / (KNOTS - 1) as f32;
-                    let velocity = (points[knot] - last[knot]) * 0.985;
+                for joint in 1..3 {
+                    let velocity = (points[joint] - last[joint]) * 0.985;
                     // Muscle tone, strongest near the root where the tentacle is thickest, holds
                     // the pose against the load.
-                    let tone = (rest(knot, time) - points[knot]) * (60.0 * (1.0 - t * 0.7));
+                    let pose = rest(if joint == 1 { MIDDLE } else { KNOTS - 1 }, time);
+                    let tone = (pose - points[joint]) * if joint == 1 { 55.0 } else { 30.0 };
                     let drag = (wind - velocity / STEP) * 1.5;
-                    points[knot] += velocity + (gravity + drag + tone) * STEP * STEP;
+                    points[joint] += velocity + (gravity + drag + tone) * STEP * STEP;
                 }
                 for _ in 0..2 {
-                    for knot in 1..KNOTS {
-                        let delta = points[knot] - points[knot - 1];
+                    for joint in 1..3 {
+                        let delta = points[joint] - points[joint - 1];
                         let fix = delta * (1.0 - length / delta.length().max(1e-6));
-                        if knot == 1 {
-                            points[knot] -= fix;
+                        if joint == 1 {
+                            points[joint] -= fix;
                         } else {
-                            points[knot - 1] += fix * 0.5;
-                            points[knot] -= fix * 0.5;
+                            points[joint - 1] += fix * 0.5;
+                            points[joint] -= fix * 0.5;
                         }
                     }
                 }
@@ -293,9 +297,19 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
         let weight = end / SETTLE - grid;
         let earlier = settle((grid - 1.0) * SETTLE);
         let later = settle(grid * SETTLE);
-        let mut points = earlier;
-        for knot in 0..KNOTS {
-            points[knot] = earlier[knot].lerp(later[knot], weight);
+        let joints = [
+            earlier[0].lerp(later[0], weight),
+            earlier[1].lerp(later[1], weight),
+            earlier[2].lerp(later[2], weight),
+        ];
+        // The drawn knots lie along the one curve through the root, the middle and the tip.
+        let control = joints[1] * 2.0 - (joints[0] + joints[2]) * 0.5;
+        let mut points = [Vec3::ZERO; KNOTS];
+        for (knot, point) in points.iter_mut().enumerate() {
+            let t = knot as f32 / (KNOTS - 1) as f32;
+            *point = joints[0] * ((1.0 - t) * (1.0 - t))
+                + control * (2.0 * t * (1.0 - t))
+                + joints[2] * (t * t);
         }
         let radius = scale * (0.075 - lane * 0.008);
         let (sheet, column) = slot(index);
@@ -307,8 +321,7 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
     }
 }
 
-/// The mouth tentacles posed by [`rig_tentacles`]: tubes tapering smoothly through their knots,
-/// faintly ringed with muscle.
+/// The mouth tentacles posed by [`rig_tentacles`]: tubes tapering smoothly along their curves.
 pub fn oral_tentacles(
     point: Vec3,
     creature: &Tetralate,
@@ -336,11 +349,9 @@ pub fn oral_tentacles(
         for knot in 0..KNOTS - 1 {
             let a = creature.tentacles[sheet][knot][column];
             let b = creature.tentacles[sheet][knot + 1][column];
-            let t = knot as f32 / (KNOTS - 1) as f32;
-            let rings = 1.0 + (t * PI * 14.0).sin() * 0.05;
             distance = smooth_min(
                 distance,
-                tapered_tail(point, a.truncate(), b.truncate(), a.w * rings, b.w),
+                tapered_tail(point, a.truncate(), b.truncate(), a.w, b.w),
                 a.w * 0.6,
             );
         }

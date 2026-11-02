@@ -1,5 +1,5 @@
 use futures_lite::future::block_on;
-use image::{DynamicImage, RgbImage, RgbaImage, imageops};
+use image::{RgbImage, RgbaImage, imageops};
 use rayon::prelude::*;
 use skybound::scene::{
     life,
@@ -15,12 +15,12 @@ use std::{
     collections::HashMap,
     env,
     f32::consts::{PI, TAU},
-    fs,
+    fs::{self, File},
+    io::BufWriter,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::SystemTime,
 };
-use webp_animation::{Encoder, EncoderOptions, EncodingConfig, EncodingType, LossyEncodingConfig};
 use wgpu::util::{BufferInitDescriptor, DeviceExt, make_spirv};
 
 const SEEDS: [u32; 9] = [11, 23, 37, 53, 71, 89, 107, 131, 157];
@@ -523,32 +523,43 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
         .collect()
 }
 
-/// Frames saved as a looping, lossy animated WebP, shown `rate` a second; a single frame makes a
-/// still. Previews need to show what a creature is and how it moves, not every last detail.
-fn save_webp(path: &Path, frames: &[RgbaImage], rate: f32) {
+/// Frames saved as a looping animated GIF, shown `rate` a second, at half the size they were
+/// traced at, which smooths their edges and keeps the files small. GIF rather than WebP because
+/// editors that preview images, Zed among them, animate GIF and show only an animated WebP's first
+/// frame.
+fn save_gif(path: &Path, frames: Vec<RgbImage>, rate: f32) {
     let (width, height) = frames[0].dimensions();
-    let options = EncoderOptions {
-        encoding_config: Some(EncodingConfig {
-            encoding_type: EncodingType::Lossy(LossyEncodingConfig::default()),
-            quality: 78.0,
-            method: 4,
-        }),
-        ..EncoderOptions::default()
-    };
-    let mut encoder = Encoder::new_with_options((width, height), options).expect("WebP encoder");
-    let step = (1000.0 / rate) as i32;
-    let mut at = 0;
-    for frame in frames {
-        encoder
-            .add_frame(frame.as_raw(), at)
-            .expect("encode WebP frame");
-        at += step;
+    let (width, height) = (width / 2, height / 2);
+    // Each frame is reduced to its own palette in parallel, the slow part, then written in turn.
+    let palettes: Vec<gif::Frame<'static>> = frames
+        .into_par_iter()
+        .map(|frame| {
+            let small = imageops::resize(&frame, width, height, imageops::FilterType::Triangle);
+            let mut encoded = gif::Frame::from_rgb_speed(
+                u16::try_from(width).expect("GIF width"),
+                u16::try_from(height).expect("GIF height"),
+                small.as_raw(),
+                10,
+            );
+            encoded.delay = (100.0 / rate).round() as u16;
+            encoded
+        })
+        .collect();
+    let output = BufWriter::new(File::create(path).expect("create GIF"));
+    let mut encoder = gif::Encoder::new(
+        output,
+        u16::try_from(width).expect("GIF width"),
+        u16::try_from(height).expect("GIF height"),
+        &[],
+    )
+    .expect("GIF encoder");
+    encoder.set_repeat(gif::Repeat::Infinite).expect("GIF loop");
+    for frame in &palettes {
+        encoder.write_frame(frame).expect("encode GIF frame");
     }
-    let data = encoder.finalize(at).expect("finish WebP");
-    fs::write(path, &*data).expect("save WebP");
 }
 
-/// An animated sheet saved as WebP, and with `--still` its first frame as PNG beside it.
+/// An animated sheet saved as GIF, and with `--still` its first frame as PNG beside it.
 fn save_sheet(path: &Path, frames: Vec<RgbImage>, rate: f32) {
     if env::args().any(|arg| arg == "--still")
         && let Some(first) = frames.first()
@@ -557,11 +568,7 @@ fn save_sheet(path: &Path, frames: Vec<RgbImage>, rate: f32) {
             .save(path.with_extension("png"))
             .expect("save still PNG");
     }
-    let frames: Vec<RgbaImage> = frames
-        .into_iter()
-        .map(|frame| DynamicImage::ImageRgb8(frame).to_rgba8())
-        .collect();
-    save_webp(path, &frames, rate);
+    save_gif(path, frames, rate);
 }
 
 /// The taxa where the tree forks, those with more than one branch that has species below it, and
@@ -844,14 +851,14 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
             continue;
         }
         let path = output.map_or_else(
-            || taxon_folder(taxon).join(format!("{}.webp", slug(taxon.name))),
+            || taxon_folder(taxon).join(format!("{}.png", slug(taxon.name))),
             |output| {
                 let name = if taxon.parent.is_some() {
                     filename(taxon)
                 } else {
                     slug(taxon.name)
                 };
-                Path::new(output).join(format!("{name}.webp"))
+                Path::new(output).join(format!("{name}.png"))
             },
         );
         let since = SPECIES
@@ -864,7 +871,9 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
         if !all && fresh(&path, since) {
             continue;
         }
-        save_webp(&path, &[render_lineup(taxon, seconds)], 1.0);
+        render_lineup(taxon, seconds)
+            .save(&path)
+            .expect("save lineup PNG");
         println!("{}: {}", taxon.name, path.display());
     }
 }
@@ -872,7 +881,7 @@ fn lineups(output: Option<&str>, selected: Option<&str>, seconds: f32, all: bool
 fn main() {
     if env::args().any(|arg| arg == "--help") {
         println!(
-            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,lineup]\nBy default, writes all four animated sheets (lossy WebP, traced on the GPU but for anatomy) beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a still lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
+            "species_preview [--size 768] [--species comma,separated,names] [--out directory] [--time seconds] [--outputs render,anatomy,lifecycle,variation,lineup]\nBy default, writes all four animated sheets (GIF, traced on the GPU but for anatomy) beside each species source file, redrawing only those older than the code they are drawn from (--all redraws everything), and at each fork in the tree a still lineup of every species below it, named for the taxon, beside its mod.rs. --anatomy selects anatomy only."
         );
         return;
     }
@@ -936,7 +945,7 @@ fn main() {
         );
         for &output in &outputs {
             let path = base.with_file_name(format!(
-                "{}_{}.webp",
+                "{}_{}.gif",
                 base.file_stem()
                     .expect("preview stem")
                     .to_string_lossy()

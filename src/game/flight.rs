@@ -529,7 +529,7 @@ fn separate_from_mount(
 ) {
     // The body's distance is a conservative bound, the more so the further inside, so a few more
     // steps may be needed from deep within.
-    for _ in 0..8 {
+    for _ in 0..16 {
         let scale = development::scale(body).to_engine();
         let point = mount.rotation.inverse() * (player.translation - mount.translation) / scale;
         if point
@@ -805,7 +805,8 @@ mod tests {
             None,
         );
         let scale = development::scale(&body).to_engine();
-        let mut player = Transform::from_translation(SPAWN + Vec3::X * 3.0 * scale);
+        // Just inside the flank, as a Næ flying into its side would be.
+        let mut player = Transform::from_translation(SPAWN + Vec3::X * 7.0 * scale);
         let mut velocity = -Vec3::X * 10.0;
         separate_from_mount(&mut player, &mount, &body, &mut velocity, Vec3::ZERO);
         let point = ((player.translation - SPAWN) / scale).to_scene();
@@ -815,6 +816,13 @@ mod tests {
                 > 0.30,
             "Næ remains embedded in Nætu"
         );
-        assert!(velocity.x >= -0.01, "collision must remove inward velocity");
+        // The flank slopes, so the Næ may slide along it, but nothing of its velocity may carry
+        // on into it.
+        let surface = |p| naetu::surface(development::body_point(p, &body), &body).distance;
+        let normal = estimate_normal(point, surface).to_engine();
+        assert!(
+            velocity.dot(normal) >= -0.01,
+            "collision must remove inward velocity"
+        );
     }
 }

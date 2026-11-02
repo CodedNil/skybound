@@ -109,6 +109,7 @@ pub const LOOK: Look = Look::coat(
     [vec4(7.5, 4.0, -0.5, 0.2), vec4(7.0, 3.8, 0.6, 0.2)],
 )
 .hinged([vec2(0.32, 0.1), vec2(0.32, 0.1)])
+.stalked([vec2(0.20, 0.70), vec2(0.20, 0.70)])
 .styled([vec4(-1.4, 1.0, 6.0, 0.0), vec4(1.6, 1.0, 5.0, 0.0)])
 // Light wings for hovering, carried on fine veins rather than bone.
 .framed([0.18, 0.18])

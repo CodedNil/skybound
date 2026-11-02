@@ -9,7 +9,7 @@ use crate::scene::life::{
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
-use spirv_std::glam::{Vec2, Vec3, Vec4, vec3, vec4};
+use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -126,6 +126,7 @@ pub const LOOK: Look = Look::coat(
     [Vec4::ZERO; 2],
 )
 .hinged([Vec2::ZERO, Vec2::ZERO])
+.stalked([vec2(0.50, 0.25), vec2(0.45, 0.25)])
 .styled([vec4(0.3, 0.9, 0.0, 0.7), vec4(0.3, 0.9, 0.0, 0.7)])
 .skinned(vec4(3.0, 1.0, 1.4, 0.20))
 .brooding(vec4(0.6, 2.2, 1.4, 0.9));

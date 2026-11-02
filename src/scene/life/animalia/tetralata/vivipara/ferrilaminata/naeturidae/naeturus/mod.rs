@@ -1,16 +1,6 @@
 pub use super::{BIOLOGY, render_wings};
-use crate::scene::{
-    life::{
-        Tetralate, ellipsoid, smooth_min,
-        surface::{Hit, Material, Ray, Surface, local_ray, make_hit},
-        tapered_tail,
-    },
-    math::{Power, intersect_sphere},
-};
-use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Vec2, Vec3, vec3};
-#[cfg(target_arch = "spirv")]
-use spirv_std::num_traits::Float;
+use crate::scene::life::{ellipsoid, smooth_min, tapered_tail};
+use spirv_std::glam::{Vec3, vec3};
 pub mod nae;
 pub mod naetu;
 
@@ -24,7 +14,7 @@ taxon!(
     "Naeturus",
     "Nae Kin",
     [
-        "Members of Naeturus share four wings, feathered tails and aur-storage organs isolated from the digestive circulation.",
+        "Members of Naeturus share four wings on short stalks, long tails flighted with feather vanes, and aur-storage organs isolated from the digestive circulation.",
         "The genus has diverged into small dexterous Næ and enormous carrying Nætu.",
         "Mouth tentacles retain their ancestral feeding role while also supporting grooming, construction and close social contact.",
         "Their complementary sizes let one lineage maintain dwellings and tools while the other carries families between distant communities.",
@@ -32,357 +22,35 @@ taxon!(
     ],
 );
 
-pub struct TailFeathers {
-    pub scale: Vec3,
-    pub length: f32,
-    pub width: f32,
-}
-
-pub fn feather(point: Vec3, root: Vec3, length: f32, width: f32, sweep: f32) -> f32 {
-    let center = root + vec3(length * 0.5 * sweep, 0.0, length * 0.5);
-    let extent = vec3(
-        width + length * 0.55 * sweep.abs(),
-        width * 0.13,
-        length * 0.55,
-    );
-    let outside = ((point - center).abs() - extent).max(Vec3::ZERO).length();
-    if outside > width * 0.1 {
-        return outside;
-    }
-    let stable = point - root;
-    let stable = vec3(
-        stable.x - stable.z * sweep,
-        stable.y,
-        stable.z - length * 0.5,
-    );
-    ellipsoid(stable, vec3(width, width * 0.13, length * 0.55)) * 0.65
-}
-
-pub fn tail_shaft(point: Vec3, creature: &Tetralate, scale: Vec3, thickness: f32) -> Surface {
-    // Its pieces run smoothly into one another, so the tail bends as one flexing shaft rather
-    // than a string of beads.
-    let mut shaft = 1e6f32;
-    for segment in 0..5 {
-        let fraction = segment as f32 / 5.0;
-        shaft = smooth_min(
-            shaft,
-            tapered_tail(
-                point,
-                creature.rig.tail[segment].truncate() * scale,
-                creature.rig.tail[segment + 1].truncate() * scale,
-                thickness * (1.06 - fraction),
-                thickness * (0.86 - fraction),
-            ),
-            thickness * (0.6 - fraction * 0.4),
+/// A tail of the genus: a shaft tapering from `start` to `end` thick along the joints `joint`
+/// gives, `count` of them, each running smoothly into the next so it bends as one.
+pub fn shaft<F: Fn(u32) -> Vec3>(point: Vec3, joint: F, count: u32, start: f32, end: f32) -> f32 {
+    let mut distance = 1e6f32;
+    for index in 0..count - 1 {
+        let from = index as f32 / (count - 1) as f32;
+        let to = (index + 1) as f32 / (count - 1) as f32;
+        let a = start + (end - start) * from;
+        let b = start + (end - start) * to;
+        distance = smooth_min(
+            distance,
+            tapered_tail(point, joint(index), joint(index + 1), a, b),
+            a * 0.5,
         );
     }
-    Surface::new(shaft, 4)
+    distance
 }
 
-fn feather_intersection(
-    origin: Vec3,
-    direction: Vec3,
-    root: Vec3,
-    length: f32,
-    width: f32,
-    sweep: f32,
-) -> Vec2 {
-    let radius = vec3(width, width * 0.13, length * 0.55);
-    let origin = origin - root;
-    let stable_origin = vec3(
-        origin.x - origin.z * sweep,
-        origin.y,
-        origin.z - length * 0.5,
-    ) / radius;
-    let stable_direction =
-        vec3(direction.x - direction.z * sweep, direction.y, direction.z) / radius;
-    intersect_sphere(stable_origin, stable_direction, 1.0)
-}
-
-pub fn render_tail_feathers<M: Fn(Vec3, u32) -> Material>(
-    ray: Ray,
-    creature: &Tetralate,
-    shape: TailFeathers,
-    material: M,
-) -> Hit {
-    let local = local_ray(ray, creature);
-    let mut distance = ray.max_distance;
-    let mut normal = Vec3::ZERO;
-    let mut previous_offset = Vec3::ZERO;
-    for segment in 0..5 {
-        let fraction = segment as f32 / 5.0;
-        let length = shape.length * (1.0 - fraction * 0.3);
-        let width = shape.width * (1.0 - fraction * 0.4);
-        let radius = vec3(width, width * 0.13, length * 0.55);
-        for layer in 1..=3 {
-            let along = layer as f32 / 3.0;
-            let anchor = creature.rig.tail[segment]
-                .truncate()
-                .lerp(creature.rig.tail[segment + 1].truncate(), along)
-                * shape.scale;
-            for side_index in 0..2 {
-                let side = if side_index == 0 { -1.0 } else { 1.0 };
-                let sweep = side * (0.8 - fraction * 0.35);
-                let roots = feather_intersection(
-                    local.origin,
-                    local.direction,
-                    anchor,
-                    length,
-                    width,
-                    sweep,
-                );
-                let candidate = if roots.x > 0.0 { roots.x } else { roots.y };
-                if roots.x >= roots.y || candidate <= 0.0 || candidate >= distance {
-                    continue;
-                }
-                distance = candidate;
-                let point = local.origin + local.direction * distance - anchor;
-                let gradient = vec3(point.x - point.z * sweep, point.y, point.z - length * 0.5)
-                    / (radius * radius);
-                normal = vec3(gradient.x, gradient.y, gradient.z - sweep * gradient.x).normalize();
-                previous_offset = creature.rig.previous_tail[segment]
-                    .truncate()
-                    .lerp(creature.rig.previous_tail[segment + 1].truncate(), along)
-                    * shape.scale
-                    - anchor;
-            }
-        }
-    }
-    if distance >= ray.max_distance {
-        return Hit::MISS;
-    }
-    let point = local.origin + local.direction * distance;
-    make_hit(
-        ray,
-        creature,
-        distance,
-        normal,
-        point + previous_offset,
-        material(point, 1),
-    )
-}
-
-pub fn wings<F: FnMut(Hit)>(
-    ray: Ray,
-    creature: &Tetralate,
-    root: Vec3,
-    dimensions: Vec2,
-    tint: Vec3,
-    mut emit: F,
-) {
-    let local = local_ray(ray, creature);
-    let reach = dimensions.x * (1.0 - creature.animation.y.clamp(0.0, 1.2) * 0.6);
-    let old_reach = dimensions.x * (1.0 - creature.previous_animation.y.clamp(0.0, 1.2) * 0.6);
-    let lift = creature.animation.x * 0.45 - creature.animation.y * 0.12;
-    let bend = 0.12 + creature.animation.x * 0.2;
-    for wing_index in 0..2 {
-        let handedness = if wing_index == 0 { -1.0 } else { 1.0 };
-        let origin = local.origin - vec3(handedness * root.x, root.y, root.z);
-        let curvature = bend / reach;
-        let roots = wing_roots(
-            Vec2::new(origin.x * handedness, origin.y),
-            Vec2::new(local.direction.x * handedness, local.direction.y),
-            lift,
-            curvature,
-        );
-        let mut nearest = ray.max_distance;
-        for root_index in 0..2 {
-            let distance = if root_index == 0 { roots.x } else { roots.y };
-            if distance <= 0.0 || distance >= nearest {
-                continue;
-            }
-            let point = origin + local.direction * distance;
-            let fraction = point.x * handedness / reach;
-            if !(0.0..1.0).contains(&fraction) {
-                continue;
-            }
-            let chord =
-                dimensions.y * (0.55 + (fraction * PI).sin().sqrt()) * (1.0 - fraction).sqrt();
-            let chord_position = point.z - reach * fraction * fraction * 0.35;
-            let fringe = (fraction * 19.0).fract_gl();
-            let trailing = chord * (0.7 - fraction * 0.15 * (fringe * PI).sin());
-            if chord_position >= -chord * 0.45 && chord_position <= trailing {
-                nearest = distance;
-            }
-        }
-        if nearest >= ray.max_distance {
-            continue;
-        }
-        let point = origin + local.direction * nearest;
-        let fraction = point.x * handedness / reach;
-        let chord_position = point.z - reach * fraction * fraction * 0.35;
-        let chord = dimensions.y * (0.55 + (fraction * PI).sin().sqrt()) * (1.0 - fraction).sqrt();
-        let feather_coordinate = fraction * 24.0 + chord_position / dimensions.y * 0.6;
-        let ridge = ((feather_coordinate.fract_gl() - 0.5).abs() * 2.0).power(3);
-        let tips = (chord_position / chord).smoothstep(0.05, 0.65);
-        let covert = (-chord_position / chord).smoothstep(0.05, 0.4);
-        let variation = (feather_coordinate.floor() * 2.4).sin() * 0.06;
-        let detail = 1.0 - (ray.footprint * nearest / dimensions.y).smoothstep(0.001, 0.02);
-        let filaments =
-            (chord_position / dimensions.y * 180.0 + fraction * 60.0).sin() * 0.025 * detail;
-        let colour = tint.lerp(vec3(0.045, 0.095, 0.15), tips * 0.65).lerp(
-            vec3(0.72, 0.53, 0.25),
-            covert * fraction.smoothstep(0.25, 0.95) * 0.6,
-        );
-        let mut material =
-            Material::skin(colour * (1.0 + variation + filaments - ridge * 0.16), 0.65);
-        material.translucency = 0.18;
-        let mut normal = vec3(
-            -handedness * (lift + 2.0 * curvature * point.x * handedness),
-            1.0,
-            0.0,
-        )
-        .normalize();
-        if normal.dot(local.direction) > 0.0 {
-            normal = -normal;
-        }
-        let old_lift = creature.previous_animation.x * 0.45 - creature.previous_animation.y * 0.12;
-        let old_bend = 0.12 + creature.previous_animation.x * 0.2;
-        let previous = vec3(
-            handedness * (root.x + fraction * old_reach),
-            root.y + old_reach * (old_lift * fraction + old_bend * fraction * fraction),
-            root.z + old_reach * fraction * fraction * 0.35 + chord_position,
-        );
-        let mut hit = make_hit(ray, creature, nearest, normal, previous, material);
-        hit.part = 1;
-        emit(hit);
-    }
-}
-
-fn wing_roots(origin: Vec2, direction: Vec2, lift: f32, curvature: f32) -> Vec2 {
-    let quadratic = curvature * direction.x * direction.x;
-    let linear = (lift + 2.0 * curvature * origin.x) * direction.x - direction.y;
-    let constant = lift * origin.x + curvature * origin.x * origin.x - origin.y;
-    let disc = linear * linear - 4.0 * quadratic * constant;
-    if disc < 0.0 {
-        return Vec2::splat(-1.0);
-    }
-    if quadratic.abs() < 1e-8 {
-        if linear.abs() < 1e-8 {
-            return Vec2::splat(-1.0);
-        }
-        Vec2::splat(-constant / linear)
-    } else {
-        let stable = -0.5
-            * (linear
-                + if linear < 0.0 {
-                    -disc.sqrt()
-                } else {
-                    disc.sqrt()
-                });
-        Vec2::new(
-            stable / quadratic,
-            if stable.abs() > 1e-10 {
-                constant / stable
-            } else {
-                -linear / (2.0 * quadratic)
-            },
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::scene::life::{CreatureInstance, animalia::Animal};
-    use spirv_std::glam::Vec4;
-
-    #[test]
-    fn direct_feather_roots_match_the_sheared_surface() {
-        let root = vec3(0.3, -0.2, 1.4);
-        let radius = vec3(0.085, 0.085 * 0.13, 0.38 * 0.55);
-        for sweep in [-0.8, 0.0, 0.8] {
-            for index in 1..50 {
-                let axis = vec3((index as f32).sin(), (index as f32 * 0.7).cos(), 0.4).normalize();
-                let stable = axis * radius;
-                let z = stable.z + 0.38 * 0.5;
-                let surface = root + vec3(stable.x + z * sweep, stable.y, z);
-                let gradient = stable / (radius * radius);
-                let normal =
-                    vec3(gradient.x, gradient.y, gradient.z - sweep * gradient.x).normalize();
-                let roots =
-                    feather_intersection(surface + normal * 0.3, -normal, root, 0.38, 0.085, sweep);
-                assert!((roots.x - 0.3).abs() < 0.0001, "direct feather root drift");
-                assert!(feather(surface, root, 0.38, 0.085, sweep).abs() < 0.00001);
-                let inside = feather_intersection(
-                    root + vec3(0.38 * 0.5 * sweep, 0.0, 0.38 * 0.5),
-                    normal,
-                    root,
-                    0.38,
-                    0.085,
-                    sweep,
-                );
-                assert!(
-                    inside.x < 0.0 && inside.y > 0.0,
-                    "inside rays need the exit root"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn feathered_wings_remain_attached_and_reproject_when_folded() {
-        let root = vec3(4.6, 0.7, -5.0);
-        let dimensions = Vec2::new(34.0, 7.0);
-        for stroke in [-0.3, 0.0, 0.3] {
-            for fold in [0.0, 1.0] {
-                let animation = Vec4::new(stroke, fold, 0.0, 0.0);
-                let creature = Tetralate {
-                    animal: Animal {
-                        organism: CreatureInstance {
-                            rotation: Vec4::W,
-                            previous_rotation: Vec4::W,
-                            animation,
-                            previous_animation: animation,
-                            ..CreatureInstance::default()
-                        },
-                        ..Animal::default()
-                    },
-                    ..Tetralate::default()
-                };
-                let reach = dimensions.x * (1.0 - fold * 0.6);
-                for handedness in [-1.0, 1.0] {
-                    for fraction in [0.001, 0.5, 0.9] {
-                        let point = vec3(
-                            handedness * (root.x + reach * fraction),
-                            root.y
-                                + reach
-                                    * ((stroke * 0.45 - fold * 0.12) * fraction
-                                        + (0.12 + stroke * 0.2) * fraction * fraction),
-                            root.z + reach * fraction * fraction * 0.35,
-                        );
-                        let ray = Ray {
-                            origin: point + Vec3::Y * 30.0,
-                            direction: -Vec3::Y,
-                            light: Vec3::Y,
-                            ambient: Vec3::ONE,
-                            radiance: Vec3::ONE,
-                            max_distance: 100.0,
-                            footprint: 0.001,
-                        };
-                        let mut hit = Hit::MISS;
-                        wings(ray, &creature, root, dimensions, Vec3::ONE, |layer| {
-                            hit = layer;
-                        });
-                        assert!(
-                            hit.is_hit(),
-                            "missing wing at stroke={stroke}, fold={fold}, span={fraction}"
-                        );
-                        assert!(
-                            (hit.distance() - 30.0).abs() < 0.001,
-                            "wing detached from its profile"
-                        );
-                        assert!(
-                            hit.previous_position.distance(point) < 0.001,
-                            "stationary feather has incorrect motion"
-                        );
-                        assert!(
-                            (hit.normal.length() - 1.0).abs() < 0.001,
-                            "invalid wing normal"
-                        );
-                    }
-                }
-            }
-        }
-    }
+/// One feather vane of a tail: a long, flat blade from `root` along `direction` (of unit length),
+/// lying flat across the air as the tail does, widest a third of the way out and narrowing to a
+/// rounded tip.
+pub fn vane(point: Vec3, root: Vec3, direction: Vec3, length: f32, width: f32) -> f32 {
+    let flat = vec3(direction.z, 0.0, -direction.x);
+    let across = flat / flat.length().max(1e-4);
+    let up = direction.cross(across);
+    let q = point - root;
+    let along = q.dot(direction);
+    let t = (along / length).clamp(0.0, 1.0);
+    let breadth = width * (0.45 + 0.55 * (t * 3.0).min(1.0)) * (1.0 - t * t * 0.6);
+    let local = vec3(q.dot(across), q.dot(up), along - length * 0.5);
+    ellipsoid(local, vec3(breadth, width * 0.1, length * 0.5)) * 0.8
 }

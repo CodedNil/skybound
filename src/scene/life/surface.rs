@@ -373,6 +373,10 @@ pub struct Sheet {
     pub pattern: Vec4,
     pub second: Vec3,
     pub side: f32,
+    /// How much of the chord the root keeps at the stalk, and how far the wing is twisted about
+    /// its spar now and last frame.
+    pub stalk: f32,
+    pub pitch: Vec2,
     /// How torn this wing is, and how scarred from tears long healed.
     pub torn: f32,
     pub scarred: f32,
@@ -481,22 +485,37 @@ fn roll(v: Vec3, angle: f32) -> Vec3 {
     vec3(v.x * cosine - v.y * sine, v.x * sine + v.y * cosine, v.z)
 }
 
+/// A vector turned about the span, as a wing twists about its spar: positive raises the leading
+/// edge.
+fn pitched(v: Vec3, angle: f32) -> Vec3 {
+    let (sine, cosine) = angle.sin_cos();
+    vec3(v.x, v.y * cosine - v.z * sine, v.y * sine + v.z * cosine)
+}
+
 /// A wing's style: how far its tip sweeps back, how rounded or pointed its tip is, how many fingers
 /// or slotted feathers split its trailing edge, and how finely that edge frays into fringe.
 pub const PLAIN_WING: Vec4 = Vec4::new(1.0, 0.5, 4.0, 0.0);
 
+/// How much of its chord a wing keeps a share of the way out along it: narrowing in to the stalk
+/// it grows from, `stalk` of the chord wide, and full by a third of the way out.
+fn pinch(along: f32, stalk: f32) -> f32 {
+    let out = (along / 0.32).clamp(0.0, 1.0);
+    let out = out * out * (3.0 - 2.0 * out);
+    stalk + (1.0 - stalk) * out.sqrt()
+}
+
 /// How far ahead of a wing's chord line its leading edge lies, in chords, a share of the way out
 /// along it.
-fn leading(along: f32, style: Vec4) -> f32 {
+fn leading(along: f32, style: Vec4, stalk: f32) -> f32 {
     let tip = (1.0 - along.clamp(0.0, 1.0).powf(2.0 + style.y * 10.0))
         .max(0.0)
         .sqrt();
-    0.62 * tip
+    0.62 * tip * pinch(along, stalk.max(0.6))
 }
 
 /// How far behind the chord line its trailing edge lies: tapering from the root to the tip, notched
 /// between its fingers and frayed into fringe.
-fn trailing(along: f32, style: Vec4, feathered: bool) -> f32 {
+fn trailing(along: f32, style: Vec4, feathered: bool, stalk: f32) -> f32 {
     let along = along.clamp(0.0, 1.0);
     let tip = (1.0 - along.powf(2.0 + style.y * 10.0)).max(0.0).sqrt();
     let slots = if style.z > 0.5 {
@@ -507,15 +526,15 @@ fn trailing(along: f32, style: Vec4, feathered: bool) -> f32 {
     };
     let fringe = 1.0 - style.w * 0.22 * (along * 70.0).sin().abs() * along.smoothstep(0.05, 0.3);
     let root = 0.25 + 0.5 * style.y;
-    (root + (1.15 - root) * (1.0 - along).sqrt()) * tip * slots * fringe
+    (root + (1.15 - root) * (1.0 - along).sqrt()) * tip * slots * fringe * pinch(along, stalk)
 }
 
 /// How far inside a wing's outline a point of it lies, in chords, from its coordinates:
 /// positive within.
-fn planform(uv: Vec2, side: f32, feathered: bool, style: Vec4) -> f32 {
+fn planform(uv: Vec2, side: f32, feathered: bool, style: Vec4, stalk: f32) -> f32 {
     let along = uv.x.mul_add(side * 0.5, 0.5);
-    (uv.y + leading(along, style))
-        .min(trailing(along, style, feathered) - uv.y)
+    (uv.y + leading(along, style, stalk))
+        .min(trailing(along, style, feathered, stalk) - uv.y)
         .min((along + 0.02) * 2.0)
         .min((1.0 - along) * 2.0)
 }
@@ -1211,7 +1230,7 @@ impl Sheet {
                     along > self.wrist
                 };
                 if on_panel
-                    && planform(uv, self.side, feathered, self.style) >= 0.0
+                    && planform(uv, self.side, feathered, self.style, self.stalk) >= 0.0
                     && intact(uv, self.side, self.torn, self.root.z + self.side)
                 {
                     distance = candidate;
@@ -1263,8 +1282,9 @@ impl Sheet {
         let mark = marking(self.pattern, along, chord, facing);
         let colour = colour.lerp(self.second, (mark.max(0.0) * self.pattern.z).min(1.0));
         let windows = (-mark).max(0.0) * self.pattern.z;
-        let coverage =
-            (planform(uv, self.side, feathered, self.style) / footprint.max(0.001)).saturate();
+        let coverage = (planform(uv, self.side, feathered, self.style, self.stalk)
+            / footprint.max(0.001))
+        .saturate();
         let alpha =
             ((opacity + rib * 0.6 + thickness * 0.1) * (1.0 - windows * 0.8)).clamp(0.0, 0.98);
         let mut material = Material::skin(colour, if feathered { 0.65 } else { 0.25 + rib * 0.35 });
@@ -1276,8 +1296,11 @@ impl Sheet {
 pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit {
     let local = local_ray(ray, c);
     // Into the wing's own frame: about its root, with its stroke undone.
-    let origin = roll(local.origin - shape.root, -shape.stroke.x);
-    let direction = roll(local.direction, -shape.stroke.x);
+    let origin = pitched(
+        roll(local.origin - shape.root, -shape.stroke.x),
+        -shape.pitch.x,
+    );
+    let direction = pitched(roll(local.direction, -shape.stroke.x), -shape.pitch.x);
     let offset = shape.center - shape.root;
     let (distance, point) = shape.crossing(origin, direction, ray.max_distance, pigment.w > 0.9);
     if distance >= ray.max_distance {
@@ -1291,7 +1314,7 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
         surface_normal.dot(normalize(direction)).abs(),
         footprint,
     );
-    let normal = roll(surface_normal, shape.stroke.x);
+    let normal = roll(pitched(surface_normal, shape.pitch.x), shape.stroke.x);
     // Where this point of the membrane was last frame, bent and curled as it was then.
     let earlier = vec3(
         point.x,
@@ -1303,8 +1326,9 @@ pub fn sheet(ray: Ray, c: &CreatureInstance, shape: Sheet, pigment: Vec4) -> Hit
         ),
         point.z,
     );
-    let previous =
-        shape.root + (shape.previous_center - shape.center) + roll(earlier, shape.stroke.y);
+    let previous = shape.root
+        + (shape.previous_center - shape.center)
+        + roll(pitched(earlier, shape.pitch.y), shape.stroke.y);
     let mut hit = make_hit(
         ray,
         c,
@@ -1349,6 +1373,7 @@ pub fn wing_sheet<C: Flier>(body: &C, look: Look, index: usize, side: f32) -> Sh
     let reach = dimensions.x * development * (1.0 - c.animation.y * 0.65);
     let old_reach = dimensions.x * development * (1.0 - c.previous_animation.y * 0.65);
     let motion = look.flight;
+    let twist = look.stalks[index].y;
     // The membrane is no board: the air it drives bows it along the span against the stroke, tips
     // curling up on the downstroke and down on the up, and fills it deeper across the chord on
     // the downstroke.
@@ -1384,10 +1409,14 @@ pub fn wing_sheet<C: Flier>(body: &C, look: Look, index: usize, side: f32) -> Sh
             motion.z * ((phase - motion.w).sin() - 0.3) * effort,
             0.02 + push * motion.y * 0.1,
             0.07 + push.max(0.0) * 0.06,
+            // The wing is an oar: turned square to the air, leading edge down, to drive on the
+            // downstroke, and feathered edge-on, leading edge up, to slip back on the upstroke;
+            // held a little nose-down in a glide.
+            -twist * push * 0.8 - twist * 0.1,
         )
     };
-    let (stroke, fold, flex, camber) = beat(c.animation.z, c.animation.y, animal.motion);
-    let (old_stroke, old_fold, old_flex, _) = beat(
+    let (stroke, fold, flex, camber, pitch) = beat(c.animation.z, c.animation.y, animal.motion);
+    let (old_stroke, old_fold, old_flex, _, old_pitch) = beat(
         c.previous_animation.z,
         c.previous_animation.y,
         animal.previous_motion,
@@ -1413,6 +1442,8 @@ pub fn wing_sheet<C: Flier>(body: &C, look: Look, index: usize, side: f32) -> Sh
         pattern: look.pattern,
         second: look.second,
         side,
+        stalk: look.stalks[index].x,
+        pitch: Vec2::new(pitch, old_pitch),
         torn: own(wings.torn),
         scarred: own(wings.scarred),
     }
@@ -1475,22 +1506,31 @@ pub fn wing_bones<C: Flier>(p: Vec3, c: &C, look: Look, index: usize) -> f32 {
                 + (along * along - 0.25) * rx * 0.55 * style.x
                 + v * chord * (1.0 - 0.55 * along);
             let placed = vec3(x, shape.height(x, z, curvature, curl), z);
-            shape.root + roll(placed, shape.stroke.x)
+            shape.root + roll(pitched(placed, shape.pitch.x), shape.stroke.x)
         };
-        let lead = |along: f32| -leading(along, style) * 0.9;
-        let trail = |along: f32| trailing(along, style, feathered) * 0.95;
+        let lead = |along: f32| -leading(along, style, shape.stalk) * 0.9;
+        let trail = |along: f32| trailing(along, style, feathered, shape.stalk) * 0.95;
         let bone = |a: Vec3, b: Vec3, ra: f32, rb: f32| {
             let axis = b - a;
             let t = ((p - a).dot(axis) / axis.length_squared().max(1e-8)).saturate();
             ((p - a - axis * t).length() - ra.lerp(rb, t) * weight) * 0.9
         };
         let wrist = shape.wrist;
+        // The stalk: a short, thick, muscular root the whole wing twists about, swelling from the
+        // shoulder and narrowing into the spar.
+        let stalk_end = 0.16f32.min(wrist * 0.5);
         let mut frame = bone(
-            at(0.0, lead(0.0)),
-            at(wrist, lead(wrist)),
-            chord * 0.075,
-            chord * 0.04,
+            at(0.0, lead(0.0) * 0.5),
+            at(stalk_end, lead(stalk_end)),
+            chord * (0.07 + shape.stalk * 0.12),
+            chord * 0.065,
         );
+        frame = frame.min(bone(
+            at(stalk_end, lead(stalk_end)),
+            at(wrist, lead(wrist)),
+            chord * 0.065,
+            chord * 0.04,
+        ));
         for segment in 0..3 {
             let a = wrist + (0.97 - wrist) * segment as f32 / 3.0;
             let b = wrist + (0.97 - wrist) * (segment + 1) as f32 / 3.0;
@@ -1694,6 +1734,8 @@ mod tests {
                 pattern: Vec4::ZERO,
                 second: Vec3::ZERO,
                 side: 0.0,
+                stalk: 1.0,
+                pitch: Vec2::ZERO,
                 torn: 0.0,
                 scarred: 0.0,
             },

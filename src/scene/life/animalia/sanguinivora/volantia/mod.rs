@@ -47,6 +47,7 @@ taxon!(
         "Members of this class are fluid-feeding animals with a single pair of powered wings.",
         "The wings developed within the sucker-bearing lineage, independently of the four-winged body plan of Tetralata, and with them a single hoop of spring fibre round the body at their roots, the class's only frame, which arose apart from the tetralates' girdles for the same work.",
         "Flight allows them to leave a host after feeding rather than depend on permanent attachment.",
+        "Grown from folds of the body wall, their wings stay joined to the flank along their whole root and are beaten by the wall's own muscle, so they flap and bow rather than twist as a tetralate's stalked wings do.",
         "Broad membranes favour hovering approaches, while smaller fringed wings suit gliding through cloud cover.",
         "Repeated short visits also provide the behavioural starting point for grooming mimicry and more enduring host partnerships.",
     ],
