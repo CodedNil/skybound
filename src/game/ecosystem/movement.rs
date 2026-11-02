@@ -75,6 +75,12 @@ pub(super) fn relocate(
         transform.rotation = movement.rotation.to_engine();
         motion.0 = movement.velocity.to_engine();
     }
+    // A step that went wrong leaves the body where it was rather than nowhere at all.
+    if !motion.0.is_finite() || !transform.rotation.is_finite() {
+        warn!("{:?} was given a non-finite motion or heading", agent.kind);
+        motion.0 = Vec3::ZERO;
+        transform.rotation = turned;
+    }
     // Remembered so it is drawn gliding from where it was to here until the next step.
     let lag = was - transform.translation;
     relations.lag = if lag.length() < 200.0 {
@@ -199,6 +205,10 @@ pub(super) fn travel(
     coordinate: Option<&mut PlanetPosition>,
     world: &WorldData,
 ) {
+    if !offset.is_finite() {
+        warn!("an organism was moved by a non-finite offset; it stays where it was");
+        return;
+    }
     if let Some(coordinate) = coordinate {
         coordinate.translate(offset, transform, world);
     } else {

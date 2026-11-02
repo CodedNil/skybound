@@ -151,16 +151,26 @@ impl Range {
             since: 0.0,
             looked: 0.0,
         };
-        let food = range.food();
+        // Each level of the food chain is held to the one below it, so settle them one by one:
+        // plants, grazers, their hunters, and the hunters of those.
+        for _ in 0..4 {
+            let food = range.food();
+            for (index, count) in range.counts.iter_mut().enumerate() {
+                *count = range.capacity[index] * food[index];
+            }
+        }
         for (index, count) in range.counts.iter_mut().enumerate() {
-            let jitter = 0.6 + hash(index as u64, 7) * 0.4;
-            *count *= jitter * food[index];
+            *count *= 0.6 + hash(index as u64, 7) * 0.4;
         }
         range
     }
 
-    /// How well fed each kind could be in each region, from how much of what it eats lives there
-    /// against what could; plants make their own.
+    /// How well fed each kind could be in each region, as a share of what its region could hold of
+    /// it: plants make their own. An animal is held to what a tenth of the living mass it eats
+    /// there can feed, for food passes up from one eater to the next at about a tenth, so the
+    /// grazers are far fewer than the plants and the hunters far fewer than the grazers. A
+    /// parasite takes little and leaves its host alive, so it is held only to how many hosts there
+    /// are.
     fn food(&self) -> Vec<f32> {
         let kinds = KINDS.len();
         (0..REGIONS * kinds)
@@ -171,14 +181,27 @@ impl Range {
                 if diet.is_empty() {
                     return 1.0;
                 }
-                let found: f32 = diet
+                let eater = KINDS[kind];
+                if eater.animal().is_some_and(|animal| animal.parasite) {
+                    let hosts: f32 = diet
+                        .iter()
+                        .map(|&food| {
+                            self.counts[region * kinds + food] / density(KINDS[food]).max(1e-6)
+                        })
+                        .sum();
+                    return hosts.clamp(0.05, 1.0);
+                }
+                let eaten: f32 = diet
                     .iter()
                     .map(|&food| {
-                        let at = region * kinds + food;
-                        self.counts[at] / density(KINDS[food]).max(1e-6)
+                        self.counts[region * kinds + food] * KINDS[food].biology().adult_mass
                     })
                     .sum();
-                found.clamp(0.05, 1.0)
+                let fed = eaten * 0.1 / eater.biology().adult_mass.max(1e-6);
+                // A drifter straining the air lives as much on the algae and fragments drifting
+                // in it as on any plant it meets.
+                let drifting = if eater.floats() { 0.3 } else { 0.01 };
+                (fed / self.capacity[index].max(1e-3)).clamp(drifting, 1.0)
             })
             .collect()
     }
@@ -248,9 +271,10 @@ fn density(kind: Kind) -> f32 {
     }
     let sight = PI64 * near(kind) * near(kind);
     let area = 4.0 * PI64 * f64::from(PLANET_RADIUS).powi(2) / REGIONS as f64;
+    // Plants are the base of everything, and the most numerous.
     let in_sight = match kind.kingdom() {
         Kingdom::Animalia => 560.0,
-        Kingdom::Plantae => 800.0,
+        Kingdom::Plantae => 1600.0,
     };
     (in_sight * area / sight) as f32 * if kind.attaches() { 0.2 } else { 1.0 }
 }
@@ -594,6 +618,36 @@ mod tests {
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod balance {
+    use super::*;
+    use skybound::scene::life::animalia::physiology::Take;
+
+    /// No hunter outweighs, planet-wide, more than a small share of the living mass it hunts.
+    #[test]
+    fn food_chain_holds_hunters_to_their_prey() {
+        let range = Range::seeded();
+        let kinds = KINDS.len();
+        let mass = |index: usize| {
+            let total: f32 = (0..REGIONS).map(|region| range.counts[region * kinds + index]).sum();
+            total * KINDS[index].biology().adult_mass
+        };
+        for (index, kind) in KINDS.iter().enumerate() {
+            let hunter = kind.takes(Take::Prey)
+                && kind.animal().is_some_and(|animal| !animal.parasite);
+            if !hunter || range.diets[index].is_empty() {
+                continue;
+            }
+            let prey: f32 = range.diets[index].iter().map(|&food| mass(food)).sum();
+            assert!(
+                mass(index) <= prey * 0.15,
+                "{kind:?} outweighs its prey: {} against {prey}",
+                mass(index)
+            );
         }
     }
 }

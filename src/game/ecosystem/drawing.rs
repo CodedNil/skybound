@@ -33,7 +33,9 @@ pub(super) type Seen<'a> = (
     &'a Relations,
 );
 
-/// Every minute, how many of each species are alive, so a lineage dying out shows in the log.
+/// Every minute, how many of each species are alive among those lived out in full near the
+/// camera, so a lineage dying out shows in the log. The rest of the planet's life is kept as counts
+/// by region (see `range`) and is not in it; births and deaths are counted since the game began.
 pub(super) fn census(
     organisms: Query<(&Species, &Physiology, &Relations)>,
     ecosystem: Res<Ecosystem>,
@@ -61,7 +63,7 @@ pub(super) fn census(
         let _ = write!(line, " {kind:?}={}", counts.get(kind).copied().unwrap_or(0));
     }
     info!(
-        "census{line} births={} deaths={}",
+        "census of the life lived out near the camera:{line} (births={} deaths={} since start)",
         ecosystem.births, ecosystem.deaths
     );
     let mut activities: Vec<_> = doing.into_iter().collect();
