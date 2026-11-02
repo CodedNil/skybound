@@ -23,6 +23,7 @@ use spirv_std::{
 };
 
 pub mod clouds;
+mod features;
 mod march;
 pub mod ocean;
 mod poles;
@@ -157,6 +158,16 @@ fn opaque_hit(ray: Ray, frame: &FrameUniform) -> Hit {
     );
     if spire.distance() < closest.distance() {
         closest = spire;
+    }
+    let feature = features::trace(
+        ray.origin,
+        ray.direction,
+        &frame.view,
+        closest.distance(),
+        ray.footprint,
+    );
+    if feature.distance() < closest.distance() {
+        closest = feature;
     }
     closest
 }

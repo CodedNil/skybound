@@ -14,9 +14,9 @@
 //! Every feature is a few numbers drawn from its index, so the host and the shaders agree on where
 //! each is without being told, and few enough that anything can look at all of them.
 
-use crate::scene::{PLANET_RADIUS, math::Power};
+use crate::scene::{PLANET_RADIUS, aur::spire_point, math::Power};
 use core::f32::consts::TAU;
-use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3, vec4};
+use spirv_std::glam::{FloatExt, Vec2, Vec3, Vec4, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -266,13 +266,52 @@ pub fn influence(up: Vec3, altitude: f32) -> Influence {
             .wall
             .max((-((q - 1.15) / 0.2).power(2)).exp() * column);
     }
-    // The equatorial ice band, in the cold high air, broken into drifts.
+    found.ice = ice(up, altitude);
+    found
+}
+
+/// How thick ice crystals hang at a direction from the planet's centre and a height: in a band of
+/// cold, high air over the equator, broken into drifts.
+pub fn ice(up: Vec3, altitude: f32) -> f32 {
     let latitude = up.z.clamp(-1.0, 1.0).asin().abs();
     let band = 1.0 - (latitude / 0.32).min(1.0);
     let height = within((altitude - 9500.0).abs(), 2600.0);
     let drifts = (up.x * 41.0).sin() * (up.y * 37.0 + up.z * 13.0).sin() * 0.5 + 0.5;
-    found.ice = band * height * drifts.smoothstep(0.35, 0.75);
-    found
+    band * height * drifts.smoothstep(0.35, 0.75)
+}
+
+/// The ice crystals' cells, in spire coordinates: each holds at most one.
+pub const ICE_CELL: f32 = 900.0;
+/// The heights the ice crystals hang between.
+pub const ICE_LOW: f32 = 7000.0;
+pub const ICE_HIGH: f32 = 12_500.0;
+
+/// Four numbers in [0, 1) drawn from a cell, by integers alone so the host and the shaders agree
+/// exactly: a sine of a coordinate this large is computed differently on each.
+fn cell_hash(cell: Vec2) -> [f32; 4] {
+    let key = (cell.x as i32 as u32).wrapping_mul(0x8da6_b343)
+        ^ (cell.y as i32 as u32).wrapping_mul(0xd816_3841);
+    let r = draw(key, 41);
+    [r.x, r.y, r.z, r.w]
+}
+
+/// The ice crystal in a cell, if the ice is thick enough there for one: where its middle hangs (as
+/// across the cell and in height), its size, its form and its own seed.
+pub fn crystal(cell: Vec2, time: f32) -> Option<(Vec3, f32, u32, f32)> {
+    let [a, b, c, d] = cell_hash(cell);
+    let middle = (cell + 0.5) * ICE_CELL;
+    // How thick the ice hangs over this cell, from the planet-wide band and its drifts.
+    let around = spire_point(middle.extend(0.0)) / PLANET_RADIUS;
+    let thick = ice(around, 9500.0);
+    if a > thick * 0.5 {
+        return None;
+    }
+    let size = 40.0 + b.power(2) * 120.0;
+    // Bobbing slowly on the updraft that holds it up.
+    let bob = (time * (0.12 + c * 0.08) + d * TAU).sin() * size * 0.08;
+    let across = (vec2(b, c) - 0.5) * (ICE_CELL - size * 2.5);
+    let height = ICE_LOW + 400.0 + d * (ICE_HIGH - ICE_LOW - 800.0) + bob;
+    Some((across.extend(height), size, (c * 3.0) as u32, d))
 }
 
 #[cfg(test)]

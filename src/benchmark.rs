@@ -30,9 +30,10 @@ use skybound::scene::{
         spire_count, spire_point,
     },
     climate::{CIRRUS, CUMULUS, CYCLONE, DECK, TOWER},
+    features,
     planet::{REACTION_RADIUS, surface_frame},
 };
-use spirv_std::glam::Vec4 as SceneVec4;
+use spirv_std::glam::{Vec2 as SceneVec2, Vec3 as SceneVec3, Vec4 as SceneVec4};
 use std::{
     collections::BTreeMap,
     env,
@@ -196,6 +197,8 @@ fn setup(params: BenchmarkSetup) {
             &mut player,
             scene == "aur-lightning",
         )
+    } else if let Some(direction) = focus_feature(&scene, &mut world, &mut mount, &mut player) {
+        direction
     } else {
         Vec3::Y
     };
@@ -395,7 +398,10 @@ fn scene_camera(
     player: Vec3,
     direction: Vec3,
 ) -> Transform {
-    if scene == "nae-close" {
+    if matches!(scene, "geyser" | "lake" | "vents" | "ice") {
+        // From just over the mount, straight at the feature.
+        Transform::from_translation(mount + Vec3::Z * 25.0).looking_to(direction, Vec3::Z)
+    } else if scene == "nae-close" {
         Transform::from_translation(player + vec3(1.5, -4.0, 0.8)).looking_at(player, Vec3::Z)
     } else if scene == "aur-high" {
         Transform::from_translation(mount - direction * 3000.0 + Vec3::Z * 1000.0)
@@ -444,6 +450,7 @@ fn scene_altitude(scene: &str) -> f32 {
         "climate-orbit" => 476_000.0,
         "polar-beam" => 450_000.0,
         "aur-ejection" | "aur-lightning" => 81.25,
+        "geyser" | "lake" | "vents" | "ice" => 600.0,
         "aur-spires" | "spire-base" | "garden" | "clear" | "mounted" | "nae-close" | "equator"
         | "sunrise" | "polar" | "polar-reaction" => 300.0,
         _ => panic!("unknown benchmark scene"),
@@ -456,6 +463,64 @@ fn scene_weather(scene: &str) -> Option<Vec4> {
         | "polar" | "polar-reaction" | "pole-distant" => Some(Vec4::ZERO),
         _ => None,
     }
+}
+
+/// Put the world at one of the planet's features and the mount a little way off, facing it: a
+/// swamp's geyser, a floating lake, a Mineral Field's vents, or an ice crystal over the equator.
+/// Returns the way to it.
+fn focus_feature(
+    scene: &str,
+    world: &mut WorldData,
+    mount: &mut Transform,
+    player: &mut Transform,
+) -> Option<Vec3> {
+    let at = |up: SceneVec3, height: f32| up * (PLANET_RADIUS + height);
+    let (target, distance, lift) = match scene {
+        "geyser" => {
+            let geyser = features::geyser(0, 0);
+            (at(geyser.up, geyser.height * 0.4), 1500.0, 0.0)
+        }
+        "lake" => {
+            let lake = features::lake(0);
+            (
+                at(lake.up, lake.altitude),
+                lake.radius * 3.0,
+                lake.radius * 0.8,
+            )
+        }
+        "vents" => {
+            let field = features::vent_field(0);
+            (at(field.up, 60.0), field.radius * 0.7, 120.0)
+        }
+        "ice" => {
+            // The nearest crystal over the equator at the prime meridian.
+            let here = spire_coordinates(SceneVec3::X * PLANET_RADIUS);
+            let home = (here.truncate() / features::ICE_CELL).floor();
+            let (cell, (middle, size, ..)) = (0..900)
+                .map(|index| {
+                    home + SceneVec2::new((index / 30) as f32 - 15.0, (index % 30) as f32 - 15.0)
+                })
+                .find_map(|cell| features::crystal(cell, 0.0).map(|found| (cell, found)))
+                .expect("a crystal near the equator");
+            let place = (cell + 0.5) * features::ICE_CELL + middle.truncate();
+            (spire_point(place.extend(middle.z)), size * 4.0, size * 0.6)
+        }
+        _ => return None,
+    };
+    let target = target.as_dvec3().to_engine();
+    let up = target.normalize();
+    *world = WorldData::at(up.z.asin(), up.y.atan2(up.x));
+    let target = world.local(target);
+    let position = target - Vec3::Y * distance + Vec3::Z * lift;
+    let direction = (target - position).normalize();
+    let level = world.up(position);
+    mount.translation = position;
+    mount.rotation = Transform::default()
+        .looking_to(direction.with_z(0.0), level)
+        .rotation;
+    player.translation = position + level * 5.8;
+    player.rotation = mount.rotation;
+    Some(direction)
 }
 
 fn focus_aur(

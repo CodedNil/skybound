@@ -161,13 +161,8 @@ pub fn silk(p: Vec3, tether: Vec4) -> f32 {
     let length = end.length().max(1e-3);
     let middle = end * 0.5 - Vec3::Y * length * 0.04;
     let thick = tether.w;
-    let mut cable = tapered_tail(p, Vec3::ZERO, middle, thick, thick).min(tapered_tail(
-        p,
-        middle,
-        end,
-        thick,
-        thick,
-    ));
+    let mut cable = tapered_tail(p, Vec3::ZERO, middle, thick, thick)
+        .min(tapered_tail(p, middle, end, thick, thick));
     // The twist of its strands, a ridge running round it.
     let along = p.dot(end) / length;
     cable += (along / thick * 1.3 + p.x.atan2(p.y) * 3.0).sin() * thick * 0.08;

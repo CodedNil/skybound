@@ -93,7 +93,10 @@ fn tug(agent: Agent, relations: &mut Relations, index: &HashMap<Entity, Agent>, 
     let Some((anchor, rest)) = relations.tether else {
         return Vec3::ZERO;
     };
-    let Some(anchor) = index.get(&anchor).filter(|anchor| anchor.alive() && agent.alive()) else {
+    let Some(anchor) = index
+        .get(&anchor)
+        .filter(|anchor| anchor.alive() && agent.alive())
+    else {
         relations.tether = None;
         return Vec3::ZERO;
     };

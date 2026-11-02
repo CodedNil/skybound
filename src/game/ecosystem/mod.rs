@@ -117,9 +117,9 @@ pub struct Relations {
     /// How fast others pushed it along last step: a guardian nudging a stray egg home,
     /// tree-dwellers drawing their tree into rising air.
     nudge: Vec3,
-    /// The plant it is tied to by silk, and how long the tie is: a Weaver's work, or the strands of
-    /// a kelp forest grown into one another. It holds the two together against the wind until it is
-    /// stretched too far and snaps.
+    /// The plant it is tied to by silk, and how long the tie is: a Weaver's work, or the strands
+    /// of a kelp forest grown into one another. It holds the two together against the wind
+    /// until it is stretched too far and snaps.
     pub tether: Option<(Entity, f32)>,
     /// Where it was before the last step moved it, as an offset from where it is, how it was
     /// turned, and when that step was, so it is drawn gliding between steps rather than jumping.
@@ -1009,7 +1009,7 @@ mod tests {
                 protected: false,
                 genes: Genome::TYPICAL,
                 skill: 0.0,
-            tether: None,
+                tether: None,
             }
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
