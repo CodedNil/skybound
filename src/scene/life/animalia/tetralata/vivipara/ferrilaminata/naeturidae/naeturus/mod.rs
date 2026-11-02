@@ -95,6 +95,36 @@ pub fn feather_strip(
     flat - barbs * width / flatness * 0.25
 }
 
+/// The opening of an eye's lids, as the genus has them: almond-shaped.
+///
+/// It is longest along the head and pointed at the corners fore and aft, so the lids cover the top
+/// and bottom of the eye, set at `at` looking along `looking` (of unit length), `radius` the size
+/// of the eye.
+pub fn almond(point: Vec3, at: Vec3, looking: Vec3, radius: f32) -> f32 {
+    let along = Vec3::Y.cross(looking);
+    let along = along / along.length().max(1e-5);
+    let up = looking.cross(along);
+    let q = point - at;
+    let (x, y, z) = (q.dot(along), q.dot(up), q.dot(looking));
+    let (round, apart) = (radius * 1.5, radius * 1.05);
+    let lens = (vec2(x, y + apart).length() - round).max(vec2(x, y - apart).length() - round);
+    lens.max(-z - radius)
+}
+
+/// Shade an eye, `from` a point on it measured from its centre: a glossy lens over an `iris` round
+/// a wide dark pupil, as seen down the line it looks along.
+pub fn shade_eye(m: &mut Material, from: Vec3, looking: Vec3, radius: f32, iris: Vec3) {
+    let across = (from - looking * from.dot(looking)).length() / radius;
+    let pupil = across.smoothstep(0.32, 0.4);
+    let rim = across.smoothstep(0.82, 0.95);
+    m.color = vec3(0.01, 0.015, 0.02)
+        .lerp(iris, pupil)
+        .lerp(vec3(0.05, 0.12, 0.14), rim);
+    m.roughness = 0.04;
+    m.relief = 0.0;
+    m.scatter = 0.0;
+}
+
 /// Knots along the tail and along each strand of the train.
 pub const KNOTS: usize = 6;
 

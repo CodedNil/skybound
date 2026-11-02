@@ -48,7 +48,7 @@ taxon!(
         "Næ are small, intelligent four-winged animals with large round heads, soft plump bodies, small feathers lying up the back from the tail to the crown, and a long tail that droops under a train of forked streamers.",
         "As all their phylum do, they see all round at once, through a circlet of lensed eyes ringing the head; in the Næ it is reduced to three on each side in a rough line, the forward pair much the largest, set close together for the fine work of their tentacles, the middle pair a little higher and the rear a little lower, and the face they make is the first thing a Nætu learns to know.",
         "The mouth opens under the front of the snout, a soft round lip among the roots of the tentacles that bring food and water up to it.",
-        "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs. The outer pair is grown long and thick, each ending in three fine, opposable fingers that hold tools, knot fibre, work iron and part a companion's plumes to groom them; the shorter inner pairs steady things and guide food.",
+        "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs. The outer pair is grown long and thick, each ending in a broad, flattened pad, ridged for grip, that curls round whatever it holds: tools, fibre to knot, iron to work, or a companion's plumes as it parts them to groom; the shorter inner pairs steady things and guide food.",
         "Their wings are small, rounded and feathered, on narrow stalks that twist through a quick stroke, for hovering close to work rather than for distance; a Næ travels far on its Nætu.",
         "The bare tip of the tail curls into a hook below the train, and with it a Næ holds fast to the fibres of its Nætu's back through any turn; the train itself is for one another, spread and rippled in greeting and courtship, its streamers lit along their ribs by the aur sacs.",
         "Moisture-recovery folds support short flights, although active travel still requires drinks from living basins.",
@@ -142,11 +142,12 @@ const TRAIN_SHAPE: Train = Train {
 
 /// A Næ: small, soft and mostly head.
 ///
-/// Its big round head runs without a waist into a plump body. A circlet of lensed eyes rings the
-/// head, the forward pair much the largest, and the mouth opens beneath it among the roots of the
-/// tentacles, the outer pair long and thick and ending in fingers: its hands. the aur sacs glow on
-/// its flanks, and small feathers lie up its back from the tail to the crown. The tail droops under
-/// a train of forked streamers, its bare tip curled into a hook beneath them.
+/// Its long hooded head runs without a waist into a slender body. A circlet of lensed eyes, set in
+/// almond-lidded sockets, rings the head, the forward pair much the largest, and the mouth opens
+/// beneath the muzzle just ahead of the roots of the tentacles, the outer pair long and thick and
+/// ending in curling pads: its hands. The aur sacs glow on its flanks, and small feathers lie up
+/// its back from the tail to the crown. The tail droops under a train of forked streamers, its bare
+/// tip curled into a hook beneath them.
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     // The sex that carries the young is the heavier.
@@ -232,13 +233,7 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     .length()
         - 0.009;
     hit.blend(lip, 17, 0.01);
-    // The circlet of eyes round the head, and the downward pair beneath it.
-    for index in 0..CIRCLET {
-        let (at, radius, _) = circlet(index);
-        hit.socket((mirrored - at).length() - radius, radius);
-    }
-    let (at, radius, _) = downward();
-    hit.socket((mirrored - at).length() - radius, radius);
+    hit = eyes(point, hit);
     // An aur sac on each flank, glowing through the iron collar its body laid down round it.
     // The sex that carries the young carries larger aur sacs, to heal and shield its brood.
     let bearer = if creature.sex.x > 0.5 && creature.sex.x < 1.5 {
@@ -272,26 +267,42 @@ fn skull(point: Vec3) -> f32 {
     let skull = rounded(shaped, HEAD_SIZE * vec3(0.95, 0.85, 1.25)) / narrowing;
     // Its top flattened under the hood.
     let skull = -smooth_min(-skull, -(point.y - 0.125), 0.04);
-    let muzzle = rounded(
-        point - vec3(0.0, -0.035, -0.29),
-        vec3(0.065, 0.05, 0.075),
-    );
+    let muzzle = rounded(point - vec3(0.0, -0.035, -0.29), vec3(0.065, 0.05, 0.075));
     smooth_min(skull, muzzle, 0.05)
 }
 
-/// The hood every tetralate of its lineage carries over the head: a broad, flat cowl, wider than
-/// the skull and overhanging the eyes, lifting a little at its edges, and running back over the
-/// crown into the line of the back.
+/// The hood every tetralate of its lineage carries over the head: a broad, flat cowl over the
+/// crown, lifting a little at its edges and running back into the line of the back, kept narrow
+/// enough in the Næ that the higher eyes see up past it.
 fn hood(point: Vec3) -> f32 {
     let q = point - vec3(0.0, 0.105, -0.15);
     let lift = q.x * q.x / 0.04 * 0.025;
     let reach = (-q.z / 0.22).clamp(0.0, 1.0);
-    let half = vec3(0.165 - reach * 0.07, 0.03 - reach * 0.01, 0.23);
+    let half = vec3(0.13 - reach * 0.06, 0.03 - reach * 0.01, 0.23);
     rounded(q - vec3(0.0, lift, 0.0), half)
 }
 
-/// The mouth tentacles, and on the tip of each of the long outer pair three fine fingers, splayed a
-/// little apart, that close on whatever it holds.
+/// The circlet of eyes round the head, and the downward pair beneath it, each in almond lids.
+fn eyes(point: Vec3, mut hit: Surface) -> Surface {
+    let mirrored = vec3(point.x.abs(), point.y, point.z);
+    for index in 0..=CIRCLET {
+        let (at, radius, looking) = if index < CIRCLET {
+            circlet(index)
+        } else {
+            downward()
+        };
+        hit.lidded(
+            (mirrored - at).length() - radius,
+            almond(mirrored, at, looking, radius),
+            radius,
+        );
+    }
+
+    hit
+}
+
+/// The mouth tentacles, and on the tip of each of the long outer pair a broad, flat pad that curls
+/// under round whatever it holds.
 fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit.blend(
         oral_grasping(point, creature, TENTACLES, REACH, ORAL_PAIRS, GRIP),
@@ -309,19 +320,27 @@ fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
         let across = flat / flat.length().max(1e-4);
         let over = across.cross(onward);
         let thick = (tip.w * 2.2).max(0.006);
-        let palm = tip.truncate() + onward * thick;
-        hit.blend((point - palm).length() - thick * 1.3, 2, thick);
-        for finger in 0..3 {
-            let turn = (finger as f32 - 1.0) * 0.7;
-            let out = onward + across * turn.sin() * 0.8 + over * (turn.cos() - 0.6) * 0.6;
-            let out = out / out.length();
-            let end = palm + out * thick * 4.5 - over * thick * 1.2;
-            hit.blend(
-                tapered_tail(point, palm, end, thick * 0.6, thick * 0.25),
-                2,
-                thick * 0.5,
-            );
-        }
+        // The pad: broad and flat across the tentacle, its far end curling under towards what
+        // it holds, in two stretches so the curl is smooth.
+        let pad = |from: Vec3, to: Vec3, wide: f32| {
+            let axis = to - from;
+            let length = axis.length().max(1e-5);
+            let q = point - from.lerp(to, 0.5);
+            let local = vec3(q.dot(across), q.dot(over), q.dot(axis / length));
+            rounded(local, vec3(wide, thick * 0.45, length * 0.55))
+        };
+        let root = tip.truncate();
+        let middle = root + onward * thick * 3.0;
+        let end = middle + (onward - over * 0.9) / (onward - over * 0.9).length() * thick * 2.4;
+        hit.blend(
+            smooth_min(
+                pad(root, middle, thick * 1.5),
+                pad(middle, end, thick * 1.2),
+                thick * 0.6,
+            ),
+            2,
+            thick,
+        );
     }
     hit
 }
@@ -346,7 +365,8 @@ fn tuft(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
         let back = vec3(lane * 0.45, -0.15 + stir, 1.0);
         let control = root + rise / rise.length() * length * 0.6;
         let tip = control + back / back.length() * length * 0.6;
-        let curve = |t: f32| root * (1.0 - t).power(2) + control * (2.0 * t * (1.0 - t)) + tip * (t * t);
+        let curve =
+            |t: f32| root * (1.0 - t).power(2) + control * (2.0 * t * (1.0 - t)) + tip * (t * t);
         let width = |u: f32| 0.004 + 0.016 * (u * 3.0).min(1.0) * (1.0 - u.power(3));
         for segment in 0..5 {
             let (from, to) = (segment as f32 / 5.0, (segment + 1) as f32 / 5.0);
@@ -666,16 +686,13 @@ fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
                     looking = towards;
                 }
             }
-            let eye = mirrored - centre;
-            let across = (eye - looking * eye.dot(looking)).length() / radius;
-            let pupil = across.smoothstep(0.32, 0.4);
-            let rim = across.smoothstep(0.82, 0.95);
-            m.color = vec3(0.01, 0.015, 0.02)
-                .lerp(vec3(0.85, 0.60, 0.18), pupil)
-                .lerp(vec3(0.05, 0.12, 0.14), rim);
-            m.roughness = 0.04;
-            m.relief = 0.0;
-            m.scatter = 0.0;
+            shade_eye(
+                &mut m,
+                mirrored - centre,
+                looking,
+                radius,
+                vec3(0.85, 0.60, 0.18),
+            );
         }
         7 => {
             // Worked iron, polished bright by handling.
@@ -890,9 +907,15 @@ mod tests {
         for eye in EYES {
             assert!(skull(eye).abs() < 0.01, "an eye is off the skull: {eye}");
         }
-        assert!(jaw(DOWNWARD_EYE).abs() < 0.01, "the downward eye is off the jaw");
+        assert!(
+            jaw(DOWNWARD_EYE).abs() < 0.01,
+            "the downward eye is off the jaw"
+        );
         assert!(jaw(MOUTH).abs() < 0.01, "the mouth is off the jaw");
         let crown = smooth_min(skull(TUFT_ROOT), hood(TUFT_ROOT), 0.07);
-        assert!(crown < 0.0 && crown > -0.02, "the crest is not rooted in the crown");
+        assert!(
+            crown < 0.0 && crown > -0.02,
+            "the crest is not rooted in the crown"
+        );
     }
 }

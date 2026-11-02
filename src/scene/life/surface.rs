@@ -164,15 +164,21 @@ impl Surface {
     /// open sky can be carried out on a stalk or bead, where the wind would tear it; every one sits
     /// in the body that guards it.
     pub fn socket(&mut self, eye: f32, radius: f32) {
+        self.lidded(eye, eye - radius * 0.3, radius);
+    }
+
+    /// Set an eye as [`Surface::socket`] does, its lids parted to the shape `opening` gives
+    /// rather than a round hole: the lids follow its edge and hide whatever of the eye lies
+    /// outside it.
+    pub fn lidded(&mut self, eye: f32, opening: f32, radius: f32) {
         let body = self.distance;
-        let hollow = eye - radius * 0.3;
         // The lid: the socket's wall where it meets the skin, standing a little proud of it.
-        let lid = ((hollow - radius * 0.16).abs() - radius * 0.16)
+        let lid = ((opening - radius * 0.16).abs() - radius * 0.16)
             .max(body - radius * 0.28)
             .max(-body - radius * 0.7);
-        let sunk = -smooth_min(-body, hollow, radius * 0.12);
+        let sunk = -smooth_min(-body, opening, radius * 0.12);
         self.distance = smooth_min(sunk, lid, radius * 0.18);
-        self.join(eye, 3);
+        self.join(eye.max(opening - radius * 0.05), 3);
     }
 
     /// Set cup eyes into the body, as the blood-feeders kept them from their soft-bodied

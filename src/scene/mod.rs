@@ -28,7 +28,7 @@ pub mod preview_entry {
 #[cfg(all(target_arch = "spirv", not(feature = "preview")))]
 pub mod render;
 
-pub const PLANET_RADIUS: f32 = 250_000.0;
+pub const PLANET_RADIUS: f32 = 125_000.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, bytemuck::Pod, bytemuck::Zeroable)]

@@ -129,7 +129,10 @@ mod nature {
                 })
         },
         act: |mind, s| {
-            let covered = s.seen.mark(ROOST).is_some_and(|cover| cover.length() < 10.0);
+            let covered = s
+                .seen
+                .mark(ROOST)
+                .is_some_and(|cover| cover.length() < 10.0);
             if mind.intent == FLEE && covered {
                 return Some(hang_still());
             }

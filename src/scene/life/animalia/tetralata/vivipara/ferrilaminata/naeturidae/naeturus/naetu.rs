@@ -73,10 +73,27 @@ fn shielded(creature: &Tetralate) -> f32 {
     ((creature.life.x - BIOLOGY.maturity_days) / 365.0).clamp(0.0, 1.0)
 }
 
-/// A point on the head's surface, `inset` of the way out along `direction` from its centre.
-fn on_head(direction: Vec3, inset: f32) -> Vec3 {
-    HEAD + HEAD_SIZE * (direction / direction.length()) * inset
+/// Eye `index`, the circlet's four from ahead round to behind and then the low one under the face:
+/// where it sits on the face (a test checks each lies on it), how large it is, and which way it
+/// looks.
+fn eye(index: u32) -> (Vec3, f32, Vec3) {
+    let (at, radius) = if index == 0 {
+        (vec3(2.395, 1.47, -18.864), 0.95)
+    } else if index == 1 {
+        (vec3(4.452, 1.466, -17.256), 0.54)
+    } else if index == 2 {
+        (vec3(5.548, 1.458, -14.921), 0.48)
+    } else if index == 3 {
+        (vec3(5.289, 1.432, -12.432), 0.42)
+    } else {
+        (vec3(2.174, -3.24, -17.305), 0.35)
+    };
+    let looking = at - HEAD;
+    (at, radius, looking / looking.length())
 }
+
+/// How many eyes it has on each side.
+const EYES: u32 = 5;
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 20.0, 25.0, 0);
@@ -136,11 +153,11 @@ fn drape(creature: &Tetralate, index: usize) -> Drape {
     Drape {
         anchor: vec3(x, under + 0.3, z),
         length: 6.0 + chance(2) * 14.0,
-        width: 0.22 + chance(3) * 0.45,
+        width: 0.12 + chance(3) * 0.25,
         colours: (first, second),
         pattern: (chance(10) * 5.99) as u32,
         repeats: 2.0 + (chance(11) * 8.0).floor(),
-        twist: (chance(14) - 0.5) * 5.0,
+        twist: (chance(14) - 0.5) * 2.4,
         tassels: chance(12) < 0.55,
         gems: (chance(13) * 3.99) as u32,
     }
@@ -188,6 +205,9 @@ fn rig_drapes(creature: &mut Tetralate) {
                 }
                 tie(&mut knots, segment);
                 tie(&mut knots, segment);
+                for knot in &mut knots {
+                    *knot = outside(*knot, strand.width + 0.3);
+                }
                 knots[0] = strand.anchor;
             }
             knots
@@ -197,6 +217,24 @@ fn rig_drapes(creature: &mut Tetralate) {
             creature.drapes[index][knot] = earlier[knot].lerp(later[knot], weight).extend(0.0);
         }
     }
+}
+
+/// A point kept `margin` clear of the body: pushed back out of the torso and the keel beneath it
+/// if the cloth has swung into them.
+fn outside(point: Vec3, margin: f32) -> Vec3 {
+    let mut point = point;
+    for (centre, radii) in [
+        (vec3(0.0, 0.2, -0.5), vec3(6.2, 4.8, 13.5)),
+        (vec3(0.0, -3.6, 0.0), vec3(2.2, 2.0, 10.5)),
+    ] {
+        let radii = radii + Vec3::splat(margin);
+        let q = (point - centre) / radii;
+        let inside = q.length();
+        if inside < 1.0 {
+            point = centre + q / inside.max(1e-4) * radii;
+        }
+    }
+    point
 }
 
 /// Stretch `knot` of strand `index` of cloth: where it starts and ends, the normal to the band's
@@ -211,7 +249,13 @@ fn band(
     let a = creature.drapes[index][knot].truncate();
     let b = creature.drapes[index][knot + 1].truncate();
     let axis = (b - a) / (b - a).length().max(1e-6);
+    // Broad side to the air: across the body, unless the strand itself runs across it.
     let face = axis.cross(Vec3::X);
+    let face = if face.length() > 0.3 {
+        face
+    } else {
+        axis.cross(Vec3::Y)
+    };
     let face = face / face.length().max(1e-6);
     let turn = strand.twist * (knot as f32 + 0.5) / (DRAPE_KNOTS - 1) as f32;
     let face = face * turn.cos() + axis.cross(face) * turn.sin();
@@ -258,7 +302,7 @@ fn cloth(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
             let (a, b, face, _) = band(creature, &strand, index, knot);
             let t = knot as f32 / (DRAPE_KNOTS - 1) as f32;
             let width = strand.width * (1.0 - t * 0.2);
-            ribbon = ribbon.min(strip(point, a, b, width, width * 0.98, face, 26.0));
+            ribbon = ribbon.min(strip(point, a, b, width, width * 0.98, face, 30.0));
         }
         hit.join(ribbon, 30 + index as u32);
         let end = creature.drapes[index][DRAPE_KNOTS - 1].truncate();
@@ -430,20 +474,16 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
         return hit;
     }
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    // A circlet of eyes ringing the head from ahead round to behind, the forward pair largest.
-    for index in 0..4 {
-        let angle = 0.42 + index as f32 * 0.45;
-        let looking = vec3(angle.sin(), 0.08, -angle.cos());
-        let radius = if index == 0 {
-            0.95
-        } else {
-            0.6 - index as f32 * 0.06
-        };
-        let eye = (mirrored - on_head(looking, 1.06)).length() - radius;
-        hit.socket(eye, radius);
+    // A circlet of eyes ringing the head from ahead round to behind, the forward pair largest,
+    // and a low one beneath watching the aur, each in almond lids.
+    for index in 0..EYES {
+        let (at, radius, looking) = eye(index);
+        hit.lidded(
+            (mirrored - at).length() - radius,
+            almond(mirrored, at, looking, radius),
+            radius,
+        );
     }
-    let low = (mirrored - vec3(2.0, -2.9, -17.0)).length() - 0.35;
-    hit.socket(low, 0.35);
     hit.blend(
         oral_grasping(point, creature, MOUTH, REACH, ORAL_PAIRS, GRIP),
         2,
@@ -523,8 +563,24 @@ fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
             m.translucency = 0.4;
         }
         3 => {
-            m.color = vec3(0.008, 0.025, 0.04);
-            m.roughness = 0.08;
+            // Whichever eye this is: a lens over a deep bronze iris.
+            let mirrored = vec3(point.x.abs(), point.y, point.z);
+            let mut nearest = (1e6f32, Vec3::ZERO, 1.0, Vec3::Z);
+            for index in 0..EYES {
+                let (at, radius, looking) = eye(index);
+                let distance = (mirrored - at).length() - radius;
+                if distance < nearest.0 {
+                    nearest = (distance, at, radius, looking);
+                }
+            }
+            let (_, at, radius, looking) = nearest;
+            shade_eye(
+                &mut m,
+                mirrored - at,
+                looking,
+                radius,
+                vec3(0.62, 0.42, 0.16),
+            );
         }
         9 => {
             m.color = vec3(0.19, 0.82, 0.86);
@@ -798,7 +854,9 @@ mod nature {
         act: |_, s| {
             Goal::new(
                 Activity::Groom,
-                s.seen.mark(NAE).map(|nae| nae - nae.normalize_or_zero() * 20.0),
+                s.seen
+                    .mark(NAE)
+                    .map(|nae| nae - nae.normalize_or_zero() * 20.0),
                 0.4,
             )
             .hovering()
@@ -830,5 +888,18 @@ mod nature {
             return Some(goal.unwrap_or_else(|| (FOLLOW.act)(mind, s)).calling());
         }
         goal
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eyes_lie_on_the_face() {
+        for index in 0..EYES {
+            let (at, ..) = eye(index);
+            assert!(face(at).abs() < 0.05, "eye {index} is off the face");
+        }
     }
 }

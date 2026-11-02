@@ -57,6 +57,11 @@ pub const fn layer_depth(layer: u32) -> f32 {
     }
 }
 
+/// How large weather systems grow against those of a world of 250 km radius, which their reaches
+/// are given for: in proportion to the planet, so its skies are as often clear or overcast at any
+/// size.
+const SYSTEM_SCALE: f32 = PLANET_RADIUS / 250_000.0;
+
 /// Weather systems in flight at once, as many as keep the planet's skies as often clear as cloudy
 /// for its size.
 pub const CLOUD_SLOTS: u32 = 224;
@@ -591,6 +596,13 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
                 low * growth,
             )
         }
+    };
+    // A system spreads as far as the planet's own scale allows; a thunderhead is one cloud, as
+    // large on any world.
+    let reach = if kind == TOWER {
+        reach
+    } else {
+        reach * SYSTEM_SCALE
     };
     CloudParcel {
         centre: centre.extend(reach),

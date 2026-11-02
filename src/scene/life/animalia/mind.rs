@@ -655,8 +655,7 @@ mod tests {
             youth: 1.0,
             ..Drives::default()
         };
-        let goal =
-            Mind::default().decide(Kind::Custos, grown, &perception, 0.0, Genome::TYPICAL);
+        let goal = Mind::default().decide(Kind::Custos, grown, &perception, 0.0, Genome::TYPICAL);
         assert_eq!(
             goal.activity,
             Activity::Defend,
@@ -672,11 +671,9 @@ mod tests {
             term: 0.95,
             ..grown
         };
-        let goal =
-            Mind::default().decide(Kind::Herbivolus, due, &perception, 0.0, Genome::TYPICAL);
+        let goal = Mind::default().decide(Kind::Herbivolus, due, &perception, 0.0, Genome::TYPICAL);
         assert!(
-            goal.offset
-                .is_some_and(|to| to.distance(sanctuary) < 30.0),
+            goal.offset.is_some_and(|to| to.distance(sanctuary) < 30.0),
             "a mother near her time stayed away from the sanctuary"
         );
     }
