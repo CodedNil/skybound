@@ -131,6 +131,43 @@ fn lens(q: Vec3, lake: Lake, time: f32) -> f32 {
     belly.max(surface)
 }
 
+/// How hard it is raining over lake `index` now: showers come and go over each on its own slow
+/// rhythm, rarely, for the lakes hang where rain is scarce.
+fn shower(index: u32, time: f32) -> f32 {
+    let phase = time * 0.0021 + index as f32 * 2.3;
+    ((phase.sin() + (phase * 2.7).sin() * 0.5) * 0.7).smoothstep(0.55, 0.85)
+}
+
+/// The streams pouring into a lake in rain, in its own frame: rainwater gathered from the air about
+/// it and drawn down into the low pressure at its heart, falling in arcs from beyond its rim onto
+/// its water. Nothing when it is dry.
+fn streams(q: Vec3, lake: Lake, rain: f32, time: f32) -> f32 {
+    if rain <= 0.0 {
+        return f32::MAX;
+    }
+    let mut d = f32::MAX;
+    for stream in 0..5 {
+        let angle = stream as f32 * 1.256_637 + 0.4 + (time * 0.05 + stream as f32).sin() * 0.1;
+        let out = vec3(angle.cos(), 0.0, angle.sin());
+        let from = out * lake.radius * 2.2 + Vec3::Y * lake.radius * 0.9;
+        let to = out * lake.radius * 0.7;
+        let bend = out * lake.radius * 1.6 + Vec3::Y * lake.radius * 0.3;
+        let thick = (2.0 + lake.radius * 0.008) * rain;
+        let mut previous = from;
+        for piece in 1..5 {
+            let t = piece as f32 / 4.0;
+            let point = from * (1.0 - t).power(2) + bend * (2.0 * t * (1.0 - t)) + to * (t * t);
+            let along = q - previous;
+            let axis = point - previous;
+            let h = (along.dot(axis) / axis.length_squared().max(1e-6)).clamp(0.0, 1.0);
+            let wobble = (q.y * 0.3 - time * 6.0 + stream as f32).sin() * thick * 0.25;
+            d = d.min((along - axis * h).length() - thick * (1.0 - t * 0.4) - wobble);
+            previous = point;
+        }
+    }
+    d
+}
+
 /// A hexagonal prism, `half` its across-the-flats radius and half length, lying along y.
 fn hexagonal(p: Vec3, half: Vec2) -> f32 {
     let k = vec3(-0.866_025_4, 0.5, 0.577_350_3);
@@ -334,26 +371,28 @@ fn find(ro: Vec3, rd: Vec3, limit: f32, time: f32, angle: f32) -> Option<Found> 
         let frame = Frame::at(lake.up, lake.altitude);
         let start = frame.local(ro - frame.origin);
         let way = frame.local(rd);
-        let sphere = intersect_sphere(start, way, lake.radius * 1.05 + lake.depth);
+        let rain = shower(index, time);
+        let reach = if rain > 0.0 { 2.6 } else { 1.05 };
+        let sphere = intersect_sphere(start, way, lake.radius * reach + lake.depth);
         if sphere.x > sphere.y || sphere.y < 0.0 || !nearer(sphere.x.max(0.0), &best) {
             continue;
         }
-        let t = march(
-            start,
-            way,
-            sphere.x.max(0.0),
-            sphere.y,
-            |q| lens(q, lake, time),
-            angle,
-        );
+        let water = |q: Vec3| lens(q, lake, time).min(streams(q, lake, rain, time));
+        let t = march(start, way, sphere.x.max(0.0), sphere.y, water, angle);
         if nearer(t, &best) {
             let at = start + way * t;
-            let n = normal(at, (t * angle).max(0.05), |q| lens(q, lake, time));
+            let n = normal(at, (t * angle).max(0.05), water);
+            // A stream falling into it is shaded as falling water, the lake as a lake.
+            let falling = streams(at, lake, rain, time) < lens(at, lake, time);
             best = Some(Found {
                 t,
                 normal: frame.outward(n),
-                kind: LAKE,
-                detail: at / lake.radius,
+                kind: if falling { GEYSER } else { LAKE },
+                detail: if falling {
+                    vec3(at.y / lake.radius, 0.0, 0.0)
+                } else {
+                    at / lake.radius
+                },
             });
         }
     }
@@ -540,9 +579,9 @@ fn shade(found: Found, point: Vec3, rd: Vec3, view: &ViewUniform) -> Vec3 {
                     (across.y * 85.0 + time * 1.1).sin()
                         + (across.x * 60.0 + time * 0.8).sin() * 0.6,
                 ) * 0.04;
-                let tilted = n
-                    + (Vec3::ONE - up * up.dot(Vec3::ONE)).normalize() * wave.x
-                    + up.cross(n).normalize() * wave.y;
+                let east = vec3(-up.y, up.x, 0.0);
+                let east = east / east.length().max(1e-6);
+                let tilted = n + east * wave.x + up.cross(east) * wave.y;
                 tilted / tilted.length().max(1e-6)
             } else {
                 n
