@@ -95,6 +95,10 @@ pub fn surface(p: Vec3, c: &Plant) -> Surface {
         } else {
             0.0
         };
+        // A head no nearer than what is already found need not be built.
+        if (p - head).length() - (shape_of.length + shape_of.width) * 1.4 > shape.distance {
+            continue;
+        }
         let q = rotate(p - head, bearing);
         let (sine, cosine) = lean.sin_cos();
         let q = vec3(q.x * cosine - q.y * sine, q.x * sine + q.y * cosine, q.z);

@@ -1,7 +1,7 @@
 //! What an animal does once it has decided: strike and hold its prey, court, call and sleep.
 
 use crate::{
-    game::ecosystem::{Agent, Attack, Call, Organisms, Relations, senses::Targets},
+    game::ecosystem::{Agent, Attack, Call, Index, Organisms, Relations, senses::Targets},
     math::{ToEngine, ToScene},
 };
 use bevy::prelude::*;
@@ -17,16 +17,10 @@ use skybound::scene::life::{
     vitals::Vitals,
 };
 use spirv_std::glam::Vec3 as SceneVec3;
-use std::collections::HashMap;
 
 /// A call carries as far as the caller's voice; a voiceless animal asks a partner close by that has
 /// one to call for it.
-pub(super) fn call(
-    agent: Agent,
-    relations: &Relations,
-    index: &HashMap<Entity, Agent>,
-    calls: &mut Vec<Call>,
-) {
+pub(super) fn call(agent: Agent, relations: &Relations, index: &Index, calls: &mut Vec<Call>) {
     let kind = agent.kind;
     let voice = kind.voice();
     if voice > 0.0 {
@@ -57,7 +51,7 @@ pub(super) fn engage(
     prey: Agent,
     body: &mut Vitals,
     relations: &mut Relations,
-    index: &HashMap<Entity, Agent>,
+    index: &Index,
     (attacks, now, dt): (&mut Vec<Attack>, f32, f32),
 ) {
     let biology = agent.kind.biology();
@@ -144,7 +138,7 @@ fn aimed_at(agent: Agent, relations: &Relations) -> Option<Vec3> {
 }
 
 /// The neighbour nearest `point` that `fits`.
-fn nearest(neighbours: &[Agent], point: Vec3, fits: impl Fn(&Agent) -> bool) -> Option<Agent> {
+fn nearest(neighbours: &[&Agent], point: Vec3, fits: impl Fn(&Agent) -> bool) -> Option<Agent> {
     neighbours
         .iter()
         .filter(|other| fits(other))
@@ -153,7 +147,7 @@ fn nearest(neighbours: &[Agent], point: Vec3, fits: impl Fn(&Agent) -> bool) -> 
                 .distance_squared(point)
                 .total_cmp(&b.position.distance_squared(point))
         })
-        .copied()
+        .map(|&&other| other)
 }
 
 /// Turning on a hunter: whatever it was driving at, if it is a hunter and in reach, is dealt with.
@@ -260,7 +254,7 @@ pub(super) fn write(body: &mut Vitals, dt: f32) {
 pub(super) struct Conduct<'a> {
     pub(super) now: f32,
     pub(super) dt: f32,
-    pub(super) neighbours: &'a [Agent],
+    pub(super) neighbours: &'a [&'a Agent],
     pub(super) attacks: &'a mut Vec<Attack>,
     pub(super) calls: &'a mut Vec<Call>,
     pub(super) nudges: &'a mut Vec<(Entity, Vec3)>,
@@ -276,7 +270,7 @@ pub(super) fn conduct(
     body: &mut Vitals,
     relations: &mut Relations,
     targets: &Targets,
-    index: &HashMap<Entity, Agent>,
+    index: &Index,
     mut step: Conduct,
 ) {
     let kind = agent.kind;

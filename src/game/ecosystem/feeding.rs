@@ -67,7 +67,7 @@ pub(super) fn forage(
     agent: Agent,
     body: &mut Vitals,
     relations: &Relations,
-    neighbours: &[Agent],
+    neighbours: &[&Agent],
     pool: &mut Pool,
     dt: f32,
 ) -> Option<Meal> {

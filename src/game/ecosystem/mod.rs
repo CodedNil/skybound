@@ -7,8 +7,9 @@ use crate::{
     math::{ToEngine, ToScene},
 };
 use bevy::{
-    ecs::system::ParallelCommands,
+    ecs::{entity::EntityHashMap, system::ParallelCommands},
     math::DVec3,
+    platform::collections::HashMap as FastMap,
     prelude::*,
     render::{RenderApp, extract_resource::ExtractResource},
     transform::TransformSystems,
@@ -30,7 +31,6 @@ use skybound::scene::{
 };
 use spirv_std::glam::Vec3 as SceneVec3;
 use std::{
-    collections::HashMap,
     mem,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -121,6 +121,9 @@ pub struct Relations {
     /// of a kelp forest grown into one another. It holds the two together against the wind
     /// until it is stretched too far and snaps.
     pub tether: Option<(Entity, f32)>,
+    /// The climate about it when last sampled, when and where: the air changes over seconds and
+    /// kilometres, not from one step to the next.
+    climate: Option<(Climate, f32, Vec3)>,
     /// Where it was before the last step moved it, as an offset from where it is, how it was
     /// turned, and when that step was, so it is drawn gliding between steps rather than jumping.
     lag: Vec3,
@@ -130,6 +133,8 @@ pub struct Relations {
 
 impl Relations {
     pub fn rotate(&mut self, turn: Quat) {
+        // The cached climate's winds and bearings are in the old axes.
+        self.climate = None;
         self.lag = turn * self.lag;
         self.turned = turn * self.turned;
         let rotation = turn.to_scene();
@@ -233,7 +238,7 @@ pub struct Ecosystem {
     pub living: usize,
     pub births: u64,
     pub deaths: u64,
-    patches: HashMap<IVec3, Pool>,
+    patches: FastMap<IVec3, Pool>,
     /// Calls made last step, which carry to the callers' kin far off.
     calls: Vec<Call>,
 }
@@ -419,7 +424,7 @@ struct Outcome {
     gifts: Vec<(Entity, f32)>,
     ties: Vec<(Entity, Entity, f32)>,
     seedlings: Vec<(Kind, Vec3, Genome)>,
-    patches: HashMap<IVec3, Pool>,
+    patches: FastMap<IVec3, Pool>,
     births: u64,
     deaths: u64,
 }
@@ -455,7 +460,7 @@ fn simulate(
     let dt = mem::take(&mut *accumulated);
     let now = time.elapsed_secs();
     let agents = snapshot(&organisms);
-    let index: HashMap<_, _> = agents.iter().map(|agent| (agent.entity, *agent)).collect();
+    let index: Index = agents.iter().map(|agent| (agent.entity, *agent)).collect();
     let grid = grid(&agents);
     let calls = mem::take(&mut ecosystem.calls);
     let players = players(&organisms);
@@ -495,10 +500,7 @@ fn simulate(
         outcome.seedlings.append(&mut part.seedlings);
         outcome.births += part.births;
         outcome.deaths += part.deaths;
-        #[expect(
-            clippy::iter_over_hash_type,
-            reason = "the changes are summed, so their order does not matter"
-        )]
+        // The changes are summed, so their order does not matter.
         for (cell, change) in part.patches {
             let patch = ecosystem.patches.entry(cell).or_default();
             patch.nutrients = (patch.nutrients + change.nutrients).max(0.0);
@@ -549,11 +551,11 @@ fn hand_over(organisms: &mut Query<Organisms>, nudges: &[(Entity, Vec3)], gifts:
 struct Shared<'a> {
     world: &'a WorldData,
     clouds: &'a CloudField,
-    index: &'a HashMap<Entity, Agent>,
-    grid: &'a HashMap<IVec3, Vec<Agent>>,
+    index: &'a Index,
+    grid: &'a Grid<'a>,
     players: &'a [Vec3],
     calls: &'a [Call],
-    patches: &'a HashMap<IVec3, Pool>,
+    patches: &'a FastMap<IVec3, Pool>,
     /// How many are alive, counting the births so far this step.
     living: &'a AtomicUsize,
     commands: &'a ParallelCommands<'a, 'a>,
@@ -591,7 +593,21 @@ fn live_out(
         ..
     } = *shared;
     let kind = species.0;
-    let climate = climate_at(world, shared.clouds, transform.translation, now);
+    // Sampled afresh every fifth of a second or thirty metres, each organism on its own beat so the
+    // sampling is spread across the steps.
+    let beat = 0.15 + (entity.to_bits() % 4) as f32 * 0.025;
+    let climate = match relations.climate {
+        Some((climate, at, place))
+            if now - at < beat && place.distance(transform.translation) < 30.0 =>
+        {
+            climate
+        }
+        _ => {
+            let climate = climate_at(world, shared.clouds, transform.translation, now);
+            relations.climate = Some((climate, now, transform.translation));
+            climate
+        }
+    };
     let cell = cell(world.position(transform.translation).as_vec3());
     let before = shared.patches.get(&cell).copied().unwrap_or_default();
     let mut patch = before;
@@ -723,7 +739,7 @@ fn breed(
     agent: Agent,
     body: &mut Vitals,
     relations: &mut Relations,
-    neighbours: &[Agent],
+    neighbours: &[&Agent],
     shared: &Shared,
     position: Vec3,
 ) -> bool {
@@ -833,10 +849,17 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
 }
 
 /// The organisms sorted into cells, so each finds its neighbours quickly.
-fn grid(agents: &[Agent]) -> HashMap<IVec3, Vec<Agent>> {
-    let mut grid: HashMap<IVec3, Vec<Agent>> = HashMap::new();
+/// The organisms sorted into cells, keyed by a fast hash: every organism looks up many cells a
+/// step.
+type Grid<'a> = FastMap<IVec3, Vec<&'a Agent>>;
+
+/// Every organism as the step found it, by entity.
+type Index = EntityHashMap<Agent>;
+
+fn grid(agents: &[Agent]) -> Grid<'_> {
+    let mut grid = Grid::default();
     for agent in agents {
-        grid.entry(cell(agent.position)).or_default().push(*agent);
+        grid.entry(cell(agent.position)).or_default().push(agent);
     }
     grid
 }
@@ -845,13 +868,18 @@ fn cell(position: Vec3) -> IVec3 {
     (position / CELL).floor().as_ivec3()
 }
 
-fn neighbours(position: Vec3, range: f32, grid: &HashMap<IVec3, Vec<Agent>>) -> Vec<Agent> {
+fn neighbours<'a>(position: Vec3, range: f32, grid: &Grid<'a>) -> Vec<&'a Agent> {
     let origin = cell(position);
     let radius = (range / CELL).ceil() as i32;
-    let mut found = Vec::new();
+    // Only the cells some part of which lies within range: a ball of them, not the cube about it.
+    let reach = (range / CELL + 1.8).powi(2);
+    let mut found: Vec<&Agent> = Vec::new();
     for x in -radius..=radius {
         for y in -radius..=radius {
             for z in -radius..=radius {
+                if (x * x + y * y + z * z) as f32 > reach {
+                    continue;
+                }
                 if let Some(agents) = grid.get(&(origin + ivec3(x, y, z))) {
                     found.extend(
                         agents.iter().copied().filter(|agent| {
@@ -862,11 +890,6 @@ fn neighbours(position: Vec3, range: f32, grid: &HashMap<IVec3, Vec<Agent>>) -> 
             }
         }
     }
-    found.sort_by(|a, b| {
-        a.position
-            .distance_squared(position)
-            .total_cmp(&b.position.distance_squared(position))
-    });
     found
 }
 
@@ -879,6 +902,7 @@ mod tests {
         *,
     };
     use bevy::ecs::system::SystemState;
+    use std::iter::once;
     use skybound::scene::life::KINDS;
 
     #[test]
@@ -1014,7 +1038,8 @@ mod tests {
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
         let kind = Kind::Herbivolus;
-        let index: HashMap<_, _> = [(mother, agent(mother, kind, 2.0, Vec3::ZERO))].into();
+        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO)))
+            .collect();
         let mut relations = Relations {
             parent: Some(mother),
             ..Relations::default()
@@ -1052,7 +1077,8 @@ mod tests {
         );
         // A string of eggs is cut loose to drift before it hatches.
         let kind = Kind::Manduca;
-        let index: HashMap<_, _> = [(mother, agent(mother, kind, 2.0, Vec3::ZERO))].into();
+        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO)))
+            .collect();
         let mut relations = Relations {
             parent: Some(mother),
             host: Some(mother),
@@ -1095,7 +1121,7 @@ mod tests {
         let prey = agent(prey_kind, Vec3::X * 60.0);
         let guardian = agent(Kind::Custos, Vec3::X * 80.0);
         let climate = Climate::sample(Vec3::ZERO.to_scene(), 2.0, 0.0);
-        let prey_in = |hunter: Agent, neighbours: &[Agent]| {
+        let prey_in = |hunter: Agent, neighbours: &[&Agent]| {
             let around = Surroundings {
                 climate,
                 neighbours,
@@ -1108,15 +1134,15 @@ mod tests {
                 .prey
                 .is_some()
         };
-        assert!(prey_in(hunter, &[prey]), "the hunter overlooked its prey");
+        assert!(prey_in(hunter, &[&prey]), "the hunter overlooked its prey");
         assert!(
-            !prey_in(hunter, &[prey, guardian]),
+            !prey_in(hunter, &[&prey, &guardian]),
             "the hunter hunted in a sanctuary"
         );
         let mut starving = hunter;
         starving.vitals.energy = 0.02;
         assert!(
-            prey_in(starving, &[prey, guardian]),
+            prey_in(starving, &[&prey, &guardian]),
             "a starving hunter would not test the sanctuary"
         );
     }

@@ -108,8 +108,12 @@ fn beside(up: Vec3, reach: f32, angle: f32) -> Vec3 {
 }
 
 /// How far apart two directions lie across the planet's surface, in metres.
+///
+/// The chord between them, lengthened by the first term of its arc's series, which is exact to
+/// well under a metre across any field and costs no inverse sine.
 pub fn apart(a: Vec3, b: Vec3) -> f32 {
-    ((a - b).length() * 0.5).min(1.0).asin() * 2.0 * PLANET_RADIUS
+    let chord = (a - b).length();
+    chord * (1.0 + chord * chord / 24.0) * PLANET_RADIUS
 }
 
 /// Swamp `index`: anywhere but the dry poles.
@@ -184,12 +188,12 @@ pub fn lake(index: u32) -> Lake {
 pub fn nearest_geyser(up: Vec3) -> Option<(Geyser, f32)> {
     let mut best: Option<(Geyser, f32)> = None;
     for index in 0..SWAMPS {
-        let field = swamp(index);
+        let field = swamp_at(index);
         if apart(up, field.up) > field.radius {
             continue;
         }
-        for which in 0..geysers(index) {
-            let geyser = geyser(index, which);
+        for which in 0..geysers_at(index) {
+            let geyser = geyser_at(index, which);
             let distance = apart(up, geyser.up);
             if best.is_none_or(|(_, nearest)| distance < nearest) {
                 best = Some((geyser, distance));
@@ -202,11 +206,104 @@ pub fn nearest_geyser(up: Vec3) -> Option<(Geyser, f32)> {
 /// The nearest floating lake to a direction from the planet's centre, and how far its middle lies
 /// across the surface.
 pub fn nearest_lake(up: Vec3) -> (Lake, f32) {
-    let mut best = (lake(0), apart(up, lake(0).up));
+    let mut best = (lake_at(0), apart(up, lake_at(0).up));
     for index in 1..LAKES {
-        let distance = apart(up, lake(index).up);
+        let distance = apart(up, lake_at(index).up);
         if distance < best.1 {
-            best = (lake(index), distance);
+            best = (lake_at(index), distance);
+        }
+    }
+    best
+}
+
+/// The planet's sites, worked out once on the host, which looks them up far more often than they
+/// could change; the shaders, with nowhere to keep them, work each out where they need it.
+#[cfg(not(target_arch = "spirv"))]
+mod sites {
+    use super::{
+        Field, GEYSERS, Geyser, LAKES, Lake, SWAMPS, VENT_FIELDS, geyser, geysers, lake, swamp,
+        vent_field,
+    };
+    use std::sync::OnceLock;
+
+    struct Sites {
+        swamps: Vec<Field>,
+        geysers: Vec<Geyser>,
+        counts: Vec<u32>,
+        vent_fields: Vec<Field>,
+        lakes: Vec<Lake>,
+    }
+
+    fn sites() -> &'static Sites {
+        static SITES: OnceLock<Sites> = OnceLock::new();
+        SITES.get_or_init(|| Sites {
+            swamps: (0..SWAMPS).map(swamp).collect(),
+            geysers: (0..SWAMPS * GEYSERS)
+                .map(|index| geyser(index / GEYSERS, index % GEYSERS))
+                .collect(),
+            counts: (0..SWAMPS).map(geysers).collect(),
+            vent_fields: (0..VENT_FIELDS).map(vent_field).collect(),
+            lakes: (0..LAKES).map(lake).collect(),
+        })
+    }
+
+    pub fn swamp_at(index: u32) -> Field {
+        sites().swamps[index as usize]
+    }
+
+    pub fn geyser_at(index: u32, which: u32) -> Geyser {
+        sites().geysers[(index * GEYSERS + which) as usize]
+    }
+
+    pub fn geysers_at(index: u32) -> u32 {
+        sites().counts[index as usize]
+    }
+
+    pub fn vent_field_at(index: u32) -> Field {
+        sites().vent_fields[index as usize]
+    }
+
+    pub fn lake_at(index: u32) -> Lake {
+        sites().lakes[index as usize]
+    }
+}
+
+#[cfg(target_arch = "spirv")]
+mod sites {
+    use super::{Field, Geyser, Lake, geyser, geysers, lake, swamp, vent_field};
+
+    pub fn swamp_at(index: u32) -> Field {
+        swamp(index)
+    }
+
+    pub fn geyser_at(index: u32, which: u32) -> Geyser {
+        geyser(index, which)
+    }
+
+    pub fn geysers_at(index: u32) -> u32 {
+        geysers(index)
+    }
+
+    pub fn vent_field_at(index: u32) -> Field {
+        vent_field(index)
+    }
+
+    pub fn lake_at(index: u32) -> Lake {
+        lake(index)
+    }
+}
+
+use sites::{geyser_at, geysers_at, lake_at, swamp_at, vent_field_at};
+
+/// The nearest Mineral Field to a direction from the planet's centre, and how far its heart lies
+/// across the surface.
+pub fn nearest_vent_field(up: Vec3) -> (Field, f32) {
+    let mut best = (vent_field_at(0), apart(up, vent_field_at(0).up));
+    for index in 1..VENT_FIELDS {
+        let field = vent_field_at(index);
+        let distance = apart(up, field.up);
+        if distance < best.1 {
+            best = (field, distance);
         }
     }
     best
@@ -240,14 +337,14 @@ pub struct Influence {
 pub fn influence(up: Vec3, altitude: f32) -> Influence {
     let mut found = Influence::default();
     for index in 0..SWAMPS {
-        let field = swamp(index);
+        let field = swamp_at(index);
         found.swamp = found
             .swamp
             .max(within(apart(up, field.up), field.radius * 1.4));
     }
     let mut nearest = 1.0e9;
     for index in 0..VENT_FIELDS {
-        let field = vent_field(index);
+        let field = vent_field_at(index);
         let distance = apart(up, field.up);
         let here = within(distance, field.radius * 1.6);
         found.vents = found.vents.max(here);
@@ -258,7 +355,7 @@ pub fn influence(up: Vec3, altitude: f32) -> Influence {
         }
     }
     for index in 0..LAKES {
-        let lake = lake(index);
+        let lake = lake_at(index);
         let q = apart(up, lake.up) / lake.radius;
         let column = (1.0 - ((altitude - lake.altitude) / 2500.0).abs()).max(0.0);
         found.lake = found.lake.max(within(q, 2.5) * column);

@@ -633,12 +633,14 @@ mod balance {
         let range = Range::seeded();
         let kinds = KINDS.len();
         let mass = |index: usize| {
-            let total: f32 = (0..REGIONS).map(|region| range.counts[region * kinds + index]).sum();
+            let total: f32 = (0..REGIONS)
+                .map(|region| range.counts[region * kinds + index])
+                .sum();
             total * KINDS[index].biology().adult_mass
         };
         for (index, kind) in KINDS.iter().enumerate() {
-            let hunter = kind.takes(Take::Prey)
-                && kind.animal().is_some_and(|animal| !animal.parasite);
+            let hunter =
+                kind.takes(Take::Prey) && kind.animal().is_some_and(|animal| !animal.parasite);
             if !hunter || range.diets[index].is_empty() {
                 continue;
             }

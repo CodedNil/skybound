@@ -1501,8 +1501,18 @@ pub fn wing_bones<C: Flier>(p: Vec3, c: &C, look: Look, index: usize) -> f32 {
     let weight = look.frames[index];
     let feathered = look.wings[index].w > 0.9;
     let mut distance = 1e6f32;
+    let wing = look.wings[index];
+    let shoulder = look.hinges[index].extend(wing.z);
+    // Nothing of a wing reaches further from its shoulder than its span and chord, as long as its
+    // genes can make them: far off, that is distance enough, and its pose need not be worked out.
+    let reach = (wing.x + wing.y) * 1.2;
     for i in 0..2 {
         let side = if i == 0 { -1.0 } else { 1.0 };
+        let near = (p - vec3(shoulder.x * side, shoulder.y, shoulder.z)).length() - reach;
+        if near > wing.y {
+            distance = distance.min(near);
+            continue;
+        }
         let shape = wing_sheet(c, look, index, side);
         // A wing torn right through is gone, frame and all, but for a stump at the shoulder.
         if shape.torn >= 0.98 {

@@ -1781,3 +1781,53 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod timing {
+    use super::*;
+    use std::{hint::black_box, time::Instant};
+
+    /// How long tracing a grid of rays through a posed creature takes, in microseconds per ray.
+    fn time(kind: Kind) -> f64 {
+        let radius = kind.render_radius();
+        let drawn = Drawn::specimen(
+            Vec4::new(0.0, 0.0, 0.0, radius),
+            Vec4::W,
+            Vec4::new(0.0, 0.0, 1.5, 8.0),
+            kind as u32,
+            kind.biology().maturity_days * 1.5,
+            7,
+        );
+        let mut rays = 0;
+        let start = Instant::now();
+        for y in 0..48 {
+            for x in 0..48 {
+                let aim = vec3(
+                    (x as f32 / 47.0 - 0.5) * 1.6,
+                    (y as f32 / 47.0 - 0.5) * 1.6,
+                    -1.0,
+                );
+                let ray = Ray {
+                    origin: Vec3::Z * radius * 2.5,
+                    direction: aim.normalize(),
+                    light: vec3(0.3, 1.0, 0.2).normalize(),
+                    ambient: Vec3::splat(0.3),
+                    radiance: Vec3::ONE,
+                    max_distance: 1.0e6,
+                    footprint: 0.002,
+                };
+                black_box(drawn.render(ray));
+                rays += 1;
+            }
+        }
+        start.elapsed().as_secs_f64() * 1.0e6 / f64::from(rays)
+    }
+
+    #[test]
+    #[ignore = "a measurement, run by hand"]
+    fn print_tracing_costs() {
+        for &kind in KINDS {
+            println!("{kind:?} {:.1} us/ray", time(kind));
+        }
+    }
+}

@@ -4,7 +4,7 @@
 use crate::{
     game::{
         ecosystem::{
-            Agent, Call, Relations,
+            Agent, Call, Index, Relations,
             breeding::{Stage, nurture},
         },
         world::WorldData,
@@ -15,7 +15,7 @@ use bevy::{math::DVec3, prelude::*};
 use skybound::scene::{
     PLANET_RADIUS,
     climate::Climate,
-    features::{VENT_FIELDS, apart, nearest_geyser, nearest_lake, vent_field},
+    features::{nearest_geyser, nearest_lake, nearest_vent_field},
     life::{
         Kind,
         animalia::{
@@ -28,7 +28,6 @@ use skybound::scene::{
     },
 };
 use spirv_std::glam::Vec3 as SceneVec3;
-use std::collections::HashMap;
 
 /// How hard an animal steers away from another body `offset` from it, so bodies keep out of one
 /// another, the larger needing the more room; plants hold their places.
@@ -46,12 +45,11 @@ pub(super) fn perceive(
     agent: Agent,
     relations: &mut Relations,
     climate: Climate,
-    neighbours: &[Agent],
+    neighbours: &[&Agent],
     now: f32,
     world: &WorldData,
 ) -> Senses {
     let Agent {
-        entity,
         kind,
         vitals: body,
         position,
@@ -71,44 +69,7 @@ pub(super) fn perceive(
         list: body.wings().1,
         ..Senses::default()
     };
-    for other in neighbours.iter().filter(|other| other.entity != entity) {
-        let offset = (other.position - position).to_scene();
-        if senses.food.is_none()
-            && ((kind.eats(other.kind) && other.vitals.health > 0.0)
-                || (kind.takes(Take::Carrion) && other.vitals.health <= 0.0))
-        {
-            senses.food = Some(offset);
-            relations.remembered_food = Some((other.entity, world.position(other.position), now));
-        }
-        if senses.danger.is_none()
-            && other.vitals.health > 0.0
-            && other.kind.takes(Take::Prey)
-            && other.kind.eats(kind)
-        {
-            senses.danger = Some(offset);
-        }
-        if senses.water.is_none()
-            && plant(other.kind)
-            && other.kind.organs().has(Function::Water)
-            && other.vitals.health > 0.0
-        {
-            senses.water = Some(offset);
-        }
-        if senses.companion.is_none() && kind.partners(other.kind) && other.vitals.health > 0.0 {
-            senses.companion = Some(offset);
-            relations.companion = Some(other.entity);
-            if offset.length_squared() < 25.0 && kind.attaches() {
-                relations.host = Some(other.entity);
-            }
-        }
-        senses.separation += keep_clear(kind, other, offset);
-        if other.kind == kind && other.vitals.health > 0.0 {
-            senses.separation -= offset / offset.length_squared().max(1.0);
-            if kind.animal().is_some_and(|animal| animal.flocks) {
-                senses.alignment += other.velocity.to_scene() * 0.02;
-            }
-        }
-    }
+    survey(agent, relations, neighbours, &mut senses, (now, world));
     sense_features(kind, position, world, &mut senses);
     if senses.food.is_none()
         && let Some((remembered, location, seen)) = relations.remembered_food
@@ -150,6 +111,71 @@ pub(super) fn perceive(
     senses
 }
 
+/// Look over the neighbours: the nearest food, danger, water and companion, for neighbours come in
+/// no particular order, and how hard to steer to keep clear of the rest and keep with its own kind.
+fn survey(
+    agent: Agent,
+    relations: &mut Relations,
+    neighbours: &[&Agent],
+    senses: &mut Senses,
+    (now, world): (f32, &WorldData),
+) {
+    let Agent {
+        entity,
+        kind,
+        position,
+        ..
+    } = agent;
+    let mut nearest = [f32::MAX; 4];
+    let mut food: Option<&Agent> = None;
+    let mut companion: Option<&Agent> = None;
+    for other in neighbours.iter().filter(|other| other.entity != entity) {
+        let offset = (other.position - position).to_scene();
+        let distance = offset.length_squared();
+        let alive = other.vitals.health > 0.0;
+        if distance < nearest[0]
+            && ((kind.eats(other.kind) && alive) || (kind.takes(Take::Carrion) && !alive))
+        {
+            nearest[0] = distance;
+            senses.food = Some(offset);
+            food = Some(other);
+        }
+        if distance < nearest[1] && alive && other.kind.takes(Take::Prey) && other.kind.eats(kind) {
+            nearest[1] = distance;
+            senses.danger = Some(offset);
+        }
+        if distance < nearest[2]
+            && alive
+            && plant(other.kind)
+            && other.kind.organs().has(Function::Water)
+        {
+            nearest[2] = distance;
+            senses.water = Some(offset);
+        }
+        if distance < nearest[3] && alive && kind.partners(other.kind) {
+            nearest[3] = distance;
+            senses.companion = Some(offset);
+            companion = Some(other);
+        }
+        senses.separation += keep_clear(kind, other, offset);
+        if other.kind == kind && alive {
+            senses.separation -= offset / distance.max(1.0);
+            if kind.animal().is_some_and(|animal| animal.flocks) {
+                senses.alignment += other.velocity.to_scene() * 0.02;
+            }
+        }
+    }
+    if let Some(food) = food {
+        relations.remembered_food = Some((food.entity, world.position(food.position), now));
+    }
+    if let Some(companion) = companion {
+        relations.companion = Some(companion.entity);
+        if nearest[3] < 25.0 && kind.attaches() {
+            relations.host = Some(companion.entity);
+        }
+    }
+}
+
 /// Which way a storm is: its heart, to get away from; without one to place, up and out of the
 /// rain.
 fn storm(climate: Climate, up: SceneVec3) -> Option<SceneVec3> {
@@ -183,10 +209,8 @@ fn sense_features(kind: Kind, position: Vec3, world: &WorldData, senses: &mut Se
         }
     }
     // The nearest Mineral Field, which the dust in the air points the way to from far off.
-    let field = (0..VENT_FIELDS)
-        .map(vent_field)
-        .min_by(|a, b| apart(up, a.up).total_cmp(&apart(up, b.up)));
-    if let Some(field) = field.filter(|field| apart(up, field.up) < 60_000.0) {
+    let (field, distance) = nearest_vent_field(up);
+    if distance < 60_000.0 {
         let heart = field.up.to_engine().as_dvec3() * planet.length();
         senses.minerals = Some(toward(heart));
     }
@@ -223,7 +247,7 @@ fn climb(kind: Kind, climate: Climate, up: SceneVec3, below: f32, fatigue: f32) 
 /// What an animal can perceive around it this step.
 pub(super) struct Surroundings<'a> {
     pub(super) climate: Climate,
-    pub(super) neighbours: &'a [Agent],
+    pub(super) neighbours: &'a [&'a Agent],
     pub(super) players: &'a [Vec3],
     pub(super) calls: &'a [Call],
     pub(super) now: f32,
@@ -236,7 +260,7 @@ pub(super) fn orient(
     relations: &mut Relations,
     free: bool,
     around: &Surroundings,
-    (index, world): (&HashMap<Entity, Agent>, &WorldData),
+    (index, world): (&Index, &WorldData),
 ) -> (Senses, Stage, Targets) {
     let mut senses = perceive(
         agent,
@@ -366,7 +390,7 @@ pub(super) fn sense(
         {
             nearest[1] = distance;
             seen.prey = Some(sighting);
-            targets.prey = Some(*other);
+            targets.prey = Some(**other);
         }
         if distance < wary && distance < nearest[2] && menaces(other, kind, distance) {
             nearest[2] = distance;
@@ -395,7 +419,7 @@ pub(super) fn sense(
             {
                 nearest[3] = distance;
                 seen.mate = Some((to, other.activity == Activity::Display));
-                targets.mate = Some(*other);
+                targets.mate = Some(**other);
             }
         }
         (ethology.notice)(&glimpse(kind, other, to), &mut seen);
@@ -420,7 +444,7 @@ struct Sanctuaries {
 }
 
 impl Sanctuaries {
-    fn around(neighbours: &[Agent], hunter: Agent) -> Self {
+    fn around(neighbours: &[&Agent], hunter: Agent) -> Self {
         Self {
             guardians: neighbours
                 .iter()

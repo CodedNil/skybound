@@ -1,7 +1,7 @@
 //! Breeding and the young: where newborns are kept, how they grow independent, and births.
 
 use crate::{
-    game::ecosystem::{Agent, Pool, Relations, feeding::Meal, population},
+    game::ecosystem::{Agent, Index, Pool, Relations, feeding::Meal, population},
     math::ToScene,
 };
 use bevy::prelude::*;
@@ -17,7 +17,6 @@ use skybound::scene::life::{
     plantae::physiology::Propagation,
     vitals::Vitals,
 };
-use std::collections::HashMap;
 
 /// Bring a young one into the world beside its parent, with genes from its parent and from the
 /// mate or pollen that fathered it; a plant dividing or breaking apart passes on its own, changed a
@@ -26,7 +25,7 @@ pub(super) fn bear(
     commands: &mut Commands,
     parent: Agent,
     sire: Option<Genome>,
-    neighbours: &[Agent],
+    neighbours: &[&Agent],
     position: Vec3,
     now: f32,
 ) {
@@ -49,7 +48,7 @@ pub(super) fn bear(
 
 /// Where a newborn is first kept, by its lineage's way of keeping them: on its parent, tethered to
 /// the nearest living plant (its food plant if there is one in reach), or nowhere.
-pub(super) fn nest(parent: Agent, neighbours: &[Agent]) -> Option<Entity> {
+pub(super) fn nest(parent: Agent, neighbours: &[&Agent]) -> Option<Entity> {
     match parent.kind.animal()?.brood {
         Brood::Carried | Brood::Strings | Brood::Pouch => Some(parent.entity),
         Brood::Tethered => {
@@ -119,11 +118,7 @@ impl Stage {
 /// them. Pouch young stay in the pouch until they are formed, then make trips out to feed, at first
 /// going out while fed and homing on the parent as they grow hungry, until they no longer come
 /// back.
-pub(super) fn nurture(
-    agent: Agent,
-    relations: &mut Relations,
-    index: &HashMap<Entity, Agent>,
-) -> Stage {
+pub(super) fn nurture(agent: Agent, relations: &mut Relations, index: &Index) -> Stage {
     let biology = agent.kind.biology();
     let young = (agent.vitals.age_days / f64::from(biology.maturity_days)) as f32;
     let brood = agent.kind.animal().map(|animal| animal.brood);

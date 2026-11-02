@@ -2,7 +2,7 @@
 
 use crate::{
     game::{
-        ecosystem::{Agent, EcologicalMotion, Relations, breeding::Stage},
+        ecosystem::{Agent, EcologicalMotion, Index, Relations, breeding::Stage},
         world::{PlanetPosition, WorldData},
     },
     math::{ToEngine, ToScene},
@@ -16,7 +16,7 @@ use skybound::scene::life::{
     genome::{BUILD, HUE, SHADE},
 };
 use spirv_std::glam::Vec3 as SceneVec3;
-use std::{collections::HashMap, mem};
+use std::mem;
 
 /// Everything moving an organism needs from the world.
 pub(super) struct Move<'a> {
@@ -36,7 +36,7 @@ pub(super) fn relocate(
     relations: &mut Relations,
     (transform, motion): (&mut Transform, &mut EcologicalMotion),
     movement: &Motion,
-    index: &HashMap<Entity, Agent>,
+    index: &Index,
     step: Move,
 ) {
     let Move {
@@ -95,7 +95,7 @@ pub(super) fn relocate(
 /// How far a plant's silk tie pulls it back towards what it is tied to this step: nothing while
 /// the tie is slack, more the further it is stretched. A tie stretched far past its length snaps,
 /// and one whose anchor has died falls away.
-fn tug(agent: Agent, relations: &mut Relations, index: &HashMap<Entity, Agent>, dt: f32) -> Vec3 {
+fn tug(agent: Agent, relations: &mut Relations, index: &Index, dt: f32) -> Vec3 {
     let Some((anchor, rest)) = relations.tether else {
         return Vec3::ZERO;
     };
@@ -240,7 +240,9 @@ mod tests {
         };
         let anchor = agent(world.spawn_empty().id(), Vec3::ZERO);
         let plant = agent(world.spawn_empty().id(), Vec3::X * 30.0);
-        let index = HashMap::from([(anchor.entity, anchor), (plant.entity, plant)]);
+        let index: Index = [(anchor.entity, anchor), (plant.entity, plant)]
+            .into_iter()
+            .collect();
         let mut relations = Relations {
             tether: Some((anchor.entity, 20.0)),
             ..Relations::default()

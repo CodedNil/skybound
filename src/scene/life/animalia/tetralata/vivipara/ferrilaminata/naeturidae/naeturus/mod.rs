@@ -334,6 +334,10 @@ pub fn feather_root(creature: &Tetralate, shape: Train, along: f32, across: f32)
 /// its tip, with barbs angled back from a pale shaft and beads along the shaft lit by the aur sacs.
 /// `long` stretches them as an animal's genes have them. Returns the vanes, the shafts and the
 /// beads.
+#[expect(
+    clippy::needless_range_loop,
+    reason = "knots are walked by index, as shader code must"
+)]
 pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Vec3 {
     let middle = train_knot(creature, 0.5, 2);
     if (point - middle).length() > shape.scale {
@@ -342,6 +346,13 @@ pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Ve
     let mut vanes = 1e6f32;
     let mut ribs = 1e6f32;
     let mut beads = 1e6f32;
+    // Across the sheet at each knot, from its first strand to its last: the same for every
+    // feather, so worked out once.
+    let mut breadth = [Vec3::ZERO; KNOTS];
+    for knot in 0..KNOTS {
+        let across = train_knot(creature, 1.0, knot) - train_knot(creature, 0.0, knot);
+        breadth[knot] = across / across.length().max(1e-6);
+    }
     for feather in 0..TRAIN_FEATHERS {
         let (along, across, reach) = train_feather(feather);
         let reach = reach * (0.92 + creature.chance(620 + feather) * 0.16);
@@ -355,28 +366,27 @@ pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Ve
             let u = knot as f32 / last as f32;
             (0.006 + 0.05 * reach * (u * 3.0).min(1.0) * (1.0 - u.power(3))) * shape.scale
         };
-        // Across the sheet at a knot, from its first strand to its last.
-        let breadth = |knot: usize| {
-            let across = train_knot(creature, 1.0, knot) - train_knot(creature, 0.0, knot);
-            across / across.length().max(1e-6)
-        };
         let at = |knot: usize| {
             let offset = (train_knot(creature, across, knot) - start) * reach;
-            base + offset + breadth(knot) * splay * offset.length()
+            base + offset + breadth[knot] * splay * offset.length()
         };
+        // Beyond a sphere holding the whole feather, that sphere is as near as the feather can be,
+        // which the march may safely step by; and it is no use looking closer at a feather that
+        // cannot be nearer than one already found.
         let tip = at(last);
-        if (point - base.lerp(tip, 0.5)).length()
-            > (tip - base).length() * 0.6 + 0.06 * reach * shape.scale
-        {
+        let bound = (point - base.lerp(tip, 0.5)).length()
+            - ((tip - base).length() * 0.6 + 0.06 * reach * shape.scale);
+        if bound > 0.0 {
+            vanes = vanes.min(bound);
             continue;
         }
+        let mut a = base;
         for knot in 0..KNOTS - 1 {
             if knot >= last {
                 break;
             }
-            let a = at(knot);
             let b = at(knot + 1);
-            let normal = (b - a).cross(breadth(knot));
+            let normal = (b - a).cross(breadth[knot]);
             let normal = normal / normal.length().max(1e-6);
             vanes = vanes.min(feather_strip(
                 point,
@@ -397,6 +407,7 @@ pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Ve
             if reach > 0.8 && knot >= 2 && knot + 1 < last {
                 beads = beads.min((point - b).length() - 0.008 * shape.scale);
             }
+            a = b;
         }
     }
     vec3(vanes, ribs, beads)
