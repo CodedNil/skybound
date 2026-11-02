@@ -225,7 +225,7 @@ fn hide(p: Vec3, c: &CreatureInstance, look: Look, distance: f32) -> f32 {
     let fine = 26.0 / size;
     let first = (p.z * fine + (p.x * fine * 0.6).sin() * 1.4 + (p.y * fine * 0.5).sin()).sin();
     let second = (p.x * fine * 0.9 - p.z * fine * 0.4 + (p.y * fine * 0.7).sin() * 1.2).sin();
-    skin -= ((1.0 - first.abs()).power(8) + (1.0 - second.abs()).power(8)) * 0.002 * size;
+    skin -= ((1.0 - first.abs()).power(8) + (1.0 - second.abs()).power(8)) * 0.0007 * size;
     skin * age
 }
 

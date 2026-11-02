@@ -1,8 +1,8 @@
-use super::{feather, plume, shaft};
+use super::{feather, plume, shaft, vane};
 use crate::scene::life::{
     Look, Tetralate,
     animalia::{
-        tetralata::{oral_tentacles, rig_tentacles},
+        tetralata::{oral_grasping, rig_grasping, tentacle_tip},
         visit_wings, with_wings,
     },
     biology::{Biology, Litter},
@@ -33,12 +33,12 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 3.2;
 
-/// How tall the fin along its back, how large the aur sacs on its flanks, how plump its body, how
+/// How long the feathers up its back, how large the aur sacs on its flanks, how plump its body, how
 /// long its train, and how full the plumes behind its cheeks.
 ///
-/// A family's fins run alike, so kin know one another at a glance; large sacs heal it faster and a
-/// plump body carries it further between meals; a long train of bright eyes wins a mate; and full
-/// plumes breathe more of the air, for longer flights between drinks.
+/// A family's back feathers lie alike, so kin know one another at a glance; large sacs heal it
+/// faster and light its streamers brighter; a plump body carries it further between meals; a long
+/// train wins a mate; and full plumes breathe more of the air, for longer flights between drinks.
 pub const CREST: Gene = Gene(38);
 pub const SACS: Gene = Gene(39);
 pub const HEFT: Gene = Gene(40);
@@ -56,12 +56,13 @@ taxon!(
     "Nae",
     "Næ",
     [
-        "Næ are small, intelligent four-winged animals with large heads, soft round bodies, a low fin along the back and a long tail that droops under a train of eyed feathers.",
-        "Two large eyes look forwards and down from under a pale brow, the downward pair beneath the chin watching the aur below, and the face they make is the first thing a Nætu learns to know.",
+        "Næ are small, intelligent four-winged animals with large round heads, soft plump bodies, small feathers lying up the back from the tail to the crown, and a long tail that droops under a train of forked streamers.",
+        "As all their phylum do, they see all round at once, through a circlet of lensed eyes ringing the head; in the Næ the forward pair is much the largest, set close together for the fine work of their tentacles, and the face they make is the first thing a Nætu learns to know.",
+        "The mouth opens beneath the head, a soft round lip among the roots of the tentacles that bring food and water up to it.",
         "Behind each cheek three feathery plumes fan back, the exchange frills of their genus, which take in the air they fly through; a Næ flushes them when it is glad.",
-        "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs, with long outer tips holding tools while shorter tips steady objects and guide food.",
+        "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs. The outer pair is grown long and thick, each ending in three fine, opposable fingers that hold tools, knot fibre, work iron and part a companion's plumes to groom them; the shorter inner pairs steady things and guide food.",
         "Their wings are small, rounded and feathered, on narrow stalks that twist through a quick stroke, for hovering close to work rather than for distance; a Næ travels far on its Nætu.",
-        "The bare tip of the tail curls into a hook below the train, and with it a Næ holds fast to the fibres of its Nætu's back through any turn; the train itself is for one another, spread and shivered in greeting and courtship.",
+        "The bare tip of the tail curls into a hook below the train, and with it a Næ holds fast to the fibres of its Nætu's back through any turn; the train itself is for one another, spread and rippled in greeting and courtship, its streamers lit along their ribs by the aur sacs.",
         "Moisture-recovery folds support short flights, although active travel still requires drinks from living basins.",
         "Isolated aur sacs support their magical abilities and are replenished through the protected life they share with bonded Nætu.",
         "They take iron in their diet as all their order does, and their bodies sheathe their aur sacs in it as their Nætu do; what they gather beyond that they work by hand into rings, threaded on the stems of their plumes, given and traded between friends, so that a Næ wears the record of everyone it has known.",
@@ -78,21 +79,47 @@ const HEAD_SIZE: Vec3 = vec3(0.17, 0.15, 0.16);
 const BODY: Vec3 = vec3(0.0, -0.01, 0.07);
 const BODY_SIZE: Vec3 = vec3(0.15, 0.14, 0.18);
 
-/// Where the mouth opens, just inside the chin, and its tentacles with it.
-const MOUTH: Vec3 = vec3(0.0, -0.06, -0.24);
+/// Where the mouth opens, beneath the head, and its tentacles with it.
+const MOUTH: Vec3 = vec3(0.0, -0.1, -0.15);
 
-/// How far the mouth tentacles reach, as a share of the lineage's usual reach.
-const REACH: f32 = 0.15;
+/// How far the mouth tentacles reach, as a share of the lineage's usual reach, and how much longer
+/// again the outer, working pair grows.
+const REACH: f32 = 0.22;
+const GRIP: f32 = 1.1;
 
 /// A point on the head's surface, `inset` of the way out along `direction` from its centre.
 fn on_head(direction: Vec3, inset: f32) -> Vec3 {
     HEAD + HEAD_SIZE * (direction / direction.length()) * inset
 }
 
+/// Eye `index` of the circlet on each side, from the front round to behind: where it lies, how
+/// large it is, and which way it looks. The front pair is much the largest, for close work.
+fn circlet(index: u32) -> (Vec3, f32, Vec3) {
+    let angle = 0.3 + index as f32 * 0.43;
+    let looking = vec3(angle.sin(), 0.14, -angle.cos());
+    let looking = looking / looking.length();
+    let radius = if index == 0 {
+        0.034
+    } else {
+        0.019 - index as f32 * 0.0015
+    };
+    (on_head(looking, 0.97), radius, looking)
+}
+
+/// How many eyes ring each side of the head.
+const CIRCLET: u32 = 5;
+
+/// The downward pair beneath the head, watching the aur.
+fn downward() -> (Vec3, f32, Vec3) {
+    let looking = vec3(0.35, -0.85, -0.42);
+    let looking = looking / looking.length();
+    (on_head(looking, 0.97), 0.016, looking)
+}
+
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 0.4, 0.8, 0);
     creature.opaque_bounds = vec3(0.7, 0.9, 1.4).extend(0.0);
-    rig_tentacles(creature, MOUTH, REACH, ORAL_PAIRS);
+    rig_grasping(creature, MOUTH, REACH, ORAL_PAIRS, GRIP);
 }
 
 /// Where its tail runs: back from the body and drooping, swaying as it flies, and curling forward
@@ -111,12 +138,12 @@ fn tail_joint(creature: &Tetralate, index: u32) -> Vec3 {
 
 /// A Næ: small, soft and mostly head.
 ///
-/// Its big head runs without a waist into a plump body, under a low fin that rises from the crown
-/// and runs down the back. Two large eyes are set low under a pale brow to look forwards and down,
-/// and below them the mouth tentacles hang from the chin, short and curling: its hands. Three
-/// feathery plumes fan back behind each cheek, threaded with rings of worked iron, and the aur
-/// sacs glow on its flanks. The tail droops under a train of long eyed feathers, its bare tip
-/// curled into a hook beneath them.
+/// Its big round head runs without a waist into a plump body. A circlet of lensed eyes rings the
+/// head, the forward pair much the largest, and the mouth opens beneath it among the roots of the
+/// tentacles, the outer pair long and thick and ending in fingers: its hands. Three feathery plumes
+/// fan back behind each cheek, threaded with rings of worked iron, the aur sacs glow on its flanks,
+/// and small feathers lie up its back from the tail to the crown. The tail droops under a train of
+/// forked streamers, its bare tip curled into a hook beneath them.
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     let heft = 0.94 + creature.gene(HEFT) * 0.12;
@@ -128,41 +155,33 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     );
     // Head into body without a waist, as one soft form.
     let mut d = smooth_min(smooth_min(head, body, 0.12), belly, 0.06);
-    // A soft pale brow over the eyes, shading them from the glow below.
-    let brow = rounded(mirrored - vec3(0.06, 0.09, -0.22), vec3(0.08, 0.045, 0.1));
-    d = smooth_min(d, brow, 0.05);
-    let muzzle = rounded(point - vec3(0.0, -0.05, -0.28), vec3(0.075, 0.05, 0.05));
-    d = smooth_min(d, muzzle, 0.05);
-    // Full cheeks below and behind the eyes, where the plumes are rooted.
-    let cheek = rounded(mirrored - vec3(0.12, -0.03, -0.16), vec3(0.07, 0.07, 0.08));
+    // A soft rounded snout ahead of the eyes, and full cheeks behind them where the plumes root.
+    let snout = rounded(point - vec3(0.0, 0.0, -0.27), vec3(0.08, 0.07, 0.05));
+    d = smooth_min(d, snout, 0.06);
+    let cheek = rounded(mirrored - vec3(0.12, -0.03, -0.13), vec3(0.07, 0.07, 0.08));
     d = smooth_min(d, cheek, 0.05);
-    // A low fin from the crown down the back, as tall as the family runs.
-    let height = 0.03 + creature.gene(CREST) * 0.03;
-    let fin = rounded(
-        point
-            - vec3(
-                0.0,
-                0.13 + height * 0.5 - (point.z + 0.05).max(0.0) * 0.12,
-                -0.02,
-            ),
-        vec3(0.008, height, 0.2),
-    );
-    d = smooth_min(d, fin, 0.025);
+    // The mouth, a soft round opening beneath the head.
+    let opening = (point - vec3(0.0, -0.13, -0.15)).length() - 0.02;
+    d = d.max(-opening);
     d = louvres(d, point - vec3(0.0, 0.0, 0.08), vec3(0.15, 0.13, 0.18));
     let tail = shaft(point, |index| tail_joint(creature, index), 8, 0.06, 0.016);
     d = smooth_min(d, tail, 0.06);
-    let mut hit = with_wings(
-        Surface::new(d, if fin < d + 0.004 { 15 } else { 0 }),
-        point,
-        creature,
-        LOOK,
-    );
-    // Two large eyes, set low in the face under the brow to look forwards and down, and the small
-    // downward pair beneath the chin that watches the aur.
-    let eye = (mirrored - on_head(vec3(0.42, -0.1, -0.9), 0.95)).length() - 0.042;
-    hit.socket(eye, 0.042);
-    let low = (mirrored - on_head(vec3(0.35, -0.85, -0.42), 0.97)).length() - 0.014;
-    hit.socket(low, 0.014);
+    let mut hit = with_wings(Surface::new(d, 0), point, creature, LOOK);
+    // Its lip, a soft rosy ring round the mouth.
+    let lip = vec2(
+        vec2(point.x, point.z + 0.15).length() - 0.027,
+        point.y + 0.118,
+    )
+    .length()
+        - 0.009;
+    hit.blend(lip, 17, 0.01);
+    // The circlet of eyes round the head, and the downward pair beneath it.
+    for index in 0..CIRCLET {
+        let (at, radius, _) = circlet(index);
+        hit.socket((mirrored - at).length() - radius, radius);
+    }
+    let (at, radius, _) = downward();
+    hit.socket((mirrored - at).length() - radius, radius);
     // An aur sac on each flank, glowing through the iron collar its body laid down round it.
     let sac = 0.028 + creature.gene(SACS) * 0.018;
     let at = mirrored - vec3(0.135, 0.0, 0.07);
@@ -173,12 +192,45 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
         .max(at.x - sac * 0.3);
     hit.join(collar, 11);
     hit = plumes(point, creature, hit);
+    hit = back(point, creature, hit);
     hit = train(point, creature, hit);
+    hit = hands(point, creature, hit);
+    hit
+}
+
+/// The mouth tentacles, and on the tip of each of the long outer pair three fine fingers, splayed a
+/// little apart, that close on whatever it holds.
+fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit.blend(
-        oral_tentacles(point, creature, MOUTH, REACH, ORAL_PAIRS),
+        oral_grasping(point, creature, MOUTH, REACH, ORAL_PAIRS, GRIP),
         2,
-        0.05,
+        0.04,
     );
+    for index in 0..2 {
+        let (tip, before) = tentacle_tip(creature, index);
+        if (point - tip.truncate()).length() > 0.12 {
+            continue;
+        }
+        let onward = tip.truncate() - before.truncate();
+        let onward = onward / onward.length().max(1e-4);
+        let flat = onward.cross(Vec3::Y);
+        let across = flat / flat.length().max(1e-4);
+        let over = across.cross(onward);
+        let thick = (tip.w * 2.2).max(0.006);
+        let palm = tip.truncate() + onward * thick;
+        hit.blend((point - palm).length() - thick * 1.3, 2, thick);
+        for finger in 0..3 {
+            let turn = (finger as f32 - 1.0) * 0.7;
+            let out = onward + across * turn.sin() * 0.8 + over * (turn.cos() - 0.6) * 0.6;
+            let out = out / out.length();
+            let end = palm + out * thick * 4.5 - over * thick * 1.2;
+            hit.blend(
+                tapered_tail(point, palm, end, thick * 0.6, thick * 0.25),
+                2,
+                thick * 0.5,
+            );
+        }
+    }
     hit
 }
 
@@ -194,7 +246,7 @@ fn plumes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     let stir = (creature.animation.z * 3.0).sin() * 0.015;
     for index in 0..3 {
         let lane = index as f32;
-        let root = vec3(0.15, 0.05 - lane * 0.05, -0.13 + lane * 0.02);
+        let root = vec3(0.15, 0.05 - lane * 0.05, -0.12 + lane * 0.02);
         let bend = root + vec3(0.1, 0.08 - lane * 0.06 + stir, 0.05) * full;
         let tip = bend + vec3(0.07, 0.07 - lane * 0.07 + stir, 0.16 - lane * 0.03) * full;
         hit.join(
@@ -213,7 +265,37 @@ fn plumes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit
 }
 
-/// The train: long eyed feathers fanned from the tail and drooping under it, longest towards its
+/// Small feathers lying back along the spine in two rows, from the tail's root up to the crown,
+/// longest at the tail and smallest on the head.
+fn back(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    if point.y < 0.04 || point.z > 0.45 || point.z < -0.3 {
+        return hit;
+    }
+    let long = 0.8 + creature.gene(CREST) * 0.4;
+    let mut feathers = 1e6f32;
+    for index in 0..7 {
+        let step = index as f32;
+        let z = 0.22 - step * 0.055;
+        // Along the line of the back, rising over the head.
+        let top = 0.125 + (-z).max(0.0) * 0.35;
+        for side in 0..2 {
+            let sign = if side == 0 { -1.0 } else { 1.0 };
+            let root = vec3(sign * 0.025, top - 0.01, z);
+            let direction = vec3(sign * 0.25, 0.3, 1.0);
+            feathers = feathers.min(vane(
+                point,
+                root,
+                direction / direction.length(),
+                (0.15 - step * 0.012) * long,
+                0.032 - step * 0.002,
+            ));
+        }
+    }
+    hit.join(feathers, 1);
+    hit
+}
+
+/// The train: long forked streamers fanned from the tail and drooping under it, longest towards its
 /// end, over the bare hooked tip.
 fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     let middle = tail_joint(creature, 4);
@@ -222,8 +304,8 @@ fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     }
     let long = 0.85 + creature.gene(TRAIN) * 0.3;
     let mut vanes = 1e6f32;
-    let mut rings = 1e6f32;
-    let mut centres = 1e6f32;
+    let mut beads = 1e6f32;
+    let mut ribs = 1e6f32;
     for joint in 1..5 {
         let root = tail_joint(creature, joint);
         let ahead = tail_joint(creature, joint + 1) - root;
@@ -238,16 +320,16 @@ fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
                 root,
                 direction / direction.length(),
                 reach,
-                0.075 + joint as f32 * 0.01,
+                0.06 + joint as f32 * 0.008,
             );
             vanes = vanes.min(parts.x);
-            rings = rings.min(parts.y);
-            centres = centres.min(parts.z);
+            beads = beads.min(parts.y);
+            ribs = ribs.min(parts.z);
         }
     }
     hit.join(vanes, 1);
-    hit.join(rings, 13);
-    hit.join(centres, 14);
+    hit.join(ribs, 14);
+    hit.join(beads, 13);
     // The tail's quills, where the feathers root, a little thicker than the shaft.
     let quill = tapered_tail(
         point,
@@ -264,12 +346,16 @@ pub fn render_opaque(ray: Ray, creature: &Tetralate) -> Hit {
     trace_material(ray, creature, surface, material)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "every tissue of the body reads best in one match"
+)]
 fn material(point: Vec3, id: u32) -> Material {
     // A pale back and brow over a deep teal belly, the countershading of a world lit from below.
     let back = point.y.smoothstep(-0.02, 0.09);
     let belly = (-point.y).smoothstep(0.02, 0.12);
-    // The muzzle and chin a warm cream, which makes a face of the eyes above them.
-    let muzzle = (-point.z).smoothstep(0.22, 0.3) * (-point.y).smoothstep(-0.02, 0.04);
+    // The snout a warm cream, which makes a face of the large eyes either side of it.
+    let muzzle = (-point.z).smoothstep(0.22, 0.3) * (1.0 - (point.x.abs() / 0.06).min(1.0));
     let mut m = Material::skin(
         vec3(0.20, 0.50, 0.54)
             .lerp(vec3(0.42, 0.74, 0.72), back)
@@ -303,24 +389,23 @@ fn material(point: Vec3, id: u32) -> Material {
             m.relief = 0.0;
         }
         13 => {
-            // A feather's eye: a ring of gold.
-            m.color = vec3(0.92, 0.70, 0.26);
-            m.roughness = 0.35;
-            m.film = 0.8;
+            // The beads along a streamer's rib, lit from within by the aur sacs.
+            m.color = vec3(0.30, 0.92, 0.86);
+            m.emission = 0.9;
+            m.roughness = 0.2;
             m.relief = 0.0;
         }
         14 => {
-            // The eye's centre: deep blue, shot with violet as the light moves over it.
-            m.color = vec3(0.10, 0.16, 0.48);
-            m.roughness = 0.25;
-            m.film = 1.0;
+            // A streamer's raised rib, pale gold.
+            m.color = vec3(0.92, 0.80, 0.52);
+            m.roughness = 0.35;
             m.relief = 0.0;
         }
-        15 => {
-            // The fin, pale and thin enough to glow at its edge.
-            m.color = vec3(0.62, 0.84, 0.80);
-            m.translucency = 0.5;
-            m.roughness = 0.4;
+        17 => {
+            // The lip round the mouth, soft and rosy.
+            m.color = vec3(0.90, 0.55, 0.52);
+            m.roughness = 0.35;
+            m.translucency = 0.35;
         }
         16 => {
             // The plumes, coral fading to gold at their tips, flushed with blood.
@@ -331,11 +416,23 @@ fn material(point: Vec3, id: u32) -> Material {
             m.relief = 0.0;
         }
         3 => {
-            // A glossy lens over an amber iris round a wide dark pupil, measured across the eye's
-            // face from the line it looks along.
-            let looking = vec3(0.42, -0.1, -0.9).normalize();
-            let eye = vec3(point.x.abs(), point.y, point.z) - on_head(looking, 0.95);
-            let across = (eye - looking * eye.dot(looking)).length() / 0.042;
+            // A glossy lens over an amber iris round a wide dark pupil, measured across whichever
+            // eye this is from the line it looks along.
+            let mirrored = vec3(point.x.abs(), point.y, point.z);
+            let (mut centre, mut radius, mut looking) = downward();
+            let mut nearest = (mirrored - centre).length() - radius;
+            for index in 0..CIRCLET {
+                let (at, size, towards) = circlet(index);
+                let distance = (mirrored - at).length() - size;
+                if distance < nearest {
+                    nearest = distance;
+                    centre = at;
+                    radius = size;
+                    looking = towards;
+                }
+            }
+            let eye = mirrored - centre;
+            let across = (eye - looking * eye.dot(looking)).length() / radius;
             let pupil = across.smoothstep(0.32, 0.4);
             let rim = across.smoothstep(0.82, 0.95);
             m.color = vec3(0.01, 0.015, 0.02)

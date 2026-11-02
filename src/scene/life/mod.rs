@@ -1404,15 +1404,16 @@ pub fn feathers<C: Rigged>(p: Vec3, creature: &C, width: f32) -> f32 {
 
 /// Eyes for open air lit from below.
 ///
-/// A row of small eyes around the cowl's rim watches every bearing at once, for in open sky a
-/// threat can come from anywhere; a larger pair beneath looks down at the glowing aur, where both
-/// the light and the deadliest danger lie.
+/// A row of small eyes around the cowl's rim, from ahead round to behind, watches every bearing at
+/// once, for in open sky a threat can come from anywhere and there is no ground to put at one's
+/// back; a larger pair beneath looks down at the glowing aur, where both the light and the
+/// deadliest danger lie.
 pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     let q = vec3(p.x.abs(), p.y, p.z);
     let centre = cowl_centre(length, head);
     let mut d = 1e6f32;
-    for i in 0..3 {
-        let angle = 0.55 + i as f32 * 0.38;
+    for i in 0..4 {
+        let angle = 0.5 + i as f32 * 0.42;
         let x = angle.sin() * 2.05 * head;
         // On the rim's edge, bulging out past it, so each sees level and down as well as up.
         let rim = centre

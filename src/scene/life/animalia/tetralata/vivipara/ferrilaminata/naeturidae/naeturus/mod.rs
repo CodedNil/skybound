@@ -16,7 +16,7 @@ taxon!(
     "Naeturus",
     "Nae Kin",
     [
-        "Members of Naeturus share four wings on short stalks, long tails trailing a train of eyed feathers, feathery exchange plumes behind the head, and aur-storage organs isolated from the digestive circulation.",
+        "Members of Naeturus share four wings on short stalks, long tails trailing a train of forked streamers lit along their ribs by the aur sacs, feathery exchange plumes behind the head, and aur-storage organs isolated from the digestive circulation.",
         "The genus has diverged into small dexterous Næ and enormous carrying Nætu.",
         "Mouth tentacles retain their ancestral feeding role while also supporting grooming, construction and close social contact.",
         "Their complementary sizes let one lineage maintain dwellings and tools while the other carries families between distant communities.",
@@ -59,24 +59,38 @@ pub fn vane(point: Vec3, root: Vec3, direction: Vec3, length: f32, width: f32) -
     ellipsoid(local, vec3(breadth, width * 0.1, length * 0.5)) * 0.8
 }
 
-/// A train feather of the genus.
+/// A streamer of the genus's train.
 ///
-/// A long vane from `root` along `direction` (of unit length), with an eye of two rings near its
-/// tip, each standing a hair proud of the vane so it takes its own colour. Returns the vane, the
-/// eye's outer ring and its centre.
+/// A long, narrow vane from `root` along `direction` (of unit length), forked at its tip, with a
+/// pale raised rib down its middle and three beads along the rib towards the tip, which the aur
+/// sacs light from within with a trickle of their charge. Returns the vane, the beads and the rib.
 ///
-/// The eyes are for one another: the genus courts and greets by spreading and shivering its train,
-/// and a full train of bright eyes is a sign of a well-fed, unwounded body.
+/// The train is for one another: the genus greets and courts by spreading and rippling it, and in
+/// the dim equatorial sky a herd's trains glow like strings of lamps, a sign of full, healthy sacs.
 pub fn feather(point: Vec3, root: Vec3, direction: Vec3, length: f32, width: f32) -> Vec3 {
-    let blade = vane(point, root, direction, length, width);
     let flat = vec3(direction.z, 0.0, -direction.x);
     let across = flat / flat.length().max(1e-4);
     let up = direction.cross(across);
     let q = point - root;
-    let local = vec3(q.dot(across), q.dot(up), q.dot(direction) - length * 0.78);
-    let ring = ellipsoid(local, vec3(width * 0.62, width * 0.12, width * 0.8));
-    let centre = ellipsoid(local, vec3(width * 0.3, width * 0.14, width * 0.4));
-    vec3(blade, ring, centre)
+    let local = vec3(q.dot(across), q.dot(up), q.dot(direction));
+    let notch = ellipsoid(
+        local - vec3(0.0, 0.0, length * 0.98),
+        vec3(width * 0.28, width, length * 0.14),
+    );
+    let blade = vane(point, root, direction, length, width).max(-notch);
+    let rib = tapered_tail(
+        point,
+        root,
+        root + direction * length * 0.9,
+        width * 0.14,
+        width * 0.06,
+    );
+    let mut beads = 1e6f32;
+    for index in 0..3 {
+        let at = vec3(0.0, 0.0, length * (0.55 + index as f32 * 0.14));
+        beads = beads.min((local - at).length() - width * (0.17 - index as f32 * 0.02));
+    }
+    vec3(blade, beads, rib)
 }
 
 /// A feathery exchange plume of the genus.

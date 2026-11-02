@@ -59,7 +59,7 @@ taxon!(
     "Naetu",
     "Nætu",
     [
-        "Nætu are enormous four-winged carriers, built round their wings with great shoulders and haunches, broad flat backs, a heavy-browed face over a jutting muzzle, feathery exchange plumes fanning behind the cheeks and a long tail trailing a train of eyed feathers wide as a second wing.",
+        "Nætu are enormous four-winged carriers, built round their wings with great shoulders and haunches, broad flat backs, a heavy-browed face over a jutting muzzle, feathery exchange plumes fanning behind the cheeks and a long tail trailing a train of forked streamers wide as a second wing, lit along their ribs by the aur sacs.",
         "Three pairs of mouth tentacles gather vegetation, while redundant gas lobes along the upper flanks and pleated breathing channels reduce the cost of slow flight; the belly is pleated lengthwise round the great crop, and the folds open as it fills.",
         "Their wings are broad and stalked thick, for a carrier cruises rather than hovers, and beat slowly enough to count.",
         "A raised ridge rings the back, and in it sit the aur sacs, sheathed in iron: from its twentieth year a Nætu can let their charge out along the ridge as a shimmering dome over its back, brightest where it leaves the ridge, which turns the wind and the spray of the mists from everything that lives there.",
@@ -125,7 +125,7 @@ fn tail_joint(creature: &Tetralate, index: u32) -> Vec3 {
 /// and the Næ build, ringed by the raised ridge that holds the aur sacs, gas lobes swelling along
 /// the upper flanks so no single wound brings it down, a crease running the flank from cheek to
 /// tail, and beneath it all a keel, the belly pleated either side of it round the crop. The tail
-/// flows straight out of the body under a train of eyed feathers.
+/// flows straight out of the body under a train of forked streamers.
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     let torso = rounded(point - vec3(0.0, 0.2, -0.5), vec3(6.2, 4.8, 13.5));
@@ -244,8 +244,18 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
         return hit;
     }
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let eye = (mirrored - on_head(vec3(0.55, 0.05, -0.83), 0.98)).length() - 1.0;
-    hit.socket(eye, 1.0);
+    // A circlet of eyes ringing the head from ahead round to behind, the forward pair largest.
+    for index in 0..4 {
+        let angle = 0.42 + index as f32 * 0.45;
+        let looking = vec3(angle.sin(), 0.08, -angle.cos());
+        let radius = if index == 0 {
+            0.95
+        } else {
+            0.6 - index as f32 * 0.06
+        };
+        let eye = (mirrored - on_head(looking, 0.98)).length() - radius;
+        hit.socket(eye, radius);
+    }
     let low = (mirrored - vec3(2.0, -2.9, -17.0)).length() - 0.35;
     hit.socket(low, 0.35);
     let full = 0.8 + creature.gene(FRILLS) * 0.4;
@@ -269,15 +279,15 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
     hit
 }
 
-/// The train: long eyed feathers fanned from the last half of the tail, longest at its end,
+/// The train: long forked streamers fanned from the last half of the tail, longest at its end,
 /// spread wide across the air like a second, trailing wing.
 fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     if (point - tail_joint(creature, 5)).length() > 48.0 {
         return hit;
     }
     let mut vanes = 1e6f32;
-    let mut rings = 1e6f32;
-    let mut centres = 1e6f32;
+    let mut beads = 1e6f32;
+    let mut ribs = 1e6f32;
     for joint in 3..7 {
         let root = tail_joint(creature, joint);
         let ahead = tail_joint(creature, joint + 1) - root;
@@ -288,13 +298,13 @@ fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
             let direction = ahead + vec3(spread, -0.1 - spread.abs() * 0.1, 0.0);
             let parts = feather(point, root, direction / direction.length(), reach, 4.2);
             vanes = vanes.min(parts.x);
-            rings = rings.min(parts.y);
-            centres = centres.min(parts.z);
+            beads = beads.min(parts.y);
+            ribs = ribs.min(parts.z);
         }
     }
     hit.join(vanes, 1);
-    hit.join(rings, 13);
-    hit.join(centres, 14);
+    hit.join(ribs, 14);
+    hit.join(beads, 13);
     hit
 }
 
@@ -323,12 +333,35 @@ fn material(point: Vec3, id: u32) -> Material {
     m.film = 0.35;
     match id {
         1 => {
-            // Feather vanes, deep teal shading to gold at the tips.
-            let vane = (point.z * 4.0 + point.x.abs() * 7.0).sin() * 0.035;
-            let gold = (point.z - 48.0).smoothstep(0.0, 10.0);
+            // Train streamers: deep teal shading to bronze towards their tips, with fine barbs.
+            let barbs = (point.x * 9.0 + point.z * 3.0).sin() * 0.04;
+            let tip = (point.z - 36.0).smoothstep(0.0, 18.0);
             m.color =
-                vec3(0.07, 0.28, 0.33).lerp(vec3(0.70, 0.56, 0.26), gold * 0.6) * (1.0 + vane);
-            m.roughness = 0.65;
+                vec3(0.06, 0.28, 0.33).lerp(vec3(0.60, 0.46, 0.22), tip * 0.6) * (1.0 + barbs);
+            m.roughness = 0.45;
+            m.film = 0.8;
+            m.relief = 0.0;
+        }
+        13 => {
+            // The beads along a streamer's rib, lit from within by the aur sacs.
+            m.color = vec3(0.30, 0.92, 0.86);
+            m.emission = 0.9;
+            m.roughness = 0.2;
+            m.relief = 0.0;
+        }
+        14 => {
+            // A streamer's raised rib, pale gold.
+            m.color = vec3(0.92, 0.80, 0.52);
+            m.roughness = 0.35;
+            m.relief = 0.0;
+        }
+        16 => {
+            // The exchange plumes: coral, fading to gold at their filament tips.
+            m.color = vec3(0.86, 0.36, 0.40)
+                .lerp(vec3(0.98, 0.76, 0.46), (point.y - 1.0).smoothstep(0.0, 4.0));
+            m.translucency = 0.45;
+            m.roughness = 0.45;
+            m.relief = 0.0;
         }
         2 => {
             m.color = vec3(0.79, 0.29, 0.39).lerp(vec3(0.98, 0.72, 0.52), speckles);

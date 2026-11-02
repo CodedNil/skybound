@@ -238,16 +238,16 @@ pub fn relief(q: Vec3, texture: u32) -> f32 {
     match texture {
         WRINKLED => {
             let folds = (q.z * 5.0 + fbm(q * 0.8) * 4.0).sin().abs();
-            (1.0 - folds) * 0.45 + noise(q * 22.0) * 0.25 + fbm(q * 2.5) * 0.3
+            (1.0 - folds) * 0.5 + noise(q * 22.0) * 0.06 + fbm(q * 2.5) * 0.3
         }
         PLATED => {
             let warped = q + vec3(fbm(q * 0.5), fbm(q * 0.5 + 7.0), fbm(q * 0.5 + 13.0)) * 0.9;
             let cell = (vec2(warped.x, warped.z) * 1.3).fract_gl() - Vec2::splat(0.5);
             let groove = cell.abs().max_element().smoothstep(0.38, 0.5);
-            (0.5 - cell.length()) * 0.6 - groove + noise(q * 14.0) * 0.25
+            (0.5 - cell.length()) * 0.6 - groove + noise(q * 14.0) * 0.08
         }
-        FURRED => noise(vec3(q.x * 34.0, q.y * 34.0, q.z * 5.0)) * 0.8 + noise(q * 70.0) * 0.2,
-        RINGED => (q.y * 22.0 + q.x * 6.0 + fbm(q * 2.0) * 3.0).sin() * 0.5 + noise(q * 18.0) * 0.3,
+        FURRED => noise(vec3(q.x * 34.0, q.y * 34.0, q.z * 5.0)) * 0.8 + noise(q * 70.0) * 0.05,
+        RINGED => (q.y * 22.0 + q.x * 6.0 + fbm(q * 2.0) * 3.0).sin() * 0.5 + noise(q * 18.0) * 0.1,
         SLICK => fbm(q * 1.6) * 0.7 + noise(q * 9.0) * 0.15,
         _ => 0.0,
     }
@@ -593,11 +593,13 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     let pigment = look.pigment;
     let accent = look.accent;
     let warp = vec3(fbm(p * 0.6), fbm(p * 0.6 + 17.0), fbm(p * 0.6 + 31.0)) - 0.5;
-    let blotches = fbm(vec3(p.x * 0.8, p.y * 0.8, p.z * 0.45) + warp * 2.2);
+    // Broad patches with soft edges, rather than a fine scatter: the markings read at a distance
+    // and keep their shapes as the body moves.
+    let blotches = fbm(vec3(p.x * 0.42, p.y * 0.42, p.z * 0.24) + warp * 1.6);
     let mottle = fbm(p * 2.6 + 5.0);
     let grain = noise(p * 19.0);
     let dorsal = (p.y * 0.30 + 0.5).saturate();
-    let markings = blotches.smoothstep(0.5, 0.64) * dorsal.smoothstep(0.25, 0.75);
+    let markings = blotches.smoothstep(0.46, 0.68) * dorsal.smoothstep(0.25, 0.75);
     let base = pigment.truncate().lerp(accent, markings * 0.7);
     // Countershading turned over, for a world lit from below: the back pale, lost against the
     // bright veil to anything looking down on it, and the belly dark, lost against the dim sky to
@@ -606,11 +608,11 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     let belly = base * 0.55;
     // Pulsatile nutrient channels show faintly through the skin, branching back from the crop.
     let channel = fbm(vec3(p.x * 1.4, p.y * 1.4, p.z * 0.5) + warp * 1.5);
-    let vein = 1.0 - (channel - 0.5).abs().smoothstep(0.0, 0.035);
+    let vein = 1.0 - (channel - 0.5).abs().smoothstep(0.0, 0.06);
     let mut m = Material::skin(
         belly
             .lerp(back, dorsal.smoothstep(0.2, 0.8))
-            .lerp(accent * 0.6 + vec3(0.22, 0.04, 0.08), vein * 0.22)
+            .lerp(accent * 0.6 + vec3(0.22, 0.04, 0.08), vein * 0.06)
             * (0.9 + mottle * 0.14)
             * (0.98 + grain * 0.03),
         0.55 + mottle * 0.18,
@@ -624,11 +626,11 @@ pub fn coat(p: Vec3, id: u32, look: Look) -> Material {
     } else {
         WRINKLED
     };
-    m.relief = 0.24 * skin.y;
+    m.relief = 0.18 * skin.y;
     m.grain = skin.z;
     m.roughness = (m.roughness + skin.w).clamp(0.05, 1.0);
     // Living skin: light scatters through it and a thin film of moisture glints on it.
-    m.scatter = 0.6;
+    m.scatter = 0.45;
     m.film = 0.5;
     tissue(m, p, id, look, vec3(blotches, mottle, grain))
 }
@@ -669,7 +671,7 @@ fn tissue(mut m: Material, p: Vec3, id: u32, look: Look, pattern: Vec3) -> Mater
             m.color = accent.lerp(pigment.truncate(), blotches * 0.5) * (0.6 + mottle * 0.5);
             m.roughness = 0.68 + grain * 0.12;
             m.texture = PLATED;
-            m.relief = 0.5;
+            m.relief = 0.35;
             m.grain = look.skin.z * 0.8;
         }
         6 => {
@@ -1122,7 +1124,7 @@ fn relieved(
     }
     let slope = slope / (4.0 * step);
     let resolve = 1.0 - (footprint * material.grain * 4.0).smoothstep(0.3, 1.5);
-    normalize(normal - (slope - normal * slope.dot(normal)) * material.relief * 0.09 * resolve)
+    normalize(normal - (slope - normal * slope.dot(normal)) * material.relief * 0.055 * resolve)
 }
 
 pub fn tonemap(color: Vec3) -> Vec3 {

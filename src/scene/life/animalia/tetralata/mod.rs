@@ -167,6 +167,7 @@ taxon!(
     [
         "Tetralata descend from elongated, limbless animals with two pairs of wings and a pair of muscular mouth tentacles.",
         "Wings control movement through the updraft, while the tentacles gather food, hold anchors and manipulate objects without walking limbs.",
+        "With nothing to put at its back, a tetralate sees all round at once: a circlet of small lensed eyes rings its head from ahead to behind, each in its own lidded socket, and a larger pair beneath watches the aur, where the light and the worst danger lie. The mouth opens beneath, among the tentacles that bring food up to it.",
         "The updraft and the gas stores carry the body, so the wings are oars and rudders rather than lifting surfaces: each grows from a short, muscular stalk on the shoulder about which the whole wing twists, square to the air to drive on the downstroke and feathered edge-on to slip back on the up, and turned to steer in a glide. A wing joined to the flank along its length, as the blood-feeders' are, could not turn so; the stalk is narrowest in hoverers and divers, broadest in the heavy cruisers.",
         "A digestive crop and pulsatile nutrient channels support more concentrated feeding than the absorptive surfaces of bubblebacks.",
         "Pleated respiratory passages recover moisture, although vigorous flight still creates a need for drinking or humid air.",
@@ -218,6 +219,12 @@ fn tentacle_root(mouth: Vec3, scale: f32, index: usize) -> (Vec3, f32, f32) {
 /// from that pose over the last second and a half, which is all the damping remembers, and drawn
 /// along one smooth curve through the three.
 pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
+    rig_grasping(c, mouth, scale, pairs, 0.0);
+}
+
+/// Pose the mouth tentacles as [`rig_tentacles`] does, the outer pair grown `grip` longer again and
+/// thicker, as a lineage that works with its tentacles grows them.
+pub fn rig_grasping(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32, grip: f32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
     let turn = Quat::from_array(c.rotation.to_array()).conjugate();
@@ -226,8 +233,9 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
     let wind = vec3(0.0, 0.0, c.animation.w.max(0.0));
     for index in 0..(pairs as usize * 2).min(9) {
         let (root, reach, side) = tentacle_root(mouth, scale, index);
-        let reach = reach * (0.8 + c.gene(REACH) * 0.4);
         let lane = (index / 2) as f32;
+        let outer = if lane < 0.5 { 1.0 + grip } else { 1.0 };
+        let reach = reach * (0.8 + c.gene(REACH) * 0.4) * outer;
         let length = reach * 0.5;
         // At rest they hang forward and down beneath the head like loosely held arms, bent a
         // little at the middle, each moving slowly on its own.
@@ -293,10 +301,10 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
         };
         // Settled from two starts on a fixed grid, crossfaded, so the pose moves smoothly from one
         // frame to the next.
-        let grid = (end / SETTLE).floor();
-        let weight = end / SETTLE - grid;
-        let earlier = settle((grid - 1.0) * SETTLE);
-        let later = settle(grid * SETTLE);
+        let window = (end / SETTLE).floor();
+        let weight = end / SETTLE - window;
+        let earlier = settle((window - 1.0) * SETTLE);
+        let later = settle(window * SETTLE);
         let joints = [
             earlier[0].lerp(later[0], weight),
             earlier[1].lerp(later[1], weight),
@@ -311,7 +319,7 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
                 + control * (2.0 * t * (1.0 - t))
                 + joints[2] * (t * t);
         }
-        let radius = scale * (0.075 - lane * 0.008);
+        let radius = scale * (0.075 - lane * 0.008) * (1.0 + (outer - 1.0) * 0.7);
         let (sheet, column) = slot(index);
         for (knot, point) in points.iter().enumerate() {
             let t = knot as f32 / (KNOTS - 1) as f32;
@@ -319,6 +327,16 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
         }
         c.previous_tentacles[sheet] = c.tentacles[sheet];
     }
+}
+
+/// The tip of mouth tentacle `index` and the knot before it, each with its thickness, for a
+/// species that grows something at its tips.
+pub const fn tentacle_tip(c: &Tetralate, index: usize) -> (Vec4, Vec4) {
+    let (sheet, column) = slot(index);
+    (
+        c.tentacles[sheet][KNOTS - 1][column],
+        c.tentacles[sheet][KNOTS - 2][column],
+    )
 }
 
 /// The mouth tentacles posed by [`rig_tentacles`]: tubes tapering smoothly along their curves.
@@ -329,8 +347,21 @@ pub fn oral_tentacles(
     scale: f32,
     pairs: u32,
 ) -> f32 {
+    oral_grasping(point, creature, mouth, scale, pairs, 0.0)
+}
+
+/// The mouth tentacles posed by [`rig_grasping`], the outer pair `grip` longer.
+pub fn oral_grasping(
+    point: Vec3,
+    creature: &Tetralate,
+    mouth: Vec3,
+    scale: f32,
+    pairs: u32,
+    grip: f32,
+) -> f32 {
     let scale = scale * (0.35 + creature.life.y * 0.65);
-    let bounds = (point - mouth).length() - scale * 3.2 * (0.8 + creature.gene(REACH) * 0.4);
+    let bounds =
+        (point - mouth).length() - scale * 3.2 * (0.8 + creature.gene(REACH) * 0.4) * (1.0 + grip);
     if bounds > scale * 0.1 {
         return bounds;
     }
@@ -342,7 +373,7 @@ pub fn oral_tentacles(
         let (sheet, column) = slot(index);
         let root = creature.tentacles[sheet][0][column];
         if (point - root.truncate()).length()
-            > scale * 2.6 * (0.8 + creature.gene(REACH) * 0.4) + root.w
+            > scale * 2.6 * (0.8 + creature.gene(REACH) * 0.4) * (1.0 + grip) + root.w
         {
             continue;
         }
