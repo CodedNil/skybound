@@ -9,7 +9,7 @@ use skybound::scene::{
     aur::{aur_climate, energy_color},
     climate::{
         CLOUD_CELLS, CLOUD_GRID, CLOUD_SLOTS, CloudCover, CloudParcel, cloud_cell, cloud_parcel,
-        cube_direction,
+        cube_direction, cyclone_wind,
     },
     math::fourth,
     planet::surface_frame,
@@ -98,6 +98,28 @@ impl CloudField {
             cover.add(self.parcels[id as usize], up);
         }
         cover.texels()
+    }
+}
+
+impl CloudField {
+    /// The hurricane winds at a direction from the planet's centre and a height above the aur,
+    /// along the surface towards the heart of the worst of them, and how severe the storm is.
+    pub fn gale(&self, up: Vec3, altitude: f32) -> (Vec3, Vec3, f32) {
+        let cell = cloud_cell(up);
+        let mut wind = Vec3::ZERO;
+        let mut toward = Vec3::ZERO;
+        let mut worst = 0.0f32;
+        for &id in &self.index[self.index[cell] as usize..self.index[cell + 1] as usize] {
+            let parcel = self.parcels[id as usize];
+            let (gust, severity) = cyclone_wind(parcel, up, altitude);
+            wind += gust;
+            if severity > worst {
+                worst = severity;
+                let centre = parcel.centre.xyz();
+                toward = (centre - up * centre.dot(up)).normalize_or_zero();
+            }
+        }
+        (wind, toward, worst)
     }
 }
 

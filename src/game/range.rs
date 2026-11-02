@@ -277,8 +277,9 @@ fn suitability(kind: Kind, up: DVec3) -> f32 {
 }
 
 /// How many of a kind keep together: herds and swarms in the lineages that took to them, the
-/// forests and tangles of plants that grow joined, and the rest alone or in pairs. Plants that grow
-/// alone are brought into being a few at a time, scattered far apart.
+/// forests and tangles of plants that grow joined, and the rest alone or in pairs. A plant that
+/// grows alone comes into being alone, each at its own place: seeds and spores scatter on the wind,
+/// so nothing gathers them.
 fn group(kind: Kind, seed: u64) -> usize {
     let spread = hash(seed, 3);
     match (kind.animal(), kind.plant()) {
@@ -287,7 +288,7 @@ fn group(kind: Kind, seed: u64) -> usize {
         (_, Some(plant)) if plant.stand > 1 => {
             plant.stand / 2 + (spread * plant.stand as f32) as usize
         }
-        _ => 3 + (spread * 4.0) as usize,
+        _ => 1,
     }
 }
 

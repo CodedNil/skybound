@@ -120,6 +120,8 @@ pub struct Senses {
     pub habitat: Option<Vec3>,
     pub storm: Option<Vec3>,
     pub water: Option<Vec3>,
+    /// Towards the heart of the nearest Mineral Field, where the vents fill the air with dust.
+    pub minerals: Option<Vec3>,
     pub separation: Vec3,
     pub alignment: Vec3,
     pub energy: f32,
@@ -149,6 +151,7 @@ impl Default for Senses {
             habitat: None,
             storm: None,
             water: None,
+            minerals: None,
             separation: Vec3::ZERO,
             alignment: Vec3::ZERO,
             energy: 0.5,

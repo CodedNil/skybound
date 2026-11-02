@@ -2,6 +2,7 @@ use crate::{
     game::{
         camera::CameraController,
         ecosystem::{Individual, Physiology, Relations},
+        weather::CloudField,
         world::{WorldAnchor, WorldData},
     },
     math::{ToEngine, ToScene},
@@ -18,7 +19,7 @@ use bevy::{
     transform::TransformSystems,
 };
 use skybound::scene::{
-    aur,
+    PLANET_RADIUS, aur,
     life::{
         Drawn, Kind, Tetralate,
         animalia::tetralata::vivipara::ferrilaminata::naeturidae::naeturus::{nae, naetu},
@@ -150,6 +151,7 @@ struct FlightInput<'w, 's> {
     motion: Res<'w, AccumulatedMouseMotion>,
     wheel: MessageReader<'w, 's, MouseWheel>,
     world: Res<'w, WorldData>,
+    clouds: Res<'w, CloudField>,
 }
 
 struct Steering<'a> {
@@ -296,6 +298,14 @@ fn pilot(
     body.translation += advance(velocity, heading * speed, 3.5, dt);
 }
 
+/// A hurricane's wind dragging at a flying body.
+fn buffet(body: &mut Transform, world: &WorldData, clouds: &CloudField, dt: f32) {
+    let planet = world.position(body.translation);
+    let altitude = (planet.length() - f64::from(PLANET_RADIUS)) as f32;
+    let (gale, ..) = clouds.gale(planet.normalize().as_vec3().to_scene(), altitude);
+    body.translation += world.rotate_to_local(gale.to_engine()) * 0.6 * dt;
+}
+
 fn contact(
     position: Vec3,
     mount: &Transform,
@@ -362,6 +372,7 @@ fn fly(
         motion,
         mut wheel,
         world,
+        clouds,
     } = input;
     let scroll: f32 = wheel.read().map(|e| e.y).sum();
     flight.zoom = (flight.zoom * (-scroll * 0.12).exp()).clamp(0.45, 2.5);
@@ -425,6 +436,7 @@ fn fly(
             };
             let up = world.up(body.translation);
             pilot(body, velocity, steering, cruise * boost, dt, up);
+            buffet(body, &world, &clouds, dt);
             if mounted {
                 player.translation = mount.transform_point(rosette);
                 player.rotation = mount.rotation;

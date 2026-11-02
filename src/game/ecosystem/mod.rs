@@ -17,6 +17,7 @@ use bevy::{
 use skybound::scene::{
     PLANET_RADIUS,
     climate::{Climate, layer_altitude},
+    features::nearest_geyser,
     life::{
         Drawn, Kind,
         animalia::mind::Mind,
@@ -27,6 +28,7 @@ use skybound::scene::{
         vitals::Vitals,
     },
 };
+use spirv_std::glam::Vec3 as SceneVec3;
 use std::{
     collections::HashMap,
     mem,
@@ -143,6 +145,7 @@ impl Relations {
             &mut senses.habitat,
             &mut senses.storm,
             &mut senses.water,
+            &mut senses.minerals,
         ] {
             *target = target.map(|direction| rotation * direction);
         }
@@ -367,6 +370,14 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     // Creatures live among the clouds that are drawn: in them the air is saturated, and tall towers
     // mean storms.
     let [lower, upper] = clouds.cover(position.normalize());
+    // A hurricane's winds carry whatever is caught in them, and everything knows which way its
+    // heart lies.
+    let local = |direction: SceneVec3| world.rotate_to_local(direction.to_engine()).to_scene();
+    let (gale, toward, severity) =
+        clouds.gale(position.normalize(), position.length() - PLANET_RADIUS);
+    climate.wind += local(gale);
+    climate.storm = climate.storm.max(severity.min(1.0));
+    climate.storm_toward = local(toward);
     let altitude = position.length() - PLANET_RADIUS;
     let cumulus = layer_altitude(0);
     let within = if altitude > cumulus && altitude < upper.w {
@@ -378,6 +389,12 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
     climate.middle_cloud = lower.z.max(lower.w).max(upper.x);
     climate.high_cloud = upper.y.max(upper.z);
     climate.humidity = climate.humidity.max(within);
+    // Rain falls from heavy convective cloud onto whatever is beneath it, and freezes out higher
+    // up.
+    let beneath = 1.0 - altitude.smoothstep(upper.w, upper.w + 500.0);
+    climate.precipitation = climate
+        .precipitation
+        .max(lower.x.smoothstep(0.45, 0.9) * beneath * (1.0 - climate.ice * 0.6));
     climate.storm = climate
         .storm
         .max(lower.x * ((upper.w - cumulus - 32_000.0) / 24_000.0).clamp(0.0, 1.0));
@@ -572,6 +589,14 @@ fn live_out(
         outcome.exchange(cell, before, patch);
         return;
     }
+    // A geyser's jet kills whatever it strikes, but for the player and their mount, which the game
+    // has no death for yet.
+    if !player && !mount && in_geyser(world, kind, transform.translation) {
+        body.0.health = 0.0;
+        outcome.deaths += 1;
+        outcome.exchange(cell, before, patch);
+        return;
+    }
     let neighbours = neighbours(transform.translation, kind.senses(), shared.grid);
     let agent = index[&entity];
     let (senses, stage, targets) = orient(
@@ -665,6 +690,16 @@ fn live_out(
     ) {
         outcome.births += 1;
     }
+}
+
+/// Whether a body at `local` is inside a geyser's jet.
+fn in_geyser(world: &WorldData, kind: Kind, local: Vec3) -> bool {
+    let planet = world.position(local);
+    let up = planet.normalize().as_vec3().to_scene();
+    let altitude = (planet.length() - f64::from(PLANET_RADIUS)) as f32;
+    nearest_geyser(up).is_some_and(|(geyser, distance)| {
+        distance < geyser.radius + kind.render_radius() * 0.5 && altitude < geyser.height
+    })
 }
 
 /// Bear a litter if one is due, as many of it as there is room in the world for.

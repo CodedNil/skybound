@@ -9,11 +9,13 @@ use crate::{
         },
         world::WorldData,
     },
-    math::ToScene,
+    math::{ToEngine, ToScene},
 };
-use bevy::prelude::*;
+use bevy::{math::DVec3, prelude::*};
 use skybound::scene::{
+    PLANET_RADIUS,
     climate::Climate,
+    features::{VENT_FIELDS, apart, nearest_geyser, nearest_lake, vent_field},
     life::{
         Kind,
         animalia::{
@@ -107,6 +109,7 @@ pub(super) fn perceive(
             }
         }
     }
+    sense_features(kind, position, world, &mut senses);
     if senses.food.is_none()
         && let Some((remembered, location, seen)) = relations.remembered_food
         && now - seen < 8.0
@@ -133,9 +136,7 @@ pub(super) fn perceive(
     if (target_altitude - climate.altitude).abs() > 5.0 {
         senses.habitat = Some(senses.up * (target_altitude - climate.altitude));
     }
-    if climate.storm > 0.1 {
-        senses.storm = Some(Vec3::Y.to_scene() * 100.0);
-    }
+    senses.storm = storm(climate, senses.up);
     senses.buoyancy = climb(
         kind,
         climate,
@@ -147,6 +148,61 @@ pub(super) fn perceive(
         relations.host = None;
     }
     senses
+}
+
+/// Which way a storm is: its heart, to get away from; without one to place, up and out of the
+/// rain.
+fn storm(climate: Climate, up: SceneVec3) -> Option<SceneVec3> {
+    (climate.storm > 0.1).then(|| {
+        if climate.storm_toward.length_squared() > 0.5 {
+            climate.storm_toward * 400.0
+        } else {
+            up * 100.0
+        }
+    })
+}
+
+/// What the planet's features mean to a body: a geyser's jet, which kills whatever touches it, is
+/// given a wide berth by everything that can steer, and a floating lake is water to drink where no
+/// basin is near.
+fn sense_features(kind: Kind, position: Vec3, world: &WorldData, senses: &mut Senses) {
+    let planet = world.position(position);
+    let up = planet.normalize().as_vec3().to_scene();
+    let altitude = (planet.length() - f64::from(PLANET_RADIUS)) as f32;
+    let toward = |target: DVec3| {
+        world
+            .rotate_to_local((target - planet).as_vec3())
+            .to_scene()
+    };
+    if let Some((geyser, distance)) = nearest_geyser(up) {
+        let room = geyser.radius + kind.render_radius() + 40.0;
+        if distance < room && altitude < geyser.height + 50.0 {
+            let axis = geyser.up.to_engine().as_dvec3() * planet.length();
+            let away = -toward(axis);
+            senses.separation += away / away.length().max(1e-3) * (1.0 - distance / room) * 30.0;
+        }
+    }
+    // The nearest Mineral Field, which the dust in the air points the way to from far off.
+    let field = (0..VENT_FIELDS)
+        .map(vent_field)
+        .min_by(|a, b| apart(up, a.up).total_cmp(&apart(up, b.up)));
+    if let Some(field) = field.filter(|field| apart(up, field.up) < 60_000.0) {
+        let heart = field.up.to_engine().as_dvec3() * planet.length();
+        senses.minerals = Some(toward(heart));
+    }
+    let (lake, distance) = nearest_lake(up);
+    if senses.water.is_none()
+        && distance < lake.radius + 400.0
+        && (altitude - lake.altitude).abs() < 600.0
+    {
+        // The nearest of its shore, on the water.
+        let centre = lake.up.to_engine().as_dvec3();
+        let out = (up.to_engine().as_dvec3() - centre).normalize_or_zero();
+        let reach = f64::from(distance.min(lake.radius * 0.8) / PLANET_RADIUS);
+        let shore =
+            (centre + out * reach).normalize() * f64::from(PLANET_RADIUS + lake.altitude + 1.0);
+        senses.water = Some(toward(shore));
+    }
 }
 
 /// How fast it means to rise or sink against the air's own rising: a floater trims its gas
@@ -420,6 +476,7 @@ pub(super) fn first_sight(senses: &Senses, climate: Climate) -> Perception {
         wind: senses.wind,
         food: senses.food,
         water: senses.water,
+        minerals: senses.minerals,
         habitat: senses.habitat,
         storm: senses.storm,
         light: climate.light,
@@ -503,6 +560,11 @@ pub(super) fn drives(agent: Agent, relations: &Relations, now: f32) -> Drives {
             0.0
         },
         youth,
+        minerals: if agent.kind.animal().is_some_and(|animal| animal.ironclad) {
+            (1.0 - body.iron * 1.6).clamp(0.0, 1.0)
+        } else {
+            0.0
+        },
         term: if body.expecting > 0 {
             body.gestation
         } else {

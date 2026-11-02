@@ -355,7 +355,10 @@ pub fn metabolize(body: &mut Vitals, kind: Kind, climate: Climate, effort: f32, 
                 .function(&body.organs, Function::Water)
                 .unwrap_or(0.0)
                 * 0.35);
-    body.hydration = (body.hydration + (climate.humidity * 0.0008 - drying) * dt).clamp(0.0, 1.0);
+    // Rain beading on the skin is drawn in through the breathing folds with the air.
+    let rain = climate.precipitation * 0.0012;
+    body.hydration =
+        (body.hydration + (climate.humidity * 0.0008 + rain - drying) * dt).clamp(0.0, 1.0);
     let muscle = body.locomotion(viscera).max(0.2);
     body.fatigue =
         (body.fatigue + (effort * 0.008 / muscle - body.breath * 0.003) * dt).clamp(0.0, 1.0);

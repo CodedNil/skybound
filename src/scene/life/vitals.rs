@@ -220,7 +220,11 @@ impl Vitals {
         }
         let dust = climate.dust;
         let scraped = if scraping { 0.003 } else { 0.0 };
-        self.iron = (self.iron + (dust * 0.0002 + scraped) * (1.0 - self.iron) * dt).min(1.0);
+        // It wears away in use, in the armour, the blades and the sheaths of the aur sacs, and
+        // must be gathered again.
+        let worn = self.iron * 0.00002;
+        self.iron = (self.iron + ((dust * 0.0002 + scraped) * (1.0 - self.iron) - worn) * dt)
+            .clamp(0.0, 1.0);
     }
 
     /// A step of what grows on its hide: spores of air moss and lumaweed settle on any animal and

@@ -95,6 +95,8 @@ pub struct Perception {
     pub kin_count: u32,
     pub fleeing: u32,
     pub water: Option<Vec3>,
+    /// Towards the heart of the nearest Mineral Field.
+    pub minerals: Option<Vec3>,
     pub player: Option<Vec3>,
     /// The way back to the altitudes it lives at, and away from a storm.
     pub habitat: Option<Vec3>,
@@ -181,6 +183,8 @@ pub struct Drives {
     pub desire: f32,
     /// How young it is, from newborn to grown.
     pub youth: f32,
+    /// How badly it needs the minerals its body is built of, for a lineage that eats metal.
+    pub minerals: f32,
     /// How near its young are to being born, from not expecting to due.
     pub term: f32,
     /// How lately it bore young, from long ago to just now.

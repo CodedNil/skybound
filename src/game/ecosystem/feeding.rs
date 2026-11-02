@@ -100,6 +100,15 @@ pub(super) fn forage(
             amount: 0.0,
         });
     }
+    // A floating lake holds more than any drinker could take.
+    if relations.activity == Activity::Drink
+        && senses
+            .water
+            .is_some_and(|offset| offset.length_squared() < 100.0)
+    {
+        body.hydration = (body.hydration + dt * 0.2).min(1.0);
+        return None;
+    }
     if kind.takes(Take::Carrion) && body.energy < 0.85 {
         let amount = pool.detritus.min(body.mass * dt * 0.003);
         let aur = pool.bound_aur * amount / pool.detritus.max(1e-10);

@@ -10,6 +10,7 @@ pub mod atmosphere;
 pub mod aur;
 pub mod cache;
 pub mod climate;
+pub mod features;
 pub mod life;
 pub mod math;
 pub mod planet;

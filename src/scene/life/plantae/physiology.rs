@@ -120,7 +120,13 @@ pub fn metabolize(body: &mut Vitals, kind: Kind, climate: Climate, dt: f32) -> W
                 .function(&body.organs, Function::Water)
                 .unwrap_or(0.0)
                 * 0.35);
-    body.hydration = (body.hydration + (climate.humidity * 0.0008 - drying) * dt).clamp(0.0, 1.0);
+    // Rain wets every plant, and a basin built to catch it fills from it fastest of all.
+    let basin = viscera
+        .function(&body.organs, Function::Water)
+        .unwrap_or(0.0);
+    let rain = climate.precipitation * (0.0015 + basin * 0.006);
+    body.hydration =
+        (body.hydration + (climate.humidity * 0.0008 + rain - drying) * dt).clamp(0.0, 1.0);
     let frond = body.working(viscera, Function::Gathering);
     body.energy = (body.energy + (nature.powered)(&climate) * frond * 0.003 * dt).min(1.0);
     if viscera.has(Function::Nectar) {

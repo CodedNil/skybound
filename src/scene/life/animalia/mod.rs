@@ -406,6 +406,11 @@ pub mod nature {
         }
         urges.add(EXPLORE, s.temper(CURIOSITY) * s.temper(RESTLESSNESS) * 0.5);
         urges.add(SEEK, astray(s.kind, seen.light) * 0.6);
+        // Short of the minerals its body is built of, it travels to the Mineral Fields to gather
+        // them from the dusty air, however far they lie from where it lives.
+        if seen.minerals.is_some() {
+            urges.add(MINE, (drives.minerals - 0.3).max(0.0) * 0.9);
+        }
         // The guardians themselves keep the sanctuary rather than seek it.
         if seen.sanctuary.is_some() && s.kind.behaviour().shelters <= 0.0 {
             let young = (1.0 - drives.youth) * 0.5;
@@ -594,6 +599,22 @@ pub mod nature {
                 haste,
             )
             .hovering()
+        },
+    };
+
+    /// Travelling to the nearest Mineral Field, and roaming its dusty air once there.
+    pub const MINE: Intent = Intent {
+        name: "mine",
+        act: |_, s| {
+            let up = s.up();
+            let goal = s.seen.minerals.map(|heart| {
+                if heart.length() > 2500.0 {
+                    heart
+                } else {
+                    heart + orbit(up, heart, 1500.0, s.now * 0.02 + s.wobble())
+                }
+            });
+            Goal::new(Activity::Drift, goal, 0.55)
         },
     };
 

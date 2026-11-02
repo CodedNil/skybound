@@ -26,7 +26,7 @@ mod nature {
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, Intent, Situation, Urges, glide_asleep},
-            nature::{FLEE, RIDE},
+            nature::{FLEE, MINE, RIDE},
             tetralata::ETHOLOGY as TETRALATE,
         },
         behaviour::{Activity, Goal},
@@ -51,6 +51,11 @@ mod nature {
             urges.add(RIDE, 0.3);
         }
         urges.scale(FLEE, 0.15);
+        // The Mineral Fields are home: their dust renews the crust, and their vents raise the
+        // columns it rides.
+        if s.seen.minerals.is_some_and(|heart| heart.length() > 3000.0) {
+            urges.add(MINE, 0.35);
+        }
         urges.add(HUNKER, s.fear * 1.3);
     }
 }

@@ -1,5 +1,6 @@
 use crate::scene::{
     PLANET_RADIUS,
+    features::{Influence, influence},
     math::{Power, cube, lattice, square},
     planet::surface_frame,
 };
@@ -150,6 +151,8 @@ pub struct Climate {
     /// Along the surface towards the nearer pole, whose sunburst lights the sky; light falls away
     /// from it through the sunset band to the aur-lit equator.
     pub sunward: Vec3,
+    /// Along the surface towards the heart of the storm blowing here, if any.
+    pub storm_toward: Vec3,
 }
 
 /// One weather system, born near the equator, carried towards its pole and dissolved there.
@@ -200,7 +203,37 @@ impl Climate {
         let north = Vec3::Z - up * up.z;
         climate.wind = east * climate.wind.x + north * climate.wind.y + up * climate.wind.z;
         climate.sunward = north.normalize_or_zero() * if up.z < 0.0 { -1.0 } else { 1.0 };
+        climate.feature(up, influence(up, climate.altitude.max(0.0)));
         climate
+    }
+
+    /// What the planet's features make of the air here.
+    ///
+    /// A swamp's air is saturated and its rain never stops, its cloud low and dark. A vent field
+    /// chokes the low air with dust that blocks the aurlight, rising over the vents and drawing air
+    /// in across the aur from all around, so whatever drifts low is carried towards them, and out
+    /// again high above. Under a floating lake the air rises strongly, and more strongly still in
+    /// the ring of its walls.
+    fn feature(&mut self, up: Vec3, near: Influence) {
+        let altitude = self.altitude.max(0.0);
+        let swamp = near.swamp;
+        self.humidity = self.humidity.lerp(0.97, swamp);
+        self.precipitation = self.precipitation.max(swamp * 0.9 * (1.0 - self.ice * 0.5));
+        self.low_cloud = self.low_cloud.max(swamp * 0.85);
+        self.light *= 1.0 - swamp * 0.3;
+        let vents = near.vents;
+        let low = (-altitude / 900.0).exp();
+        self.dust = self
+            .dust
+            .max(vents * low.max((-altitude / 2600.0).exp() * 0.5));
+        self.light *= 1.0 - vents * 0.55 * (-altitude / 2200.0).exp();
+        // Drawn in near the aur, risen over the vents, spilled out again aloft.
+        let inflow = vents * (1.0 - vents) * 4.0;
+        let layer =
+            (-altitude / 500.0).exp() - (-((altitude - 1800.0) / 700.0).power(2)).exp() * 0.6;
+        self.wind += near.to_vents * inflow * layer * 5.0 + up * vents.power(2) * 5.0 * low;
+        self.wind += up * (near.lake * 8.0 + near.wall * 14.0);
+        self.humidity = self.humidity.max(near.lake * 0.8);
     }
 
     pub fn weather_on_planet(point: Vec3, seconds: f32) -> Vec4 {
@@ -262,6 +295,7 @@ impl Climate {
             middle_cloud: moisture.smoothstep(0.5, 0.95) * (1.0 - storm * 0.5),
             high_cloud: weather.z.smoothstep(0.43, 0.7) * (0.25 + moisture * 0.75),
             sunward: north * if latitude_sine < 0.0 { -1.0 } else { 1.0 },
+            storm_toward: Vec3::ZERO,
         }
     }
 }
@@ -522,7 +556,7 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
         DECK
     } else if seed.x < 0.88 {
         CIRRUS
-    } else if seed.x < 0.992 {
+    } else if seed.x < 0.975 {
         FRONT
     } else {
         CYCLONE
@@ -609,6 +643,45 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
         shape: vec4(kind as f32, strength, base, top),
         detail: vec4(core, time * (0.0005 + form.w * 0.0004), thickness, seed.x),
     }
+}
+
+/// Where a hurricane's eyewall stands, as a share of its reach.
+const EYEWALL: f32 = 0.09;
+
+/// The wind a hurricane drives at a direction from the planet's centre and a height above the aur,
+/// and how severe it is there, from calm to its eyewall's worst.
+///
+/// The air circles the eye, anticlockwise in the north and clockwise in the south, fastest in the
+/// eyewall and falling away beyond it; near the aur it spirals in, and in the eyewall it rises.
+/// Calm in the eye itself, and fading above the storm's top.
+pub fn cyclone_wind(parcel: CloudParcel, up: Vec3, altitude: f32) -> (Vec3, f32) {
+    let strength = parcel.shape.y;
+    if parcel.kind() != CYCLONE || strength <= 0.0 {
+        return (Vec3::ZERO, 0.0);
+    }
+    let centre = parcel.centre.xyz();
+    let reach = parcel.centre.w;
+    let distance = ((up - centre).length() * 0.5).min(1.0).asin() * 2.0 * PLANET_RADIUS;
+    if distance >= reach {
+        return (Vec3::ZERO, 0.0);
+    }
+    let q = distance / reach;
+    let profile = if q < EYEWALL {
+        q / EYEWALL
+    } else {
+        (EYEWALL / q).powf(0.6)
+    } * (1.0 - q.smoothstep(0.7, 1.0));
+    let aloft = 1.0 - altitude.smoothstep(parcel.shape.w * 0.6, parcel.shape.w);
+    let speed = strength * 60.0 * profile * aloft;
+    let inward = centre - up * centre.dot(up);
+    let inward = inward / inward.length().max(1e-6);
+    let spin = if centre.z < 0.0 { -1.0 } else { 1.0 };
+    let around = inward.cross(up) * spin;
+    let near_aur = (-altitude / 1500.0).exp();
+    let wall = (-square((q - EYEWALL) / 0.035)).exp();
+    let wind =
+        around * speed + inward * speed * 0.25 * near_aur + up * wall * strength * 8.0 * aloft;
+    (wind, speed / 45.0)
 }
 
 /// The large-scale flow carrying every weather system: polewards in each hemisphere, deflected

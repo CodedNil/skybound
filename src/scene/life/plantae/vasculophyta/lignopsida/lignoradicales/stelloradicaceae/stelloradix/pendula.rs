@@ -23,11 +23,11 @@ taxon!(
     "Stelloradix pendula",
     "Root-Stars",
     [
-        "Root-Stars float on rubbery crowns while thick fleshy roots radiate downward into nutrient-rich lower air.",
-        "Vascular channels lift absorbed moisture and minerals from the roots into the body.",
-        "Roots reaching the upper Veiland mists suffer progressive surface damage and are shed before exposure spreads into the crown.",
-        "Surviving inner tissue in a detached root curls, forms a buoyant body and rises to begin another plant.",
-        "Grounders feed on these rich root structures, linking a dangerous collecting strategy to one of the lower Gardens' most specialised grazing relationships.",
+        "Root-Stars are star-shaped clusters of thick, fleshy roots dangling beneath a buoyant, rubbery crown, living in the Mineral Fields over the thermal vents.",
+        "The roots hang down into the dusty aur mists, drawing up the minerals the vents fling into the air; vascular channels lift them into the crown.",
+        "They cannot swim the air, and need not: the vents draw the low air in across the aur from all around and loft it up over themselves, so a Root-Star hanging low on its roots is always carried back towards them, and one lofted high sinks back into the inflow under the weight of its roots.",
+        "Roots that hang too long in the mist die of the aur's exposure and are shed before it spreads into the crown; a shed root drifts up out of the mist, curls, and bursts into a new rubbery body that grows roots of its own.",
+        "Grounders feed on these rich root clusters, and live among them in the Mineral Fields.",
     ],
 );
 
@@ -121,7 +121,10 @@ pub const LOOK: Look = Look::plant(vec3(0.48, 0.27, 0.17), vec3(0.7, 0.54, 0.3))
 mod nature {
     use crate::scene::life::plantae::physiology::{Physiology, Propagation};
 
+    /// It lives on the minerals in the vents' dust as much as on the aur, so it thrives only in
+    /// the Mineral Fields.
     pub const PHYSIOLOGY: Physiology = Physiology {
+        powered: |climate| climate.aur * 0.4 + climate.dust * 1.6,
         propagation: Propagation::Fragmentation,
         ..super::super::PHYSIOLOGY
     };
