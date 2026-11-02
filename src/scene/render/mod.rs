@@ -60,7 +60,7 @@ impl ThinLayers {
 
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "ejection_lookup"))]
+#[spirv(fragment)]
 pub fn ejection_lookup(
     #[spirv(frag_coord)] pixel: Vec4,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -302,7 +302,7 @@ fn solid_output(hit: Hit, ray: Ray, frame: &FrameUniform) -> (Vec4, Vec4, Vec4, 
 /// Solids, with the sky behind them; every pixel writes depth and motion.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(depth_replacing, entry_point_name = "opaque"))]
+#[spirv(fragment(depth_replacing))]
 pub fn opaque(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -341,7 +341,7 @@ pub fn opaque(
 /// shader holds one species' tracer and not every one's.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(vertex(entry_point_name = "creature_quad"))]
+#[spirv(vertex)]
 pub fn creature_quad(
     #[spirv(vertex_index)] vertex: u32,
     #[spirv(instance_index)] instance: u32,
@@ -408,7 +408,7 @@ pub fn creature_quad(
 /// pipeline is specialised to and depth-tested against the solids already drawn.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(depth_replacing, entry_point_name = "creature"))]
+#[spirv(fragment(depth_replacing))]
 pub fn creature(
     #[spirv(frag_coord)] fragment: Vec4,
     #[spirv(flat, location = 0)] instance: u32,
@@ -466,7 +466,7 @@ pub fn creature(
 /// shader stays small.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "clouds"))]
+#[spirv(fragment)]
 pub fn clouds(
     #[spirv(frag_coord)] fragment: Vec4,
     #[spirv(location = 0)] uv: Vec2,
@@ -536,7 +536,7 @@ pub fn clouds(
 /// solids' motion beneath a cloud smears the cloud.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "volume_composite"))]
+#[spirv(fragment)]
 pub fn volume_composite(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -587,7 +587,7 @@ pub fn volume_composite(
 /// as the solids at every pixel, so an upscaler is given the whole scene alike.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "volume"))]
+#[spirv(fragment)]
 pub fn volume(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -667,7 +667,7 @@ pub fn volume(
 
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "transparent"))]
+#[spirv(fragment)]
 pub fn transparent(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -789,7 +789,7 @@ pub fn transparent(
 
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "sky"))]
+#[spirv(fragment)]
 pub fn sky(
     #[spirv(location = 0)] uv: Vec2,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,

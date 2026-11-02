@@ -14,6 +14,16 @@ pub mod life;
 pub mod math;
 pub mod planet;
 pub mod preview;
+/// The game's shader entry points, as the shader build found them.
+#[cfg(not(target_arch = "spirv"))]
+pub mod entry {
+    include!(concat!(env!("OUT_DIR"), "/scene.rs"));
+}
+/// The previewer's shader entry points, as the shader build found them.
+#[cfg(not(target_arch = "spirv"))]
+pub mod preview_entry {
+    include!(concat!(env!("OUT_DIR"), "/preview.rs"));
+}
 #[cfg(target_arch = "spirv")]
 pub mod render;
 

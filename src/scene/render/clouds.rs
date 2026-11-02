@@ -1264,7 +1264,7 @@ pub fn short_volume(
 /// the convection.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "cloud_map"))]
+#[spirv(fragment)]
 pub fn cloud_map(
     #[spirv(frag_coord)] pixel: Vec4,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,
@@ -1350,7 +1350,7 @@ pub fn cloud_map(
 /// lowest and highest the swell lifts the layers there.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(fragment(entry_point_name = "cloud_bounds"))]
+#[spirv(fragment)]
 pub fn cloud_bounds(
     #[spirv(frag_coord)] pixel: Vec4,
     #[spirv(descriptor_set = 0, binding = 0)] cloud_lower: &Image!(2D, type=f32, sampled=true),
@@ -1408,7 +1408,7 @@ pub fn cloud_bounds(
 /// stretch of the ray is integrated whole, so shadows are smooth however low the light.
 // The game's own passes, left out of the preview module.
 #[cfg(not(feature = "preview"))]
-#[spirv(compute(threads(8, 8, 1), entry_point_name = "cloud_light"))]
+#[spirv(compute(threads(8, 8, 1)))]
 pub fn cloud_shadow(
     #[spirv(global_invocation_id)] id: UVec3,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] frame: &FrameUniform,

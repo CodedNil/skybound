@@ -12,7 +12,10 @@ use bevy::{
         renderer::{RenderContext, RenderDevice},
     },
 };
-use skybound::scene::climate::{LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH};
+use skybound::scene::{
+    climate::{LIGHT_HEIGHT, LIGHT_LAYERS, LIGHT_WIDTH},
+    entry,
+};
 
 /// The cloud's shadow from the pole lights and the aur at every altitude, traced by a compute pass
 /// into a buffer and copied into a 3D texture.
@@ -45,7 +48,7 @@ impl LightVolume {
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             }),
-            pass: Compute::new("cloud_light"),
+            pass: Compute::new(entry::CLOUD_SHADOW),
             group: None,
         }
     }

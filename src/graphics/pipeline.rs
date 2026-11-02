@@ -42,6 +42,7 @@ use skybound::scene::{
     aur::{EJECTION_WINDOW, spire_origins},
     cache as volume_cache,
     climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel},
+    entry,
     life::{BloodFeeder, Bubbleback, Drawn, HERD, Plant, Tetralate},
 };
 use spirv_std::glam::DVec3 as SceneDVec3;
@@ -200,7 +201,7 @@ impl FromWorld for ScenePipeline {
         };
         Self {
             opaque: Pass::new(
-                "opaque",
+                entry::OPAQUE,
                 &[HALF, TextureFormat::Rg16Float, TextureFormat::Rgb10a2Unorm],
                 true,
             ),
@@ -209,15 +210,24 @@ impl FromWorld for ScenePipeline {
                 TextureFormat::Rg16Float,
                 TextureFormat::Rgb10a2Unorm,
             ]),
-            volume: Pass::new("volume", &[HALF, TextureFormat::Rg16Float], false),
-            clouds: Pass::new("clouds", &[HALF, FULL], false),
-            thin: Pass::new("transparent", &[HALF; 3], false),
-            sky: Pass::new("sky", &[HALF], false),
-            ejection_lookup: Pass::new("ejection_lookup", &[FULL], false),
-            columns: Pass::new("column_cache", &[HALF], false),
-            cloud_map: Pass::new("cloud_map", &[HALF, HALF, FULL], false),
-            cloud_bounds_pass: Pass::new("cloud_bounds", &[HALF], false),
-            composite: Pass::new("volume_composite", &[HALF, TextureFormat::Rg16Float], false),
+            volume: Pass::new(
+                entry::VOLUME, &[HALF, TextureFormat::Rg16Float], false),
+            clouds: Pass::new(
+                entry::CLOUDS, &[HALF, FULL], false),
+            thin: Pass::new(
+                entry::TRANSPARENT, &[HALF; 3], false),
+            sky: Pass::new(
+                entry::SKY, &[HALF], false),
+            ejection_lookup: Pass::new(
+                entry::EJECTION_LOOKUP, &[FULL], false),
+            columns: Pass::new(
+                entry::COLUMN_CACHE, &[HALF], false),
+            cloud_map: Pass::new(
+                entry::CLOUD_MAP, &[HALF, HALF, FULL], false),
+            cloud_bounds_pass: Pass::new(
+                entry::CLOUD_BOUNDS, &[HALF], false),
+            composite: Pass::new(
+                entry::VOLUME_COMPOSITE, &[HALF, TextureFormat::Rg16Float], false),
             ejections: texture(
                 device,
                 UVec2::new(EJECTION_WINDOW * 3, EJECTION_WINDOW),

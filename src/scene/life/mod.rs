@@ -582,7 +582,6 @@ macro_rules! taxon {
     // only what changed where it arose.
     (@inherit Root) => {};
     (@inherit $rank:ident) => {
-        #[allow(unused_imports, reason = "a taxon inherits all its parent has, whether it uses it or not")]
         pub use super::*;
     };
     (@parent Root) => { None };

@@ -63,7 +63,7 @@ impl PreviewView {
 /// every species' body in it needs so many registers that it runs a hundred times slower.
 /// Compiled only into the preview module, so the game's shader is no larger for it.
 #[cfg(all(target_arch = "spirv", feature = "preview"))]
-#[spirv(compute(threads(8, 8, 1), entry_point_name = "preview"))]
+#[spirv(compute(threads(8, 8, 1)))]
 pub fn preview(
     #[spirv(global_invocation_id)] id: UVec3,
     #[spirv(storage_buffer, descriptor_set = 0, binding = 0)] views: &[PreviewView],

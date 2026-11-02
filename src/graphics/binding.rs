@@ -17,7 +17,7 @@ use bevy::{
         renderer::RenderDevice,
     },
 };
-use skybound::scene::FrameUniform;
+use skybound::scene::{FrameUniform, entry};
 use std::num::NonZeroU64;
 
 /// One resource a scene pass binds, by the kind of binding it takes. A pass's bindings are numbered
@@ -256,7 +256,7 @@ impl Creatures {
                 vertex: VertexState {
                     shader: binder.shader.clone(),
                     shader_defs: Vec::new(),
-                    entry_point: Some("creature_quad".into()),
+                    entry_point: Some(entry::CREATURE_QUAD.into()),
                     buffers: Vec::new(),
                     constants: constants.clone(),
                 },
@@ -272,7 +272,7 @@ impl Creatures {
                 multisample: MultisampleState::default(),
                 fragment: Some(FragmentState {
                     shader: binder.shader.clone(),
-                    entry_point: Some("creature".into()),
+                    entry_point: Some(entry::CREATURE.into()),
                     constants,
                     targets: self
                         .formats

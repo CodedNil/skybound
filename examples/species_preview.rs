@@ -10,6 +10,7 @@ use skybound::scene::{
         surface::tonemap,
     },
     preview::PreviewView,
+    preview_entry,
 };
 use spirv_std::glam::{Vec2, Vec3, Vec4, vec2, vec3};
 use std::{
@@ -1162,7 +1163,7 @@ impl Gpu {
                 label: Some("preview"),
                 layout: None,
                 module: &self.module,
-                entry_point: Some("preview"),
+                entry_point: Some(preview_entry::PREVIEW),
                 compilation_options: wgpu::PipelineCompilationOptions {
                     constants: &[("0", f64::from(species))],
                     ..wgpu::PipelineCompilationOptions::default()
