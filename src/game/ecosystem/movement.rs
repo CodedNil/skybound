@@ -70,7 +70,7 @@ pub(super) fn relocate(
         motion.0 = wind;
     } else {
         relations.host = None;
-        let offset = movement.position.to_engine() + pushed;
+        let offset = movement.position.to_engine() + pushed + tug(agent, relations, index, dt);
         travel(offset, transform, coordinate, world);
         transform.rotation = movement.rotation.to_engine();
         motion.0 = movement.velocity.to_engine();
@@ -84,6 +84,29 @@ pub(super) fn relocate(
     };
     relations.turned = turned;
     relations.stepped = now;
+}
+
+/// How far a plant's silk tie pulls it back towards what it is tied to this step: nothing while
+/// the tie is slack, more the further it is stretched. A tie stretched far past its length snaps,
+/// and one whose anchor has died falls away.
+fn tug(agent: Agent, relations: &mut Relations, index: &HashMap<Entity, Agent>, dt: f32) -> Vec3 {
+    let Some((anchor, rest)) = relations.tether else {
+        return Vec3::ZERO;
+    };
+    let Some(anchor) = index.get(&anchor).filter(|anchor| anchor.alive() && agent.alive()) else {
+        relations.tether = None;
+        return Vec3::ZERO;
+    };
+    let apart = anchor.position - agent.position;
+    let length = apart.length();
+    if length > rest * 2.5 + 20.0 {
+        relations.tether = None;
+        return Vec3::ZERO;
+    }
+    if length <= rest {
+        return Vec3::ZERO;
+    }
+    apart / length * (length - rest) * (dt * 0.8).min(1.0)
 }
 
 /// What the step's motion does to the body itself: an animal's wings beat on through their
@@ -177,5 +200,42 @@ pub(super) fn travel(
         coordinate.translate(offset, transform, world);
     } else {
         transform.translation += offset;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skybound::scene::life::{genome::Genome, vitals::Vitals};
+
+    #[test]
+    fn silk_holds_a_plant_until_stretched_too_far() {
+        let mut world = World::new();
+        let kind = Kind::Flexilora;
+        let agent = |entity, position| Agent {
+            entity,
+            kind,
+            vitals: Vitals::new(kind.biology()),
+            position,
+            velocity: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            activity: skybound::scene::life::behaviour::Activity::Drift,
+            protected: false,
+            genes: Genome::TYPICAL,
+            skill: 0.0,
+            tether: None,
+        };
+        let anchor = agent(world.spawn_empty().id(), Vec3::ZERO);
+        let plant = agent(world.spawn_empty().id(), Vec3::X * 30.0);
+        let index = HashMap::from([(anchor.entity, anchor), (plant.entity, plant)]);
+        let mut relations = Relations {
+            tether: Some((anchor.entity, 20.0)),
+            ..Relations::default()
+        };
+        let pull = tug(plant, &mut relations, &index, 0.5);
+        assert!(pull.x < 0.0, "the silk did not pull it back");
+        let far = agent(plant.entity, Vec3::X * 90.0);
+        assert_eq!(tug(far, &mut relations, &index, 0.5), Vec3::ZERO);
+        assert!(relations.tether.is_none(), "the silk held past breaking");
     }
 }

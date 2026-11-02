@@ -17,6 +17,9 @@ pub struct Plant {
     pub previous_bend: Vec4,
     /// How full of water it is, as a Pondplant's basin shows.
     pub water: Vec4,
+    /// Where the silk tying it to another plant reaches, in its own frame, and how thick the silk
+    /// is; nothing if it is tied to none.
+    pub tether: Vec4,
 }
 
 impl Deref for Plant {
@@ -148,6 +151,35 @@ pub fn bent(p: Vec3, c: &Plant) -> Vec3 {
     p - c.bend.truncate() * up * up
 }
 
+/// The material of the silk a Weaver ties plants together with.
+pub const SILK: u32 = 63;
+
+/// A silk cable from the middle of a plant out to `tether`, the far end, its thickness in `w`:
+/// drawn three strands twisted together, sagging a little between its ends.
+pub fn silk(p: Vec3, tether: Vec4) -> f32 {
+    let end = tether.truncate();
+    let length = end.length().max(1e-3);
+    let middle = end * 0.5 - Vec3::Y * length * 0.04;
+    let thick = tether.w;
+    let mut cable = tapered_tail(p, Vec3::ZERO, middle, thick, thick).min(tapered_tail(
+        p,
+        middle,
+        end,
+        thick,
+        thick,
+    ));
+    // The twist of its strands, a ridge running round it.
+    let along = p.dot(end) / length;
+    cable += (along / thick * 1.3 + p.x.atan2(p.y) * 3.0).sin() * thick * 0.08;
+    cable
+}
+
+/// Weaver silk: pale, faintly lustrous and a little translucent.
+pub const fn silk_material() -> Material {
+    let mut m = Material::skin(vec3(0.82, 0.8, 0.72), 0.35);
+    m.translucency = 0.35;
+    m
+}
 /// Bark, leaf, glowing tissue, gloss and water: a plant's materials.
 pub fn plant_material(p: Vec3, id: u32, pigment: Vec3, glow: Vec3) -> Material {
     let grain = (p.y * 31.0 + (p.x * 4.0).sin()).sin() * 0.04;

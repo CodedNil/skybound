@@ -9,7 +9,7 @@
 //! fold back into its count, so whatever was born or died among them is kept.
 
 use crate::game::{
-    ecosystem::{Physiology, Species, population},
+    ecosystem::{Physiology, Relations, Species, population},
     flight::{Mount, Player},
     world::{PlanetPosition, WorldData},
 };
@@ -421,6 +421,9 @@ fn live_out(
         Some(_) => near(kind) * 0.4,
         None => (15.0 + size as f64 * 5.0).max(body * 3.0 * (size as f64).sqrt()),
     };
+    // A stand grows joined: every strand of a forest is tied into the first.
+    let joined = kind.plant().is_some_and(|plant| plant.stand > 1);
+    let mut first: Option<(Entity, DVec3)> = None;
     for member in 0..size {
         let key = seed ^ (member as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
         let angle = f64::from(hash(key, 1)) * TAU64;
@@ -435,7 +438,20 @@ fn live_out(
         };
         // Kin keep together: each of a group is born of the group's own family.
         let genes = Genome::wild(seed).kin(key, 0.25);
-        commands.spawn((population(kind, world.local(position), mass, genes), band));
+        let entity = commands
+            .spawn((population(kind, world.local(position), mass, genes), band))
+            .id();
+        match first {
+            Some((anchor, at)) if joined => {
+                let rest = (position.distance(at) as f32).max(kind.render_radius());
+                commands
+                    .entity(entity)
+                    .entry::<Relations>()
+                    .and_modify(move |mut relations| relations.tether = Some((anchor, rest)));
+            }
+            None => first = Some((entity, position)),
+            _ => {}
+        }
     }
 }
 

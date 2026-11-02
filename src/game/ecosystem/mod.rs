@@ -117,6 +117,10 @@ pub struct Relations {
     /// How fast others pushed it along last step: a guardian nudging a stray egg home,
     /// tree-dwellers drawing their tree into rising air.
     nudge: Vec3,
+    /// The plant it is tied to by silk, and how long the tie is: a Weaver's work, or the strands of
+    /// a kelp forest grown into one another. It holds the two together against the wind until it is
+    /// stretched too far and snaps.
+    pub tether: Option<(Entity, f32)>,
     /// Where it was before the last step moved it, as an offset from where it is, how it was
     /// turned, and when that step was, so it is drawn gliding between steps rather than jumping.
     lag: Vec3,
@@ -167,6 +171,8 @@ struct Agent {
     genes: Genome,
     /// How practised it is, from what it has learned.
     skill: f32,
+    /// The plant it is tied to by silk, if it is.
+    tether: Option<Entity>,
 }
 
 impl Agent {
@@ -411,6 +417,7 @@ struct Outcome {
     calls: Vec<Call>,
     nudges: Vec<(Entity, Vec3)>,
     gifts: Vec<(Entity, f32)>,
+    ties: Vec<(Entity, Entity, f32)>,
     seedlings: Vec<(Kind, Vec3, Genome)>,
     patches: HashMap<IVec3, Pool>,
     births: u64,
@@ -484,6 +491,7 @@ fn simulate(
         outcome.calls.append(&mut part.calls);
         outcome.nudges.append(&mut part.nudges);
         outcome.gifts.append(&mut part.gifts);
+        outcome.ties.append(&mut part.ties);
         outcome.seedlings.append(&mut part.seedlings);
         outcome.births += part.births;
         outcome.deaths += part.deaths;
@@ -505,6 +513,13 @@ fn simulate(
     ecosystem.deaths += transfer_meals(&mut organisms, &outcome.meals, now);
     ecosystem.deaths += land(&mut organisms, &outcome.attacks);
     hand_over(&mut organisms, &outcome.nudges, &outcome.gifts);
+    for &(plant, anchor, rest) in &outcome.ties {
+        if let Ok((_, _, _, mut relations, ..)) = organisms.get_mut(plant)
+            && relations.tether.is_none()
+        {
+            relations.tether = Some((anchor, rest));
+        }
+    }
     commands.command_scope(|mut commands| {
         for (kind, position, genes) in outcome.seedlings {
             if ecosystem.living < POPULATION_LIMIT {
@@ -658,6 +673,7 @@ fn live_out(
             calls: &mut outcome.calls,
             nudges: &mut outcome.nudges,
             gifts: &mut outcome.gifts,
+            ties: &mut outcome.ties,
         },
     );
     outcome
@@ -810,6 +826,7 @@ fn snapshot(organisms: &Query<Organisms>) -> Vec<Agent> {
                 protected: player || mount,
                 genes: relations.genes,
                 skill: relations.mind.experience.skill,
+                tether: relations.tether.map(|(anchor, _)| anchor),
             },
         )
         .collect()
@@ -885,6 +902,7 @@ mod tests {
             protected: false,
             genes: Genome::TYPICAL,
             skill: 0.0,
+            tether: None,
         };
         let mut relations = Relations::default();
         reproduce(agent, &mut body, &mut relations, 200.0);
@@ -991,6 +1009,7 @@ mod tests {
                 protected: false,
                 genes: Genome::TYPICAL,
                 skill: 0.0,
+            tether: None,
             }
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
@@ -1070,6 +1089,7 @@ mod tests {
             protected: false,
             genes: Genome::TYPICAL,
             skill: 0.0,
+            tether: None,
         };
         let hunter = agent(hunter_kind, Vec3::ZERO);
         let prey = agent(prey_kind, Vec3::X * 60.0);
@@ -1118,6 +1138,7 @@ mod tests {
             protected: false,
             genes: Genome::TYPICAL,
             skill: 0.0,
+            tether: None,
         };
         let mut relations = Relations {
             remembered_food: Some((

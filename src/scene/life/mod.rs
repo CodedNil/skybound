@@ -1128,8 +1128,20 @@ pub fn render_plant(kind: u32, ray: Ray, c: &Plant) -> Hit {
     let mut hit = trace_material(
         ray,
         c,
-        move |p, c| plant_surface(kind, plantae::bent(p, c), c),
-        move |p, id| plant_material(p, id, look.pigment.truncate(), look.accent),
+        move |p, c| {
+            let mut hit = plant_surface(kind, plantae::bent(p, c), c);
+            if c.tether.w > 0.0 {
+                hit.join(plantae::silk(p, c.tether), plantae::SILK);
+            }
+            hit
+        },
+        move |p, id| {
+            if id == plantae::SILK {
+                plantae::silk_material()
+            } else {
+                plant_material(p, id, look.pigment.truncate(), look.accent)
+            }
+        },
     );
     hit.transmittance = Vec3::ZERO;
     hit

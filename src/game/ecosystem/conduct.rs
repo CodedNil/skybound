@@ -185,6 +185,33 @@ fn defend(agent: Agent, body: &mut Vitals, relations: &mut Relations, step: &mut
     }
 }
 
+/// Binding the jungle: a Weaver at work on its web ties in any plant drifting near its home that
+/// nothing holds yet, drawing it a little closer, so over time its home gathers a loose mass of
+/// plants of every kind about it, joined wherever two came near.
+fn bind(agent: Agent, relations: &Relations, step: &mut Conduct) {
+    let Some(home) = relations.home else {
+        return;
+    };
+    let Some(anchor) = step.neighbours.iter().find(|other| other.entity == home) else {
+        return;
+    };
+    let reach = anchor.kind.render_radius() * 2.5 + 40.0;
+    let stray = nearest(step.neighbours, anchor.position, |other| {
+        other.entity != home
+            && other.entity != agent.entity
+            && plant(other.kind)
+            && other.alive()
+            && other.tether.is_none()
+            && !other.kind.attaches()
+    })
+    .filter(|stray| stray.position.distance(anchor.position) < reach);
+    if let Some(stray) = stray {
+        let touching = (stray.kind.render_radius() + anchor.kind.render_radius()) * 0.6;
+        let rest = (stray.position.distance(anchor.position) * 0.7).max(touching);
+        step.ties.push((stray.entity, home, rest));
+    }
+}
+
 /// Pushing something along: an egg or a young one, or a plant, in reach is moved the way the
 /// animal is pushing, the more readily the lighter it is against the one pushing.
 fn nudge(agent: Agent, relations: &Relations, step: &mut Conduct) {
@@ -238,6 +265,8 @@ pub(super) struct Conduct<'a> {
     pub(super) calls: &'a mut Vec<Call>,
     pub(super) nudges: &'a mut Vec<(Entity, Vec3)>,
     pub(super) gifts: &'a mut Vec<(Entity, f32)>,
+    /// Plants tied to others by silk, the anchor each is tied to, and the length of the tie.
+    pub(super) ties: &'a mut Vec<(Entity, Entity, f32)>,
 }
 
 /// Carry out what the mind chose: strike prey within reach, string and tend a web, latch onto a
@@ -254,6 +283,7 @@ pub(super) fn conduct(
     let ethology = kind.behaviour();
     let activity = relations.activity;
     match activity {
+        Activity::Weave => bind(agent, relations, &mut step),
         Activity::Defend => defend(agent, body, relations, &mut step),
         Activity::Nudge => nudge(agent, relations, &mut step),
         Activity::Offer => offer(agent, body, &mut step),

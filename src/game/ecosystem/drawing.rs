@@ -13,13 +13,14 @@ use crate::{
 use bevy::prelude::*;
 use rayon::prelude::*;
 use skybound::scene::life::{
-    CLUTCH, Drawn, FULL_POUCH, HERD, KINDS, Kind,
+    CLUTCH, Drawn, FULL_POUCH, HERD, KINDS, Kind, Plant,
     animalia::physiology::{Brood, plant},
     behaviour::Activity,
+    development,
     genome::Genome,
     vitals::Vitals,
 };
-use spirv_std::glam::Vec4 as SceneVec4;
+use spirv_std::glam::{Quat as SceneQuat, Vec3 as SceneVec3, Vec4 as SceneVec4};
 use std::{collections::HashMap, fmt::Write};
 
 pub(super) type Seen<'a> = (
@@ -164,6 +165,10 @@ pub(super) fn gather_herd(
                 effort: relations.effort,
                 bend: relations.bend,
                 blunted: relations.mind.wear,
+                tether: relations
+                    .tether
+                    .and_then(|(anchor, _)| organisms.get(anchor).ok())
+                    .map(|(_, _, _, anchor, ..)| anchor.translation - transform.translation),
             })
         })
         .collect();
@@ -190,6 +195,24 @@ pub(super) fn gather_herd(
     *last = drawn;
 }
 
+/// Draw the silk tying a plant to another, `offset` away: its far end in the plant's own frame, a
+/// cable as thick as a Weaver lays, and bounds grown to hold it.
+fn tie(plant: &mut Plant, offset: Vec3) {
+    let c = &mut plant.organism;
+    let turn = SceneQuat::from_array(c.rotation.to_array()).conjugate();
+    let scale = development::scale(c);
+    let end = (turn * offset.to_scene()) / scale;
+    let thick = 0.3 / scale.min_element();
+    plant.tether = end.extend(thick);
+    let c = &mut plant.organism;
+    c.opaque_bounds = c
+        .opaque_bounds
+        .truncate()
+        .max(end.abs() + SceneVec3::splat(thick * 2.0))
+        .extend(c.opaque_bounds.w);
+    c.position.w = c.position.w.max(offset.length());
+}
+
 /// What drawing one organism needs, read out of the world.
 struct Shown {
     entity: Entity,
@@ -207,6 +230,8 @@ struct Shown {
     effort: f32,
     bend: Vec3,
     blunted: f32,
+    /// How far off the plant it is tied to by silk lies, if it is tied.
+    tether: Option<Vec3>,
 }
 
 /// An organism's pose for the renderer, from what the simulation did to it: its wings where their
@@ -228,6 +253,7 @@ fn pose(shown: &Shown, now: f32) -> Drawn {
         effort,
         bend,
         blunted,
+        tether,
         ..
     } = *shown;
     // Resting animals fold their wings and stop beating them.
@@ -263,6 +289,9 @@ fn pose(shown: &Shown, now: f32) -> Drawn {
         plant.bend = bend.to_scene().extend(1.0);
         plant.previous_bend = plant.bend;
         plant.water = SceneVec4::new(vitals.hydration, 0.0, 0.0, 0.0);
+        if let Some(offset) = tether {
+            tie(plant, offset);
+        }
     }
     if let Some(animal) = pose.animal_mut() {
         animal.motion = SceneVec4::new(wingbeat, effort.min(1.0), gape, 1.0);
