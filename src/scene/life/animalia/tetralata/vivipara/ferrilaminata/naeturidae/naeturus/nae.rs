@@ -64,9 +64,9 @@ taxon!(
 const HEAD: Vec3 = vec3(0.0, 0.03, -0.15);
 const HEAD_SIZE: Vec3 = vec3(0.165, 0.14, 0.185);
 
-/// The body behind it, plump round the crop.
+/// The body behind it, slender but for the crop beneath.
 const BODY: Vec3 = vec3(0.0, -0.01, 0.07);
-const BODY_SIZE: Vec3 = vec3(0.15, 0.14, 0.18);
+const BODY_SIZE: Vec3 = vec3(0.128, 0.13, 0.18);
 
 /// Where the mouth opens, under the front of the snout, and its tentacles with it.
 const MOUTH: Vec3 = vec3(0.0, -0.075, -0.235);
@@ -76,9 +76,15 @@ const MOUTH: Vec3 = vec3(0.0, -0.075, -0.235);
 const REACH: f32 = 0.22;
 const GRIP: f32 = 1.1;
 
-/// A point on the head's surface, `inset` of the way out along `direction` from its centre.
+/// A point on the skull's surface, `inset` of the way out along `direction` from its centre: found
+/// by stepping in from outside along that line until the skull is met.
 fn on_head(direction: Vec3, inset: f32) -> Vec3 {
-    HEAD + HEAD_SIZE * (direction / direction.length()) * inset
+    let direction = direction / direction.length();
+    let mut at = HEAD + direction * 0.4;
+    for _ in 0..8 {
+        at -= direction * skull(at);
+    }
+    HEAD + (at - HEAD) * inset
 }
 
 /// Eye `index` of the circlet on each side, from the front round to behind: where it lies, how
@@ -91,7 +97,7 @@ fn circlet(index: u32) -> (Vec3, f32, Vec3) {
     let rise = if index == 0 {
         0.12
     } else if index == 1 {
-        0.42
+        0.26
     } else {
         -0.18
     };
@@ -131,10 +137,6 @@ const TRAIN_SHAPE: Train = Train {
 /// tentacles, the outer pair long and thick and ending in fingers: its hands. the aur sacs glow on
 /// its flanks, and small feathers lie up its back from the tail to the crown. The tail droops under
 /// a train of forked streamers, its bare tip curled into a hook beneath them.
-#[expect(
-    clippy::too_many_lines,
-    reason = "the body's forms are built up one on another and read best in order"
-)]
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     // The sex that carries the young is the heavier.
@@ -145,48 +147,44 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
         } else {
             0.0
         };
-    let head = rounded(point - HEAD, HEAD_SIZE);
+    let head = skull(point);
     let body = rounded(point - BODY, BODY_SIZE * vec3(heft, heft, 1.0));
     let belly = rounded(
         point - vec3(0.0, -0.055, 0.06),
         vec3(0.13, 0.1, 0.15) * heft,
     );
-    // Head into body without a waist, its crown flattened.
-    let head = -smooth_min(-head, -(point.y - 0.155), 0.03);
-    let mut d = smooth_min(smooth_min(head, body, 0.12), belly, 0.06);
-    d = smooth_min(d, face(point), 0.012);
+    let mut d = smooth_min(smooth_min(head, body, 0.09), belly, 0.06);
+    d = smooth_min(d, hood(point), 0.07);
     // A long rump behind the body, tapering into the tail, so the one runs into the other.
     let rump = rounded(
         point - vec3(0.0, -0.015, 0.21),
         vec3(0.1, 0.085, 0.14) * heft,
     );
     d = smooth_min(d, rump, 0.06);
-    // Full cheeks behind the eyes, and a throat pouch behind the mouth that
-    // swells as it drinks.
-    let cheek = rounded(mirrored - vec3(0.11, -0.05, -0.09), vec3(0.06, 0.06, 0.07));
-    d = smooth_min(d, cheek, 0.05);
+    // A throat pouch behind the mouth that swells as it drinks.
     let throat = rounded(point - vec3(0.0, -0.11, -0.1), vec3(0.085, 0.06, 0.13));
     d = smooth_min(d, throat, 0.04);
-    // The body reaches out to each pair of wings: broad shoulders drawn out into the fore wings'
-    // roots and narrower haunches into the hind, so it narrows between them to a waist.
-    let shoulder = rounded(mirrored - vec3(0.1, 0.05, 0.0), vec3(0.06, 0.05, 0.07));
+    // The body reaches out to each pair of wings: a slender shoulder drawn out past the fore
+    // wing's root, so the root stands out from the flank on it, and a narrower haunch to the hind,
+    // the body narrowing between them to a waist.
+    let shoulder = rounded(mirrored - vec3(0.09, 0.05, 0.0), vec3(0.05, 0.045, 0.065));
     let fore = tapered_tail(
         mirrored,
-        vec3(0.05, 0.05, -0.01),
-        vec3(0.172, 0.068, -0.02),
-        0.055,
-        0.03,
-    );
-    let haunch = rounded(mirrored - vec3(0.09, 0.03, 0.15), vec3(0.05, 0.045, 0.055));
-    let hind = tapered_tail(
-        mirrored,
-        vec3(0.05, 0.03, 0.15),
-        vec3(0.152, 0.045, 0.15),
+        vec3(0.06, 0.055, -0.005),
+        vec3(0.215, 0.078, -0.02),
         0.045,
         0.026,
     );
-    d = smooth_min(d, shoulder.min(fore), 0.025);
-    d = smooth_min(d, haunch.min(hind), 0.025);
+    let haunch = rounded(mirrored - vec3(0.08, 0.03, 0.15), vec3(0.045, 0.04, 0.05));
+    let hind = tapered_tail(
+        mirrored,
+        vec3(0.055, 0.03, 0.15),
+        vec3(0.19, 0.05, 0.15),
+        0.038,
+        0.022,
+    );
+    d = smooth_min(d, shoulder.min(fore), 0.02);
+    d = smooth_min(d, haunch.min(hind), 0.02);
     // Fine pleats along the belly, as all its genus has, that open as the crop fills.
     if point.y < -0.08 && point.z > -0.1 && point.z < 0.2 {
         d += (1.0 - (point.x * 90.0).sin().abs()).power(6) * 0.003;
@@ -254,56 +252,34 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     hit
 }
 
-/// The face's own forms, so the head reads as more than a ball: a squared snout and a small chin, a
-/// heavy ridge of brow over each forward eye, a cheekbone running back below it, and a pair of
-/// low ridges sweeping from the brows back over the crown into the line of the back.
-fn face(point: Vec3) -> f32 {
-    let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let snout = rounded(point - vec3(0.0, -0.005, -0.31), vec3(0.068, 0.055, 0.06));
-    let chin = rounded(point - vec3(0.0, -0.075, -0.28), vec3(0.05, 0.03, 0.045));
-    // The bridge of the snout, a ridge from its tip up between the forward eyes.
-    let bridge = tapered_tail(
-        point,
-        vec3(0.0, 0.035, -0.36),
-        vec3(0.0, 0.125, -0.24),
-        0.016,
-        0.012,
+/// The skull, its lineage's long head rather than a ball: drawn out front to back, narrowing to a
+/// blunt muzzle that dips a little towards the mouth, and broadest behind the eyes.
+fn skull(point: Vec3) -> f32 {
+    let q = point - HEAD;
+    // How far forward of the head's middle, from its back to its front.
+    let ahead = (-q.z / HEAD_SIZE.z).clamp(-1.0, 1.0);
+    let narrowing = 1.0 + ahead.max(0.0) * 0.45 - ahead.min(0.0) * 0.1;
+    let dip = ahead.max(0.0).power(2) * 0.035;
+    let shaped = vec3(q.x * narrowing, q.y + dip, q.z);
+    let skull = rounded(shaped, HEAD_SIZE * vec3(0.95, 0.85, 1.25)) / narrowing;
+    // Its top flattened under the hood.
+    let skull = -smooth_min(-skull, -(point.y - 0.125), 0.04);
+    let muzzle = rounded(
+        point - vec3(0.0, -0.035, -0.29),
+        vec3(0.065, 0.05, 0.075),
     );
-    // A heavy ridge of brow over each forward eye, running on as a ledge along the line of the eyes
-    // behind it.
-    let brow = tapered_tail(
-        mirrored,
-        vec3(0.02, 0.105, -0.315),
-        vec3(0.075, 0.1, -0.3),
-        0.02,
-        0.014,
-    );
-    let cheekbone = tapered_tail(
-        mirrored,
-        vec3(0.085, -0.035, -0.27),
-        vec3(0.16, -0.02, -0.12),
-        0.02,
-        0.01,
-    );
-    let crown = tapered_tail(
-        mirrored,
-        vec3(0.045, 0.105, -0.27),
-        vec3(0.035, 0.16, -0.12),
-        0.016,
-        0.013,
-    )
-    .min(tapered_tail(
-        mirrored,
-        vec3(0.035, 0.16, -0.12),
-        vec3(0.022, 0.14, 0.02),
-        0.013,
-        0.006,
-    ));
-    let mut d = smooth_min(snout, chin, 0.015);
-    d = smooth_min(d, bridge, 0.012);
-    d = smooth_min(d, brow, 0.01);
-    d = smooth_min(d, cheekbone, 0.012);
-    smooth_min(d, crown, 0.01)
+    smooth_min(skull, muzzle, 0.05)
+}
+
+/// The hood every tetralate of its lineage carries over the head: a broad, flat cowl, wider than
+/// the skull and overhanging the eyes, lifting a little at its edges, and running back over the
+/// crown into the line of the back.
+fn hood(point: Vec3) -> f32 {
+    let q = point - vec3(0.0, 0.105, -0.15);
+    let lift = q.x * q.x / 0.04 * 0.025;
+    let reach = (-q.z / 0.22).clamp(0.0, 1.0);
+    let half = vec3(0.165 - reach * 0.07, 0.03 - reach * 0.01, 0.23);
+    rounded(q - vec3(0.0, lift, 0.0), half)
 }
 
 /// The mouth tentacles, and on the tip of each of the long outer pair three fine fingers, splayed a

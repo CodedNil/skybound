@@ -156,8 +156,11 @@ fn nearest(neighbours: &[Agent], point: Vec3, fits: impl Fn(&Agent) -> bool) -> 
         .copied()
 }
 
-/// Turning on a hunter: whatever it was driving at, if it is a hunter and in reach, takes the blow
-/// it would deal its prey.
+/// Turning on a hunter: whatever it was driving at, if it is a hunter and in reach, is dealt with.
+///
+/// A guardian keeping a sanctuary harms no one in it: it shoulders the hunter out, away from the
+/// young, and its stand-off breaks the hunt. Any other animal defending itself takes to the hunter
+/// with the blow it would deal its prey.
 fn defend(agent: Agent, body: &mut Vitals, relations: &mut Relations, step: &mut Conduct) {
     let Some(at) = aimed_at(agent, relations) else {
         return;
@@ -173,7 +176,12 @@ fn defend(agent: Agent, body: &mut Vitals, relations: &mut Relations, step: &mut
         foe.position.distance(agent.position)
             < reach(agent.kind, foe.kind) + agent.kind.behaviour().range
     }) {
-        blow(agent, foe, body, relations, (step.attacks, step.now));
+        if agent.kind.behaviour().shelters > 0.0 {
+            let away = (foe.position - agent.position).normalize_or_zero();
+            step.nudges.push((foe.entity, away * 6.0));
+        } else {
+            blow(agent, foe, body, relations, (step.attacks, step.now));
+        }
     }
 }
 

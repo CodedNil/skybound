@@ -26,7 +26,7 @@ taxon!(
     [
         "Iron Spined Guardians are Shredders that turned from hunting to keeping: shorter and deeper chested, with fewer, broader blades standing nearly upright and broad wings for hovering in a stand-off.",
         "They keep nurseries for the young of every kind, not their own alone: sanctuaries where the eggs and young of many species are brought and watched over, which nearly every hunter of the sky has learned to leave alone.",
-        "A hunter hungry enough to test one meets the guardians crest raised, the gold-banded web spread between the blades and the red gill plates flared at the throat, and is driven off blades first; banking patrols round the nursery keep most from ever trying.",
+        "A sanctuary is no trap: any animal may pass through it, hunters among them, but no hunting and no fighting is allowed there. A hunter that starts a hunt within one meets the guardians crest raised, the gold-banded web spread between the blades and the red gill plates flared at the throat, and is shouldered out, unharmed, its hunt broken; banking patrols round the nursery keep most from ever trying.",
         "The trust runs both ways: many animals bring food to the guardians in thanks for the young they keep, so a guardian seldom needs to hunt.",
         "Nurseries most often gather round an ancient Whisperwood, for which the guardians have an affinity no one can explain; the tree itself plays no part. As eggs, young and tree all drift on the wind, the guardians nudge strays gently back to keep them close together.",
         "The display that drives off a hunter, given to one another, decides which guardians pair, and the broadest crests are the most sought after.",
@@ -112,9 +112,9 @@ mod nature {
     //! Iron Spined Guardians keep sanctuaries for the young of every kind. They gather where they
     //! feel at home, most often about an ancient Whisperwood, and patrol the nursery in banking
     //! circuits; the eggs and young of many kinds are kept there, each stray nudged gently back,
-    //! and nearly every hunter of the sky knows to hunt elsewhere. One hungry enough to test it is
-    //! met crest first and driven off. Guardians seldom hunt: the animals whose young they keep
-    //! bring them food.
+    //! and nearly every hunter of the sky knows to hunt elsewhere. Any animal may pass through, but
+    //! no hunting is allowed: one that starts a hunt there is met crest first and shouldered out,
+    //! unharmed. Guardians seldom hunt: the animals whose young they keep bring them food.
 
     use super::*;
     use crate::scene::life::{
@@ -138,8 +138,8 @@ mod nature {
     /// How far about a guardian the young of every kind are under its guard.
     const SANCTUARY: f32 = 150.0;
 
-    /// Guardians stand between the young and whatever threatens them rather than flee, drive off
-    /// any hunter that comes hunting into the sanctuary, and keep the nursery together.
+    /// Guardians stand between the young and whatever threatens them rather than flee, break up
+    /// any hunt within the sanctuary, and keep the nursery together.
     pub const ETHOLOGY: Ethology = Ethology {
         urges: guard,
         fear: |s, mind: &mut Mind| {
@@ -236,7 +236,7 @@ mod nature {
         },
     };
 
-    /// Going at a hunter in the sanctuary, crest raised, until it leaves.
+    /// Facing down a hunter hunting in the sanctuary, crest raised, and shouldering it out.
     const DRIVE_OFF: Intent = Intent {
         name: "drive off",
         act: |_, s| Goal::new(Activity::Defend, s.seen.mark(INTRUDER), 1.3),

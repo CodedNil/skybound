@@ -388,15 +388,15 @@ impl Sanctuaries {
 }
 
 /// Whether another organism `distance` away menaces an animal: a predator that would eat it, when
-/// hunting or too close to trust, or, to a hunter inside a sanctuary, a guardian driving hunters
-/// off.
+/// hunting or too close to trust, or, to a hunter inside a sanctuary, a guardian standing off a
+/// hunt. A guardian only patrolling troubles no one.
 fn menaces(other: &Agent, kind: Kind, distance: f32) -> bool {
     let hunting = matches!(other.activity, Activity::Hunt | Activity::Strike);
     let predator = other.kind.takes(Take::Prey) && other.kind.eats(kind);
     let driving_off = kind.behaviour().hunts
         && other.kind != kind
         && distance < other.kind.behaviour().shelters
-        && matches!(other.activity, Activity::Defend | Activity::Guard);
+        && other.activity == Activity::Defend;
     (predator && (hunting || distance < 60.0)) || driving_off
 }
 
