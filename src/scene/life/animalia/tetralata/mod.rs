@@ -10,13 +10,12 @@ use crate::scene::{
         genome::Gene,
         smooth_min, tapered_tail,
     },
-    planet::GRAVITY,
 };
 use core::{
     f32::consts::PI,
     ops::{Deref, DerefMut},
 };
-use spirv_std::glam::{FloatExt, Quat, Vec3, Vec4, vec3};
+use spirv_std::glam::{FloatExt, Vec3, Vec4, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod specialia;
@@ -91,7 +90,7 @@ pub struct Tetralate {
 /// How many strands of cloth a tetralate can have hung on it, and how many knots each is
 /// simulated with.
 pub const DRAPES: usize = 8;
-pub const DRAPE_KNOTS: usize = 6;
+pub const DRAPE_KNOTS: usize = 10;
 
 impl Deref for Tetralate {
     type Target = Animal;
@@ -234,10 +233,7 @@ pub fn rig_tentacles(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32) {
 pub fn rig_grasping(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32, grip: f32) {
     const STEP: f32 = 1.0 / 120.0;
     let scale = scale * (0.35 + c.life.y * 0.65);
-    let turn = Quat::from_array(c.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
-    // The animal flies head first, so the air streams back along it.
-    let wind = vec3(0.0, 0.0, c.animation.w.max(0.0));
+    let (gravity, wind) = air_frame(c, 0.0);
     for index in 0..(pairs as usize * 2).min(9) {
         let (root, reach, side) = tentacle_root(mouth, scale, index);
         let lane = (index / 2) as f32;
@@ -273,7 +269,6 @@ pub fn rig_grasping(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32, grip
         // Only the middle and the tip are simulated: a tentacle is one muscle, which bends in a
         // single smooth arc, and a chain of many knots kinks into zigzags no tentacle makes.
         let settle = |start: f32| {
-            let start = start.max(0.0);
             let mut points = [root, rest(MIDDLE, start), rest(KNOTS - 1, start)];
             let mut previous = points;
             let steps = ((end - start) / STEP) as usize;
@@ -288,30 +283,15 @@ pub fn rig_grasping(c: &mut Tetralate, mouth: Vec3, scale: f32, pairs: u32, grip
                     let pose = rest(if joint == 1 { MIDDLE } else { KNOTS - 1 }, time);
                     let tone = (pose - points[joint]) * if joint == 1 { 55.0 } else { 30.0 };
                     let drag = (wind - velocity / STEP) * 1.5;
-                    points[joint] += velocity + (gravity + drag + tone) * STEP * STEP;
+                    swing(&mut points[joint], velocity, gravity + drag + tone, STEP);
                 }
-                for _ in 0..2 {
-                    for joint in 1..3 {
-                        let delta = points[joint] - points[joint - 1];
-                        let fix = delta * (1.0 - length / delta.length().max(1e-6));
-                        if joint == 1 {
-                            points[joint] -= fix;
-                        } else {
-                            points[joint - 1] += fix * 0.5;
-                            points[joint] -= fix * 0.5;
-                        }
-                    }
-                }
+                tie(&mut points, length);
+                tie(&mut points, length);
                 points[0] = root;
             }
             points
         };
-        // Settled from two starts on a fixed grid, crossfaded, so the pose moves smoothly from one
-        // frame to the next.
-        let window = (end / SETTLE).floor();
-        let weight = end / SETTLE - window;
-        let earlier = settle((window - 1.0) * SETTLE);
-        let later = settle(window * SETTLE);
+        let (earlier, later, weight) = settled(end, SETTLE, settle);
         let joints = [
             earlier[0].lerp(later[0], weight),
             earlier[1].lerp(later[1], weight),

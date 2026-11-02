@@ -1,4 +1,8 @@
-use crate::scene::{life::Bubbleback, math::Power, planet::GRAVITY};
+use crate::scene::{
+    life::{Bubbleback, settled},
+    math::Power,
+    planet::GRAVITY,
+};
 use core::array::from_fn;
 use spirv_std::glam::{Vec3, vec3};
 
@@ -118,19 +122,13 @@ impl Cloth {
 const SETTLE: f32 = 3.0;
 
 pub fn prepare(c: &mut Bubbleback, ribbon: usize, anchor: Vec3, length: f32, width: f32) {
-    // Settled from two starts on a fixed grid, the later fading in as the earlier ages out: smooth
-    // from one moment to the next, though each is simulated afresh.
     let end = 2.0 + c.animation.z.max(0.0);
-    let grid = (end / SETTLE).floor();
-    let weight = end / SETTLE - grid;
-    let settle = |start: f32| {
+    let (mut cloth, later, weight) = settled(end, SETTLE, |start| {
         let mut cloth = Cloth::new(anchor, length, width);
-        cloth.time = start.max(0.0);
-        cloth.advance(end - cloth.time);
+        cloth.time = start;
+        cloth.advance(end - start);
         cloth
-    };
-    let mut cloth = settle((grid - 1.0) * SETTLE);
-    let later = settle(grid * SETTLE);
+    });
     for (point, other) in cloth.points.iter_mut().zip(later.points) {
         *point = point.lerp(other, weight);
     }

@@ -217,7 +217,14 @@ fn specimen(kind: usize, days: f32, seed: u32, seconds: f32) -> Drawn {
     let mut c = Drawn::specimen(
         Vec3::ZERO.extend(species.render_radius()),
         Vec4::W,
-        Vec4::new((seconds * TAU / 4.0).sin() * 0.12, 0.0, seconds, 0.0),
+        // Flying on at the speed it glides best, so whatever trails from it streams back in the
+        // air as it would in the world, though the specimen stays in place.
+        Vec4::new(
+            (seconds * TAU / 4.0).sin() * 0.12,
+            0.0,
+            seconds,
+            species.body().glide,
+        ),
         kind as u32,
         days,
         seed,

@@ -1,9 +1,8 @@
 use crate::scene::{
     life::{Tetralate, smooth_min, tapered_tail},
     math::Power,
-    planet::GRAVITY,
 };
-use spirv_std::glam::{Quat, Vec3, vec3};
+use spirv_std::glam::{Vec3, vec3};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 pub mod nae;
@@ -159,10 +158,7 @@ impl Train {
 )]
 pub fn rig_train(creature: &mut Tetralate, shape: Train) {
     const STEP: f32 = 1.0 / 120.0;
-    const SETTLE: f32 = 2.0;
-    let turn = Quat::from_array(creature.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
-    let flow = vec3(0.0, 0.0, creature.animation.w.max(1.5));
+    let (gravity, flow) = air_frame(creature, 1.5);
     let end = creature.animation.z.max(0.0);
     let droop = vec3(0.0, -0.22, 1.0) / vec3(0.0, -0.22, 1.0).length();
     let (tail_step, train_step, spread) = (shape.tail_step(), shape.train_step(), shape.spread());
@@ -173,7 +169,6 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
         tail + vec3(lane(strand) * spread, 0.0, 0.0) + out / out.length() * train_step * knot as f32
     };
     let settle = |start: f32| {
-        let start = start.max(0.0);
         let mut tail = [Vec3::ZERO; KNOTS];
         for (knot, point) in tail.iter_mut().enumerate() {
             *point = rest_tail(knot);
@@ -185,8 +180,7 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
             }
         }
         let (mut tail_before, mut train_before) = (tail, train);
-        let steps = ((end - start) / STEP) as usize;
-        for step in 0..steps {
+        for step in 0..((end - start) / STEP) as usize {
             let time = start + step as f32 * STEP;
             let gust = vec3((time * 1.3).sin() * 0.6, (time * 0.9).cos() * 0.3, 0.0);
             // The tail: muscle holds it towards its droop, strongest at the root.
@@ -197,20 +191,10 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
                 let velocity = (tail[knot] - last[knot]) * 0.97;
                 let tone = (rest_tail(knot) - tail[knot]) * (90.0 * (1.0 - t * 0.6));
                 let drag = (flow + gust - velocity / STEP) * 0.6;
-                tail[knot] += velocity + (gravity * 0.4 + drag + tone) * STEP * STEP;
+                swing(&mut tail[knot], velocity, gravity * 0.4 + drag + tone, STEP);
             }
-            for _ in 0..2 {
-                for knot in 1..KNOTS {
-                    let delta = tail[knot] - tail[knot - 1];
-                    let fix = delta * (1.0 - tail_step / delta.length().max(1e-6));
-                    if knot == 1 {
-                        tail[knot] -= fix;
-                    } else {
-                        tail[knot - 1] += fix * 0.5;
-                        tail[knot] -= fix * 0.5;
-                    }
-                }
-            }
+            tie(&mut tail, tail_step);
+            tie(&mut tail, tail_step);
             tail[0] = shape.root;
             // The train: passive cloth, but for a little stiffness in each feather's shaft.
             let last = train_before;
@@ -226,21 +210,12 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
                     let drag = (flow + gust + flutter - velocity / STEP) * 1.2;
                     let pull =
                         (rest_strand(tail[TRAIN_KNOT], strand, knot) - train[strand][knot]) * 12.0;
-                    train[strand][knot] += velocity + (gravity + drag + pull) * STEP * STEP;
+                    swing(&mut train[strand][knot], velocity, gravity + drag + pull, STEP);
                 }
             }
             for _ in 0..3 {
-                for strand in 0..STRANDS {
-                    for knot in 1..KNOTS {
-                        let delta = train[strand][knot] - train[strand][knot - 1];
-                        let fix = delta * (1.0 - train_step / delta.length().max(1e-6));
-                        if knot == 1 {
-                            train[strand][knot] -= fix;
-                        } else {
-                            train[strand][knot - 1] += fix * 0.5;
-                            train[strand][knot] -= fix * 0.5;
-                        }
-                    }
+                for chain in &mut train {
+                    tie(chain, train_step);
                 }
                 // Each strand held to the next across the sheet, as the vanes between them hold.
                 for strand in 1..STRANDS {
@@ -259,10 +234,8 @@ pub fn rig_train(creature: &mut Tetralate, shape: Train) {
         }
         (tail, train)
     };
-    let window = (end / SETTLE).floor();
-    let weight = end / SETTLE - window;
-    let (tail_earlier, train_earlier) = settle((window - 1.0) * SETTLE);
-    let (tail_later, train_later) = settle(window * SETTLE);
+    let ((tail_earlier, train_earlier), (tail_later, train_later), weight) =
+        settled(end, 2.0, settle);
     for knot in 0..KNOTS {
         creature.rig.ribbons[knot] = tail_earlier[knot]
             .lerp(tail_later[knot], weight)

@@ -1447,12 +1447,55 @@ pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     d.min((q - below).length() - 0.21 * head)
 }
 
+/// Gravity and the air streaming past, both in a creature's own frame, the air at no less than
+/// `least`: it flies head first, so the stream runs back along it at its airspeed.
+pub fn air_frame(c: &CreatureInstance, least: f32) -> (Vec3, Vec3) {
+    let turn = Quat::from_array(c.rotation.to_array()).conjugate();
+    (
+        turn * vec3(0.0, -GRAVITY, 0.0),
+        vec3(0.0, 0.0, c.animation.w.max(least)),
+    )
+}
+
+/// A pose simulated up to `end`, smooth from one frame to the next though each is simulated
+/// afresh: `settle` runs from two starts on a fixed grid `span` apart, and the later fades in as
+/// the earlier ages out. Damping forgets anything older than a span, and in the world the clock
+/// runs for hours. Returns the earlier pose, the later, and how far the later has faded in.
+pub fn settled<T>(end: f32, span: f32, settle: impl Fn(f32) -> T) -> (T, T, f32) {
+    let window = (end / span).floor();
+    (
+        settle(((window - 1.0) * span).max(0.0)),
+        settle(window * span),
+        end / span - window,
+    )
+}
+
+/// Move a knot on by Verlet integration: on at its own `velocity` per step and by `force` over a
+/// step `step` long.
+pub fn swing(knot: &mut Vec3, velocity: Vec3, force: Vec3, step: f32) {
+    *knot += velocity + force * step * step;
+}
+
+/// Hold a chain's knots `length` apart, the root fixed where it is tied and every other knot
+/// sharing each correction with its neighbour.
+pub fn tie<const N: usize>(knots: &mut [Vec3; N], length: f32) {
+    for knot in 1..N {
+        let delta = knots[knot] - knots[knot - 1];
+        let fix = delta * (1.0 - length / delta.length().max(1e-6));
+        if knot == 1 {
+            knots[knot] -= fix;
+        } else {
+            knots[knot - 1] += fix * 0.5;
+            knots[knot] -= fix * 0.5;
+        }
+    }
+}
+
 /// Pose trailing strands by simulating them.
 ///
 /// `count` chains hang side by side from `root`, `spacing` apart and `length` long, passive but for
 /// a little stiffness, swinging under gravity in the animal's own frame and streaming back in the
-/// air it flies through. Settled from two starts on a fixed grid and crossfaded, so the pose moves
-/// smoothly frame to frame.
+/// air it flies through.
 pub fn rig_ribbons<C: Rigged>(
     creature: &mut C,
     count: usize,
@@ -1461,25 +1504,20 @@ pub fn rig_ribbons<C: Rigged>(
     length: f32,
 ) {
     const STEP: f32 = 1.0 / 120.0;
-    const SETTLE: f32 = 2.0;
     let (c, rig) = creature.rigging();
-    let turn = Quat::from_array(c.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
-    let flow = vec3(0.0, 0.0, c.animation.w.max(2.0));
+    let (gravity, flow) = air_frame(c, 2.0);
     let end = c.animation.z.max(0.0);
     let segment = length / 5.0;
     for chain in 0..count.min(5) {
         let lane = chain as f32 - (count as f32 - 1.0) * 0.5;
         let anchor = root + vec3(lane * spacing, 0.0, 0.0);
         let settle = |start: f32| {
-            let start = start.max(0.0);
             let mut points = [Vec3::ZERO; 6];
             for (knot, point) in points.iter_mut().enumerate() {
                 *point = anchor + vec3(0.0, -0.4, 0.9) * (segment * knot as f32);
             }
             let mut previous = points;
-            let steps = ((end - start) / STEP) as usize;
-            for step in 0..steps {
+            for step in 0..((end - start) / STEP) as usize {
                 let time = start + step as f32 * STEP;
                 let last = previous;
                 previous = points;
@@ -1491,28 +1529,15 @@ pub fn rig_ribbons<C: Rigged>(
                         0.0,
                     ) * 2.0;
                     let drag = (flow + gust - velocity / STEP) * 0.8;
-                    points[knot] += velocity + (gravity + drag) * STEP * STEP;
+                    swing(&mut points[knot], velocity, gravity + drag, STEP);
                 }
-                for _ in 0..2 {
-                    for knot in 1..6 {
-                        let delta = points[knot] - points[knot - 1];
-                        let fix = delta * (1.0 - segment / delta.length().max(1e-6));
-                        if knot == 1 {
-                            points[knot] -= fix;
-                        } else {
-                            points[knot - 1] += fix * 0.5;
-                            points[knot] -= fix * 0.5;
-                        }
-                    }
-                }
+                tie(&mut points, segment);
+                tie(&mut points, segment);
                 points[0] = anchor;
             }
             points
         };
-        let grid = (end / SETTLE).floor();
-        let weight = end / SETTLE - grid;
-        let earlier = settle((grid - 1.0) * SETTLE);
-        let later = settle(grid * SETTLE);
+        let (earlier, later, weight) = settled(end, 2.0, settle);
         for knot in 0..6 {
             rig.ribbons[chain * 6 + knot] = earlier[knot]
                 .lerp(later[knot], weight)
