@@ -61,7 +61,7 @@ taxon!(
     "Næ",
     [
         "Næ are small, intelligent four-winged animals with large round heads, soft plump bodies, small feathers lying up the back from the tail to the crown, and a long tail that droops under a train of forked streamers.",
-        "As all their phylum do, they see all round at once, through a circlet of lensed eyes ringing the head; in the Næ the forward pair is much the largest, set close together for the fine work of their tentacles, and the face they make is the first thing a Nætu learns to know.",
+        "As all their phylum do, they see all round at once, through a circlet of lensed eyes ringing the head; in the Næ it is reduced to three on each side in a rough line, the forward pair much the largest, set close together for the fine work of their tentacles, the middle pair a little higher and the rear a little lower, and the face they make is the first thing a Nætu learns to know.",
         "The mouth opens beneath the head, a soft round lip among the roots of the tentacles that bring food and water up to it.",
         "Behind each cheek three feathery plumes fan back, the exchange frills of their genus, which take in the air they fly through; a Næ flushes them when it is glad.",
         "Four pairs of sensitive mouth tentacles extend the live-bearing lineage's usual three pairs. The outer pair is grown long and thick, each ending in three fine, opposable fingers that hold tools, knot fibre, work iron and part a companion's plumes to groom them; the shorter inner pairs steady things and guide food.",
@@ -97,21 +97,27 @@ fn on_head(direction: Vec3, inset: f32) -> Vec3 {
 }
 
 /// Eye `index` of the circlet on each side, from the front round to behind: where it lies, how
-/// large it is, and which way it looks. The front pair is much the largest, for close work.
+/// large it is, and which way it looks. They run in a rough line along the head, the forward pair
+/// largest and level for close work, the middle pair set a little higher to look a little up and
+/// the rear pair a little lower to look a little down, so between them they cover above and below
+/// as well as all round.
 fn circlet(index: u32) -> (Vec3, f32, Vec3) {
-    let angle = 0.3 + index as f32 * 0.43;
-    let looking = vec3(angle.sin(), 0.14, -angle.cos());
-    let looking = looking / looking.length();
-    let radius = if index == 0 {
-        0.034
+    let angle = 0.3 + index as f32 * 0.55;
+    let rise = if index == 0 {
+        0.12
+    } else if index == 1 {
+        0.42
     } else {
-        0.019 - index as f32 * 0.0015
+        -0.18
     };
+    let looking = vec3(angle.sin(), rise, -angle.cos());
+    let looking = looking / looking.length();
+    let radius = if index == 0 { 0.034 } else { 0.021 };
     (on_head(looking, 0.97), radius, looking)
 }
 
 /// How many eyes ring each side of the head.
-const CIRCLET: u32 = 5;
+const CIRCLET: u32 = 3;
 
 /// The downward pair beneath the head, watching the aur.
 fn downward() -> (Vec3, f32, Vec3) {

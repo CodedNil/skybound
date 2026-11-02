@@ -6,7 +6,7 @@ use crate::scene::life::{
     biology::{Biology, Litter},
     eyespots, feathers,
     genome::Gene,
-    prepare_pose, rounded, smooth_min,
+    louvres, prepare_pose, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tail,
 };
@@ -79,6 +79,8 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         vec3(2.4, 1.4, 4.5) * (0.8 + c.gene(STORE) * 0.4),
     );
     let mut body = smooth_min(smooth_min(barrel, store, 1.4), tail(p, c), 0.5);
+    // The breathing louvres every tetralate has, along the barrel's flanks.
+    body = louvres(body, p - vec3(0.0, 0.0, 2.0), vec3(3.4, 3.1, 10.0));
     let q = p - vec3(0.0, 0.3, -8.0);
     let depth = -q.z;
     let t = (depth / 6.0).clamp(0.0, 1.0);

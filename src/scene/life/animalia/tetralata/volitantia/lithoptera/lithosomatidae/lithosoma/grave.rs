@@ -7,7 +7,7 @@ use crate::scene::{
         biology::{Biology, Litter},
         capsule,
         genome::Gene,
-        rounded, smooth_min,
+        louvres, rounded, smooth_min,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -95,6 +95,9 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let boss = rounded(p - vec3(0.0, 1.3, -9.4), vec3(2.5, 1.4, 2.3));
     let mut crust = smooth_min(smooth_min(saucer, stem, 1.6), ballast, 1.8);
     crust = smooth_min(crust, boss, 1.2);
+    // The breathing louvres every tetralate has, on the flanks of the head boss, clear of the
+    // crust.
+    crust = louvres(crust, p - vec3(0.0, 1.3, -8.0), vec3(2.5, 1.4, 4.0));
     // Cracked into plates by the crust's own growth.
     let cracks = ((p.x * 0.8 + (p.z * 0.55).sin() * 1.3).sin()
         * (p.z * 0.8 + (p.x * 0.5).sin() * 1.3).sin())

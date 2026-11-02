@@ -6,7 +6,7 @@ use crate::scene::{
         biology::{Biology, Litter},
         capsule,
         genome::Gene,
-        prepare_pose, ribbons, rig_ribbons, smooth_min,
+        prepare_pose, ribbons, rig_ribbons, smooth_min, sucker,
         surface::{Ray, Surface, TraceResult},
         tapered_tail,
     },
@@ -89,6 +89,13 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
             4,
         );
     }
+    // The sucker its phylum feeds and holds on by, under the leaf's stem end, where it fastens to
+    // the host that carries it.
+    hit.blend(
+        sucker(p, vec3(0.0, -0.05, -4.0), vec3(0.0, -0.6, -0.8), 0.35),
+        8,
+        0.08,
+    );
     hit.join(ribbons(p, c, 2), 4);
     hit
 }

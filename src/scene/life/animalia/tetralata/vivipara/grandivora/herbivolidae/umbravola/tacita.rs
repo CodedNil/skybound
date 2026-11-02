@@ -6,6 +6,7 @@ use crate::scene::life::{
     biology::{Biology, Litter},
     capsule, eyespots,
     genome::Gene,
+    louvres,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -78,6 +79,9 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let thickness = 1.7 * (1.0 - shape).max(0.0).powf(1.5) + 0.08;
     let dihedral = p.x.abs() / width * 1.3 + (p.x.abs() * 0.4 - c.animation.z).sin() * 0.08;
     let plate = ((p.y - dihedral).abs() - thickness * 0.5).max((shape - 1.0) * width * 0.4) * 0.6;
+    // The breathing louvres every tetralate has, in the thick middle of the wing where the body
+    // once was.
+    let plate = louvres(plate, p, vec3(3.0, 2.0, 6.0));
     let mut hit = Surface::new(plate, 0);
     let side = p.x.abs();
     let spacing = width / 9.0;

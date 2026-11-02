@@ -6,7 +6,7 @@ use crate::scene::life::{
     biology::{Biology, Litter},
     capsule, ellipsoid,
     genome::Gene,
-    rounded, smooth_min,
+    louvres, rounded, smooth_min,
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
@@ -83,7 +83,13 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         );
     }
     let head = rounded(p - vec3(0.0, -0.05, -1.75), vec3(0.62, 0.45, 0.48));
-    let mut hit = Surface::new(smooth_min(body, head, 0.2), 0);
+    // The breathing louvres every tetralate has, along the flanks behind the acid glands.
+    let body = louvres(
+        smooth_min(body, head, 0.2),
+        p - vec3(0.0, 0.05, 1.5),
+        vec3(1.0, 0.62, 2.0),
+    );
+    let mut hit = Surface::new(body, 0);
     // The acid glands, swelling through the plates at the shoulders.
     let side = vec3(p.x.abs(), p.y, p.z);
     hit.blend(

@@ -6,6 +6,7 @@ use crate::scene::{
         animalia::tetralata::{ORAL_PAIRS, curved_tube, oral_tentacles, rig_tentacles},
         biology::{Biology, Litter},
         genome::Gene,
+        louvres,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -94,6 +95,11 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         * (0.9 + c.gene(GIRTH) * 0.2)
         * (1.0 - (0.03 + c.gene(PLATING) * 0.1) * band * band);
     let body = ((p - spine).length() - radius) * 0.8;
+    // The breathing louvres every tetralate has, on the curl's flanks behind the head: placed in
+    // the curl unrolled, along it and out from its line.
+    let around = (-p.z).atan2(p.y);
+    let unrolled = vec3(p.x, vec2(p.y, p.z).length() - CURL, -around * CURL);
+    let body = louvres(body, unrolled - vec3(0.0, 0.0, -2.2), vec3(1.0, 1.0, 3.0));
     // Plates outside, soft tissue on the inside of the curl.
     let inward = vec2(p.y, p.z).length() < CURL - radius * 0.35;
     let mut hit = Surface::new(body, if inward { 8 } else { 5 });

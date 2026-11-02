@@ -7,7 +7,7 @@ use crate::scene::{
         biology::{Biology, Litter},
         capsule, eyespots,
         genome::Gene,
-        rounded,
+        louvres, rounded,
         surface::{Ray, Surface, TraceResult},
     },
     math::Power,
@@ -73,7 +73,12 @@ const MOUTH: Vec3 = vec3(0.0, -0.45, -1.7);
 /// learn to tolerate.
 pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let dome = rounded(p - vec3(0.0, 0.25, 0.0), vec3(1.5, 0.95, 2.1));
-    let body = dome.max(-(p.y + 0.35));
+    // The breathing louvres every tetralate has, low on the dome's flanks.
+    let body = louvres(
+        dome.max(-(p.y + 0.35)),
+        p - vec3(0.0, 0.25, 0.4),
+        vec3(1.5, 0.95, 2.1),
+    );
     let mut hit = Surface::new(body, 0);
     // Rows of bristles beneath the sole.
     let spacing = 0.34 - c.gene(BRISTLES) * 0.12;

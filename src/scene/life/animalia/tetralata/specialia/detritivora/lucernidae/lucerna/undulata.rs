@@ -6,7 +6,7 @@ use crate::scene::{
         biology::{Biology, Litter},
         ellipsoid,
         genome::Gene,
-        prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
+        louvres, prepare_pose, ribbons, rig_ribbons, rounded, smooth_min,
         surface::{Ray, Surface, TraceResult},
         tail,
     },
@@ -51,6 +51,7 @@ taxon!(
     "Shimmerays",
     [
         "Shimmerays are broad, flat filter feeders whose slow, rippling wingbeats carry a wide scoop of a mouth through currents of algae and drifting organic particles.",
+        "Their single ancestral pair of mouth tentacles has flattened and split into the comb plates that line the scoop, which sieve what the current carries in.",
         "A ring of small glowing lures round the scoop draws Sparkies close enough to be swept in with the feeding stream and caught on the comb plates inside.",
         "Long luminous ribbons stream from beneath the body, sampling a deeper volume of air for particles and marking each animal's place in the swarm.",
         "They drift along the sunset band, sinking toward the upper edge of the Veilands to feed and rising again once fed; concentrated aur remains dangerous to their tissues.",
@@ -78,6 +79,8 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let gape = 1.3 + c.gene(SCOOP) * 0.6;
     let scoop = rounded(rippled - vec3(0.0, -0.05, -3.5), vec3(gape, 0.2, 0.9));
     let body = smooth_min(disc.max(-scoop), tail(p, c), 0.4);
+    // The breathing louvres every tetralate has, along the thin rim of the disc behind the scoop.
+    let body = louvres(body, p - vec3(0.0, 0.0, 0.5), vec3(3.1, 0.6, 3.0));
     let mut hit = Surface::new(body, 0);
     // Comb plates across the back of the scoop.
     let comb_x = (rippled.x / 0.22).round() * 0.22;
