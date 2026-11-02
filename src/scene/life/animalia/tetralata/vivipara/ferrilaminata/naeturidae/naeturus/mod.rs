@@ -173,3 +173,47 @@ pub fn strip(
     let squashed = a + (q - normal * across) + normal * across * flatness;
     tapered_tail(squashed, a, b, start, end) / flatness
 }
+
+/// One stretch of a feather drawn as a strip from `a` to `b` (see [`strip`]).
+///
+/// It has the detail that makes it read as a feather: barbs angled back from the shaft down the
+/// middle, raised a
+/// hair either side of the grooves between them, and an edge broken into fine barb tips. `start`
+/// is how far along the whole feather `a` lies, so the barbs run on unbroken from one stretch to
+/// the next.
+pub fn feather_strip(
+    point: Vec3,
+    a: Vec3,
+    b: Vec3,
+    start: f32,
+    widths: (f32, f32),
+    normal: Vec3,
+    flatness: f32,
+) -> f32 {
+    let axis = b - a;
+    let span = axis.length().max(1e-5);
+    let direction = axis / span;
+    let side = normal.cross(direction);
+    let q = point - a;
+    let along = q.dot(direction).clamp(0.0, span);
+    let across = q.dot(side);
+    let width = widths.0 + (widths.1 - widths.0) * (along / span);
+    // The edge breaks into the tips of the barbs.
+    let ragged = 1.0
+        - ((start + along) / width.max(1e-4) * 3.0 + across.abs() * 9.0)
+            .sin()
+            .abs()
+            * 0.1;
+    let flat = strip(
+        point,
+        a,
+        b,
+        widths.0 * ragged,
+        widths.1 * ragged,
+        normal,
+        flatness,
+    );
+    // Barbs angled back from the shaft, each a faint ridge.
+    let barbs = ((start + along - across.abs() * 0.8) / width.max(1e-4) * 9.0).sin();
+    flat - barbs * width / flatness * 0.25
+}

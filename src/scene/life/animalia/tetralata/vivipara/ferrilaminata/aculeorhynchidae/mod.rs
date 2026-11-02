@@ -24,9 +24,10 @@ taxon!(
 mod nature {
     //! The Spined Beaks climb high above their prey, fold their wings and fall on it, driving the
     //! stylet along the dive at whichever of the pump or nerve centre lies nearer its line, with
-    //! venom behind it, so a miss still paralyses. The prey falls limp, and the hunter wheels and
-    //! races it down to catch it from below and carry it up into rising air to eat. They sleep
-    //! gliding on rising air and court spiralling up together.
+    //! venom behind it, so a miss still paralyses. They take only prey small enough to fly with,
+    //! and keep it skewered on the stylet as they eat; a strike into anything too heavy costs them
+    //! the stylet's head, shed to get free. They sleep gliding on rising air and court spiralling
+    //! up together.
 
     use crate::scene::life::{
         Injury,
@@ -47,6 +48,8 @@ mod nature {
         act,
         hunts: true,
         carries: true,
+        skewers: true,
+        largest: 0.25,
         ..LIVE_BEARER
     };
 

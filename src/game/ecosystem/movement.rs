@@ -144,9 +144,13 @@ pub(super) fn held_position(agent: Agent, host: &Agent, carried: bool, world: &W
             _ => host.position,
         };
     }
-    // Prey is held to the hunter's jaws by its mouth tentacles, beneath and ahead of its head.
+    // Prey is held to the hunter's jaws by its mouth tentacles, beneath and ahead of its head, or
+    // skewered on its weapon, part way along it, as the tentacles work it down to the mouth.
     if host.kind.takes(Take::Prey) {
         let reach = host.kind.render_radius();
+        if host.kind.behaviour().skewers {
+            return host.position + host.rotation * Vec3::new(0.0, -reach * 0.01, -reach * 0.26);
+        }
         return host.position + host.rotation * Vec3::new(0.0, -reach * 0.15, -reach * 0.45);
     }
     // Anything else rides on top, each where its own build lets it cling best: further out or in,

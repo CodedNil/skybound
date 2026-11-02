@@ -99,6 +99,11 @@ pub(super) fn engage(
         && let Some(blow) = (ethology.blow)(&aim(agent, prey, body, relations.mind.wear))
     {
         body.reserve = (body.reserve - blow.cost).max(0.0);
+        // A weapon driven into something too heavy to fly with would pin the hunter to it: it sheds
+        // the weapon's head to get free, and the iron it was made of goes with it.
+        if ethology.skewers && prey.vitals.mass > agent.vitals.mass * ethology.largest * 1.5 {
+            body.iron = (body.iron - 0.25).max(0.0);
+        }
         relations.mind.wear = (relations.mind.wear + 0.08).min(1.0);
         // Every blow it lands teaches it a little more.
         relations.mind.experience.succeeded();
@@ -207,10 +212,10 @@ pub(super) fn carry(hunter: Agent, prey: Option<Agent>, activity: Activity) -> O
     let prey = prey?;
     let close = prey.position.distance(hunter.position)
         < hunter.kind.biology().adult_mass.cbrt() * 2.0 + 4.0;
-    (hunter.kind.behaviour().carries
-        && activity == Activity::Feed
-        && prey.vitals.stunned > 0.0
-        && close)
+    let ethology = hunter.kind.behaviour();
+    let light =
+        !ethology.skewers || prey.vitals.mass <= hunter.vitals.mass * ethology.largest * 1.5;
+    (ethology.carries && light && activity == Activity::Feed && prey.vitals.stunned > 0.0 && close)
         .then_some(Attack {
             victim: prey.entity,
             strike: None,

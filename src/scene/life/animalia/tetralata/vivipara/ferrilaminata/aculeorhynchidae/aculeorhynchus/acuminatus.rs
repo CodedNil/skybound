@@ -2,7 +2,7 @@
 use crate::scene::life::organs::{Function, Organ, Part, site};
 use crate::scene::life::{
     Look, Tetralate,
-    animalia::tetralata::{gape, oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+    animalia::tetralata::{gape, oral_grasping, rig_grasping, vivipara::ORAL_PAIRS},
     biology::{Biology, Litter},
     ellipsoid,
     genome::Gene,
@@ -10,6 +10,7 @@ use crate::scene::life::{
     surface::{Ray, Surface, TraceResult},
     tapered_tail,
 };
+use core::f32::consts::FRAC_PI_2;
 use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -50,19 +51,26 @@ taxon!(
     [
         "Needlesharks hunt from high above, folding their long swept wings to fall on their prey, a needle-fine stylet aligned ahead of the dive, which their body grows from the iron in their diet, as all their order eats metal, and which lengthens and hardens through their life.",
         "The stylet is aimed at the pump or the nerve centre for a killing thrust, and as it goes in a sac at its root pumps venom down it, so even a strike that misses everything vital leaves the prey paralysed.",
-        "So thin a weapon slips out as easily as it went in, and the shock of the impact is taken up by a long sheath of muscle the stylet's root slides back into, running down through the head and neck.",
-        "Struck prey falls limp toward the aur, and the hunter wheels and races it down, catching it from below in a basket of long hooked mouth tentacles and carrying it up into rising air to eat on the wing, rasping it apart with the mouth beneath its head; if it is slow, the venom wears off and the prey escapes.",
+        "The shock of the impact is taken up by a long sheath of muscle the stylet's root slides back into, running down through the head and neck.",
+        "It does not let go. Small rows of barbs rake back along the shaft, so the prey slides towards the head and never off the point, and a needleshark flies on with its kill skewered ahead of it, sometimes for days, its very long mouth tentacles reaching out along the stylet to strip it and work it down the shaft to the rasping mouth beneath the head, a mouthful at a time.",
+        "So it hunts only small prey, a quarter of its own weight at most, that it can fly with; anything larger would pin it to the sky. If it misjudges, or strikes something still strong enough to fight, it sheds the lance: the stylet's last hand's breadth is grown as a separate barbed head on a seam, which a twist of the sheath muscle snaps, leaving it in the victim while the hunter pulls free. The venom often finishes what the strike began, and it may come back later to scavenge, but a new head takes weeks and much iron to grow, and until then it strikes short.",
         "Two forward eyes either side of the stylet's root judge each dive, a swallow-tailed fork steers it, and young needlesharks spend long hours stooping on one another in play.",
     ],
 );
 
 pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(4.0, 4.0, 15.0).extend(0.0);
-    rig_tentacles(c, MOUTH, 1.8, ORAL_PAIRS);
+    rig_grasping(c, MOUTH, REACH, ORAL_PAIRS, GRIP);
 }
 
 /// Where the mouth opens beneath the head, and the catching tentacles hang from it.
 const MOUTH: Vec3 = vec3(0.0, -0.5, -3.1);
+
+/// How far the mouth tentacles reach, as a share of the lineage's usual reach, and how much further
+/// the outer pair grows: the length of the stylet, to work what is skewered on it down to the
+/// mouth, while the inner pairs stay short to hold it there.
+const REACH: f32 = 1.8;
+const GRIP: f32 = 1.4;
 
 /// Where the stylet leaves the head.
 const ROOT: Vec3 = vec3(0.0, -0.02, -4.95);
@@ -130,11 +138,35 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     // enough over its life.
     let length = 8.5 * grown * (0.88 + c.gene(STYLET) * 0.24) * (0.6 + c.stores.x.min(1.0) * 0.4);
     let tip = ROOT + vec3(0.0, -0.08, -length);
-    hit.blend(
-        tapered_tail(p, ROOT + vec3(0.0, 0.0, 0.3), tip, 0.075, 0.006),
-        6,
-        0.04,
-    );
+    let shaft = tapered_tail(p, ROOT + vec3(0.0, 0.0, 0.3), tip, 0.075, 0.006);
+    hit.blend(shaft, 6, 0.04);
+    if shaft < 0.4 {
+        // Barbs raking back along the shaft, so what it skewers slides towards the head and never
+        // off the point, in four rows turned about it.
+        let axis = (tip - ROOT) / (tip - ROOT).length().max(1e-4);
+        let mut barbs = 1e6f32;
+        for index in 0..10 {
+            let along = 0.18 + index as f32 * 0.065;
+            let at = ROOT.lerp(tip, along);
+            let turn = index as f32 * FRAC_PI_2;
+            let out = vec3(turn.cos(), turn.sin(), 0.0);
+            let thick = 0.075 - along * 0.06;
+            barbs = barbs.min(tapered_tail(
+                p,
+                at,
+                at + out * thick * 1.6 - axis * thick * 3.0,
+                thick * 0.45,
+                0.004,
+            ));
+        }
+        hit.join(barbs, 6);
+        // The seam where the lance-head is grown separately, ready to be shed.
+        let seam = ROOT.lerp(tip, 0.84);
+        let q = p - seam;
+        let along = q.dot(axis);
+        let ring = vec2((q - axis * along).length() - 0.022, along).length() - 0.006;
+        hit.carve(ring, 0.004);
+    }
     // The venom sac beneath the head.
     hit.blend(
         ellipsoid(
@@ -166,7 +198,7 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     hit.socket((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 0.13);
     hit.socket((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 0.1);
     rasp(&mut hit, p, c);
-    hit.blend(oral_tentacles(p, c, MOUTH, 1.8, ORAL_PAIRS), 8, 0.18);
+    hit.blend(oral_grasping(p, c, MOUTH, REACH, ORAL_PAIRS, GRIP), 8, 0.18);
     hit
 }
 

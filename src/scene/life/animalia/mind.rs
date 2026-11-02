@@ -452,6 +452,11 @@ pub struct Hold {
 pub struct Ethology {
     /// Whether it carries helpless prey off as it eats, held in its mouth tentacles.
     pub carries: bool,
+    /// Whether what it carries is held skewered on its weapon rather than in its tentacles, so
+    /// that prey too heavy to fly with costs it the weapon's head, shed to get free.
+    pub skewers: bool,
+    /// The heaviest prey it takes, as a share of its own weight.
+    pub largest: f32,
     /// The urges it feels, each with its pull.
     pub urges: fn(&Situation, &mut Urges),
     /// How afraid it is, from the threat in the situation.
@@ -508,6 +513,8 @@ impl Ethology {
         clings: false,
         anchored: false,
         carries: false,
+        skewers: false,
+        largest: 0.8,
     };
 }
 

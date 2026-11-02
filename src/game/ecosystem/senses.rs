@@ -295,7 +295,7 @@ pub(super) fn sense(
         }
         // Hunters take prey clearly smaller than themselves, and leave other hunters alone
         // unless starving.
-        let fair = other.vitals.mass < agent.vitals.mass * 0.8
+        let fair = other.vitals.mass < agent.vitals.mass * kind.behaviour().largest
             && (!other.kind.takes(Take::Prey) || agent.vitals.energy < 0.2);
         let fair = fair || kind.animal().is_some_and(|animal| animal.parasite);
         if hunts
