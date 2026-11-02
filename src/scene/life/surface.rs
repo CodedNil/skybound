@@ -1381,7 +1381,8 @@ pub fn wing_sheet<C: Flier>(body: &C, look: Look, index: usize, side: f32) -> Sh
     let animal = body.animal();
     let wing = look.wings[index];
     let shoulder = look.hinges[index].extend(wing.z);
-    let root = vec3(shoulder.x * side, shoulder.y, shoulder.z);
+    let out = wings.seat(index, shoulder.x);
+    let root = vec3(out * side, shoulder.y, shoulder.z);
     // No two individuals' wings quite alike: as long and broad as its genes have them, held a
     // little higher or lower at rest.
     let dimensions = wing.truncate().truncate()
@@ -1503,12 +1504,13 @@ pub fn wing_bones<C: Flier>(p: Vec3, c: &C, look: Look, index: usize) -> f32 {
     let mut distance = 1e6f32;
     let wing = look.wings[index];
     let shoulder = look.hinges[index].extend(wing.z);
+    let out = c.wings().seat(index, shoulder.x);
     // Nothing of a wing reaches further from its shoulder than its span and chord, as long as its
     // genes can make them: far off, that is distance enough, and its pose need not be worked out.
     let reach = (wing.x + wing.y) * 1.2;
     for i in 0..2 {
         let side = if i == 0 { -1.0 } else { 1.0 };
-        let near = (p - vec3(shoulder.x * side, shoulder.y, shoulder.z)).length() - reach;
+        let near = (p - vec3(out * side, shoulder.y, shoulder.z)).length() - reach;
         if near > wing.y {
             distance = distance.min(near);
             continue;

@@ -167,7 +167,7 @@ taxon!(
 );
 
 /// Knots drawn along each mouth tentacle.
-const KNOTS: usize = 12;
+pub const KNOTS: usize = 12;
 
 /// The knot halfway along a tentacle, which with its root and tip is all that is simulated.
 const MIDDLE: usize = (KNOTS - 1) / 2;
@@ -329,6 +329,9 @@ pub fn oral_grasping(
     pairs: u32,
     grip: f32,
 ) -> f32 {
+    if creature.wings.measuring() {
+        return 1e6;
+    }
     let scale = scale * (0.35 + creature.life.y * 0.65);
     let bounds =
         (point - mouth).length() - scale * 3.2 * (0.8 + creature.gene(REACH) * 0.4) * (1.0 + grip);

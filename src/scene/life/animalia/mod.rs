@@ -66,6 +66,29 @@ impl Body for Animal {
 pub struct Wings {
     pub torn: Vec4,
     pub scarred: Vec4,
+    /// Where each pair of wings is rooted, as measured on this body's own surface: how far out from
+    /// the midline the fore and hind roots sit, whether they have been measured, and, while the
+    /// body is being measured, below zero, so neither wings nor tentacles are drawn on it.
+    pub seats: Vec4,
+}
+
+impl Wings {
+    /// Whether the body is being measured bare, so nothing grown on it should be drawn.
+    pub fn measuring(&self) -> bool {
+        self.seats.w < 0.0
+    }
+
+    /// How far out from the midline wing pair `index` is rooted, as measured, or as its species'
+    /// design has it if it has not been.
+    pub fn seat(&self, index: usize, designed: f32) -> f32 {
+        if self.seats.z <= 0.0 {
+            designed
+        } else if index == 0 {
+            self.seats.x
+        } else {
+            self.seats.y
+        }
+    }
 }
 
 /// A tail and trailing ribbons, posed by simulating them each frame, with where the tail was last
@@ -211,7 +234,7 @@ fn hide(p: Vec3, c: &CreatureInstance, look: Look, distance: f32) -> f32 {
 /// flank. The young have their own forms, buds and all.
 pub fn with_wings<C: Flier>(mut body: Surface, p: Vec3, creature: &C, look: Look) -> Surface {
     let c = creature.animal();
-    if c.life.w > 0.0 {
+    if c.life.w > 0.0 || creature.wings().measuring() {
         return body;
     }
     if body.material == 0 {

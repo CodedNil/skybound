@@ -268,6 +268,7 @@ impl Drawn {
             }),
         };
         animate(&mut drawn);
+        seats::seat(&mut drawn, kind);
         let look = species.look();
         let c = drawn.organism_mut();
         if c.life.w > 0.0 {
@@ -616,6 +617,8 @@ pub mod genome;
 pub mod organs;
 #[cfg(not(target_arch = "spirv"))]
 pub mod physics;
+#[cfg(not(target_arch = "spirv"))]
+pub mod seats;
 pub mod plantae;
 pub mod surface;
 #[cfg(not(target_arch = "spirv"))]
