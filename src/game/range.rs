@@ -191,13 +191,13 @@ impl Range {
                         .sum();
                     return hosts.clamp(0.05, 1.0);
                 }
-                let eaten: f32 = diet
+                let mass_eaten: f32 = diet
                     .iter()
                     .map(|&food| {
                         self.counts[region * kinds + food] * KINDS[food].biology().adult_mass
                     })
                     .sum();
-                let fed = eaten * 0.1 / eater.biology().adult_mass.max(1e-6);
+                let fed = mass_eaten * 0.1 / eater.biology().adult_mass.max(1e-6);
                 // A drifter straining the air lives as much on the algae and fragments drifting
                 // in it as on any plant it meets.
                 let drifting = if eater.floats() { 0.3 } else { 0.01 };
