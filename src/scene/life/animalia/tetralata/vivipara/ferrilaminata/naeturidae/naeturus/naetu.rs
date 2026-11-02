@@ -1,4 +1,4 @@
-use super::{KNOTS, Train, plumage, plume, rig_train, shaft, strip, tail_knot};
+use super::{KNOTS, Train, plumage, rig_train, shaft, strip, tail_knot};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
@@ -42,15 +42,12 @@ pub const BIOLOGY: Biology = Biology {
 
 pub const RENDER_RADIUS: f32 = 70.0;
 
-/// How full its gas lobes bulge, how large its aur sacs, how far its exchange frills fan, and how
-/// deep the fibres of its back grow.
+/// How full its gas lobes bulge, how large its aur sacs, and how deep the fibres of its back grow.
 ///
 /// Full lobes carry more and lose less to a wound, large sacs hold more of the mists' charge and
-/// raise a stronger shield, long frills breathe more of the air it flies through, and a deep pelt
-/// holds the Næ's dwellings fast.
+/// raise a stronger shield, and a deep pelt holds the Næ's dwellings fast.
 pub const CHAMBERS: Gene = Gene(38);
 pub const AUR_SACS: Gene = Gene(39);
-pub const FRILLS: Gene = Gene(40);
 pub const FIBRES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
@@ -61,7 +58,7 @@ taxon!(
     "Naetu",
     "Nætu",
     [
-        "Nætu are enormous four-winged carriers, built round their wings with great shoulders and haunches, broad flat backs, a heavy-browed face over a jutting muzzle, feathery exchange plumes fanning behind the cheeks and a long tail trailing a train of forked streamers wide as a second wing, lit along their ribs by the aur sacs.",
+        "Nætu are enormous four-winged carriers, built round their wings with great shoulders and haunches, broad flat backs, a heavy-browed face over a jutting muzzle and a long tail trailing a train of forked streamers wide as a second wing, lit along their ribs by the aur sacs.",
         "Three pairs of mouth tentacles gather vegetation, while redundant gas lobes along the upper flanks and pleated breathing channels reduce the cost of slow flight; the belly is pleated lengthwise round the great crop, and the folds open as it fills.",
         "Their wings are broad and stalked thick, for a carrier cruises rather than hovers, and beat slowly enough to count.",
         "A raised ridge rings the back, and in it sit the aur sacs, sheathed in iron: from its twentieth year a Nætu can let their charge out along the ridge as a shimmering dome over its back, brightest where it leaves the ridge, which turns the wind and the spray of the mists from everything that lives there.",
@@ -458,9 +455,7 @@ fn face(point: Vec3) -> f32 {
     smooth_min(d, chin, 1.2)
 }
 
-/// The head's own parts: the eyes set low under the brows, the feathery exchange plumes fanning
-/// back from behind the cheeks where the air it flies through strikes them first, and the mouth
-/// tentacles beneath.
+/// The head's own parts: the eyes set low under the brows, and the mouth tentacles beneath.
 fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     if point.z > -4.0 {
         return hit;
@@ -480,19 +475,6 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
     }
     let low = (mirrored - vec3(2.0, -2.9, -17.0)).length() - 0.35;
     hit.socket(low, 0.35);
-    let full = 0.8 + creature.gene(FRILLS) * 0.4;
-    let stir = (creature.animation.z * 0.6).sin() * 0.4;
-    for index in 0..3 {
-        let lane = index as f32;
-        let root = vec3(5.4, 1.0 - lane * 1.2, -13.0 + lane * 0.8);
-        let bend = root + vec3(3.6, 3.0 - lane * 1.6 + stir, 2.4) * full;
-        let tip = bend + vec3(2.4, 2.2 - lane * 1.8 + stir, 6.0 - lane * 0.8) * full;
-        hit.blend(
-            plume(mirrored, root, bend, tip, 0.5, 2.2 * full, 10.0),
-            16,
-            0.4,
-        );
-    }
     hit.blend(
         oral_grasping(point, creature, MOUTH, REACH, ORAL_PAIRS, GRIP),
         2,
@@ -565,14 +547,6 @@ fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
             // A streamer's raised rib, pale gold.
             m.color = vec3(0.92, 0.80, 0.52);
             m.roughness = 0.35;
-            m.relief = 0.0;
-        }
-        16 => {
-            // The exchange plumes: coral, fading to gold at their filament tips.
-            m.color = vec3(0.86, 0.36, 0.40)
-                .lerp(vec3(0.98, 0.76, 0.46), (point.y - 1.0).smoothstep(0.0, 4.0));
-            m.translucency = 0.45;
-            m.roughness = 0.45;
             m.relief = 0.0;
         }
         2 => {

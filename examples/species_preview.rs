@@ -1,5 +1,5 @@
 use futures_lite::future::block_on;
-use image::{RgbImage, RgbaImage, imageops};
+use image::{DynamicImage, RgbImage, RgbaImage, imageops};
 use rayon::prelude::*;
 use skybound::scene::{
     life,
@@ -113,6 +113,8 @@ enum Output {
     Variation,
     /// At every fork in the tree, every species below it side by side at their true sizes.
     Lineup,
+    /// The adult alone, large and still, from the view most of its sheets open on.
+    Portrait,
 }
 
 impl Output {
@@ -123,6 +125,7 @@ impl Output {
             Self::Lifecycle => "lifecycle",
             Self::Variation => "variation",
             Self::Lineup => "lineup",
+            Self::Portrait => "portrait",
         }
     }
 }
@@ -505,7 +508,7 @@ fn render_sheet(kind: usize, size: usize, output: Output, seconds: f32) -> Vec<R
                         fixed.clone()
                     }
                 }
-                Output::Variation | Output::Lineup => fixed.clone(),
+                Output::Variation | Output::Lineup | Output::Portrait => fixed.clone(),
             }
         })
         .collect();
@@ -677,6 +680,22 @@ fn render_lineup(taxon: &Taxon, seconds: f32) -> RgbaImage {
         i64::from((SHEET - sheet.height()) / 2),
     );
     square
+}
+
+/// The side of a portrait.
+const PORTRAIT: usize = 1536;
+
+/// The grown adult alone, large and still, from the three-quarter view most of its sheets open on.
+fn render_portrait(kind: usize, seconds: f32) -> RgbaImage {
+    let biology = life::KINDS[kind].biology();
+    let c = specimen(kind, biology.maturity_days * 1.25, 0, seconds);
+    let mut view = View::fit(1, &c);
+    view.field *= 1.08;
+    let pixels = draw(&[(c, &view, PORTRAIT)], false).remove(0);
+    DynamicImage::ImageRgb8(
+        RgbImage::from_raw(PORTRAIT as u32, PORTRAIT as u32, pixels).expect("portrait pixels"),
+    )
+    .to_rgba8()
 }
 
 /// The side of a lineup sheet.
@@ -882,6 +901,7 @@ fn pack(shapes: &[Silhouette], order: &[usize], width: u32) -> (Vec<(u32, u32)>,
 enum Job {
     Lineup(&'static Taxon, PathBuf),
     Sheet(usize, Output, PathBuf),
+    Portrait(usize, PathBuf),
 }
 
 /// How many previews are drawn at once: enough that the GPU traces one while the processor labels
@@ -936,7 +956,7 @@ fn run(jobs: Vec<Job>, tile: usize, seconds: f32) {
                 .filter(|(_, species)| species.descends_from(taxon))
                 .map(|(kind, _)| kind as u32)
                 .collect::<Vec<_>>(),
-            Job::Sheet(kind, _, _) => vec![*kind as u32],
+            Job::Sheet(kind, _, _) | Job::Portrait(kind, _) => vec![*kind as u32],
         })
         .collect();
     needed.sort_unstable();
@@ -955,6 +975,10 @@ fn run(jobs: Vec<Job>, tile: usize, seconds: f32) {
                         Some(Job::Lineup(taxon, path)) => {
                             save_webp(&path, &render_lineup(taxon, seconds));
                             println!("{}: {}", taxon.name, path.display());
+                        }
+                        Some(Job::Portrait(kind, path)) => {
+                            save_webp(&path, &render_portrait(kind, seconds));
+                            println!("{}: {}", SPECIES[kind].name, path.display());
                         }
                         Some(Job::Sheet(kind, output, path)) => {
                             save_sheet(
@@ -1000,7 +1024,7 @@ fn main() {
         if env::args().any(|arg| arg == "--anatomy") {
             "anatomy".into()
         } else {
-            "render,anatomy,lifecycle,variation,lineup".into()
+            "render,anatomy,lifecycle,variation,lineup,portrait".into()
         }
     });
     let outputs: Vec<_> = requested
@@ -1011,6 +1035,7 @@ fn main() {
             "lifecycle" => Output::Lifecycle,
             "variation" => Output::Variation,
             "lineup" => Output::Lineup,
+            "portrait" => Output::Portrait,
             _ => panic!("unknown output: {name}"),
         })
         .collect();
@@ -1039,6 +1064,20 @@ fn main() {
             |output| Path::new(output).join(filename(taxon)),
         );
         for &output in &outputs {
+            // The portrait is the species' own picture, named for it alone.
+            if output == Output::Portrait {
+                let path = base.with_file_name(format!(
+                    "{}.webp",
+                    base.file_stem()
+                        .expect("preview stem")
+                        .to_string_lossy()
+                        .trim_end_matches("_render")
+                ));
+                if all || !fresh(&path, since) {
+                    jobs.push(Job::Portrait(kind, path));
+                }
+                continue;
+            }
             let path = base.with_file_name(format!(
                 "{}_{}.gif",
                 base.file_stem()
