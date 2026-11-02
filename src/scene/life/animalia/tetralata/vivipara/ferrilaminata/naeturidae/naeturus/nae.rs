@@ -1,22 +1,26 @@
-use super::{feather, plume, shaft, vane};
-use crate::scene::life::{
-    Look, Tetralate,
-    animalia::{
-        tetralata::{oral_grasping, rig_grasping, tentacle_tip},
-        visit_wings, with_wings,
-    },
-    biology::{Biology, Litter},
-    genome::Gene,
-    louvres, prepare_pose, rounded, smooth_min,
-    surface::{Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material},
-    tapered_tail,
-};
+use super::{plume, shaft, strip, vane};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
     organs::{Part, pair},
 };
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
+use crate::scene::{
+    life::{
+        Look, Tetralate,
+        animalia::{
+            tetralata::{oral_grasping, rig_grasping, tentacle_tip},
+            visit_wings, with_wings,
+        },
+        biology::{Biology, Litter},
+        genome::Gene,
+        louvres, prepare_pose, rounded, smooth_min,
+        surface::{Hit, Material, Ray, Surface, TraceResult, WRINKLED, trace_material},
+        tapered_tail,
+    },
+    math::Power,
+    planet::GRAVITY,
+};
+use spirv_std::glam::{FloatExt, Quat, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -118,22 +122,178 @@ fn downward() -> (Vec3, f32, Vec3) {
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 0.4, 0.8, 0);
-    creature.opaque_bounds = vec3(0.7, 0.9, 1.4).extend(0.0);
+    creature.opaque_bounds = vec3(0.7, 0.9, 1.5).extend(0.0);
     rig_grasping(creature, MOUTH, REACH, ORAL_PAIRS, GRIP);
+    rig_train(creature);
 }
 
-/// Where its tail runs: back from the body and drooping, swaying as it flies, and curling forward
-/// at the tip into the hook it holds on with.
-fn tail_joint(creature: &Tetralate, index: u32) -> Vec3 {
-    let mut point = vec3(0.0, -0.02, 0.2);
-    let mut angle = 0.12f32;
-    for step in 0..index {
-        let t = (step + 1) as f32 / 7.0;
-        angle += 0.05 + (t - 0.8).max(0.0) * 6.0;
-        let sway = (creature.animation.z * 1.8 - t * 3.0).sin() * t * 0.04;
-        point += vec3(sway, -angle.sin(), angle.cos()) * 0.11;
+/// Knots along the tail and along each strand of the train.
+const KNOTS: usize = 6;
+
+/// Strands across the train, which hang from the tail side by side.
+const STRANDS: usize = 4;
+
+/// Where the tail leaves the body, and how long each stretch of it is.
+const TAIL_ROOT: Vec3 = vec3(0.0, -0.02, 0.2);
+const TAIL_STEP: f32 = 0.12;
+
+/// The knot along the tail from which the train hangs, and how long each stretch of a strand is.
+const TRAIN_KNOT: usize = 2;
+const TRAIN_STEP: f32 = 0.14;
+
+/// How far apart the strands of the train hang at their roots, and how much further apart they
+/// spread with each knot towards their ends.
+const SPREAD: f32 = 0.045;
+const FAN: f32 = 1.7;
+
+/// How far apart strands `a` and `b` of the train are meant to lie at knot `knot`.
+fn spacing(knot: usize) -> f32 {
+    SPREAD * (1.0 + knot as f32 * FAN)
+}
+
+/// Pose the tail and its train by simulating them, as a body moving through the air pulls them.
+///
+/// The tail is a chain held by its own muscle in a gentle droop behind the body, swinging under
+/// gravity and the air it flies through. The train hangs from it as a sheet: four strands rooted
+/// side by side on the tail, each a chain of its own and each held to its neighbours knot by knot,
+/// so the whole moves as cloth does, billowing and folding rather than as separate sticks. Settled
+/// from two starts on a fixed grid and crossfaded, so the pose moves smoothly from frame to frame.
+/// The tail goes in the first chain of the rig's ribbons and the strands in the next four.
+#[expect(
+    clippy::too_many_lines,
+    clippy::needless_range_loop,
+    reason = "the tail, the strands and the ties across them are stepped together, by knot and \
+              strand, as the rest of the shader crate does"
+)]
+fn rig_train(creature: &mut Tetralate) {
+    const STEP: f32 = 1.0 / 120.0;
+    const SETTLE: f32 = 2.0;
+    let turn = Quat::from_array(creature.rotation.to_array()).conjugate();
+    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
+    let flow = vec3(0.0, 0.0, creature.animation.w.max(1.5));
+    let end = creature.animation.z.max(0.0);
+    let droop = vec3(0.0, -0.22, 1.0) / vec3(0.0, -0.22, 1.0).length();
+    let rest_tail = |knot: usize| TAIL_ROOT + droop * TAIL_STEP * knot as f32;
+    let lane = |strand: usize| strand as f32 - (STRANDS as f32 - 1.0) * 0.5;
+    let rest_strand = |tail: Vec3, strand: usize, knot: usize| {
+        let out = vec3(lane(strand) * FAN * 0.35, -0.18, 1.0);
+        tail + vec3(lane(strand) * SPREAD, 0.0, 0.0) + out / out.length() * TRAIN_STEP * knot as f32
+    };
+    let settle = |start: f32| {
+        let start = start.max(0.0);
+        let mut tail = [Vec3::ZERO; KNOTS];
+        for (knot, point) in tail.iter_mut().enumerate() {
+            *point = rest_tail(knot);
+        }
+        let mut train = [[Vec3::ZERO; KNOTS]; STRANDS];
+        for (strand, chain) in train.iter_mut().enumerate() {
+            for (knot, point) in chain.iter_mut().enumerate() {
+                *point = rest_strand(tail[TRAIN_KNOT], strand, knot);
+            }
+        }
+        let (mut tail_before, mut train_before) = (tail, train);
+        let steps = ((end - start) / STEP) as usize;
+        for step in 0..steps {
+            let time = start + step as f32 * STEP;
+            let gust = vec3((time * 1.3).sin() * 0.6, (time * 0.9).cos() * 0.3, 0.0);
+            // The tail: muscle holds it towards its droop, strongest at the root.
+            let last = tail_before;
+            tail_before = tail;
+            for knot in 1..KNOTS {
+                let t = knot as f32 / (KNOTS - 1) as f32;
+                let velocity = (tail[knot] - last[knot]) * 0.97;
+                let tone = (rest_tail(knot) - tail[knot]) * (90.0 * (1.0 - t * 0.6));
+                let drag = (flow + gust - velocity / STEP) * 0.6;
+                tail[knot] += velocity + (gravity * 0.4 + drag + tone) * STEP * STEP;
+            }
+            for _ in 0..2 {
+                for knot in 1..KNOTS {
+                    let delta = tail[knot] - tail[knot - 1];
+                    let fix = delta * (1.0 - TAIL_STEP / delta.length().max(1e-6));
+                    if knot == 1 {
+                        tail[knot] -= fix;
+                    } else {
+                        tail[knot - 1] += fix * 0.5;
+                        tail[knot] -= fix * 0.5;
+                    }
+                }
+            }
+            tail[0] = TAIL_ROOT;
+            // The train: passive cloth, but for a little stiffness in each feather's shaft.
+            let last = train_before;
+            train_before = train;
+            for strand in 0..STRANDS {
+                for knot in 1..KNOTS {
+                    let velocity = (train[strand][knot] - last[strand][knot]) * 0.985;
+                    let flutter = vec3(
+                        0.0,
+                        (time * 4.0 + lane(strand) * 1.3 + knot as f32 * 0.9).sin() * 0.6,
+                        0.0,
+                    );
+                    let drag = (flow + gust + flutter - velocity / STEP) * 1.2;
+                    let shape =
+                        (rest_strand(tail[TRAIN_KNOT], strand, knot) - train[strand][knot]) * 12.0;
+                    train[strand][knot] += velocity + (gravity + drag + shape) * STEP * STEP;
+                }
+            }
+            for _ in 0..3 {
+                for strand in 0..STRANDS {
+                    for knot in 1..KNOTS {
+                        let delta = train[strand][knot] - train[strand][knot - 1];
+                        let fix = delta * (1.0 - TRAIN_STEP / delta.length().max(1e-6));
+                        if knot == 1 {
+                            train[strand][knot] -= fix;
+                        } else {
+                            train[strand][knot - 1] += fix * 0.5;
+                            train[strand][knot] -= fix * 0.5;
+                        }
+                    }
+                }
+                // Each strand held to the next across the sheet, as the vanes between them hold.
+                for strand in 1..STRANDS {
+                    for knot in 1..KNOTS {
+                        let delta = train[strand][knot] - train[strand - 1][knot];
+                        let fix = delta * (1.0 - spacing(knot) / delta.length().max(1e-6)) * 0.5;
+                        train[strand - 1][knot] += fix * 0.5;
+                        train[strand][knot] -= fix * 0.5;
+                    }
+                }
+                for strand in 0..STRANDS {
+                    train[strand][0] = tail[TRAIN_KNOT] + vec3(lane(strand) * SPREAD, 0.0, 0.0);
+                }
+            }
+        }
+        (tail, train)
+    };
+    let window = (end / SETTLE).floor();
+    let weight = end / SETTLE - window;
+    let (tail_earlier, train_earlier) = settle((window - 1.0) * SETTLE);
+    let (tail_later, train_later) = settle(window * SETTLE);
+    for knot in 0..KNOTS {
+        creature.rig.ribbons[knot] = tail_earlier[knot]
+            .lerp(tail_later[knot], weight)
+            .extend(0.0);
+        for strand in 0..STRANDS {
+            creature.rig.ribbons[(strand + 1) * KNOTS + knot] = train_earlier[strand][knot]
+                .lerp(train_later[strand][knot], weight)
+                .extend(0.0);
+        }
     }
-    point
+}
+
+/// Knot `knot` of the tail as the simulation left it.
+fn tail_knot(creature: &Tetralate, knot: usize) -> Vec3 {
+    creature.rig.ribbons[knot].truncate()
+}
+
+/// Knot `knot` of the train, `across` of the way from its first strand to its last.
+fn train_knot(creature: &Tetralate, across: f32, knot: usize) -> Vec3 {
+    let at = across.clamp(0.0, 1.0) * (STRANDS - 1) as f32;
+    let strand = (at as usize).min(STRANDS - 2);
+    let between = at - strand as f32;
+    let a = creature.rig.ribbons[(strand + 1) * KNOTS + knot].truncate();
+    let b = creature.rig.ribbons[(strand + 2) * KNOTS + knot].truncate();
+    a.lerp(b, between)
 }
 
 /// A Næ: small, soft and mostly head.
@@ -160,12 +320,49 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     d = smooth_min(d, snout, 0.06);
     let cheek = rounded(mirrored - vec3(0.12, -0.03, -0.13), vec3(0.07, 0.07, 0.08));
     d = smooth_min(d, cheek, 0.05);
+    // Soft pads of brow over the forward eyes, a furrow down the crown between them, a throat
+    // pouch behind the mouth that swells as it drinks, and the shoulders the wings root in.
+    let brow = rounded(
+        mirrored - vec3(0.065, 0.085, -0.255),
+        vec3(0.045, 0.022, 0.035),
+    );
+    d = smooth_min(d, brow, 0.03);
+    if point.y > 0.08 && point.z < 0.0 {
+        d += (1.0 - (point.x.abs() / 0.025).min(1.0)).power(2) * 0.006;
+    }
+    let throat = rounded(point - vec3(0.0, -0.115, -0.06), vec3(0.075, 0.045, 0.07));
+    d = smooth_min(d, throat, 0.04);
+    let shoulder = rounded(mirrored - vec3(0.115, 0.055, 0.02), vec3(0.06, 0.055, 0.07));
+    d = smooth_min(d, shoulder, 0.05);
+    // Fine pleats along the belly, as all its genus has, that open as the crop fills.
+    if point.y < -0.08 && point.z > -0.1 && point.z < 0.2 {
+        d += (1.0 - (point.x * 90.0).sin().abs()).power(6) * 0.003;
+    }
     // The mouth, a soft round opening beneath the head.
     let opening = (point - vec3(0.0, -0.13, -0.15)).length() - 0.02;
     d = d.max(-opening);
     d = louvres(d, point - vec3(0.0, 0.0, 0.08), vec3(0.15, 0.13, 0.18));
-    let tail = shaft(point, |index| tail_joint(creature, index), 8, 0.06, 0.016);
+    // The tail as the simulation left it, and the bare hook its tip curls into, below the train.
+    let tail = shaft(
+        point,
+        |index| tail_knot(creature, index as usize),
+        KNOTS as u32,
+        0.06,
+        0.02,
+    );
     d = smooth_min(d, tail, 0.06);
+    let tip = tail_knot(creature, KNOTS - 1);
+    let onward = tip - tail_knot(creature, KNOTS - 2);
+    let onward = onward / onward.length().max(1e-4);
+    let bend = tip + onward * 0.035 + vec3(0.0, -0.035, 0.0);
+    let hook = tapered_tail(point, tip, bend, 0.02, 0.016).min(tapered_tail(
+        point,
+        bend,
+        bend + vec3(0.0, -0.01, -0.04),
+        0.016,
+        0.008,
+    ));
+    d = smooth_min(d, hook, 0.015);
     let mut hit = with_wings(Surface::new(d, 0), point, creature, LOOK);
     // Its lip, a soft rosy ring round the mouth.
     let lip = vec2(
@@ -266,28 +463,29 @@ fn plumes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
 }
 
 /// Small feathers lying back along the spine in two rows, from the tail's root up to the crown,
-/// longest at the tail and smallest on the head.
+/// longest at the tail and smallest on the head, each lying close along the skin over the one
+/// behind it as shingles do.
 fn back(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    if point.y < 0.04 || point.z > 0.45 || point.z < -0.3 {
+    if point.y < 0.06 || point.z > 0.36 || point.z < -0.3 {
         return hit;
     }
     let long = 0.8 + creature.gene(CREST) * 0.4;
     let mut feathers = 1e6f32;
-    for index in 0..7 {
+    for index in 0..8 {
         let step = index as f32;
-        let z = 0.22 - step * 0.055;
+        let z = 0.24 - step * 0.048;
         // Along the line of the back, rising over the head.
-        let top = 0.125 + (-z).max(0.0) * 0.35;
+        let top = 0.128 + (-z).max(0.0) * 0.32;
         for side in 0..2 {
             let sign = if side == 0 { -1.0 } else { 1.0 };
-            let root = vec3(sign * 0.025, top - 0.01, z);
-            let direction = vec3(sign * 0.25, 0.3, 1.0);
+            let root = vec3(sign * 0.022, top - 0.008, z);
+            let direction = vec3(sign * 0.3, 0.04 - (-z).max(0.0) * 0.25, 1.0);
             feathers = feathers.min(vane(
                 point,
                 root,
                 direction / direction.length(),
-                (0.15 - step * 0.012) * long,
-                0.032 - step * 0.002,
+                (0.1 - step * 0.006) * long,
+                0.03 - step * 0.0015,
             ));
         }
     }
@@ -295,50 +493,98 @@ fn back(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit
 }
 
-/// The train: long forked streamers fanned from the tail and drooping under it, longest towards its
-/// end, over the bare hooked tip.
+/// How many streamers fan across the train.
+const STREAMERS: u32 = 7;
+
+/// The train: forked streamers fanned across the simulated sheet, each running from the tail out
+/// along it with a pale rib and beads lit by the aur sacs, and the jewellery its owner has hung
+/// from them.
 fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    let middle = tail_joint(creature, 4);
-    if (point - middle).length() > 1.1 {
+    let middle = train_knot(creature, 0.5, 2);
+    if (point - middle).length() > 1.0 {
         return hit;
     }
     let long = 0.85 + creature.gene(TRAIN) * 0.3;
     let mut vanes = 1e6f32;
-    let mut beads = 1e6f32;
     let mut ribs = 1e6f32;
-    for joint in 1..5 {
-        let root = tail_joint(creature, joint);
-        let ahead = tail_joint(creature, joint + 1) - root;
-        let ahead = ahead / ahead.length();
-        let reach = (0.4 + joint as f32 * 0.1) * long;
-        for lane in 0..4 {
-            let spread = (lane as f32 - 1.5) * (0.28 + joint as f32 * 0.07);
-            // Drooping a little more the further out they reach, as a heavy train does.
-            let direction = ahead + vec3(spread, -0.12 - spread.abs() * 0.15, 0.0);
-            let parts = feather(
-                point,
-                root,
-                direction / direction.length(),
-                reach,
-                0.06 + joint as f32 * 0.008,
-            );
-            vanes = vanes.min(parts.x);
-            beads = beads.min(parts.y);
-            ribs = ribs.min(parts.z);
+    let mut beads = 1e6f32;
+    for streamer in 0..STREAMERS {
+        let across = streamer as f32 / (STREAMERS - 1) as f32;
+        // The middle streamers are the longest.
+        let reach = (0.75 + (1.0 - (across - 0.5).abs() * 2.0) * 0.25) * long;
+        let last = ((KNOTS - 1) as f32 * reach) as usize;
+        for knot in 0..KNOTS - 1 {
+            if knot >= last {
+                break;
+            }
+            let a = train_knot(creature, across, knot);
+            let b = train_knot(creature, across, knot + 1);
+            // The sheet's own normal here, across it from strand to strand.
+            let side = train_knot(creature, (across + 0.1).min(1.0), knot)
+                - train_knot(creature, (across - 0.1).max(0.0), knot);
+            let normal = (b - a).cross(side);
+            let normal = normal / normal.length().max(1e-6);
+            let t = knot as f32 / (KNOTS - 1) as f32;
+            let width = 0.03 + t * 0.05;
+            if knot + 1 == last {
+                // The forked tip: two narrowing prongs either side of the line.
+                let offset = side / side.length().max(1e-6) * width * 0.6;
+                for prong in 0..2 {
+                    let sign = if prong == 0 { -1.0 } else { 1.0 };
+                    vanes = vanes.min(strip(
+                        point,
+                        a + offset * sign * 0.3,
+                        b + offset * sign,
+                        width * 0.55,
+                        width * 0.12,
+                        normal,
+                        8.0,
+                    ));
+                }
+            } else {
+                vanes = vanes.min(strip(point, a, b, width, width + 0.012, normal, 8.0));
+            }
+            ribs = ribs.min(tapered_tail(point, a, b, 0.006, 0.005));
+            if knot >= 2 {
+                beads = beads.min((point - b).length() - 0.009);
+            }
         }
     }
     hit.join(vanes, 1);
     hit.join(ribs, 14);
     hit.join(beads, 13);
-    // The tail's quills, where the feathers root, a little thicker than the shaft.
-    let quill = tapered_tail(
-        point,
-        tail_joint(creature, 1),
-        tail_joint(creature, 5),
-        0.03,
-        0.022,
-    );
-    hit.blend(quill, 0, 0.03);
+    jewellery(point, creature, hit)
+}
+
+/// The beads a Næ hangs from its streamers on fine strings: none on the young, more the more iron
+/// it has gathered and worked, each where and of what its owner chose.
+fn jewellery(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    let count = (creature.stores.x.min(1.0) * 4.0 + creature.chance(31) * 1.5) as u32;
+    let down = Quat::from_array(creature.rotation.to_array()).conjugate() * vec3(0.0, -1.0, 0.0);
+    let mut strings = 1e6f32;
+    for index in 0..4 {
+        if index >= count {
+            break;
+        }
+        let salt = 40 + index * 7;
+        let across = (creature.chance(salt) * STREAMERS as f32).floor() / (STREAMERS - 1) as f32;
+        let knot = 2 + (creature.chance(salt + 1) * 3.0) as usize;
+        let hang = 0.03 + creature.chance(salt + 2) * 0.05;
+        let from = train_knot(creature, across.min(1.0), knot);
+        // The strings hang below the train, swinging a little as it moves.
+        let swing = (creature.animation.z * 2.0 + index as f32 * 1.7).sin() * 0.25;
+        let to = from + (down + vec3(swing, 0.0, 0.3)) * hang;
+        strings = strings.min(tapered_tail(point, from, to, 0.0022, 0.0022));
+        let size = 0.008 + creature.chance(salt + 3) * 0.006;
+        // Most are worked iron; a few are lumps of the bright crust of the mists.
+        let material = if creature.chance(salt + 4) < 0.6 {
+            7
+        } else {
+            18
+        };
+        hit.join((point - to - down * size).length() - size, material);
+    }
+    hit.join(strings, 19);
     hit
 }
 
@@ -399,6 +645,20 @@ fn material(point: Vec3, id: u32) -> Material {
             // A streamer's raised rib, pale gold.
             m.color = vec3(0.92, 0.80, 0.52);
             m.roughness = 0.35;
+            m.relief = 0.0;
+        }
+        18 => {
+            // A bead of the bright crust of the mists, polished and faintly lit.
+            m.color = vec3(0.30, 0.78, 0.70);
+            m.roughness = 0.12;
+            m.emission = 0.15;
+            m.relief = 0.0;
+            m.scatter = 0.0;
+        }
+        19 => {
+            // Fibre string, twisted by hand.
+            m.color = vec3(0.70, 0.58, 0.40);
+            m.roughness = 0.8;
             m.relief = 0.0;
         }
         17 => {

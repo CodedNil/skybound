@@ -155,3 +155,21 @@ pub fn plume(
     }
     smooth_min(stem, filaments * 0.85, thickness * 0.3)
 }
+
+/// A flat strip from `a` to `b`, tapering from `start` to `end` wide, lying across `normal` (of
+/// unit length) and `flatness` times thinner than it is wide: one stretch of a streamer whose shape
+/// a simulation sets.
+pub fn strip(
+    point: Vec3,
+    a: Vec3,
+    b: Vec3,
+    start: f32,
+    end: f32,
+    normal: Vec3,
+    flatness: f32,
+) -> f32 {
+    let q = point - a;
+    let across = q.dot(normal);
+    let squashed = a + (q - normal * across) + normal * across * flatness;
+    tapered_tail(squashed, a, b, start, end) / flatness
+}

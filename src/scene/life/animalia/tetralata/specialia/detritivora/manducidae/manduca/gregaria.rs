@@ -102,7 +102,7 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         );
     }
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.join((side - vec3(0.3, -0.3, -1.05)).length() - 0.15, 3);
+    hit.socket((side - vec3(0.3, -0.3, -1.05)).length() - 0.15, 0.15);
     hit
 }
 

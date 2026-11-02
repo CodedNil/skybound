@@ -158,12 +158,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     hit.blend(lure, 9, 0.15);
     // Two great eyes beneath the head, set to look down and a little ahead.
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.join(
-        ellipsoid(
-            side - vec3(0.6, -0.55, -3.75),
-            vec3(0.55, 0.5, 0.6) * (0.85 + c.gene(EYES) * 0.3),
-        ),
-        3,
+    let eye = 0.55 * (0.85 + c.gene(EYES) * 0.3);
+    hit.socket(
+        ellipsoid(side - vec3(0.6, -0.55, -3.75), vec3(1.0, 0.9, 1.1) * eye),
+        eye,
     );
     maw(&mut hit, p, c);
     hit.blend(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8, 0.08);

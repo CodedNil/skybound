@@ -104,8 +104,8 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         0.05,
     );
     hit.join(spout.max(-bore), 7);
-    hit.join((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 3);
-    hit.join((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 3);
+    hit.socket((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 0.15);
+    hit.socket((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 0.11);
     // A pair of short, toothed mandibles either side of the spout, which part sideways as it
     // feeds to shear the softened meat its acid has opened, and close over the spout's root in
     // flight.

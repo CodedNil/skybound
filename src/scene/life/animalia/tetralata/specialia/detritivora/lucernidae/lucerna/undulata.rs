@@ -95,10 +95,17 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         hit.blend((rippled - lure).length() - bulb, 9, 0.04);
     }
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.join(
+    // The downward pair beneath the scoop, and the lineage's circlet as a ring of small eyes round
+    // the rim of the disc, clear of the scoop, seeing all round as it drifts.
+    hit.socket(
         ellipsoid(side - vec3(1.1, -0.45, -2.9), vec3(0.2, 0.16, 0.2)),
-        3,
+        0.18,
     );
+    for index in 0..5 {
+        let angle = 0.85 + index as f32 * 0.4;
+        let rim = vec3(3.0 * angle.sin(), 0.12, -3.48 * angle.cos());
+        hit.socket((side - rim).length() - 0.1, 0.1);
+    }
     hit.join(ribbons(p, c, 3), 9);
     hit
 }

@@ -163,8 +163,8 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     ) / 2.5;
     hit.distance = smooth_min(hit.distance, fork, 0.2);
     // Eyes: a forward pair either side of the stylet's root to judge the dive, and a pair beneath.
-    hit.join((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 3);
-    hit.join((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 3);
+    hit.socket((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 0.13);
+    hit.socket((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 0.1);
     rasp(&mut hit, p, c);
     hit.blend(oral_tentacles(p, c, MOUTH, 1.8, ORAL_PAIRS), 8, 0.18);
     hit

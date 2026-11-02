@@ -3,6 +3,7 @@ use crate::scene::life::organs::Part;
 use crate::scene::life::{
     BloodFeeder, Look,
     biology::{Biology, Litter},
+    eyespots,
     genome::Gene,
     rounded, smooth_min, sucker,
     surface::{Ray, Surface, TraceResult},
@@ -78,6 +79,8 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     if disc < body {
         hit.material = 1;
     }
+    // A row of cup eyes round the front of the body above the disc, as its kin carry them.
+    hit.pit(eyespots(p, vec3(0.28, 0.38, -0.78), 0.14, 3, 0.05), 0.05);
     hit.blend(
         sucker(
             p,
