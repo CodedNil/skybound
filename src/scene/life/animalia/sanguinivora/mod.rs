@@ -66,6 +66,9 @@ impl Body for BloodFeeder {
     fn carrying(&self) -> (Vec4, Vec4) {
         self.animal.carrying()
     }
+    fn sex(&self) -> f32 {
+        self.animal.sex()
+    }
     fn swung(&self, point: Vec3) -> Vec3 {
         self.rig.swung(point, Vec3::ONE)
     }

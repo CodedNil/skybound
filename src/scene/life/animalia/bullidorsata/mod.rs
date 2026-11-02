@@ -46,6 +46,9 @@ impl Body for Bubbleback {
     fn carrying(&self) -> (Vec4, Vec4) {
         self.animal.carrying()
     }
+    fn sex(&self) -> f32 {
+        self.animal.sex()
+    }
 }
 
 impl Creature for Bubbleback {

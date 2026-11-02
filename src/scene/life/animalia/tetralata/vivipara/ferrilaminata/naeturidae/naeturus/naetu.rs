@@ -1,4 +1,4 @@
-use super::{feather, plume, shaft};
+use super::{KNOTS, Train, plumage, plume, rig_train, shaft, strip, tail_knot};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
@@ -8,7 +8,7 @@ use crate::scene::{
     life::{
         Look, Tetralate,
         animalia::{
-            tetralata::{oral_tentacles, rig_tentacles, vivipara::ORAL_PAIRS},
+            tetralata::{DRAPE_KNOTS, DRAPES, oral_grasping, rig_grasping, vivipara::ORAL_PAIRS},
             visit_wings, with_wings,
         },
         biology::{Biology, Litter},
@@ -19,11 +19,13 @@ use crate::scene::{
             FURRED, Hit, Material, Ray, Surface, TraceResult, WRINKLED, local_ray, make_hit,
             trace_material,
         },
+        tapered_tail,
     },
     math::{Power, intersect_sphere},
+    planet::GRAVITY,
 };
 use core::f32::consts::PI;
-use spirv_std::glam::{FloatExt, Vec3, vec2, vec3, vec4};
+use spirv_std::glam::{FloatExt, Quat, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
 
@@ -107,15 +109,228 @@ fn on_head(direction: Vec3, inset: f32) -> Vec3 {
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 20.0, 25.0, 0);
-    creature.opaque_bounds = vec3(26.0, 18.0, 76.0).extend(0.0);
-    rig_tentacles(creature, MOUTH, REACH, ORAL_PAIRS);
+    creature.opaque_bounds = vec3(26.0, 40.0, 80.0).extend(0.0);
+    rig_grasping(creature, MOUTH, REACH, ORAL_PAIRS, GRIP);
+    rig_train(creature, TRAIN_SHAPE);
+    rig_drapes(creature);
 }
 
-/// Where its tail runs: straight out of the body, sinking a little and swaying slowly.
-fn tail_joint(creature: &Tetralate, index: u32) -> Vec3 {
-    let t = index as f32 / 7.0;
-    let sway = (creature.animation.z * 1.2 - t * 3.0).sin() * t * 2.0;
-    vec3(sway, 0.5 - t * 3.0, 15.0 + t * 28.0)
+/// How much longer again the outer pair of mouth tentacles grows, to reach out and gather.
+const GRIP: f32 = 0.6;
+
+/// Its tail and train: rooted at the back of its body, at its own great scale.
+const TRAIN_SHAPE: Train = Train {
+    root: vec3(0.0, 0.5, 15.0),
+    scale: 46.0,
+};
+
+/// One strand of cloth its Næ have hung on it: where along the belly it is tied, how long and
+/// wide, its two colours, its pattern and how many repeats of it, whether its end is fringed with
+/// tassels, and how many strings of gems hang from its end. All of it is the Næ's choosing, so
+/// each is drawn from the Nætu's own seed: no two are dressed alike.
+struct Drape {
+    anchor: Vec3,
+    length: f32,
+    width: f32,
+    colours: (Vec3, Vec3),
+    pattern: u32,
+    repeats: f32,
+    tassels: bool,
+    gems: u32,
+}
+
+/// How many strands of cloth hang from it, as its Næ have dressed it.
+fn drapes(creature: &Tetralate) -> usize {
+    2 + (creature.chance(200) * 6.99) as usize
+}
+
+/// Strand `index` of the cloth hung from it.
+fn drape(creature: &Tetralate, index: usize) -> Drape {
+    let salt = 210 + index as u32 * 17;
+    let chance = |offset: u32| creature.chance(salt + offset);
+    let z = -10.0 + chance(0) * 22.0;
+    let x = (chance(1) - 0.5) * 9.0;
+    // Tied on just under the skin of the belly, so it hangs from the body itself.
+    let torso = 1.0 - (x / 6.2).power(2) - ((z + 0.5) / 13.5).power(2);
+    let keel = 1.0 - (x / 2.2).power(2) - (z / 10.5).power(2);
+    let under = (0.2 - 4.8 * torso.max(0.0).sqrt()).min(-3.6 - 2.0 * keel.max(0.0).sqrt());
+    let first = hsv(chance(4), 0.45 + chance(5) * 0.5, 0.45 + chance(6) * 0.5);
+    let second = hsv(
+        chance(4) + 0.15 + chance(7) * 0.7,
+        0.3 + chance(8) * 0.6,
+        0.35 + chance(9) * 0.6,
+    );
+    Drape {
+        anchor: vec3(x, under + 0.6, z),
+        length: 8.0 + chance(2) * 26.0,
+        width: 0.8 + chance(3) * 2.6,
+        colours: (first, second),
+        pattern: (chance(10) * 5.99) as u32,
+        repeats: 2.0 + (chance(11) * 8.0).floor(),
+        tassels: chance(12) < 0.55,
+        gems: (chance(13) * 3.99) as u32,
+    }
+}
+
+/// A colour from its hue round the wheel, how saturated and how bright.
+fn hsv(hue: f32, saturation: f32, value: f32) -> Vec3 {
+    let wheel = vec3(hue, hue + 2.0 / 3.0, hue + 1.0 / 3.0);
+    let wheel = wheel - vec3(wheel.x.floor(), wheel.y.floor(), wheel.z.floor());
+    let ramp = (wheel * 6.0 - Vec3::splat(3.0)).abs() - Vec3::ONE;
+    let ramp = ramp.clamp(Vec3::ZERO, Vec3::ONE);
+    Vec3::ONE.lerp(ramp, saturation) * value
+}
+
+/// Pose the cloth hung from it by simulating it: each strand tied at its top, falling under gravity
+/// in the body's frame and streaming back in the air it flies through, flapping in the gusts.
+/// Settled from two starts on a fixed grid and crossfaded, so it moves smoothly frame to frame.
+fn rig_drapes(creature: &mut Tetralate) {
+    const STEP: f32 = 1.0 / 60.0;
+    const SETTLE: f32 = 3.0;
+    let turn = Quat::from_array(creature.rotation.to_array()).conjugate();
+    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
+    let flow = vec3(0.0, 0.0, creature.animation.w.max(2.0));
+    let end = creature.animation.z.max(0.0);
+    let count = drapes(creature);
+    for index in 0..DRAPES {
+        if index >= count {
+            break;
+        }
+        let strand = drape(creature, index);
+        let segment = strand.length / (DRAPE_KNOTS - 1) as f32;
+        let settle = |start: f32| {
+            let start = start.max(0.0);
+            let mut knots = [Vec3::ZERO; DRAPE_KNOTS];
+            for (knot, point) in knots.iter_mut().enumerate() {
+                *point = strand.anchor + vec3(0.0, -0.8, 0.6) * segment * knot as f32;
+            }
+            let mut before = knots;
+            let steps = ((end - start) / STEP) as usize;
+            for step in 0..steps {
+                let time = start + step as f32 * STEP;
+                let last = before;
+                before = knots;
+                for knot in 1..DRAPE_KNOTS {
+                    let velocity = (knots[knot] - last[knot]) * 0.98;
+                    let flap = vec3(
+                        (time * 1.7 + index as f32 * 2.1 + knot as f32 * 0.8).sin() * 1.5,
+                        (time * 2.3 + index as f32).cos() * 0.6,
+                        0.0,
+                    );
+                    let drag = (flow + flap - velocity / STEP) * 0.5;
+                    knots[knot] += velocity + (gravity + drag) * STEP * STEP;
+                }
+                for _ in 0..2 {
+                    for knot in 1..DRAPE_KNOTS {
+                        let delta = knots[knot] - knots[knot - 1];
+                        let fix = delta * (1.0 - segment / delta.length().max(1e-6));
+                        if knot == 1 {
+                            knots[knot] -= fix;
+                        } else {
+                            knots[knot - 1] += fix * 0.5;
+                            knots[knot] -= fix * 0.5;
+                        }
+                    }
+                }
+                knots[0] = strand.anchor;
+            }
+            knots
+        };
+        let window = (end / SETTLE).floor();
+        let weight = end / SETTLE - window;
+        let earlier = settle((window - 1.0) * SETTLE);
+        let later = settle(window * SETTLE);
+        for knot in 0..DRAPE_KNOTS {
+            creature.drapes[index][knot] = earlier[knot].lerp(later[knot], weight).extend(0.0);
+        }
+    }
+}
+
+/// Where along strand `index` of cloth a point lies, as a share of its length, and how far across
+/// it, as a share of its half width; and how far it is from the strand's line.
+fn on_drape(point: Vec3, creature: &Tetralate, index: usize) -> (f32, f32, f32) {
+    let mut best = (0.0, 0.0, 1e6f32);
+    for knot in 0..DRAPE_KNOTS - 1 {
+        let a = creature.drapes[index][knot].truncate();
+        let b = creature.drapes[index][knot + 1].truncate();
+        let axis = b - a;
+        let t = ((point - a).dot(axis) / axis.length_squared().max(1e-6)).clamp(0.0, 1.0);
+        let near = a + axis * t;
+        let distance = (point - near).length();
+        if distance < best.2 {
+            best = (
+                (knot as f32 + t) / (DRAPE_KNOTS - 1) as f32,
+                point.x - near.x,
+                distance,
+            );
+        }
+    }
+    best
+}
+
+/// The cloth hung from it: each strand a broad, flat band hanging from the belly and streaming
+/// back as it flies, some fringed with tassels at the end, some with strings of gems hanging below.
+fn cloth(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    if point.y > 2.0 {
+        return hit;
+    }
+    let count = drapes(creature);
+    let mut cords = 1e6f32;
+    for index in 0..DRAPES {
+        if index >= count {
+            break;
+        }
+        let strand = drape(creature, index);
+        let middle = creature.drapes[index][DRAPE_KNOTS / 2].truncate();
+        if (point - middle).length() > strand.length * 0.75 + strand.width + 6.0 {
+            continue;
+        }
+        let mut band = 1e6f32;
+        for knot in 0..DRAPE_KNOTS - 1 {
+            let a = creature.drapes[index][knot].truncate();
+            let b = creature.drapes[index][knot + 1].truncate();
+            // The band lies across the body, broad side to the air streaming past.
+            let normal = (b - a).cross(Vec3::X);
+            let normal = normal / normal.length().max(1e-6);
+            band = band.min(strip(point, a, b, strand.width, strand.width, normal, 14.0));
+        }
+        hit.join(band, 30 + index as u32);
+        let end = creature.drapes[index][DRAPE_KNOTS - 1].truncate();
+        let onward = end - creature.drapes[index][DRAPE_KNOTS - 2].truncate();
+        let onward = onward / onward.length().max(1e-4);
+        if strand.tassels {
+            for tassel in 0..5 {
+                let across = (tassel as f32 / 4.0 - 0.5) * strand.width * 1.8;
+                let from = end + vec3(across, 0.0, 0.0);
+                cords = cords.min(tapered_tail(point, from, from + onward * 1.8, 0.12, 0.06));
+            }
+        }
+        for string in 0..3 {
+            if string >= strand.gems {
+                break;
+            }
+            let salt = 400 + index as u32 * 23 + string * 5;
+            let across = (creature.chance(salt) - 0.5) * strand.width * 1.6;
+            let hang = 2.0 + creature.chance(salt + 1) * 5.0;
+            let from = end + vec3(across, 0.0, 0.0);
+            let to = from + vec3(0.0, -1.0, 0.25) * hang;
+            cords = cords.min(tapered_tail(point, from, to, 0.05, 0.05));
+            let size = 0.25 + creature.chance(salt + 2) * 0.3;
+            let pick = creature.chance(salt + 3);
+            let material = if pick < 0.35 {
+                7
+            } else if pick < 0.6 {
+                18
+            } else if pick < 0.8 {
+                22
+            } else {
+                23
+            };
+            hit.join((point - to).length() - size, material);
+        }
+    }
+    hit.join(cords, 19);
+    hit
 }
 
 /// A flying island: a broad, flat-backed carrier.
@@ -152,7 +367,13 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
         d = smooth_min(d, lobe, 1.2);
     }
     d = smooth_min(d, face(point), 2.6);
-    let tail = shaft(point, |index| tail_joint(creature, index), 8, 3.4, 0.6);
+    let tail = shaft(
+        point,
+        |index| tail_knot(creature, index as usize),
+        KNOTS as u32,
+        3.4,
+        0.8,
+    );
     d = smooth_min(d, tail, 3.0);
     // The crease along each flank, from behind the cheek to the haunch.
     if point.z > -12.0 && point.z < 12.0 {
@@ -197,6 +418,7 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mut hit = with_wings(Surface::new(d, material), point, creature, LOOK);
     hit = head_surface(point, creature, hit);
     hit = train(point, creature, hit);
+    hit = cloth(point, creature, hit);
     // The aur sacs set in the ridge, four to a side, glowing through iron collars thicker the more
     // iron it has gathered: the organs the shield is let out from.
     let sheath = 1.06 + creature.stores.x.min(1.0) * 0.14;
@@ -253,7 +475,7 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
         } else {
             0.6 - index as f32 * 0.06
         };
-        let eye = (mirrored - on_head(looking, 0.98)).length() - radius;
+        let eye = (mirrored - on_head(looking, 1.06)).length() - radius;
         hit.socket(eye, radius);
     }
     let low = (mirrored - vec3(2.0, -2.9, -17.0)).length() - 0.35;
@@ -272,47 +494,37 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
         );
     }
     hit.blend(
-        oral_tentacles(point, creature, MOUTH, REACH, ORAL_PAIRS),
+        oral_grasping(point, creature, MOUTH, REACH, ORAL_PAIRS, GRIP),
         2,
         0.3,
     );
     hit
 }
 
-/// The train: long forked streamers fanned from the last half of the tail, longest at its end,
-/// spread wide across the air like a second, trailing wing.
+/// The train: three rows of feathers rooted along the tail, as its genus grows them, broad enough
+/// to trail like a second wing.
 fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    if (point - tail_joint(creature, 5)).length() > 48.0 {
-        return hit;
-    }
-    let mut vanes = 1e6f32;
-    let mut beads = 1e6f32;
-    let mut ribs = 1e6f32;
-    for joint in 3..7 {
-        let root = tail_joint(creature, joint);
-        let ahead = tail_joint(creature, joint + 1) - root;
-        let ahead = ahead / ahead.length();
-        let reach = 15.0 + (joint as f32 - 3.0) * 5.0;
-        for lane in 0..4 {
-            let spread = (lane as f32 - 1.5) * (0.35 + (joint as f32 - 3.0) * 0.1);
-            let direction = ahead + vec3(spread, -0.1 - spread.abs() * 0.1, 0.0);
-            let parts = feather(point, root, direction / direction.length(), reach, 4.2);
-            vanes = vanes.min(parts.x);
-            beads = beads.min(parts.y);
-            ribs = ribs.min(parts.z);
-        }
-    }
-    hit.join(vanes, 1);
-    hit.join(ribs, 14);
-    hit.join(beads, 13);
+    let parts = plumage(point, creature, TRAIN_SHAPE, 1.0);
+    hit.join(parts.x, 1);
+    hit.join(parts.y, 14);
+    hit.join(parts.z, 13);
     hit
 }
 
 pub fn render_opaque(ray: Ray, creature: &Tetralate) -> Hit {
-    trace_material(ray, creature, surface, material)
+    trace_material(ray, creature, surface, move |point, id| {
+        material(point, id, creature)
+    })
 }
 
-fn material(point: Vec3, id: u32) -> Material {
+#[expect(
+    clippy::too_many_lines,
+    reason = "every tissue of the body, and the things hung on it, read best in one match"
+)]
+fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
+    if id >= 30 {
+        return fabric(point, (id - 30) as usize, creature);
+    }
     // A pale back over a dark belly, the countershading of a world lit from below, crossed by
     // broad bands of the herd's own green.
     let bands = (point.z * 0.35 + (point.x * 0.5).sin() * 2.0)
@@ -395,8 +607,76 @@ fn material(point: Vec3, id: u32) -> Material {
             m.relief = 0.6;
             m.grain = 1.5;
         }
+        7 => {
+            // Worked iron, polished bright by handling.
+            m.color = vec3(0.62, 0.62, 0.64);
+            m.metal = 0.9;
+            m.roughness = 0.18;
+            m.relief = 0.0;
+            m.scatter = 0.0;
+        }
+        18 => {
+            m.color = vec3(0.30, 0.78, 0.70);
+            m.roughness = 0.12;
+            m.emission = 0.15;
+            m.relief = 0.0;
+            m.scatter = 0.0;
+        }
+        22 => {
+            m.color = vec3(0.95, 0.58, 0.16);
+            m.roughness = 0.1;
+            m.translucency = 0.6;
+            m.relief = 0.0;
+            m.scatter = 0.0;
+        }
+        23 => {
+            m.color = vec3(0.86, 0.42, 0.52);
+            m.roughness = 0.12;
+            m.relief = 0.0;
+            m.scatter = 0.0;
+        }
+        19 => {
+            // Fibre cord and tassels, twisted by hand.
+            m.color = vec3(0.78, 0.64, 0.42);
+            m.roughness = 0.85;
+            m.relief = 0.0;
+        }
         _ => {}
     }
+    m
+}
+
+/// The cloth of strand `index`, woven and dyed by its Næ: its two colours in one of their
+/// patterns, plain, barred across, banded down its length, in chevrons, in diamonds, or fading from
+/// one to the other, with a border of the second colour down each edge.
+fn fabric(point: Vec3, index: usize, creature: &Tetralate) -> Material {
+    let strand = drape(creature, index);
+    let (along, across, _) = on_drape(point, creature, index);
+    let across = across / strand.width.max(1e-3);
+    let (first, second) = strand.colours;
+    let repeats = strand.repeats;
+    let mix = if strand.pattern == 0 {
+        0.0
+    } else if strand.pattern == 1 {
+        ((along * repeats * PI).sin() * 0.5 + 0.5).smoothstep(0.45, 0.55)
+    } else if strand.pattern == 2 {
+        ((across * repeats * 0.8).sin() * 0.5 + 0.5).smoothstep(0.45, 0.55)
+    } else if strand.pattern == 3 {
+        (((along * repeats * 2.0 + across.abs() * 1.5) * PI).sin() * 0.5 + 0.5).smoothstep(0.4, 0.6)
+    } else if strand.pattern == 4 {
+        let cell = vec2(along * repeats * 2.0, across * 2.0 + 0.5);
+        let cell = vec2(cell.x - cell.x.floor() - 0.5, cell.y - cell.y.floor() - 0.5);
+        1.0 - (cell.x.abs() + cell.y.abs()).smoothstep(0.3, 0.35)
+    } else {
+        along
+    };
+    let border = across.abs().smoothstep(0.78, 0.84);
+    let colour = first
+        .lerp(second, mix)
+        .lerp(second * 0.8 + vec3(0.1, 0.08, 0.02), border);
+    let mut m = Material::skin(colour, 0.8);
+    m.scatter = 0.4;
+    m.translucency = 0.35;
     m
 }
 

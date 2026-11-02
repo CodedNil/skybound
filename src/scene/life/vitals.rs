@@ -145,6 +145,21 @@ impl Vitals {
 
     /// Whether two bodies of one kind can breed together: any two of a lineage that is both sexes,
     /// otherwise one that bears and one that does not.
+    /// Which sex it is, as it is drawn: zero if its lineage is both sexes at once, one if it bears
+    /// the young, two if it does not.
+    pub fn sex(&self, kind: Kind) -> f32 {
+        let both = kind
+            .animal()
+            .is_none_or(|animal| animal.sexes == Sexes::Both);
+        if both {
+            0.0
+        } else if self.bears(kind) {
+            1.0
+        } else {
+            2.0
+        }
+    }
+
     pub fn suits(&self, other: &Self, kind: Kind) -> bool {
         let both = kind
             .animal()

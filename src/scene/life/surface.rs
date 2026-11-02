@@ -848,11 +848,12 @@ pub fn trace_material<C: Body, F: Fn(Vec3, &C) -> Surface, M: Fn(Vec3, u32) -> M
         hit
     };
     // A cutaway's organs are coloured as their species colours them; the rest is the body's own.
+    let sex = body.sex();
     let material = |point, id: u32| {
         if id >= ORGAN_ID {
             organ_material(c, id, point)
         } else {
-            material(point, id)
+            dimorphic(material(point, id), sex)
         }
     };
     let bounds = c.opaque_bounds.truncate();
@@ -980,6 +981,20 @@ fn shaded(ray: Ray, occlusion: f32, lit: f32) -> Ray {
         radiance: ray.radiance * (lit * lit * (3.0 - 2.0 * lit)) * crevice.sqrt(),
         ..ray
     }
+}
+
+/// A body's colour as its sex wears it. Where the sexes are parted, the one that does not carry
+/// the young courts by showing off and is the brighter and more saturated; the one that carries
+/// them, which must not be seen while it does, is the plainer.
+fn dimorphic(mut material: Material, sex: f32) -> Material {
+    let grey = material.color.dot(vec3(0.3, 0.5, 0.2));
+    if sex > 1.5 {
+        material.color = (Vec3::splat(grey) + (material.color - grey) * 1.45) * 1.06;
+    } else if sex > 0.5 {
+        material.color = Vec3::splat(grey) + (material.color - grey) * 0.8;
+    }
+    material.color = material.color.max(Vec3::ZERO);
+    material
 }
 
 /// Where a cutaway's organs begin among a surface's materials.

@@ -266,6 +266,7 @@ fn pose(shown: &Shown, now: f32) -> Drawn {
         animal.previous_motion = animal.motion;
         animal.hide = SceneVec4::new(vitals.overgrowth, blunted, 0.0, 0.0);
         animal.stores = SceneVec4::new(vitals.iron, 0.0, 0.0, held.1 as f32);
+        animal.sex = SceneVec4::new(vitals.sex(kind), 0.0, 0.0, 0.0);
     }
     if let Some(wings) = pose.wings_mut() {
         wings.torn = SceneVec4::from_array(vitals.torn);

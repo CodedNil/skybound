@@ -46,6 +46,10 @@ pub struct Animal {
     /// Its brood chamber, where it swells as its young grow: the centre in its body's frame and
     /// the chamber's size.
     pub belly: Vec4,
+    /// Which sex it is, for a lineage whose sexes are parted: zero for one that is both at once,
+    /// one for the sex that bears the young and two for the other; and spare. Most animal
+    /// lineages part them, and their sexes look and are built differently.
+    pub sex: Vec4,
 }
 
 impl Deref for Animal {
@@ -67,6 +71,9 @@ impl Body for Animal {
     }
     fn carrying(&self) -> (Vec4, Vec4) {
         (self.belly, self.stores)
+    }
+    fn sex(&self) -> f32 {
+        self.sex.x
     }
 }
 

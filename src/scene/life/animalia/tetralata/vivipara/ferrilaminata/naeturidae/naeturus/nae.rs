@@ -1,4 +1,7 @@
-use super::{feather_strip, plume, shaft};
+use super::{
+    KNOTS, TRAIN_FEATHERS, Train, feather_strip, plumage, plume, rig_train, shaft, tail_knot,
+    train_feather, train_knot,
+};
 #[cfg(not(target_arch = "spirv"))]
 use crate::scene::life::{
     animalia::tetralata::vivipara::ferrilaminata::naeturidae::AUR_SAC,
@@ -18,8 +21,8 @@ use crate::scene::{
         tapered_tail,
     },
     math::Power,
-    planet::GRAVITY,
 };
+use core::f32::consts::TAU;
 use spirv_std::glam::{FloatExt, Quat, Vec2, Vec3, vec2, vec3, vec4};
 #[cfg(target_arch = "spirv")]
 use spirv_std::num_traits::Float;
@@ -49,6 +52,16 @@ pub const HEFT: Gene = Gene(40);
 pub const TRAIN: Gene = Gene(41);
 pub const PLUMES: Gene = Gene(42);
 
+/// Its colouring: the hue of its skin, round the whole wheel; how far its feathers and plumes are
+/// turned from that; and how boldly it is barred across the back.
+///
+/// None is better than another for the body; they are how kin know kin. Families share them, and
+/// so the Næ of one drifting community, long bred among themselves, come to look alike and unlike
+/// those of the next, as different as teal from rose or gold.
+pub const TINT: Gene = Gene(43);
+pub const SPLASH: Gene = Gene(44);
+pub const BARS: Gene = Gene(45);
+
 #[cfg(not(target_arch = "spirv"))]
 pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
@@ -70,6 +83,7 @@ taxon!(
         "Moisture-recovery folds support short flights, although active travel still requires drinks from living basins.",
         "Isolated aur sacs support their magical abilities and are replenished through the protected life they share with bonded Nætu.",
         "They take iron in their diet as all their order does, and their bodies sheathe their aur sacs in it as their Nætu do; what they gather beyond that they work by hand into rings, threaded on the stems of their plumes, given and traded between friends, so that a Næ wears the record of everyone it has known.",
+        "Their colouring runs in families, every hue of skin and feather among them, so the Næ of one community, long bred among themselves, look alike and unlike those of the next. The sexes differ too: the one that carries the young is heavier, with larger aur sacs, and the other courts with a longer train and fuller plumes and wears the brighter colours.",
         "Families groom their companions, tend sheltered homes among dorsal fibres and navigate between drifting communities by currents and the distant polar beams.",
     ],
 );
@@ -77,7 +91,7 @@ taxon!(
 /// The head: its centre and half extents. A Næ is mostly head, as the young of every tetralate
 /// are, and keeps that build all its life.
 const HEAD: Vec3 = vec3(0.0, 0.03, -0.15);
-const HEAD_SIZE: Vec3 = vec3(0.17, 0.15, 0.16);
+const HEAD_SIZE: Vec3 = vec3(0.165, 0.14, 0.17);
 
 /// The body behind it, plump round the crop.
 const BODY: Vec3 = vec3(0.0, -0.01, 0.07);
@@ -130,177 +144,14 @@ pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 0.4, 0.8, 0);
     creature.opaque_bounds = vec3(0.7, 0.9, 1.5).extend(0.0);
     rig_grasping(creature, MOUTH, REACH, ORAL_PAIRS, GRIP);
-    rig_train(creature);
+    rig_train(creature, TRAIN_SHAPE);
 }
 
-/// Knots along the tail and along each strand of the train.
-const KNOTS: usize = 6;
-
-/// Strands across the train, which hang from the tail side by side.
-const STRANDS: usize = 4;
-
-/// Where the tail leaves the body, and how long each stretch of it is.
-const TAIL_ROOT: Vec3 = vec3(0.0, -0.02, 0.2);
-const TAIL_STEP: f32 = 0.12;
-
-/// The knot along the tail from which the train hangs, and how long each stretch of a strand is.
-const TRAIN_KNOT: usize = 2;
-const TRAIN_STEP: f32 = 0.14;
-
-/// How far apart the strands of the train hang at their roots, and how much further apart they
-/// spread with each knot towards their ends.
-const SPREAD: f32 = 0.045;
-const FAN: f32 = 1.7;
-
-/// How far apart strands `a` and `b` of the train are meant to lie at knot `knot`.
-fn spacing(knot: usize) -> f32 {
-    SPREAD * (1.0 + knot as f32 * FAN)
-}
-
-/// Pose the tail and its train by simulating them, as a body moving through the air pulls them.
-///
-/// The tail is a chain held by its own muscle in a gentle droop behind the body, swinging under
-/// gravity and the air it flies through. The train hangs from it as a sheet: four strands rooted
-/// side by side on the tail, each a chain of its own and each held to its neighbours knot by knot,
-/// so the whole moves as cloth does, billowing and folding rather than as separate sticks. Settled
-/// from two starts on a fixed grid and crossfaded, so the pose moves smoothly from frame to frame.
-/// The tail goes in the first chain of the rig's ribbons and the strands in the next four.
-#[expect(
-    clippy::too_many_lines,
-    clippy::needless_range_loop,
-    reason = "the tail, the strands and the ties across them are stepped together, by knot and \
-              strand, as the rest of the shader crate does"
-)]
-fn rig_train(creature: &mut Tetralate) {
-    const STEP: f32 = 1.0 / 120.0;
-    const SETTLE: f32 = 2.0;
-    let turn = Quat::from_array(creature.rotation.to_array()).conjugate();
-    let gravity = turn * vec3(0.0, -GRAVITY, 0.0);
-    let flow = vec3(0.0, 0.0, creature.animation.w.max(1.5));
-    let end = creature.animation.z.max(0.0);
-    let droop = vec3(0.0, -0.22, 1.0) / vec3(0.0, -0.22, 1.0).length();
-    let rest_tail = |knot: usize| TAIL_ROOT + droop * TAIL_STEP * knot as f32;
-    let lane = |strand: usize| strand as f32 - (STRANDS as f32 - 1.0) * 0.5;
-    let rest_strand = |tail: Vec3, strand: usize, knot: usize| {
-        let out = vec3(lane(strand) * FAN * 0.35, -0.18, 1.0);
-        tail + vec3(lane(strand) * SPREAD, 0.0, 0.0) + out / out.length() * TRAIN_STEP * knot as f32
-    };
-    let settle = |start: f32| {
-        let start = start.max(0.0);
-        let mut tail = [Vec3::ZERO; KNOTS];
-        for (knot, point) in tail.iter_mut().enumerate() {
-            *point = rest_tail(knot);
-        }
-        let mut train = [[Vec3::ZERO; KNOTS]; STRANDS];
-        for (strand, chain) in train.iter_mut().enumerate() {
-            for (knot, point) in chain.iter_mut().enumerate() {
-                *point = rest_strand(tail[TRAIN_KNOT], strand, knot);
-            }
-        }
-        let (mut tail_before, mut train_before) = (tail, train);
-        let steps = ((end - start) / STEP) as usize;
-        for step in 0..steps {
-            let time = start + step as f32 * STEP;
-            let gust = vec3((time * 1.3).sin() * 0.6, (time * 0.9).cos() * 0.3, 0.0);
-            // The tail: muscle holds it towards its droop, strongest at the root.
-            let last = tail_before;
-            tail_before = tail;
-            for knot in 1..KNOTS {
-                let t = knot as f32 / (KNOTS - 1) as f32;
-                let velocity = (tail[knot] - last[knot]) * 0.97;
-                let tone = (rest_tail(knot) - tail[knot]) * (90.0 * (1.0 - t * 0.6));
-                let drag = (flow + gust - velocity / STEP) * 0.6;
-                tail[knot] += velocity + (gravity * 0.4 + drag + tone) * STEP * STEP;
-            }
-            for _ in 0..2 {
-                for knot in 1..KNOTS {
-                    let delta = tail[knot] - tail[knot - 1];
-                    let fix = delta * (1.0 - TAIL_STEP / delta.length().max(1e-6));
-                    if knot == 1 {
-                        tail[knot] -= fix;
-                    } else {
-                        tail[knot - 1] += fix * 0.5;
-                        tail[knot] -= fix * 0.5;
-                    }
-                }
-            }
-            tail[0] = TAIL_ROOT;
-            // The train: passive cloth, but for a little stiffness in each feather's shaft.
-            let last = train_before;
-            train_before = train;
-            for strand in 0..STRANDS {
-                for knot in 1..KNOTS {
-                    let velocity = (train[strand][knot] - last[strand][knot]) * 0.985;
-                    let flutter = vec3(
-                        0.0,
-                        (time * 4.0 + lane(strand) * 1.3 + knot as f32 * 0.9).sin() * 0.6,
-                        0.0,
-                    );
-                    let drag = (flow + gust + flutter - velocity / STEP) * 1.2;
-                    let shape =
-                        (rest_strand(tail[TRAIN_KNOT], strand, knot) - train[strand][knot]) * 12.0;
-                    train[strand][knot] += velocity + (gravity + drag + shape) * STEP * STEP;
-                }
-            }
-            for _ in 0..3 {
-                for strand in 0..STRANDS {
-                    for knot in 1..KNOTS {
-                        let delta = train[strand][knot] - train[strand][knot - 1];
-                        let fix = delta * (1.0 - TRAIN_STEP / delta.length().max(1e-6));
-                        if knot == 1 {
-                            train[strand][knot] -= fix;
-                        } else {
-                            train[strand][knot - 1] += fix * 0.5;
-                            train[strand][knot] -= fix * 0.5;
-                        }
-                    }
-                }
-                // Each strand held to the next across the sheet, as the vanes between them hold.
-                for strand in 1..STRANDS {
-                    for knot in 1..KNOTS {
-                        let delta = train[strand][knot] - train[strand - 1][knot];
-                        let fix = delta * (1.0 - spacing(knot) / delta.length().max(1e-6)) * 0.5;
-                        train[strand - 1][knot] += fix * 0.5;
-                        train[strand][knot] -= fix * 0.5;
-                    }
-                }
-                for strand in 0..STRANDS {
-                    train[strand][0] = tail[TRAIN_KNOT] + vec3(lane(strand) * SPREAD, 0.0, 0.0);
-                }
-            }
-        }
-        (tail, train)
-    };
-    let window = (end / SETTLE).floor();
-    let weight = end / SETTLE - window;
-    let (tail_earlier, train_earlier) = settle((window - 1.0) * SETTLE);
-    let (tail_later, train_later) = settle(window * SETTLE);
-    for knot in 0..KNOTS {
-        creature.rig.ribbons[knot] = tail_earlier[knot]
-            .lerp(tail_later[knot], weight)
-            .extend(0.0);
-        for strand in 0..STRANDS {
-            creature.rig.ribbons[(strand + 1) * KNOTS + knot] = train_earlier[strand][knot]
-                .lerp(train_later[strand][knot], weight)
-                .extend(0.0);
-        }
-    }
-}
-
-/// Knot `knot` of the tail as the simulation left it.
-fn tail_knot(creature: &Tetralate, knot: usize) -> Vec3 {
-    creature.rig.ribbons[knot].truncate()
-}
-
-/// Knot `knot` of the train, `across` of the way from its first strand to its last.
-fn train_knot(creature: &Tetralate, across: f32, knot: usize) -> Vec3 {
-    let at = across.clamp(0.0, 1.0) * (STRANDS - 1) as f32;
-    let strand = (at as usize).min(STRANDS - 2);
-    let between = at - strand as f32;
-    let a = creature.rig.ribbons[(strand + 1) * KNOTS + knot].truncate();
-    let b = creature.rig.ribbons[(strand + 2) * KNOTS + knot].truncate();
-    a.lerp(b, between)
-}
+/// The Næ's tail and train: rooted at the back of its body, at its own small scale.
+const TRAIN_SHAPE: Train = Train {
+    root: vec3(0.0, -0.02, 0.2),
+    scale: 1.0,
+};
 
 /// A Næ: small, soft and mostly head.
 ///
@@ -310,18 +161,36 @@ fn train_knot(creature: &Tetralate, across: f32, knot: usize) -> Vec3 {
 /// fan back behind each cheek, threaded with rings of worked iron, the aur sacs glow on its flanks,
 /// and small feathers lie up its back from the tail to the crown. The tail droops under a train of
 /// forked streamers, its bare tip curled into a hook beneath them.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the body's forms are built up one on another and read best in order"
+)]
 pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let heft = 0.94 + creature.gene(HEFT) * 0.12;
+    // The sex that carries the young is the heavier.
+    let heft = 0.94
+        + creature.gene(HEFT) * 0.12
+        + if creature.sex.x > 0.5 && creature.sex.x < 1.5 {
+            0.06
+        } else {
+            0.0
+        };
     let head = rounded(point - HEAD, HEAD_SIZE);
     let body = rounded(point - BODY, BODY_SIZE * vec3(heft, heft, 1.0));
     let belly = rounded(
         point - vec3(0.0, -0.055, 0.06),
         vec3(0.13, 0.1, 0.15) * heft,
     );
-    // Head into body without a waist, as one soft form.
+    // Head into body without a waist, its crown flattened.
+    let head = -smooth_min(-head, -(point.y - 0.155), 0.03);
     let mut d = smooth_min(smooth_min(head, body, 0.12), belly, 0.06);
-    d = smooth_min(d, face(point), 0.03);
+    d = smooth_min(d, face(point), 0.012);
+    // A long rump behind the body, tapering into the tail, so the one runs into the other.
+    let rump = rounded(
+        point - vec3(0.0, -0.015, 0.21),
+        vec3(0.1, 0.085, 0.14) * heft,
+    );
+    d = smooth_min(d, rump, 0.06);
     // Full cheeks behind the eyes, where the plumes root, and a throat pouch behind the mouth that
     // swells as it drinks.
     let cheek = rounded(mirrored - vec3(0.11, -0.05, -0.09), vec3(0.06, 0.06, 0.07));
@@ -330,24 +199,24 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     d = smooth_min(d, throat, 0.04);
     // The body reaches out to each pair of wings: broad shoulders drawn out into the fore wings'
     // roots and narrower haunches into the hind, so it narrows between them to a waist.
-    let shoulder = rounded(mirrored - vec3(0.12, 0.05, 0.0), vec3(0.07, 0.05, 0.08));
+    let shoulder = rounded(mirrored - vec3(0.1, 0.05, 0.0), vec3(0.06, 0.05, 0.07));
     let fore = tapered_tail(
         mirrored,
-        vec3(0.06, 0.05, -0.01),
-        vec3(0.135, 0.07, -0.02),
-        0.05,
+        vec3(0.05, 0.05, -0.01),
+        vec3(0.172, 0.068, -0.02),
+        0.055,
         0.03,
     );
-    let haunch = rounded(mirrored - vec3(0.1, 0.03, 0.16), vec3(0.055, 0.045, 0.06));
+    let haunch = rounded(mirrored - vec3(0.09, 0.03, 0.15), vec3(0.05, 0.045, 0.055));
     let hind = tapered_tail(
         mirrored,
         vec3(0.05, 0.03, 0.15),
-        vec3(0.125, 0.045, 0.15),
-        0.04,
-        0.024,
+        vec3(0.152, 0.045, 0.15),
+        0.045,
+        0.026,
     );
-    d = smooth_min(d, shoulder.min(fore), 0.045);
-    d = smooth_min(d, haunch.min(hind), 0.04);
+    d = smooth_min(d, shoulder.min(fore), 0.025);
+    d = smooth_min(d, haunch.min(hind), 0.025);
     // Fine pleats along the belly, as all its genus has, that open as the crop fills.
     if point.y < -0.08 && point.z > -0.1 && point.z < 0.2 {
         d += (1.0 - (point.x * 90.0).sin().abs()).power(6) * 0.003;
@@ -361,10 +230,10 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
         point,
         |index| tail_knot(creature, index as usize),
         KNOTS as u32,
-        0.06,
+        0.075,
         0.02,
     );
-    d = smooth_min(d, tail, 0.06);
+    d = smooth_min(d, tail, 0.08);
     let tip = tail_knot(creature, KNOTS - 1);
     let onward = tip - tail_knot(creature, KNOTS - 2);
     let onward = onward / onward.length().max(1e-4);
@@ -395,7 +264,13 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     let (at, radius, _) = downward();
     hit.socket((mirrored - at).length() - radius, radius);
     // An aur sac on each flank, glowing through the iron collar its body laid down round it.
-    let sac = 0.028 + creature.gene(SACS) * 0.018;
+    // The sex that carries the young carries larger aur sacs, to heal and shield its brood.
+    let bearer = if creature.sex.x > 0.5 && creature.sex.x < 1.5 {
+        1.2
+    } else {
+        1.0
+    };
+    let sac = (0.028 + creature.gene(SACS) * 0.018) * bearer;
     let at = mirrored - vec3(0.135, 0.0, 0.07);
     hit.join(at.length() - sac, 9);
     let sheath = sac * (1.08 + creature.stores.x.min(1.0) * 0.2);
@@ -404,6 +279,7 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
         .max(at.x - sac * 0.3);
     hit.join(collar, 11);
     hit = plumes(point, creature, hit);
+    hit = tuft(point, creature, hit);
     hit = train(point, creature, hit);
     hit = hands(point, creature, hit);
     hit
@@ -414,40 +290,58 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
 /// low ridges sweeping from the brows back over the crown into the line of the back.
 fn face(point: Vec3) -> f32 {
     let mirrored = vec3(point.x.abs(), point.y, point.z);
-    let snout = rounded(point - vec3(0.0, -0.005, -0.275), vec3(0.075, 0.058, 0.05));
-    let chin = rounded(point - vec3(0.0, -0.075, -0.25), vec3(0.05, 0.03, 0.04));
+    let snout = rounded(point - vec3(0.0, -0.005, -0.28), vec3(0.07, 0.055, 0.05));
+    let chin = rounded(point - vec3(0.0, -0.075, -0.255), vec3(0.05, 0.03, 0.04));
+    // The bridge of the snout, a ridge from its tip up between the forward eyes.
+    let bridge = tapered_tail(
+        point,
+        vec3(0.0, 0.035, -0.325),
+        vec3(0.0, 0.12, -0.22),
+        0.016,
+        0.012,
+    );
+    // A heavy ridge of brow over each forward eye, running on as a ledge along the line of the eyes
+    // behind it.
     let brow = tapered_tail(
         mirrored,
-        vec3(0.025, 0.09, -0.295),
-        vec3(0.115, 0.07, -0.24),
-        0.016,
-        0.01,
-    );
+        vec3(0.02, 0.095, -0.3),
+        vec3(0.11, 0.08, -0.265),
+        0.02,
+        0.015,
+    )
+    .min(tapered_tail(
+        mirrored,
+        vec3(0.11, 0.08, -0.265),
+        vec3(0.17, 0.06, -0.15),
+        0.015,
+        0.007,
+    ));
     let cheekbone = tapered_tail(
         mirrored,
-        vec3(0.09, -0.035, -0.265),
-        vec3(0.155, -0.015, -0.13),
-        0.016,
+        vec3(0.085, -0.035, -0.27),
+        vec3(0.16, -0.02, -0.12),
+        0.02,
         0.01,
     );
     let crown = tapered_tail(
         mirrored,
-        vec3(0.05, 0.1, -0.27),
+        vec3(0.045, 0.105, -0.27),
         vec3(0.035, 0.16, -0.12),
+        0.016,
         0.013,
-        0.011,
     )
     .min(tapered_tail(
         mirrored,
         vec3(0.035, 0.16, -0.12),
         vec3(0.022, 0.14, 0.02),
-        0.011,
+        0.013,
         0.006,
     ));
-    let mut d = smooth_min(snout, chin, 0.02);
-    d = smooth_min(d, brow, 0.015);
-    d = smooth_min(d, cheekbone, 0.02);
-    smooth_min(d, crown, 0.015)
+    let mut d = smooth_min(snout, chin, 0.015);
+    d = smooth_min(d, bridge, 0.012);
+    d = smooth_min(d, brow, 0.01);
+    d = smooth_min(d, cheekbone, 0.012);
+    smooth_min(d, crown, 0.01)
 }
 
 /// The mouth tentacles, and on the tip of each of the long outer pair three fine fingers, splayed a
@@ -486,6 +380,45 @@ fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     hit
 }
 
+/// The tuft on its forehead: three long feathers rising from between the brows and sweeping back
+/// over the crown, the middle one longest, as long as its genes have them and longer in the sex
+/// that courts.
+fn tuft(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    if (point - vec3(0.0, 0.25, -0.12)).length() > 0.3 {
+        return hit;
+    }
+    let long = (0.85 + creature.gene(CREST) * 0.3) * if creature.sex.x > 1.5 { 1.2 } else { 1.0 };
+    let stir = (creature.animation.z * 2.5).sin() * 0.01;
+    let mut feathers = 1e6f32;
+    for index in 0..3 {
+        let lane = index as f32 - 1.0;
+        let length = (0.24 - lane.abs() * 0.05) * long;
+        let root = vec3(lane * 0.018, 0.14, -0.215);
+        let rise = vec3(lane * 0.35, 0.85, 0.45);
+        let bend = root + rise / rise.length() * length * 0.5;
+        let back = vec3(lane * 0.45, 0.25 + stir * 10.0, 1.0);
+        let tip = bend + back / back.length() * length * 0.5;
+        for half in 0..2 {
+            let (a, b) = if half == 0 { (root, bend) } else { (bend, tip) };
+            let normal = (b - a).cross(Vec3::Y);
+            let normal = normal / normal.length().max(1e-5);
+            let width = |at: f32| 0.004 + 0.016 * (at * 3.0).min(1.0) * (1.0 - at.power(3));
+            let start = half as f32 * 0.5;
+            feathers = feathers.min(feather_strip(
+                point,
+                a,
+                b,
+                start * length,
+                (width(start), width(start + 0.5)),
+                normal,
+                10.0,
+            ));
+        }
+    }
+    hit.join(feathers, 1);
+    hit
+}
+
 /// The three feathery plumes behind each cheek, sweeping back and up, with a ring of worked iron
 /// on each stem.
 fn plumes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
@@ -493,7 +426,8 @@ fn plumes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
     if (mirrored - vec3(0.25, 0.02, -0.02)).length() > 0.5 {
         return hit;
     }
-    let full = 0.85 + creature.gene(PLUMES) * 0.3;
+    // The sex that does not carry the young courts with them, and grows them fuller.
+    let full = (0.85 + creature.gene(PLUMES) * 0.3) * if creature.sex.x > 1.5 { 1.25 } else { 1.0 };
     // They stir with the wingbeat.
     let stir = (creature.animation.z * 3.0).sin() * 0.015;
     for index in 0..3 {
@@ -534,7 +468,7 @@ fn jitter(cell: Vec2) -> f32 {
 /// feather from the middle, how far back through it from base to tip, and how large it is. They
 /// lie in staggered rows like shingles, each tip overlapping the base of the one behind, growing
 /// from the head down the back, and each a little out of line with its neighbours.
-fn contour(point: Vec3) -> (f32, f32, f32) {
+fn contour(point: Vec3) -> (f32, f32, f32, f32) {
     let size = plume_scale(point.z);
     let rows = point.z / (0.026 * size);
     let row = rows.floor();
@@ -548,7 +482,7 @@ fn contour(point: Vec3) -> (f32, f32, f32) {
     let wobble = jitter(vec2(row, column));
     let across = columns - column - 0.5 + (wobble - 0.5) * 0.25;
     let back = (rows - row + (wobble - 0.5) * 0.3).clamp(0.0, 1.0);
-    (across, back, size)
+    (across, back, size, wobble)
 }
 
 /// How far up round the tail's line a point near it lies, from -1 beneath to 1 on top, or -1 if
@@ -581,7 +515,7 @@ fn feathered(body: f32, point: Vec3, creature: &Tetralate) -> (f32, u32) {
         return (body, 0);
     }
     // Over the back and the upper flanks from behind the brow, and on down the tail's top.
-    let back = point.y.smoothstep(-0.05, 0.08) * (point.z + 0.22).smoothstep(0.0, 0.12);
+    let back = point.y.smoothstep(-0.09, 0.07) * (point.z + 0.25).smoothstep(0.0, 0.16);
     let tail = if point.z > 0.15 {
         tail_top(point, creature).smoothstep(-0.2, 0.5)
     } else {
@@ -592,17 +526,21 @@ fn feathered(body: f32, point: Vec3, creature: &Tetralate) -> (f32, u32) {
     if coat <= 0.0 && ruff <= 0.0 {
         return (body, 0);
     }
-    let (across, along, size) = contour(point);
+    let (across, along, size, wobble) = contour(point);
+    // Towards the coat's edges the feathers thin out one by one rather than stopping on a line:
+    // each grows only where the coat is thicker than its own chance.
+    let threshold = 0.1 + wobble * 0.75;
+    let present = coat.smoothstep(threshold - 0.06, threshold + 0.06);
     // Each feather rounded at its tip, rising from its base under the one before to its tip.
     let outline = (across * 2.0).power(2) + (1.0 - along).power(2) * 0.6;
-    let lift = along * (1.0 - outline).max(0.0).sqrt() * 0.004 * size * coat;
+    let lift = along * (1.0 - outline).max(0.0).sqrt() * 0.004 * size * present;
     // The down: soft, fine tufts.
     let around = point.y.atan2(point.x);
     let fluff =
         ((around * 22.0).sin() * 0.5 + 0.5) * ((point.z * 160.0).sin() * 0.3 + 0.7) * 0.007 * ruff;
     let id = if ruff > 0.35 {
         21
-    } else if coat > 0.4 {
+    } else if present > 0.5 {
         20
     } else {
         0
@@ -610,80 +548,15 @@ fn feathered(body: f32, point: Vec3, creature: &Tetralate) -> (f32, u32) {
     (body - lift - fluff, id)
 }
 
-/// The train: three rows of feathers rooted one after another along the tail, short coverts
-/// nearest the body and the long tail feathers at its end, each lying across the simulated sheet
-/// as it billows, narrow at its quill, widest past its middle and rounded at its tip, with barbs
-/// angled back from a pale shaft and beads along the shaft lit by the aur sacs; and the jewellery
-/// its owner has hung from them.
+/// The train, with the jewellery its owner has hung from it.
 fn train(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    let middle = train_knot(creature, 0.5, 2);
-    if (point - middle).length() > 1.0 {
-        return hit;
-    }
-    let long = 0.85 + creature.gene(TRAIN) * 0.3;
-    let mut vanes = 1e6f32;
-    let mut ribs = 1e6f32;
-    let mut beads = 1e6f32;
-    for feather in 0..TRAIN_FEATHERS {
-        let (root, across, reach) = train_feather(feather);
-        let base = tail_knot(creature, root);
-        let start = train_knot(creature, across, 0);
-        let last = (((KNOTS - 1) as f32 * reach * long) as usize).clamp(2, KNOTS - 1);
-        // A feather's width a share of the way along it: a quill at the root, widest beyond the
-        // middle, and closing to a rounded tip.
-        let width = |knot: usize| {
-            let u = knot as f32 / last as f32;
-            0.006 + 0.055 * reach * (u * 3.0).min(1.0) * (1.0 - u.power(3))
-        };
-        // Each follows the sheet's shape, but from its own root along the tail.
-        let at = |knot: usize| base + (train_knot(creature, across, knot) - start) * reach;
-        for knot in 0..KNOTS - 1 {
-            if knot >= last {
-                break;
-            }
-            let a = at(knot);
-            let b = at(knot + 1);
-            // The sheet's own normal here, across it from strand to strand.
-            let side = train_knot(creature, (across + 0.1).min(1.0), knot)
-                - train_knot(creature, (across - 0.1).max(0.0), knot);
-            let normal = (b - a).cross(side);
-            let normal = normal / normal.length().max(1e-6);
-            vanes = vanes.min(feather_strip(
-                point,
-                a,
-                b,
-                knot as f32 * TRAIN_STEP,
-                (width(knot), width(knot + 1)),
-                normal,
-                10.0,
-            ));
-            ribs = ribs.min(tapered_tail(point, a, b, 0.005, 0.0035));
-            if reach > 0.8 && knot >= 2 && knot + 1 < last {
-                beads = beads.min((point - b).length() - 0.008);
-            }
-        }
-    }
-    hit.join(vanes, 1);
-    hit.join(ribs, 14);
-    hit.join(beads, 13);
+    // The sex that does not carry the young courts with its train, and grows it longer.
+    let long = (0.85 + creature.gene(TRAIN) * 0.3) * if creature.sex.x > 1.5 { 1.25 } else { 0.95 };
+    let parts = plumage(point, creature, TRAIN_SHAPE, long);
+    hit.join(parts.x, 1);
+    hit.join(parts.y, 14);
+    hit.join(parts.z, 13);
     jewellery(point, creature, hit)
-}
-
-/// How many feathers make the train.
-const TRAIN_FEATHERS: u32 = 10;
-
-/// Train feather `index`: the tail knot it roots at, where across the sheet it lies, and how long
-/// it is as a share of the longest. Three rows, staggered so each falls between those of the row
-/// before: short coverts at the tail's root, longer feathers past its middle, and the longest at
-/// its end.
-fn train_feather(index: u32) -> (usize, f32, f32) {
-    if index < 3 {
-        (1, 0.15 + index as f32 * 0.35, 0.45)
-    } else if index < 6 {
-        (2, (index - 3) as f32 * 0.5, 0.75)
-    } else {
-        (3, 0.1 + (index - 6) as f32 * 0.27, 1.0)
-    }
 }
 
 /// The gems a Næ hangs from its train on long strings, gathered over its life: none on the young,
@@ -758,22 +631,29 @@ fn jewellery(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
 }
 
 pub fn render_opaque(ray: Ray, creature: &Tetralate) -> Hit {
-    trace_material(ray, creature, surface, material)
+    trace_material(ray, creature, surface, move |point, id| {
+        material(point, id, creature)
+    })
 }
 
 #[expect(
     clippy::too_many_lines,
     reason = "every tissue of the body reads best in one match"
 )]
-fn material(point: Vec3, id: u32) -> Material {
+fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
     // A pale back and brow over a deep teal belly, the countershading of a world lit from below.
     let back = point.y.smoothstep(-0.02, 0.09);
     let belly = (-point.y).smoothstep(0.02, 0.12);
     // The snout a warm cream, which makes a face of the large eyes either side of it.
     let muzzle = (-point.z).smoothstep(0.22, 0.3) * (1.0 - (point.x.abs() / 0.06).min(1.0));
+    // Bars across the back, as bold as its genes have them.
+    let barred = ((point.z * 34.0 + (point.x * 20.0).sin() * 0.6).sin() * 0.5 + 0.5)
+        .smoothstep(0.55, 0.8)
+        * back
+        * creature.gene(BARS);
     let mut m = Material::skin(
         vec3(0.20, 0.50, 0.54)
-            .lerp(vec3(0.42, 0.74, 0.72), back)
+            .lerp(vec3(0.42, 0.74, 0.72), back * (1.0 - barred * 0.7))
             .lerp(vec3(0.05, 0.16, 0.22), belly * 0.85)
             .lerp(vec3(0.94, 0.86, 0.70), muzzle * 0.8),
         0.5,
@@ -847,7 +727,7 @@ fn material(point: Vec3, id: u32) -> Material {
         }
         20 => {
             // Contour feathers, each darker at its base under the one before and pale at the tip.
-            let (across, back, _) = contour(point);
+            let (across, back, _, _) = contour(point);
             let edge =
                 back.smoothstep(0.6, 0.95) * (1.0 - (across.abs() * 2.0).smoothstep(0.7, 1.0));
             m.color = vec3(0.14, 0.40, 0.44).lerp(vec3(0.58, 0.80, 0.76), edge * 0.7);
@@ -925,7 +805,25 @@ fn material(point: Vec3, id: u32) -> Material {
         }
         _ => {}
     }
+    // Its family's colours: the skin turned round the wheel as its genes have it, and its
+    // feathers and plumes turned further, so a whole community can be rose, gold or violet where
+    // another is teal. Eyes, gems, iron and the glow of the aur keep their own.
+    let skin = (creature.gene(TINT) - 0.5) * TAU * 0.9;
+    let feathers = skin + (creature.gene(SPLASH) - 0.5) * TAU * 0.6;
+    if id == 0 || id == 2 || id == 17 || id == 20 || id == 21 {
+        m.color = turned(m.color, skin);
+    } else if id == 1 || id == 14 || id == 16 {
+        m.color = turned(m.color, feathers);
+    }
     m
+}
+
+/// A colour turned round the colour wheel by `angle`, keeping how light it is.
+fn turned(colour: Vec3, angle: f32) -> Vec3 {
+    let axis = Vec3::splat(0.577_350_26);
+    let (sine, cosine) = angle.sin_cos();
+    (colour * cosine + axis.cross(colour) * sine + axis * axis.dot(colour) * (1.0 - cosine))
+        .max(Vec3::ZERO)
 }
 
 /// The organs that are its own, beside the body plan its lineage gives it; see [`Part`].
@@ -943,7 +841,7 @@ pub const LOOK: Look = Look::coat(
     vec3(0.24, 0.56, 0.58),
     [vec4(0.72, 0.3, -0.02, 0.98), vec4(0.52, 0.24, 0.15, 0.98)],
 )
-.hinged([vec2(0.12, 0.07), vec2(0.12, 0.04)])
+.hinged([vec2(0.175, 0.068), vec2(0.155, 0.045)])
 .stalked([vec2(0.22, 0.65), vec2(0.22, 0.65)])
 .styled([vec4(0.35, 0.4, 0.0, 0.0), vec4(0.25, 0.4, 0.0, 0.0)])
 .framed([0.35, 0.3])

@@ -5,7 +5,9 @@ use skybound::scene::{
     life,
     life::{
         BloodFeeder, Bubbleback, Drawn, Injury, Plant, Rank, SPECIES, SPECIES_MODULES, Taxon,
-        Tetralate, Wound, animalia::physiology::Brood, surface::tonemap,
+        Tetralate, Wound,
+        animalia::physiology::{Brood, Sexes},
+        surface::tonemap,
     },
     preview::PreviewView,
 };
@@ -458,6 +460,21 @@ fn panel(kind: usize, output: Output, panel: usize, seconds: f32) -> (Drawn, Str
         Output::Variation => format!("S{seed}"),
         _ => String::new(),
     };
+    // Variations alternate between the sexes, where the lineage has them parted.
+    if output == Output::Variation {
+        let parted = species
+            .animal()
+            .is_some_and(|animal| animal.sexes != Sexes::Both);
+        if let Some(animal) = c.animal_mut() {
+            animal.sex.x = if !parted {
+                0.0
+            } else if panel.is_multiple_of(2) {
+                1.0
+            } else {
+                2.0
+            };
+        }
+    }
     (c, label)
 }
 

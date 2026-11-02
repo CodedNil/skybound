@@ -87,7 +87,15 @@ pub struct Tetralate {
     /// The knots of each mouth tentacle, laid out by [`slot`], and where they were last frame.
     pub tentacles: [[[Vec4; 3]; KNOTS]; 3],
     pub previous_tentacles: [[[Vec4; 3]; KNOTS]; 3],
+    /// Whatever others have hung on it, as the Næ dress their Nætu: up to [`DRAPES`] strands of
+    /// cloth, each a chain of knots its simulation left, as a lived thing and never inherited.
+    pub drapes: [[Vec4; DRAPE_KNOTS]; DRAPES],
 }
+
+/// How many strands of cloth a tetralate can have hung on it, and how many knots each is
+/// simulated with.
+pub const DRAPES: usize = 8;
+pub const DRAPE_KNOTS: usize = 6;
 
 impl Deref for Tetralate {
     type Target = Animal;
@@ -108,6 +116,9 @@ impl Body for Tetralate {
     }
     fn carrying(&self) -> (Vec4, Vec4) {
         self.animal.carrying()
+    }
+    fn sex(&self) -> f32 {
+        self.animal.sex()
     }
     fn swung(&self, point: Vec3) -> Vec3 {
         // The Naeturidae's tail shafts are drawn wider than their knots.

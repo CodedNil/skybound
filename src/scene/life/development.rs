@@ -190,6 +190,7 @@ pub fn appearance(mut material: Material, point: Vec3, c: &CreatureInstance) -> 
     let pigment = material.color.lerp(material.color.yzx(), hue.abs() * 0.45);
     let pattern = (point.z * (2.0 + bold * 5.0) + (point.x * 3.0 + hue * TAU).sin() * 2.0).sin();
     material.color = pigment * (1.0 + shade * 0.3 + pattern * (bold - 0.5) * 0.16);
+
     // Every wound it carries shows where it landed, in the shape of what made it: raw and wet
     // while open, an animal's flesh dark red and a plant's inner tissue pale and weeping, closing
     // as it heals to a pale, puckered scar crossed by seams where the skin knitted, or on a plant

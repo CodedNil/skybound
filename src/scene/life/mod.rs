@@ -140,6 +140,12 @@ pub trait Body {
     fn swung(&self, _point: Vec3) -> Vec3 {
         Vec3::ZERO
     }
+
+    /// Which sex it is, as it is drawn: zero for a body with no sexes or both at once, one for the
+    /// sex that bears the young and two for the other. Plants have none; animals carry theirs.
+    fn sex(&self) -> f32 {
+        0.0
+    }
 }
 
 impl Body for CreatureInstance {
