@@ -24,7 +24,7 @@ pub const UPTURN: Gene = Gene(40);
 pub const HEFT: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -158,7 +158,14 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Physiology, Sexes};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::Ethology,
+            physiology::{Brood, Physiology, Sexes},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         brood: Brood::Carried,
@@ -167,5 +174,22 @@ mod nature {
         // female once grown large.
         sexes: Sexes::Sequential,
         ..super::super::PHYSIOLOGY
+    };
+    /// Threatened, Grounders close up: each draws in beside its nearest fellows, armour outward,
+    /// so a hunter faces a raft of stone rather than one animal.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if mind.intent == HUNKER
+                && let Some(kin) = s.seen.kin.filter(|kin| kin.length() < 40.0)
+            {
+                return Some(
+                    Goal::new(Activity::Rest, Some(kin), 0.3)
+                        .folded(1.0)
+                        .hovering(),
+                );
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        ..super::super::ETHOLOGY
     };
 }

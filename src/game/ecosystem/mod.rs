@@ -112,6 +112,9 @@ pub struct Relations {
     seed: Option<(Kind, f32, Genome)>,
     /// The hunter carrying it off, while it is helpless to escape.
     captor: Option<Entity>,
+    /// How fast others pushed it along last step: a guardian nudging a stray egg home,
+    /// tree-dwellers drawing their tree into rising air.
+    nudge: Vec3,
     /// Where it was before the last step moved it, as an offset from where it is, how it was
     /// turned, and when that step was, so it is drawn gliding between steps rather than jumping.
     lag: Vec3,
@@ -292,15 +295,21 @@ struct Attack {
 pub fn population(kind: Kind, position: Vec3, mass_fraction: f32, genes: Genome) -> impl Bundle {
     let mut vitals = Vitals::born(kind);
     vitals.mass *= mass_fraction;
+    let seed = u64::from(position.x.to_bits()) ^ u64::from(position.z.to_bits()).rotate_left(29);
+    // A grown one met in the wild is any age from just grown to old, the old the fewer.
+    let biology = kind.biology();
     if mass_fraction < 0.5 {
         vitals.age_days = 0.0;
+    } else {
+        let span = (biology.lifespan_days * 0.7 - biology.maturity_days).max(0.0);
+        let age = biology.maturity_days + span * breeding::unit(seed ^ 0xa9).powi(3);
+        vitals.age_days = f64::from(age);
     }
     // Its sex falls out at conception, as even odds between the two. A grown one met in the wild
     // may already be carrying, as many of its kind are at any time, somewhere through it.
-    let seed = u64::from(position.x.to_bits()) ^ u64::from(position.z.to_bits()).rotate_left(29);
     vitals.female = breeding::unit(seed) < 0.5;
     if mass_fraction >= 0.5 && vitals.bears(kind) && breeding::unit(seed ^ 0xb1) < 0.3 {
-        let litter = kind.biology().litter;
+        let litter = biology.litter;
         vitals.expecting = litter.draw(breeding::unit(seed ^ 0xc3), genes.get(FECUNDITY));
         vitals.gestation = breeding::unit(seed ^ 0xd7);
     }
@@ -376,12 +385,15 @@ fn climate_at(world: &WorldData, clouds: &CloudField, local: Vec3, now: f32) -> 
 }
 
 /// What one thread's share of a step changed beyond the organisms themselves: the meals, blows,
-/// calls and seeds to settle, what the air about them gained or lost, and the births and deaths.
+/// calls, pushes, gifts and seeds to settle, what the air about them gained or lost, and the births
+/// and deaths.
 #[derive(Default)]
 struct Outcome {
     meals: Vec<Meal>,
     attacks: Vec<Attack>,
     calls: Vec<Call>,
+    nudges: Vec<(Entity, Vec3)>,
+    gifts: Vec<(Entity, f32)>,
     seedlings: Vec<(Kind, Vec3, Genome)>,
     patches: HashMap<IVec3, Pool>,
     births: u64,
@@ -453,6 +465,8 @@ fn simulate(
         outcome.meals.append(&mut part.meals);
         outcome.attacks.append(&mut part.attacks);
         outcome.calls.append(&mut part.calls);
+        outcome.nudges.append(&mut part.nudges);
+        outcome.gifts.append(&mut part.gifts);
         outcome.seedlings.append(&mut part.seedlings);
         outcome.births += part.births;
         outcome.deaths += part.deaths;
@@ -473,6 +487,7 @@ fn simulate(
     ecosystem.deaths += outcome.deaths;
     ecosystem.deaths += transfer_meals(&mut organisms, &outcome.meals, now);
     ecosystem.deaths += land(&mut organisms, &outcome.attacks);
+    hand_over(&mut organisms, &outcome.nudges, &outcome.gifts);
     commands.command_scope(|mut commands| {
         for (kind, position, genes) in outcome.seedlings {
             if ecosystem.living < POPULATION_LIMIT {
@@ -481,6 +496,21 @@ fn simulate(
             }
         }
     });
+}
+
+/// Settle the step's pushes and gifts: each push moves its ward next step, the pushes on one
+/// summed, and each gift is eaten by the guardian it was brought to.
+fn hand_over(organisms: &mut Query<Organisms>, nudges: &[(Entity, Vec3)], gifts: &[(Entity, f32)]) {
+    for &(ward, push) in nudges {
+        if let Ok((_, _, _, mut relations, ..)) = organisms.get_mut(ward) {
+            relations.nudge += push;
+        }
+    }
+    for &(guardian, gift) in gifts {
+        if let Ok((_, _, mut body, ..)) = organisms.get_mut(guardian) {
+            body.0.ingest(gift, 0.0);
+        }
+    }
 }
 
 /// What every organism's step reads of the world, shared across the threads.
@@ -598,8 +628,11 @@ fn live_out(
         Conduct {
             now,
             dt,
+            neighbours: &neighbours,
             attacks: &mut outcome.attacks,
             calls: &mut outcome.calls,
+            nudges: &mut outcome.nudges,
+            gifts: &mut outcome.gifts,
         },
     );
     outcome
@@ -790,10 +823,11 @@ mod tests {
     use super::{
         breeding::{Stage, nurture},
         feeding::Meal,
-        senses::perceive,
+        senses::{perceive, sense},
         *,
     };
     use bevy::ecs::system::SystemState;
+    use skybound::scene::life::KINDS;
 
     #[test]
     fn birth_requires_mating_and_conserves_mass() {
@@ -976,6 +1010,60 @@ mod tests {
         assert_eq!(relations.host, Some(mother));
         assert!(nurture(agent(child, kind, 0.2, Vec3::ZERO), &mut relations, &index) == Stage::Egg);
         assert!(relations.host.is_none(), "egg string never cut loose");
+    }
+
+    #[test]
+    fn hunters_leave_a_sanctuary_alone_unless_desperate() {
+        let mut world = World::new();
+        let hunter_kind = Kind::Ferrispina;
+        let prey_kind = *KINDS
+            .iter()
+            .find(|kind| {
+                kind.animal().is_some()
+                    && hunter_kind.eats(**kind)
+                    && kind.biology().adult_mass < hunter_kind.biology().adult_mass * 0.5
+            })
+            .expect("something a Shredder hunts");
+        let mut agent = |kind: Kind, position| Agent {
+            entity: world.spawn_empty().id(),
+            kind,
+            vitals: Vitals::new(kind.biology()),
+            position,
+            velocity: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            activity: Activity::Drift,
+            protected: false,
+            genes: Genome::TYPICAL,
+            skill: 0.0,
+        };
+        let hunter = agent(hunter_kind, Vec3::ZERO);
+        let prey = agent(prey_kind, Vec3::X * 60.0);
+        let guardian = agent(Kind::Custos, Vec3::X * 80.0);
+        let climate = Climate::sample(Vec3::ZERO.to_scene(), 2.0, 0.0);
+        let prey_in = |hunter: Agent, neighbours: &[Agent]| {
+            let around = Surroundings {
+                climate,
+                neighbours,
+                players: &[],
+                calls: &[],
+                now: 0.0,
+            };
+            sense(hunter, &Relations::default(), &Senses::default(), &around)
+                .1
+                .prey
+                .is_some()
+        };
+        assert!(prey_in(hunter, &[prey]), "the hunter overlooked its prey");
+        assert!(
+            !prey_in(hunter, &[prey, guardian]),
+            "the hunter hunted in a sanctuary"
+        );
+        let mut starving = hunter;
+        starving.vitals.energy = 0.02;
+        assert!(
+            prey_in(starving, &[prey, guardian]),
+            "a starving hunter would not test the sanctuary"
+        );
     }
 
     #[test]

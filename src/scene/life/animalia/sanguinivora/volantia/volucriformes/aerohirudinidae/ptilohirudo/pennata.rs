@@ -21,7 +21,7 @@ pub const FEATHERING: Gene = Gene(39);
 pub const RIPPLE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -102,10 +102,32 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::Physiology;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, hang_still},
+            physiology::Physiology,
+        },
+        behaviour::Goal,
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         speed: 24.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// Hidden in the vapour at a cloud's broken edge, it lets a host come on until it is close,
+    /// and only then darts out to it, faster than it would ever chase.
+    pub const ETHOLOGY: Ethology = Ethology {
+        hunt: |mind, s, host| {
+            if s.seen.humidity > 0.55 && host.offset.length() > 25.0 {
+                hang_still()
+            } else {
+                let goal = (super::super::ETHOLOGY.hunt)(mind, s, host);
+                Goal {
+                    speed: goal.speed * 1.4,
+                    ..goal
+                }
+            }
+        },
+        ..super::super::ETHOLOGY
     };
 }

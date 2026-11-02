@@ -763,15 +763,17 @@ fn shield<F: FnMut(Hit)>(ray: Ray, creature: &Tetralate, mut emit: F) {
 mod nature {
     //! A Nætu's voice is a call so deep it is felt more than heard, rolling through the great gas
     //! chambers and carrying across a hundred kilometres of open sky. A herd strung out across the
-    //! clouds keeps together by it, and the Næ who live on them ask them to call for them.
+    //! clouds keeps together by it, and the Næ who live on them ask them to call for them. A Nætu
+    //! knows its Næ by touch and face: content, it comes alongside one to be groomed and to nuzzle
+    //! it, the more often the more loyal it is.
 
     use super::*;
     use crate::scene::life::{
         animalia::{
-            mind::{Ethology, Mind, Situation},
+            mind::{Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges},
             physiology::Physiology,
         },
-        behaviour::Goal,
+        behaviour::{Activity, Goal},
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
@@ -781,9 +783,42 @@ mod nature {
     };
 
     pub const ETHOLOGY: Ethology = Ethology {
+        urges,
         act,
+        notice,
         ..super::super::ETHOLOGY
     };
+
+    /// A Næ, of the people it carries.
+    const NAE: Interest = Interest("næ");
+
+    /// Alongside a Næ, nuzzling and being groomed.
+    const NUZZLE: Intent = Intent {
+        name: "nuzzle",
+        act: |_, s| {
+            Goal::new(
+                Activity::Groom,
+                s.seen.mark(NAE).map(|nae| nae - nae.normalize_or_zero() * 20.0),
+                0.4,
+            )
+            .hovering()
+        },
+    };
+
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (super::super::ETHOLOGY.notice)(glimpse, seen);
+        if !glimpse.heard && glimpse.other == Kind::Nae {
+            seen.note(NAE, glimpse.offset);
+        }
+    }
+
+    fn urges(s: &Situation, urges: &mut Urges) {
+        (super::super::ETHOLOGY.urges)(s, urges);
+        if s.seen.mark(NAE).is_some_and(|nae| nae.length() < 150.0) {
+            let content = (1.0 - s.drives.hunger) * (1.0 - s.fear).max(0.0);
+            urges.add(NUZZLE, (0.1 + s.temper(LOYALTY) * 0.35) * content);
+        }
+    }
 
     /// Making for the herd, a Nætu that has lost sight of it calls, and the herd answers.
     fn act(mind: &mut Mind, s: &Situation) -> Option<Goal> {

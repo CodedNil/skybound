@@ -6,6 +6,8 @@
     clippy::wildcard_imports,
     reason = "a taxon's behaviour sees all its taxon has, as the taxon sees all its parent has"
 )]
+#[cfg(not(target_arch = "spirv"))]
+pub use crate::scene::life::organs::{Function, Organ, Part, Tissue, pair, site};
 use crate::scene::{
     life::{
         animalia::{
@@ -29,8 +31,6 @@ pub use crate::scene::{
     },
     math::Power,
 };
-#[cfg(not(target_arch = "spirv"))]
-pub use crate::scene::life::organs::{Function, Organ, Part, Tissue, pair, site};
 pub use animalia::{bullidorsata::Bubbleback, sanguinivora::BloodFeeder, tetralata::Tetralate};
 pub use core::f32::consts::{FRAC_PI_2, PI, TAU};
 pub use plantae::Plant;

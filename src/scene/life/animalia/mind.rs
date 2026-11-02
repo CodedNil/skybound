@@ -102,6 +102,9 @@ pub struct Perception {
     /// The plant it keeps as its home, for a lineage that keeps one: a Weaver's web is strung
     /// there.
     pub home: Option<Vec3>,
+    /// The nearest sanctuary: a guardian keeping the young of every kind, which most hunters will
+    /// not test, so mothers bear their young there and the frightened run to it.
+    pub sanctuary: Option<Vec3>,
     /// How bright it is here, from the aur's glow alone at the equator to the full sunburst over
     /// the poles; light is a matter of place.
     pub light: f32,
@@ -178,6 +181,10 @@ pub struct Drives {
     pub desire: f32,
     /// How young it is, from newborn to grown.
     pub youth: f32,
+    /// How near its young are to being born, from not expecting to due.
+    pub term: f32,
+    /// How lately it bore young, from long ago to just now.
+    pub borne: f32,
 }
 
 /// What an animal has set itself to do, declared in the taxon where it arose with the way its
@@ -485,6 +492,9 @@ pub struct Ethology {
     /// Whether it clings to a plant while it sleeps, and keeps a plant as its home.
     pub clings: bool,
     pub anchored: bool,
+    /// How far about it the young of every kind are under its guard, for a guardian that keeps a
+    /// sanctuary; nothing for any other.
+    pub shelters: f32,
 }
 
 impl Kind {
@@ -515,6 +525,7 @@ impl Ethology {
         carries: false,
         skewers: false,
         largest: 0.8,
+        shelters: 0.0,
     };
 }
 
@@ -622,6 +633,51 @@ mod tests {
             goal.activity,
             Activity::Guard,
             "a guardian abandoned the young"
+        );
+    }
+
+    #[test]
+    fn a_guardian_drives_off_a_hunter_in_its_sanctuary_and_mothers_bear_their_young_there() {
+        let mut perception = Perception {
+            light: 0.3,
+            ..seen()
+        };
+        let hunter = Glimpse {
+            kind: Kind::Custos,
+            other: Kind::Ferrispina,
+            offset: Vec3::new(30.0, 0.0, 0.0),
+            grown: 1.0,
+            heard: false,
+            activity: Activity::Hunt,
+        };
+        (Kind::Custos.behaviour().notice)(&hunter, &mut perception);
+        let grown = Drives {
+            youth: 1.0,
+            ..Drives::default()
+        };
+        let goal =
+            Mind::default().decide(Kind::Custos, grown, &perception, 0.0, Genome::TYPICAL);
+        assert_eq!(
+            goal.activity,
+            Activity::Defend,
+            "a guardian let a hunter hunt in its sanctuary"
+        );
+        let sanctuary = Vec3::new(0.0, 0.0, 100.0);
+        let perception = Perception {
+            sanctuary: Some(sanctuary),
+            light: 0.8,
+            ..seen()
+        };
+        let due = Drives {
+            term: 0.95,
+            ..grown
+        };
+        let goal =
+            Mind::default().decide(Kind::Herbivolus, due, &perception, 0.0, Genome::TYPICAL);
+        assert!(
+            goal.offset
+                .is_some_and(|to| to.distance(sanctuary) < 30.0),
+            "a mother near her time stayed away from the sanctuary"
         );
     }
 

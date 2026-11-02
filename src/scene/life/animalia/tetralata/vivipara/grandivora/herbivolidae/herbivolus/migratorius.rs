@@ -23,7 +23,7 @@ pub const STORE: Gene = Gene(39);
 pub const COMBS: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -112,11 +112,35 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::Ethology,
+            nature::FORAGE,
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
         speed: 12.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// Feeding, Grazers spread out abreast across the algae stream, each keeping to the side away
+    /// from its neighbours, so none feeds in another's stripped wake.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if mind.intent == FORAGE
+                && let (Some(food), Some(kin)) = (s.seen.food, s.seen.kin)
+            {
+                let across = s.up().cross(s.seen.heading).normalize_or_zero();
+                let side = if kin.dot(across) > 0.0 { -1.0 } else { 1.0 };
+                return Some(
+                    Goal::new(Activity::Feed, Some(food + across * side * 8.0), 0.6).hovering(),
+                );
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        ..super::super::ETHOLOGY
     };
 }

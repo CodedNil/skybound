@@ -1,7 +1,7 @@
 pub mod grave;
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::ETHOLOGY;
+pub use nature::{ETHOLOGY, HUNKER};
 
 taxon!(
     Genus,
@@ -33,7 +33,7 @@ mod nature {
     };
 
     /// Drawn in and still, armour turned to the threat.
-    const HUNKER: Intent = Intent {
+    pub const HUNKER: Intent = Intent {
         name: "hunker",
         act: |_, _| Goal::new(Activity::Rest, None, 0.0).folded(1.0).hovering(),
     };

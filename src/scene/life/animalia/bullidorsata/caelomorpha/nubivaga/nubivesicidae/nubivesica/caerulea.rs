@@ -120,7 +120,9 @@ pub const LOOK: Look = Look::drift(vec3(0.42, 0.67, 0.24), 3.5);
 mod nature {
     //! Cloud Balloons live by the cloud. They sink towards the rich air near the mists when hungry
     //! and rise when fed, but a balloon in dry air climbs into the nearest cloud, where its moist
-    //! folds can drink and its pearly skin is lost against the vapour.
+    //! folds can drink and its pearly skin is lost against the vapour. Where the updraft fails they
+    //! vent a little gas and settle into denser air, rather than be left adrift high in the cold
+    //! where ice would lock their folds.
 
     use crate::scene::life::{
         animalia::{
@@ -142,6 +144,12 @@ mod nature {
         ..GAS_BAG
     };
 
+    /// Venting gas to settle into denser air.
+    const SETTLE: Intent = Intent {
+        name: "settle",
+        act: |_, s| Goal::new(Activity::Drift, Some(-s.up() * 40.0), 0.15),
+    };
+
     /// Climbing into cloud, where the air is wet.
     const ENSHROUD: Intent = Intent {
         name: "enshroud",
@@ -151,5 +159,6 @@ mod nature {
     fn urges(s: &Situation, urges: &mut Urges) {
         (GAS_BAG.urges)(s, urges);
         urges.add(ENSHROUD, (0.6 - s.seen.humidity).max(0.0) * 1.2);
+        urges.add(SETTLE, (0.4 - s.seen.updraft).max(0.0) * 1.2);
     }
 }

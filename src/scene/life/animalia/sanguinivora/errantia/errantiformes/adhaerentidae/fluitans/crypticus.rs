@@ -100,11 +100,13 @@ pub const LOOK: Look = Look::coat(
 mod nature {
     //! The Floating Ones wait inside the cover of large plants, hanging still among the fronds in
     //! the narrow ways grazers feed along, until a passing grazer brings its hide within reach.
+    //! Glassy and veined like the shed scraps of sail they hang among, they do not flee a hunter
+    //! from cover: they go still, and are passed over as one more scrap.
 
     use crate::scene::life::{
         animalia::{
             mind::{Ethology, hang_still},
-            nature::ROOST,
+            nature::{FLEE, ROOST},
             physiology::{Light, Physiology},
             sanguinivora::errantia::ETHOLOGY as WANDERER,
         },
@@ -125,6 +127,13 @@ mod nature {
                 .map_or_else(hang_still, |cover| {
                     Goal::new(Activity::Drift, Some(cover), 0.3).hovering()
                 })
+        },
+        act: |mind, s| {
+            let covered = s.seen.mark(ROOST).is_some_and(|cover| cover.length() < 10.0);
+            if mind.intent == FLEE && covered {
+                return Some(hang_still());
+            }
+            (WANDERER.act)(mind, s)
         },
         ..WANDERER
     };

@@ -23,7 +23,7 @@ pub const COIL: Gene = Gene(39);
 pub const COLLAR: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -103,10 +103,37 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, orbit},
+            nature::FORAGE,
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
         ..super::super::PHYSIOLOGY
+    };
+    /// A Misting never stays long at one flower: it sips, then flits to another, so the pollen on
+    /// its collar is carried from bloom to bloom across the gaps between them.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if mind.intent == FORAGE {
+                let visit = (s.now - mind.since) % 18.0;
+                if visit > 12.0 {
+                    let up = s.up();
+                    let hop = ((s.now - mind.since) / 18.0).floor() + s.wobble();
+                    return Some(Goal::new(
+                        Activity::Drift,
+                        Some(orbit(up, up, 25.0, hop)),
+                        0.6,
+                    ));
+                }
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        ..super::super::ETHOLOGY
     };
 }

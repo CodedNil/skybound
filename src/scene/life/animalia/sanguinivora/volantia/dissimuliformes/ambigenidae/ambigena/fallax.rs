@@ -23,7 +23,7 @@ pub const HUMPS: Gene = Gene(39);
 pub const CUP_SIZE: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -107,10 +107,34 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::Physiology;
+    use super::*;
+    use crate::scene::life::{
+        animalia::{mind::Ethology, physiology::Physiology},
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         speed: 8.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// Visits are kept short: it cleans and drinks a while, then backs off and hangs nearby before
+    /// coming in again, the warier the briefer, for a host that feels one patch worked too long
+    /// turns to look.
+    pub const ETHOLOGY: Ethology = Ethology {
+        hunt: |mind, s, host| {
+            let visit = 25.0 - s.temper(VIGILANCE) * 15.0;
+            let phase = (s.now - mind.since) % (visit + 10.0);
+            if phase > visit && host.offset.length() < 12.0 {
+                Goal::new(
+                    Activity::Rest,
+                    Some(-host.offset.normalize_or_zero() * 12.0),
+                    0.5,
+                )
+                .hovering()
+            } else {
+                (super::super::ETHOLOGY.hunt)(mind, s, host)
+            }
+        },
+        ..super::super::ETHOLOGY
     };
 }

@@ -1,4 +1,6 @@
 use crate::scene::life::BloodFeeder;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::ETHOLOGY;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.07,
@@ -93,3 +95,35 @@ pub const LOOK: Look = Look::coat(
     [Vec4::ZERO; 2],
 )
 .skinned(vec4(3.0, 1.0, 2.0, 0.15));
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        animalia::mind::{Ethology, Interest},
+        behaviour::{Activity, Goal},
+    };
+
+    /// When a cleaner comes near its host, an Attached One stops feeding and lies flat and still,
+    /// its colours matched to the hide, and is passed over.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if s.seen
+                .mark(CLEANER)
+                .is_some_and(|cleaner| cleaner.length() < 25.0)
+            {
+                return Some(Goal::new(Activity::Rest, None, 0.0).folded(1.0).hovering());
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        notice: |glimpse, seen| {
+            (super::super::ETHOLOGY.notice)(glimpse, seen);
+            if !glimpse.heard && glimpse.other.animal().is_some_and(|animal| animal.grooms) {
+                seen.note(CLEANER, glimpse.offset);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// A cleaner, which would pick it off its host.
+    const CLEANER: Interest = Interest("cleaner");
+}

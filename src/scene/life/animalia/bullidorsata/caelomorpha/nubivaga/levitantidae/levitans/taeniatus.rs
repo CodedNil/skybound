@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::ETHOLOGY;
 pub const BIOLOGY: Biology = Biology {
     size: 0.13,
     maturity_days: 90.0,
@@ -90,3 +92,29 @@ pub const PARTS: &[Part] = &[];
 
 /// Tint and scale, shared by the preview and the world renderer.
 pub const LOOK: Look = Look::drift(vec3(0.38, 0.66, 0.19), 3.8);
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        animalia::mind::{Ethology, Intent},
+        behaviour::{Activity, Goal},
+    };
+
+    /// Hungry with nothing in reach of its ribbons, a Drifter lets out a little gas and settles
+    /// towards the richer air below, until it finds food again.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.food.is_none() {
+                urges.add(SETTLE, s.drives.hunger * 0.7);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// Sinking slowly towards richer air.
+    const SETTLE: Intent = Intent {
+        name: "settle",
+        act: |_, s| Goal::new(Activity::Drift, Some(-s.up() * 50.0), 0.2),
+    };
+}

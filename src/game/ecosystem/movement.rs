@@ -16,7 +16,7 @@ use skybound::scene::life::{
     genome::{BUILD, HUE, SHADE},
 };
 use spirv_std::glam::Vec3 as SceneVec3;
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
 /// Everything moving an organism needs from the world.
 pub(super) struct Move<'a> {
@@ -47,6 +47,7 @@ pub(super) fn relocate(
         now,
     } = step;
     let (was, turned) = (transform.translation, transform.rotation);
+    let pushed = mem::take(&mut relations.nudge) * dt;
     if let Some(host) = relations
         .host
         .and_then(|host| index.get(&host))
@@ -64,12 +65,12 @@ pub(super) fn relocate(
         }
         motion.0 = host.velocity;
     } else if stage == Stage::Egg {
-        // An egg cast loose goes where the air takes it.
-        travel(wind * dt, transform, coordinate, world);
+        // An egg cast loose goes where the air takes it, and where it is pushed.
+        travel(wind * dt + pushed, transform, coordinate, world);
         motion.0 = wind;
     } else {
         relations.host = None;
-        let offset = movement.position.to_engine();
+        let offset = movement.position.to_engine() + pushed;
         travel(offset, transform, coordinate, world);
         transform.rotation = movement.rotation.to_engine();
         motion.0 = movement.velocity.to_engine();

@@ -17,6 +17,7 @@ use skybound::scene::{
     life::{
         Kind,
         animalia::{
+            BOLDNESS,
             mind::{Drives, Glimpse, Perception, Sighting},
             physiology::{Take, plant},
         },
@@ -271,9 +272,10 @@ pub(super) fn sense(
     if kind.takes(Take::Prey) {
         seen.food = None;
     }
-    let mut nearest = [f32::MAX; 6];
+    let mut nearest = [f32::MAX; 7];
     let mut kin_sum = SceneVec3::ZERO;
     let mut heading = SceneVec3::ZERO;
+    let respects = Sanctuaries::around(neighbours, agent);
     for other in neighbours
         .iter()
         .filter(|other| other.entity != agent.entity)
@@ -302,6 +304,7 @@ pub(super) fn sense(
             && animal
             && fair
             && !other.protected
+            && respects.allow(other.position)
             && kind.eats(other.kind)
             && distance < nearest[1]
         {
@@ -309,17 +312,18 @@ pub(super) fn sense(
             seen.prey = Some(sighting);
             targets.prey = Some(*other);
         }
-        // A predator is a threat when it is hunting, or too close to trust.
-        let menacing =
-            matches!(other.activity, Activity::Hunt | Activity::Strike) || distance < 60.0;
-        if distance < wary
-            && distance < nearest[2]
-            && menacing
-            && other.kind.takes(Take::Prey)
-            && other.kind.eats(kind)
-        {
+        if distance < wary && distance < nearest[2] && menaces(other, kind, distance) {
             nearest[2] = distance;
             seen.threat = Some(sighting);
+        }
+        let shelters = other.kind.behaviour().shelters;
+        if shelters > 0.0
+            && other.grown() >= 1.0
+            && distance < shelters * 1.5
+            && distance < nearest[6]
+        {
+            nearest[6] = distance;
+            seen.sanctuary = Some(to);
         }
         if other.kind == kind {
             seen.kin_count += 1;
@@ -350,6 +354,50 @@ pub(super) fn sense(
     }
     sense_far(agent, relations, around, &mut seen);
     (seen, targets)
+}
+
+/// The guardians about a hunter, each keeping the young of every kind safe for some way around it,
+/// and whether the hunter is hungry enough, and bold enough, to test them as most will not.
+struct Sanctuaries {
+    guardians: Vec<(Vec3, f32)>,
+    desperate: bool,
+}
+
+impl Sanctuaries {
+    fn around(neighbours: &[Agent], hunter: Agent) -> Self {
+        Self {
+            guardians: neighbours
+                .iter()
+                .filter(|other| other.alive() && other.grown() >= 1.0)
+                .map(|other| (other.position, other.kind.behaviour().shelters))
+                .filter(|&(_, shelters)| shelters > 0.0)
+                .collect(),
+            desperate: hunter.vitals.energy < 0.08 + hunter.genes.get(BOLDNESS) * 0.17,
+        }
+    }
+
+    /// Whether the hunter will hunt at a place: anywhere outside a sanctuary, and in one only if
+    /// desperate.
+    fn allow(&self, at: Vec3) -> bool {
+        self.desperate
+            || !self
+                .guardians
+                .iter()
+                .any(|&(guardian, shelters)| guardian.distance(at) < shelters)
+    }
+}
+
+/// Whether another organism `distance` away menaces an animal: a predator that would eat it, when
+/// hunting or too close to trust, or, to a hunter inside a sanctuary, a guardian driving hunters
+/// off.
+fn menaces(other: &Agent, kind: Kind, distance: f32) -> bool {
+    let hunting = matches!(other.activity, Activity::Hunt | Activity::Strike);
+    let predator = other.kind.takes(Take::Prey) && other.kind.eats(kind);
+    let driving_off = kind.behaviour().hunts
+        && other.kind != kind
+        && distance < other.kind.behaviour().shelters
+        && matches!(other.activity, Activity::Defend | Activity::Guard);
+    (predator && (hunting || distance < 60.0)) || driving_off
 }
 
 /// Another organism as it comes to an animal's notice, `to` away.
@@ -455,5 +503,16 @@ pub(super) fn drives(agent: Agent, relations: &Relations, now: f32) -> Drives {
             0.0
         },
         youth,
+        term: if body.expecting > 0 {
+            body.gestation
+        } else {
+            0.0
+        },
+        // Remembered for an hour or so, as long as its young are small.
+        borne: if relations.last_birth > 0.0 {
+            (1.0 - (now - relations.last_birth) / 3600.0).clamp(0.0, 1.0)
+        } else {
+            0.0
+        },
     }
 }

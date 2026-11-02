@@ -771,7 +771,8 @@ mod nature {
     //! speakers and in the wet heart of a cloud they talk freely; and still air keeps a glyph for a
     //! while after its writer has gone, so a message can be left for whoever comes, until the wind
     //! shreds it. Beyond sight they speak through their Nætu, asking them for the deep calls that
-    //! carry across the sky, and they read those calls in turn: each helps the other.
+    //! carry across the sky, and they read those calls in turn: each helps the other. A Næ sleeps
+    //! at home: on the back of its Nætu, among the dorsal fibres, if one is near.
 
     use super::*;
     use crate::scene::life::{
@@ -795,10 +796,26 @@ mod nature {
     pub const ETHOLOGY: Ethology = Ethology {
         urges,
         court,
+        sleep,
         act,
         notice,
         ..super::super::ETHOLOGY
     };
+
+    /// A Nætu, home to the Næ that live on it.
+    const CARRIER: Interest = Interest("carrier");
+
+    /// Asleep on a Nætu's back if one is near, or as its lineage sleeps if not.
+    fn sleep(s: &Situation) -> Goal {
+        s.seen.mark(CARRIER).map_or_else(
+            || (super::super::ETHOLOGY.sleep)(s),
+            |carrier| {
+                Goal::new(Activity::Sleep, Some(carrier + s.up() * 6.0), 0.4)
+                    .folded(0.9)
+                    .hovering()
+            },
+        )
+    }
 
     /// One of its kind near enough to read its glyphs.
     pub const SIGNER: Interest = Interest("signer");
@@ -823,6 +840,9 @@ mod nature {
         hear(glimpse, seen);
         if glimpse.heard && glimpse.other == Kind::Naetu {
             seen.note(CALL, glimpse.offset);
+        }
+        if !glimpse.heard && glimpse.other == Kind::Naetu {
+            seen.note(CARRIER, glimpse.offset);
         }
         if !glimpse.heard && glimpse.other == glimpse.kind && glimpse.offset.length() < 150.0 {
             seen.note(SIGNER, glimpse.offset);

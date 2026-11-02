@@ -17,7 +17,7 @@ pub const BLADES: Gene = Gene(38);
 pub const CHEST: Gene = Gene(39);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -86,10 +86,37 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use super::*;
+    use crate::scene::life::animalia::{
+        mind::Ethology,
+        nature::lead,
+        physiology::{Light, Physiology},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Twilight,
         ..super::super::PHYSIOLOGY
+    };
+    /// Young Shredders hunt together: each comes in on the far side of the prey from its
+    /// companion, so a herd breaking from one runs onto the other.
+    pub const ETHOLOGY: Ethology = Ethology {
+        hunt: |mind, s, prey| {
+            let mut goal = (super::super::ETHOLOGY.hunt)(mind, s, prey);
+            let together = s.drives.youth < 1.0 || s.temper(SOCIABILITY) > 0.6;
+            if together
+                && prey.offset.length() > 25.0
+                && let Some(kin) = s.seen.kin.filter(|kin| kin.length() < 80.0)
+            {
+                let side = s.up().cross(prey.offset).normalize_or_zero();
+                let flank = if side.dot(kin - prey.offset) > 0.0 {
+                    -side
+                } else {
+                    side
+                };
+                goal.offset = Some(lead(s.kind, prey) + flank * 20.0);
+            }
+            goal
+        },
+        ..super::super::ETHOLOGY
     };
 }

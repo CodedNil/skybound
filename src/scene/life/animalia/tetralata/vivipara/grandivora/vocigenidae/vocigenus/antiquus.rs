@@ -29,7 +29,7 @@ pub const CALLUS: Gene = Gene(42);
 pub const MATS: Gene = Gene(43);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -333,12 +333,49 @@ pub const LOOK: Look = Look::coat(
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
     use super::*;
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent},
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
         speed: 8.0,
         eats: |_, food| matches!(food, Kind::Aerothallus | Kind::Laevivelum),
         ..super::super::PHYSIOLOGY
+    };
+    /// Hungry with no kelp forest or Laevensail in sight, an Old Wise One sets out for the next.
+    ///
+    /// It travels along the light round the pole, calling now and then so the herd keeps with it
+    /// and the young learn the way.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.food.is_none() {
+                urges.add(JOURNEY, s.drives.hunger * 0.8);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// On the road between forests.
+    const JOURNEY: Intent = Intent {
+        name: "journey",
+        act: |mind, s| {
+            if mind.course.length_squared() < 400.0 {
+                let along = s.up().cross(s.seen.sunward).normalize_or(Vec3::X);
+                let way = if s.wobble().sin() > 0.0 { 1.0 } else { -1.0 };
+                mind.course = along * way * 800.0;
+            }
+            let goal = Goal::new(Activity::Drift, Some(mind.course), 0.4);
+            if (s.now * 0.03 + s.wobble()).fract() < 0.1 {
+                goal.calling()
+            } else {
+                goal
+            }
+        },
     };
 }

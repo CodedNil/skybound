@@ -1,7 +1,7 @@
 pub mod mutualis;
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::ETHOLOGY;
+pub use nature::{CLIENT, ETHOLOGY};
 
 taxon!(
     Genus,
@@ -41,7 +41,7 @@ mod nature {
     };
 
     /// A large animal that might want cleaning.
-    const CLIENT: Interest = Interest("client");
+    pub const CLIENT: Interest = Interest("client");
 
     /// The cleaner's dance: bobbing and swaying before a client.
     const ADVERTISE: Intent = Intent {

@@ -123,18 +123,26 @@ pub const LOOK: Look = Look::drift(vec3(0.78, 0.65, 0.30), 12.0);
 mod nature {
     //! An Air Giant cannot fly, but it can steer by tilting: a slow lean brings its feeding folds
     //! square to the passing current, so the air pours its algae through the arches, and when the
-    //! air is still it drifts towards the strongest rising air it can find.
+    //! air is still it drifts towards the strongest rising air it can find. It does not run from a
+    //! storm as smaller drifters do: it spreads its canopy and rides it out, still, and the small
+    //! animals of the sky gather in the sheltered air beneath it.
 
     use crate::scene::life::{
         animalia::{
             bullidorsata::ETHOLOGY as GAS_BAG,
             mind::{Ethology, Intent, Situation, Urges},
-            nature::RIDE,
+            nature::{RIDE, SHELTER},
         },
         behaviour::{Activity, Goal},
     };
 
     pub const ETHOLOGY: Ethology = Ethology { urges, ..GAS_BAG };
+
+    /// Riding out a storm, canopy spread and still: a roof for whatever shelters beneath.
+    const SPREAD: Intent = Intent {
+        name: "spread the canopy",
+        act: |_, _| Goal::new(Activity::Rest, None, 0.0).hovering(),
+    };
 
     /// Leaning the canopy so its feeding folds face into the current.
     const TILT: Intent = Intent {
@@ -151,6 +159,10 @@ mod nature {
 
     fn urges(s: &Situation, urges: &mut Urges) {
         (GAS_BAG.urges)(s, urges);
+        if s.seen.storm.is_some() {
+            urges.scale(SHELTER, 0.2);
+            urges.add(SPREAD, 0.9);
+        }
         if s.seen.updraft < 0.5 {
             urges.add(RIDE, 0.3);
         }

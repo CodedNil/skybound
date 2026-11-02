@@ -24,7 +24,7 @@ pub const FRILLS: Gene = Gene(40);
 pub const EYES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -200,12 +200,33 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, hang_still, orbit},
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Aurlit,
         speed: 45.0,
         flocks: false,
         ..super::super::PHYSIOLOGY
+    };
+    /// Where the haze grows too thick for its lure to be seen, a Duskslicer gives up hanging and
+    /// roams slowly through it instead, scavenging what it comes across.
+    pub const ETHOLOGY: Ethology = Ethology {
+        wander: |mind, s| {
+            if s.seen.humidity < 0.8 {
+                return hang_still();
+            }
+            if mind.course.length_squared() < 400.0 {
+                let up = s.up();
+                mind.course = orbit(up, up, 120.0, s.now * 0.01 + s.wobble());
+            }
+            Goal::new(Activity::Drift, Some(mind.course), 0.3)
+        },
+        ..super::super::ETHOLOGY
     };
 }

@@ -23,7 +23,7 @@ pub const RINGS: Gene = Gene(39);
 pub const HOOKS: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -103,10 +103,40 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::Physiology;
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent},
+            physiology::Physiology,
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         mates: false,
         ..super::super::PHYSIOLOGY
+    };
+    /// A juvenile with no host in sight makes for the drinking-plants, where hosts crowd closest,
+    /// the faster the less of its reserve is left.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.mark(HOST).is_none() && s.seen.mark(WATERHOLE).is_some() {
+                urges.add(CROWD, 0.3 + s.drives.hunger * 0.6);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// Into the crowd at the water.
+    const CROWD: Intent = Intent {
+        name: "make for the crowd",
+        act: |_, s| {
+            Goal::new(
+                Activity::Drift,
+                s.seen.mark(WATERHOLE),
+                0.5 + s.drives.hunger * 0.6,
+            )
+        },
     };
 }

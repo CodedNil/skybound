@@ -25,7 +25,7 @@ pub const WHISKERS: Gene = Gene(40);
 pub const STREAMERS: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -121,7 +121,11 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology, Take};
+    use crate::scene::life::animalia::{
+        mind::Ethology,
+        nature::SCAVENGE,
+        physiology::{Light, Physiology, Take},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Aurlit,
@@ -130,5 +134,17 @@ mod nature {
         gleans: true,
         speed: 32.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// A Shadowing that finds a carcass cries out as it circles down, and its companions come from
+    /// far off to share it.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            let goal = (super::super::ETHOLOGY.act)(mind, s);
+            if mind.intent == SCAVENGE {
+                return Some(goal.unwrap_or_else(|| (SCAVENGE.act)(mind, s)).calling());
+            }
+            goal
+        },
+        ..super::super::ETHOLOGY
     };
 }

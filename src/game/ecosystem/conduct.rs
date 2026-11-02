@@ -2,14 +2,15 @@
 
 use crate::{
     game::ecosystem::{Agent, Attack, Call, Organisms, Relations, senses::Targets},
-    math::ToScene,
+    math::{ToEngine, ToScene},
 };
 use bevy::prelude::*;
 use skybound::scene::life::{
-    Injury,
+    Injury, Kind,
     animalia::{
         AGILITY, PRECISION,
         mind::{Aim, Snare},
+        physiology::{Take, plant},
     },
     behaviour::Activity,
     organs::{Function, Strike},
@@ -63,7 +64,7 @@ pub(super) fn engage(
     let ethology = agent.kind.behaviour();
     let activity = relations.activity;
     let distance = prey.position.distance(agent.position);
-    let reach = biology.adult_mass.cbrt() * 2.0 + prey.kind.biology().adult_mass.cbrt() * 2.0 + 3.0;
+    let reach = reach(agent.kind, prey.kind);
     // Prey the hunter holds, in a web or by latching on.
     let web = relations.home.and_then(|home| index.get(&home));
     let snare = Snare {
@@ -93,27 +94,123 @@ pub(super) fn engage(
             carrier: None,
         });
     }
-    if activity == Activity::Strike
-        && distance < reach + ethology.range
-        && now >= relations.ready
-        && let Some(blow) = (ethology.blow)(&aim(agent, prey, body, relations.mind.wear))
-    {
-        body.reserve = (body.reserve - blow.cost).max(0.0);
-        // A weapon driven into something too heavy to fly with would pin the hunter to it: it sheds
-        // the weapon's head to get free, and the iron it was made of goes with it.
-        if ethology.skewers && prey.vitals.mass > agent.vitals.mass * ethology.largest * 1.5 {
-            body.iron = (body.iron - 0.25).max(0.0);
+    if activity == Activity::Strike && distance < reach + ethology.range {
+        blow(agent, prey, body, relations, (attacks, now));
+    }
+}
+
+/// How near two organisms must be for one to reach the other: their sizes, and a little more.
+fn reach(one: Kind, other: Kind) -> f32 {
+    one.biology().adult_mass.cbrt() * 2.0 + other.biology().adult_mass.cbrt() * 2.0 + 3.0
+}
+
+/// Deal a blow to `victim` in the animal's own way, if it is ready to.
+fn blow(
+    agent: Agent,
+    victim: Agent,
+    body: &mut Vitals,
+    relations: &mut Relations,
+    (attacks, now): (&mut Vec<Attack>, f32),
+) {
+    let ethology = agent.kind.behaviour();
+    if now < relations.ready {
+        return;
+    }
+    let Some(blow) = (ethology.blow)(&aim(agent, victim, body, relations.mind.wear)) else {
+        return;
+    };
+    body.reserve = (body.reserve - blow.cost).max(0.0);
+    // A weapon driven into something too heavy to fly with would pin the hunter to it: it sheds
+    // the weapon's head to get free, and the iron it was made of goes with it.
+    if ethology.skewers && victim.vitals.mass > agent.vitals.mass * ethology.largest * 1.5 {
+        body.iron = (body.iron - 0.25).max(0.0);
+    }
+    relations.mind.wear = (relations.mind.wear + 0.08).min(1.0);
+    // Every blow it lands teaches it a little more.
+    relations.mind.experience.succeeded();
+    attacks.push(Attack {
+        victim: victim.entity,
+        strike: Some(blow.strike),
+        stun: blow.stun,
+        carrier: None,
+    });
+    relations.ready = now + blow.rest;
+}
+
+/// Where the mind meant to go this step, in the world.
+fn aimed_at(agent: Agent, relations: &Relations) -> Option<Vec3> {
+    let offset = relations.senses.goal?.offset?;
+    Some(agent.position + offset.to_engine())
+}
+
+/// The neighbour nearest `point` that `fits`.
+fn nearest(neighbours: &[Agent], point: Vec3, fits: impl Fn(&Agent) -> bool) -> Option<Agent> {
+    neighbours
+        .iter()
+        .filter(|other| fits(other))
+        .min_by(|a, b| {
+            a.position
+                .distance_squared(point)
+                .total_cmp(&b.position.distance_squared(point))
+        })
+        .copied()
+}
+
+/// Turning on a hunter: whatever it was driving at, if it is a hunter and in reach, takes the blow
+/// it would deal its prey.
+fn defend(agent: Agent, body: &mut Vitals, relations: &mut Relations, step: &mut Conduct) {
+    let Some(at) = aimed_at(agent, relations) else {
+        return;
+    };
+    let foe = nearest(step.neighbours, at, |other| {
+        other.entity != agent.entity
+            && other.kind != agent.kind
+            && other.alive()
+            && !other.protected
+            && other.kind.takes(Take::Prey)
+    });
+    if let Some(foe) = foe.filter(|foe| {
+        foe.position.distance(agent.position)
+            < reach(agent.kind, foe.kind) + agent.kind.behaviour().range
+    }) {
+        blow(agent, foe, body, relations, (step.attacks, step.now));
+    }
+}
+
+/// Pushing something along: an egg or a young one, or a plant, in reach is moved the way the
+/// animal is pushing, the more readily the lighter it is against the one pushing.
+fn nudge(agent: Agent, relations: &Relations, step: &mut Conduct) {
+    let Some(at) = aimed_at(agent, relations) else {
+        return;
+    };
+    let ward = nearest(step.neighbours, agent.position, |other| {
+        other.entity != agent.entity
+            && other.alive()
+            && !other.protected
+            && (plant(other.kind) || other.grown() < 0.5)
+    })
+    .filter(|ward| ward.position.distance(agent.position) < reach(agent.kind, ward.kind));
+    if let Some(ward) = ward {
+        let way = (at - ward.position).normalize_or_zero();
+        let leverage = (agent.vitals.mass / ward.vitals.mass.max(1e-6) * 20.0).min(1.0);
+        step.nudges.push((ward.entity, way * 1.5 * leverage));
+    }
+}
+
+/// Bringing a guardian food: some of what is in its gut is handed over while it is close.
+fn offer(agent: Agent, body: &mut Vitals, step: &mut Conduct) {
+    let guardian = nearest(step.neighbours, agent.position, |other| {
+        other.alive() && other.grown() >= 1.0 && other.kind.behaviour().shelters > 0.0
+    })
+    .filter(|guardian| {
+        guardian.position.distance(agent.position) < reach(agent.kind, guardian.kind) + 3.0
+    });
+    if let Some(guardian) = guardian {
+        let gift = (body.mass * step.dt * 0.003).min(body.gut * 0.5);
+        if gift > 0.0 {
+            body.gut -= gift;
+            step.gifts.push((guardian.entity, gift));
         }
-        relations.mind.wear = (relations.mind.wear + 0.08).min(1.0);
-        // Every blow it lands teaches it a little more.
-        relations.mind.experience.succeeded();
-        attacks.push(Attack {
-            victim: prey.entity,
-            strike: Some(blow.strike),
-            stun: blow.stun,
-            carrier: None,
-        });
-        relations.ready = now + blow.rest;
     }
 }
 
@@ -123,12 +220,16 @@ pub(super) fn write(body: &mut Vitals, dt: f32) {
     body.aur = (body.aur - 0.0002 * dt).max(0.0);
 }
 
-/// The step's bookkeeping shared by every animal's conduct.
+/// The step's bookkeeping shared by every animal's conduct: the organisms about it, and the blows,
+/// calls, pushes and gifts it gives others, settled once all have stepped.
 pub(super) struct Conduct<'a> {
     pub(super) now: f32,
     pub(super) dt: f32,
+    pub(super) neighbours: &'a [Agent],
     pub(super) attacks: &'a mut Vec<Attack>,
     pub(super) calls: &'a mut Vec<Call>,
+    pub(super) nudges: &'a mut Vec<(Entity, Vec3)>,
+    pub(super) gifts: &'a mut Vec<(Entity, f32)>,
 }
 
 /// Carry out what the mind chose: strike prey within reach, string and tend a web, latch onto a
@@ -139,21 +240,37 @@ pub(super) fn conduct(
     relations: &mut Relations,
     targets: &Targets,
     index: &HashMap<Entity, Agent>,
-    step: Conduct,
+    mut step: Conduct,
 ) {
+    let kind = agent.kind;
+    let ethology = kind.behaviour();
+    let activity = relations.activity;
+    match activity {
+        Activity::Defend => defend(agent, body, relations, &mut step),
+        Activity::Nudge => nudge(agent, relations, &mut step),
+        Activity::Offer => offer(agent, body, &mut step),
+        _ => {}
+    }
     let Conduct {
         now,
         dt,
         attacks,
         calls,
+        ..
     } = step;
-    let kind = agent.kind;
-    let ethology = kind.behaviour();
-    let activity = relations.activity;
     if let Some(prey) = targets.prey {
         engage(agent, prey, body, relations, index, (attacks, now, dt));
     }
     attacks.extend(carry(agent, targets.prey, activity));
+    // A feeder fastened on a host lets go once it turns to anything else, unless its lineage
+    // lives fastened.
+    if relations.host.is_some()
+        && relations.host == targets.prey.map(|prey| prey.entity)
+        && !matches!(activity, Activity::Attach | Activity::Feed)
+        && !kind.attaches()
+    {
+        relations.host = None;
+    }
     // Prey held only by venom or silk escapes once it wears off.
     if relations.captor.is_some() && body.stunned <= 0.0 {
         relations.host = None;

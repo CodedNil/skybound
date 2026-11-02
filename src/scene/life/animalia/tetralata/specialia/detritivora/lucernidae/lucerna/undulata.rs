@@ -25,7 +25,7 @@ pub const RIBBONS: Gene = Gene(40);
 pub const RIPPLE: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -119,11 +119,37 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::Ethology,
+            physiology::{Brood, Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Twilight,
         brood: Brood::Drifting,
         ..super::super::PHYSIOLOGY
+    };
+    /// Following the swarm, each keeps its own lane abreast of the rest rather than falling in
+    /// behind, so the swarm spreads into the long shifting ribbons of light seen from afar.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if mind.intent == FOLLOW
+                && let Some(kin) = s.seen.kin
+            {
+                let across = s.up().cross(s.seen.heading).normalize_or_zero();
+                let lane = s.wobble().sin() * 14.0;
+                return Some(Goal::new(
+                    Activity::Drift,
+                    Some(kin + across * lane + s.seen.heading * 2.0),
+                    0.4,
+                ));
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        ..super::super::ETHOLOGY
     };
 }

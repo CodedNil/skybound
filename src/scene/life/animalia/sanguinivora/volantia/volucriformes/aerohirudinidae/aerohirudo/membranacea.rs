@@ -20,7 +20,7 @@ pub const TAIL_RINGS: Gene = Gene(39);
 pub const DROOP: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -102,11 +102,51 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent, Situation},
+            nature::ROOST,
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Aurlit,
         speed: 18.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// Its broad wings cannot hold it in a strong current, so when the wind rises it slips into
+    /// the lee of the nearest plant and waits there for the air to slacken.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            let current = level(s).length();
+            if current > 8.0 && s.seen.mark(ROOST).is_some() {
+                urges.add(LEE, ((current - 8.0) / 8.0).min(1.0) * 0.9);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// The wind across the sky, without the updraft.
+    fn level(s: &Situation) -> Vec3 {
+        let up = s.up();
+        s.seen.wind - up * s.seen.wind.dot(up)
+    }
+
+    /// In the lee of a plant, out of a current it cannot cross.
+    const LEE: Intent = Intent {
+        name: "keep to the lee",
+        act: |_, s| {
+            let downwind = level(s).normalize_or_zero();
+            Goal::new(
+                Activity::Rest,
+                s.seen.mark(ROOST).map(|plant| plant + downwind * 6.0),
+                0.6,
+            )
+            .hovering()
+        },
     };
 }

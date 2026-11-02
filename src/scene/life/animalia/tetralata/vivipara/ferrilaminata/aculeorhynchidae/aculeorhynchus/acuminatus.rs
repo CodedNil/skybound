@@ -25,7 +25,7 @@ pub const FORK: Gene = Gene(40);
 pub const SCUTES: Gene = Gene(41);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -246,12 +246,31 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, orbit},
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Twilight,
         speed: 75.0,
         flocks: false,
         ..super::super::PHYSIOLOGY
+    };
+    /// Idle, a Needleshark soars: slow wide circles riding the rising air above the herds, every
+    /// pass a look down for something small enough to fall on.
+    pub const ETHOLOGY: Ethology = Ethology {
+        wander: |_, s| {
+            let up = s.up();
+            Goal::new(
+                Activity::Drift,
+                Some(orbit(up, up, 80.0, s.now * 0.08 + s.wobble()) + up * 8.0),
+                0.45,
+            )
+        },
+        ..super::super::ETHOLOGY
     };
 }

@@ -1,4 +1,6 @@
 use crate::scene::life::Tetralate;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::ETHOLOGY;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.33,
@@ -135,3 +137,38 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(2.0, 1.6, 1.4, 0.15))
 .flying(vec4(2.00, 0.30, 0.10, 0.60))
 .marked(vec4(1.00, 3.00, 0.50, 0.45), vec3(0.25, 0.16, 0.08));
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent},
+            nature::FLEE,
+        },
+        behaviour::{Activity, Goal},
+    };
+
+    /// Its soft underside is safe only while it is curled round its branch, so a Driftmuncher
+    /// threatened at its food does not flee into the open: it locks its tail claw and curls tight,
+    /// armour out.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.food.is_some_and(|branch| branch.length() < 8.0) {
+                urges.scale(FLEE, 0.3);
+                urges.add(CURL, s.fear * 1.2);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// Curled tight round the branch.
+    const CURL: Intent = Intent {
+        name: "curl",
+        act: |_, s| {
+            Goal::new(Activity::Rest, s.seen.food, 0.2)
+                .folded(1.0)
+                .hovering()
+        },
+    };
+}

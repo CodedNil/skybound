@@ -53,6 +53,12 @@ pub enum Activity {
     /// Speaking in mist-script, as the voiceless Næ do: breathing out glyphs of vapour lit from
     /// within by its aur sacs, toned by the colour of its crest.
     Sign,
+    /// Turning on a hunter to drive it off: from the young in its keeping, or from its own.
+    Defend,
+    /// Pushing something gently along: a stray egg back to the nursery, a tree into rising air.
+    Nudge,
+    /// Bringing food to a guardian, in thanks for the young it keeps.
+    Offer,
 }
 
 /// What a mind has decided to do this moment, for the body to carry out.

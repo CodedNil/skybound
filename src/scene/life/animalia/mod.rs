@@ -325,6 +325,11 @@ pub mod nature {
     //!
     //! It flees what would eat it, drinks, sleeps, rests, feeds, mates, ranges about, and goes back
     //! to the light and the air it lives in. Lineages below build their own ways on these.
+    //!
+    //! Where guardians keep a sanctuary, every animal knows it. A mother near her time goes there
+    //! to bear her young, the young stay in it, the frightened run to it rather than away into
+    //! the open, and one whose young were born there brings the guardians food when it is fed
+    //! itself.
 
     use super::*;
     use crate::scene::life::{
@@ -401,6 +406,18 @@ pub mod nature {
         }
         urges.add(EXPLORE, s.temper(CURIOSITY) * s.temper(RESTLESSNESS) * 0.5);
         urges.add(SEEK, astray(s.kind, seen.light) * 0.6);
+        // The guardians themselves keep the sanctuary rather than seek it.
+        if seen.sanctuary.is_some() && s.kind.behaviour().shelters <= 0.0 {
+            let young = (1.0 - drives.youth) * 0.5;
+            urges.add(
+                REFUGE,
+                (drives.term * 0.9).max(young).max(s.fear * 1.5) + drives.borne * 0.2,
+            );
+            urges.add(
+                OFFER,
+                drives.borne * (1.0 - drives.hunger) * (0.3 + s.temper(SOCIABILITY) * 0.4),
+            );
+        }
     }
 
     /// Fear: of a threat, less in a bold animal; of its own wounds; and of its kin's panic, which
@@ -408,9 +425,20 @@ pub mod nature {
     fn fear(s: &Situation, mind: &mut Mind) -> f32 {
         mind.alarm *= (-(s.now - mind.felt).max(0.0) / 12.0).exp();
         mind.felt = s.now;
-        let fear =
-            (s.threat * (1.3 - s.temper(BOLDNESS) * 0.7) + panic(s, 1.0) + s.drives.hurt * 0.5)
-                .max(mind.alarm);
+        // Within reach of a sanctuary, the threat matters less: few hunters will follow.
+        let safe = if s
+            .seen
+            .sanctuary
+            .is_some_and(|sanctuary| sanctuary.length() < 60.0)
+        {
+            0.5
+        } else {
+            1.0
+        };
+        let fear = (s.threat * (1.3 - s.temper(BOLDNESS) * 0.7) * safe
+            + panic(s, 1.0)
+            + s.drives.hurt * 0.5)
+            .max(mind.alarm);
         mind.alarm = mind.alarm.max(fear * 0.8);
         fear
     }
@@ -549,6 +577,30 @@ pub mod nature {
     pub const SHELTER: Intent = Intent {
         name: "shelter",
         act: |_, s| Goal::new(Activity::Flee, s.seen.storm.map(|storm| -storm), 0.9),
+    };
+
+    /// Into a sanctuary, to bear young or keep them, or out of a hunter's way: close by the
+    /// guardian, circling slowly, and quickly if afraid.
+    pub const REFUGE: Intent = Intent {
+        name: "refuge",
+        act: |_, s| {
+            let up = s.up();
+            let haste = 0.5 + s.fear.min(1.0) * 0.8;
+            Goal::new(
+                Activity::Drift,
+                s.seen.sanctuary.map(|sanctuary| {
+                    sanctuary + orbit(up, sanctuary, 20.0, s.now * 0.1 + s.wobble())
+                }),
+                haste,
+            )
+            .hovering()
+        },
+    };
+
+    /// Bringing a guardian food, in thanks for the young it keeps.
+    pub const OFFER: Intent = Intent {
+        name: "offer",
+        act: |_, s| Goal::new(Activity::Offer, s.seen.sanctuary, 0.6).hovering(),
     };
 
     /// Casting about in wide arcs for rising air, as gas-bags and heavy gliders do alike.

@@ -22,7 +22,7 @@ pub const BARBS: Gene = Gene(39);
 pub const GLOW: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -136,11 +136,47 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent, Interest},
+            physiology::{Brood, Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Aurlit,
         brood: Brood::Drifting,
         ..super::super::PHYSIOLOGY
+    };
+    /// A Shimmeray's lure flashes like one of their own, and a hungry Sparky, the less watchful the
+    /// sooner, is drawn in to it as though to food.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.mark(GLOW).is_some() {
+                urges.add(DRAWN, s.drives.hunger * (1.0 - s.temper(VIGILANCE)) * 0.9);
+            }
+        },
+        notice: |glimpse, seen| {
+            (super::super::ETHOLOGY.notice)(glimpse, seen);
+            if !glimpse.heard
+                && glimpse.other == Kind::Lucerna
+                && glimpse.activity == Activity::Display
+            {
+                seen.note(GLOW, glimpse.offset);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// A lure glowing like a Sparky's flash.
+    const GLOW: Interest = Interest("glow");
+
+    /// Flying to the glow.
+    const DRAWN: Intent = Intent {
+        name: "drawn to the glow",
+        act: |_, s| Goal::new(Activity::Feed, s.seen.mark(GLOW), 0.6),
     };
 }

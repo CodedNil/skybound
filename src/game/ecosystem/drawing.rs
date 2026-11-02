@@ -249,10 +249,13 @@ fn pose(shown: &Shown, now: f32) -> Drawn {
         seed,
         genes,
     );
-    // Jaws wide as it bites, parted as it strikes, shut otherwise.
+    // Jaws wide as it bites, bared at a hunter it drives off, parted as it strikes or holds out
+    // food for a guardian, shut otherwise.
     let gape = match activity {
         Activity::Feed => 1.0,
+        Activity::Defend => 0.6,
         Activity::Strike => 0.4,
+        Activity::Offer => 0.3,
         _ => 0.0,
     };
     pose.organism_mut().wounds = vitals.wounds;

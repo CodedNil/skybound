@@ -1,7 +1,7 @@
 pub mod lucens;
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::ETHOLOGY;
+pub use nature::{ETHOLOGY, TREE};
 
 taxon!(
     Genus,
@@ -36,7 +36,7 @@ mod nature {
     };
 
     /// Its Whisperwood.
-    const TREE: Interest = Interest("tree");
+    pub const TREE: Interest = Interest("tree");
 
     /// Lamp lit, on the trunk of its tree.
     const LAMPLIGHT: Intent = Intent {

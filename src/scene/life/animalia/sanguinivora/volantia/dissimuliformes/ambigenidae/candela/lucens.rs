@@ -20,7 +20,7 @@ pub const HOOPS: Gene = Gene(39);
 pub const TEETH: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -125,7 +125,11 @@ mod nature {
     use super::*;
     use crate::scene::life::{
         Kind,
-        animalia::physiology::{Light, Physiology},
+        animalia::{
+            mind::{Ethology, Intent},
+            physiology::{Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
     };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
@@ -137,5 +141,32 @@ mod nature {
         partner: |_, tree| tree == Kind::Susurrus,
         speed: 1.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// In slack air the colony draws its Whisperwood up into rising currents.
+    ///
+    /// Gathered beneath the trunk, recruited by the scent along its sap veins, they beat together
+    /// and push it up, the more of them the stronger.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen.mark(TREE).is_some() && s.seen.updraft < 0.3 {
+                let colony = (s.seen.kin_count as f32 / 6.0).min(1.0);
+                urges.add(TOW, (0.3 - s.seen.updraft) * 1.5 * (0.3 + colony));
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// Beating under the trunk, pushing the tree up.
+    const TOW: Intent = Intent {
+        name: "tow",
+        act: |_, s| {
+            Goal::new(
+                Activity::Nudge,
+                s.seen.mark(TREE).map(|tree| tree + s.up() * 6.0),
+                0.5,
+            )
+            .hovering()
+        },
     };
 }

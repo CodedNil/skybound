@@ -1,4 +1,6 @@
 use crate::scene::life::Tetralate;
+#[cfg(not(target_arch = "spirv"))]
+pub use nature::ETHOLOGY;
 
 pub const BIOLOGY: Biology = Biology {
     size: 0.083,
@@ -138,3 +140,30 @@ pub const LOOK: Look = Look::coat(
 .skinned(vec4(1.0, 0.8, 1.8, 0.00))
 .flying(vec4(3.00, 0.12, 0.10, 0.50))
 .marked(vec4(2.00, 4.00, 0.90, 0.40), vec3(0.95, 0.85, 0.30));
+
+#[cfg(not(target_arch = "spirv"))]
+mod nature {
+    use crate::scene::life::{
+        animalia::mind::{Ethology, orbit},
+        behaviour::{Activity, Goal},
+    };
+
+    /// Gusts and shifting currents strain the lines, so in rough air a Weaver mends even when
+    /// hungry, loosening and re-tying strands to let the web breathe with the moving plants.
+    pub const ETHOLOGY: Ethology = Ethology {
+        wander: |mind, s| {
+            let up = s.up();
+            let gusty = (s.seen.wind - up * s.seen.wind.dot(up)).length() > 6.0;
+            match s.seen.home {
+                Some(web) if gusty => Goal::new(
+                    Activity::Weave,
+                    Some(web + orbit(up, web, 4.0, s.now * 0.5)),
+                    0.3,
+                )
+                .hovering(),
+                _ => (super::super::ETHOLOGY.wander)(mind, s),
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+}

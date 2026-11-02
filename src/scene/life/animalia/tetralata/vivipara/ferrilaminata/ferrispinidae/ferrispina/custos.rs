@@ -24,11 +24,12 @@ taxon!(
     "Ferrispina custos",
     "Iron Spined Guardians",
     [
-        "Iron Spined Guardians are Shredders that stay near communal nursery currents: shorter and deeper chested, with fewer, broader blades standing nearly upright and broad wings for hovering in a stand-off.",
-        "Faced with a predator they raise the crest, spread the gold-banded web between the blades and flare the red gill plates at the throat, and repeated banking patrols discourage anything from approaching the young.",
-        "The same display, given to one another, decides which guardians pair, and the broadest crests are the most sought after.",
-        "Vocal exchanges and the motion of nearby adults help maintain a loose moving boundary around the nursery.",
-        "The nursery travels with a suitable current, so protection depends on recognising companions rather than defending a fixed place.",
+        "Iron Spined Guardians are Shredders that turned from hunting to keeping: shorter and deeper chested, with fewer, broader blades standing nearly upright and broad wings for hovering in a stand-off.",
+        "They keep nurseries for the young of every kind, not their own alone: sanctuaries where the eggs and young of many species are brought and watched over, which nearly every hunter of the sky has learned to leave alone.",
+        "A hunter hungry enough to test one meets the guardians crest raised, the gold-banded web spread between the blades and the red gill plates flared at the throat, and is driven off blades first; banking patrols round the nursery keep most from ever trying.",
+        "The trust runs both ways: many animals bring food to the guardians in thanks for the young they keep, so a guardian seldom needs to hunt.",
+        "Nurseries most often gather round an ancient Whisperwood, for which the guardians have an affinity no one can explain; the tree itself plays no part. As eggs, young and tree all drift on the wind, the guardians nudge strays gently back to keep them close together.",
+        "The display that drives off a hunter, given to one another, decides which guardians pair, and the broadest crests are the most sought after.",
     ],
 );
 
@@ -108,11 +109,21 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
+    //! Iron Spined Guardians keep sanctuaries for the young of every kind. They gather where they
+    //! feel at home, most often about an ancient Whisperwood, and patrol the nursery in banking
+    //! circuits; the eggs and young of many kinds are kept there, each stray nudged gently back,
+    //! and nearly every hunter of the sky knows to hunt elsewhere. One hungry enough to test it is
+    //! met crest first and driven off. Guardians seldom hunt: the animals whose young they keep
+    //! bring them food.
+
     use super::*;
     use crate::scene::life::{
         animalia::{
-            mind::{Ethology, Intent, Mind, Situation, Urges},
-            physiology::{Light, Physiology},
+            mind::{
+                Ethology, Glimpse, Intent, Interest, Mind, Perception, Situation, Urges, orbit,
+            },
+            nature::HUNT,
+            physiology::{Light, Physiology, Take, plant},
             tetralata::vivipara::ferrilaminata::ferrispinidae::ferrispina::ETHOLOGY as IRON_SPINE,
         },
         behaviour::{Activity, Goal},
@@ -124,8 +135,11 @@ mod nature {
         ..super::super::PHYSIOLOGY
     };
 
-    /// Guardians stand by the young of their kind: faced with a threat they put themselves between
-    /// it and the nursery rather than flee, and gang together against it.
+    /// How far about a guardian the young of every kind are under its guard.
+    const SANCTUARY: f32 = 150.0;
+
+    /// Guardians stand between the young and whatever threatens them rather than flee, drive off
+    /// any hunter that comes hunting into the sanctuary, and keep the nursery together.
     pub const ETHOLOGY: Ethology = Ethology {
         urges: guard,
         fear: |s, mind: &mut Mind| {
@@ -136,11 +150,53 @@ mod nature {
                 fear
             }
         },
+        wander: patrol,
+        notice,
+        shelters: SANCTUARY,
         ..IRON_SPINE
     };
 
+    /// A hunter hunting within the sanctuary.
+    const INTRUDER: Interest = Interest("intruder");
+    /// An ancient Whisperwood, which guardians keep their nurseries about.
+    const NURSERY: Interest = Interest("nursery");
+
+    /// A guardian watches over the eggs and young of every kind, not its own alone, marks any
+    /// hunter hunting within its sanctuary, and knows an ancient Whisperwood when it sees one.
+    fn notice(glimpse: &Glimpse, seen: &mut Perception) {
+        (IRON_SPINE.notice)(glimpse, seen);
+        if glimpse.heard {
+            return;
+        }
+        let other = glimpse.other;
+        if plant(other) {
+            if other == Kind::Susurrus && glimpse.grown > 10.0 {
+                seen.note(NURSERY, glimpse.offset);
+            }
+            return;
+        }
+        if glimpse.grown < 0.5 {
+            seen.note(YOUNG, glimpse.offset);
+        }
+        let hunting = matches!(glimpse.activity, Activity::Hunt | Activity::Strike);
+        if hunting
+            && other != glimpse.kind
+            && other.takes(Take::Prey)
+            && glimpse.offset.length() < SANCTUARY
+        {
+            seen.note(INTRUDER, glimpse.offset);
+        }
+    }
+
+    /// The heart of the nursery: an ancient Whisperwood if there is one, or else where the
+    /// guardians gather.
+    fn nursery(s: &Situation) -> Vec3 {
+        s.seen.mark(NURSERY).or(s.seen.kin).unwrap_or(Vec3::ZERO)
+    }
+
     fn guard(s: &Situation, urges: &mut Urges) {
         (IRON_SPINE.urges)(s, urges);
+        let devotion = s.temper(DEVOTION);
         if s.seen.threat.is_some() {
             let young = if s.seen.mark(YOUNG).is_some() {
                 1.0
@@ -151,9 +207,20 @@ mod nature {
             // what threatens them.
             urges.add(
                 GUARD,
-                s.threat * (0.6 + s.temper(AGGRESSION) * 0.5 + s.temper(DEVOTION) * 0.7) * young,
+                s.threat * (0.6 + s.temper(AGGRESSION) * 0.5 + devotion * 0.7) * young,
             );
         }
+        if s.seen.mark(INTRUDER).is_some() {
+            urges.add(DRIVE_OFF, 0.7 + s.temper(AGGRESSION) * 0.4 + devotion * 0.5);
+        }
+        if s.seen
+            .mark(YOUNG)
+            .is_some_and(|ward| (ward - nursery(s)).length() > 25.0)
+        {
+            urges.add(TEND, 0.25 + devotion * 0.35);
+        }
+        // Fed by those whose young it keeps, a guardian hunts only when it must.
+        urges.scale(HUNT, 0.5);
     }
 
     /// Standing between a threat and the young.
@@ -168,4 +235,36 @@ mod nature {
             Goal::new(Activity::Guard, stand, 1.0)
         },
     };
+
+    /// Going at a hunter in the sanctuary, crest raised, until it leaves.
+    const DRIVE_OFF: Intent = Intent {
+        name: "drive off",
+        act: |_, s| Goal::new(Activity::Defend, s.seen.mark(INTRUDER), 1.3),
+    };
+
+    /// Nudging a stray egg or young one back towards the rest.
+    const TEND: Intent = Intent {
+        name: "tend",
+        act: |_, s| {
+            let centre = nursery(s);
+            let goal = s
+                .seen
+                .mark(YOUNG)
+                .map(|ward| ward + (centre - ward).normalize_or_zero() * 8.0);
+            Goal::new(Activity::Nudge, goal, 0.4).hovering()
+        },
+    };
+
+    /// Banking circuits round the nursery, each guardian on its own: they warn off hunters
+    /// before any comes near.
+    fn patrol(_: &mut Mind, s: &Situation) -> Goal {
+        let up = s.up();
+        let centre = nursery(s);
+        let radius = 40.0 + s.wobble().sin() * 12.0;
+        Goal::new(
+            Activity::Guard,
+            Some(centre + orbit(up, centre, radius, s.now * 0.12 + s.wobble())),
+            0.5,
+        )
+    }
 }

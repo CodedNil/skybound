@@ -23,7 +23,7 @@ pub const SPOUT: Gene = Gene(39);
 pub const PLATES: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -136,11 +136,51 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Physiology};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent},
+            physiology::{Brood, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         brood: Brood::Carried,
         speed: 10.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// A Spitfire with acid to spare turns on a hunter that comes close rather than flee, and a
+    /// mother with her eggs glued round her all the more so: it holds off at its range and spits.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen
+                .threat
+                .is_some_and(|threat| threat.offset.length() < 40.0)
+            {
+                let brooding = s.drives.term.max(s.drives.borne);
+                urges.add(
+                    STAND,
+                    s.threat * (0.5 + s.temper(AGGRESSION) * 0.6 + brooding * 0.6),
+                );
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// Holding at spitting range from a hunter, and firing.
+    const STAND: Intent = Intent {
+        name: "stand its ground",
+        act: |_, s| {
+            Goal::new(
+                Activity::Defend,
+                s.seen
+                    .threat
+                    .map(|threat| threat.offset - threat.offset.normalize_or_zero() * 10.0),
+                0.6,
+            )
+            .hovering()
+        },
     };
 }

@@ -23,7 +23,7 @@ pub const GRIP: Gene = Gene(39);
 pub const PLUMP: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -110,11 +110,37 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology};
+    use crate::scene::life::{
+        animalia::{
+            mind::Ethology,
+            nature::FLEE,
+            physiology::{Brood, Light, Physiology},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
         brood: Brood::Strings,
         ..super::super::PHYSIOLOGY
+    };
+    /// Fleeing, a Nibbler turns with the swarm rather than alone.
+    ///
+    /// It follows its neighbours' heading as much as it flies from the threat, so the turn ripples
+    /// through the whole murmuration as their eyespots flash.
+    pub const ETHOLOGY: Ethology = Ethology {
+        act: |mind, s| {
+            if mind.intent == FLEE
+                && s.seen.kin_count >= 3
+                && let Some(threat) = s.seen.threat
+            {
+                let away = -threat.offset.normalize_or_zero();
+                let with = s.seen.heading.normalize_or_zero();
+                let way = (away + with * 1.5).normalize_or(away);
+                return Some(Goal::new(Activity::Flee, Some(way * 40.0), 1.3));
+            }
+            (super::super::ETHOLOGY.act)(mind, s)
+        },
+        ..super::super::ETHOLOGY
     };
 }

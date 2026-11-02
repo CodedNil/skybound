@@ -23,7 +23,7 @@ pub const FEELERS: Gene = Gene(39);
 pub const BRISTLES: Gene = Gene(40);
 
 #[cfg(not(target_arch = "spirv"))]
-pub use nature::PHYSIOLOGY;
+pub use nature::{ETHOLOGY, PHYSIOLOGY};
 
 taxon!(
     Species,
@@ -123,7 +123,14 @@ pub const LOOK: Look = Look::coat(
 
 #[cfg(not(target_arch = "spirv"))]
 mod nature {
-    use crate::scene::life::animalia::physiology::{Brood, Light, Physiology, Take};
+    use super::*;
+    use crate::scene::life::{
+        animalia::{
+            mind::{Ethology, Intent},
+            physiology::{Brood, Light, Physiology, Take},
+        },
+        behaviour::{Activity, Goal},
+    };
 
     pub const PHYSIOLOGY: Physiology = Physiology {
         light: Light::Sunlit,
@@ -139,5 +146,33 @@ mod nature {
         flocks: false,
         speed: 8.0,
         ..super::super::PHYSIOLOGY
+    };
+    /// Between cleanings, a fed Sweeper rides in the sheltered air downwind of a client, as the
+    /// stripe promises it may, ready when the next one wants it.
+    pub const ETHOLOGY: Ethology = Ethology {
+        urges: |s, urges| {
+            (super::super::ETHOLOGY.urges)(s, urges);
+            if s.seen
+                .mark(CLIENT)
+                .is_some_and(|client| client.length() < 60.0)
+            {
+                urges.add(WAKE, (1.0 - s.drives.hunger) * 0.4);
+            }
+        },
+        ..super::super::ETHOLOGY
+    };
+
+    /// In a client's lee.
+    const WAKE: Intent = Intent {
+        name: "ride the wake",
+        act: |_, s| {
+            let downwind = s.seen.wind.normalize_or_zero();
+            Goal::new(
+                Activity::Drift,
+                s.seen.mark(CLIENT).map(|client| client + downwind * 12.0),
+                0.6,
+            )
+            .hovering()
+        },
     };
 }
