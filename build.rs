@@ -1,5 +1,5 @@
 use spirv_builder::{SpirvBuilder, SpirvMetadata};
-use std::{env, fs, path::PathBuf, thread};
+use std::{env, fmt::Write, fs, path::PathBuf, thread};
 
 /// Build the shader crate to SPIR-V with `features`, in its own target folder so two builds can run
 /// at once, and copy the module to `name` in Cargo's build output, with a constant for each of its
@@ -21,17 +21,16 @@ fn build(manifest_dir: &str, features: &[&str], folder: &str, name: &str) {
         .expect("Failed to build rust-gpu shader");
     let built_shader = result.module.unwrap_single();
     fs::copy(built_shader, &out_path).expect("Failed to copy shader to Cargo's build output");
-    let constants: String = result
-        .entry_points
-        .iter()
-        .map(|entry| {
-            let function = entry.rsplit("::").next().unwrap_or(entry);
-            format!(
-                "/// The `{entry}` entry point.\npub const {}: &str = \"{entry}\";\n",
-                function.to_uppercase()
-            )
-        })
-        .collect();
+    let mut constants = String::new();
+    for entry in &result.entry_points {
+        let function = entry.rsplit("::").next().unwrap_or(entry);
+        writeln!(
+            constants,
+            "/// The `{entry}` entry point.\npub const {}: &str = \"{entry}\";",
+            function.to_uppercase()
+        )
+        .expect("write to a string");
+    }
     fs::write(out_path.with_extension("rs"), constants).expect("write entry point names");
 }
 
