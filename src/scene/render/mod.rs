@@ -25,6 +25,7 @@ use spirv_std::{
 pub mod clouds;
 mod features;
 mod march;
+mod media;
 pub mod ocean;
 mod poles;
 mod spikes;

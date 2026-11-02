@@ -37,12 +37,13 @@ use bevy::{
     },
 };
 use skybound::scene::{
-    FrameUniform, ViewUniform,
+    FrameUniform, PLANET_RADIUS, ViewUniform,
     atmosphere::SKY_SIZE,
     aur::{EJECTION_WINDOW, spire_origins},
     cache as volume_cache,
     climate::{CLOUD_MAP_HEIGHT, CLOUD_MAP_WIDTH, CloudParcel},
     entry,
+    features::influence,
     life::{BloodFeeder, Bubbleback, Drawn, HERD, Plant, Tetralate},
 };
 use spirv_std::glam::DVec3 as SceneDVec3;
@@ -289,6 +290,7 @@ pub(super) fn prepare_scene_view(params: PrepareSceneView) {
         buffer.profile,
     );
     uniform.weather = atmosphere.0.to_scene();
+    uniform.rain = rain(&world, &clouds, view.world_from_view.translation()).to_scene();
     uniform.times = vec4(
         time.elapsed_secs_wrapped(),
         frame_count.0 as f32,
@@ -376,6 +378,23 @@ fn upload_herd(
     buffer.bubblebacks.write_buffer(device, queue);
     buffer.blood_feeders.write_buffer(device, queue);
     buffer.tetralates.write_buffer(device, queue);
+}
+
+/// How hard it rains about a place, and the way the wind drives it there: constantly in a swamp,
+/// beneath heavy convective cloud, and hardest in a hurricane's bands.
+fn rain(world: &WorldData, clouds: &CloudField, local: Vec3) -> Vec4 {
+    let planet = world.position(local);
+    let up = planet.normalize().as_vec3().to_scene();
+    let altitude = (planet.length() - f64::from(PLANET_RADIUS)) as f32;
+    let [lower, upper] = clouds.cover(up);
+    let beneath = 1.0 - altitude.smoothstep(upper.w, upper.w + 300.0);
+    let swamp = influence(up, altitude).swamp;
+    let (gale, _, severity) = clouds.gale(up, altitude);
+    let falling = (lower.x.smoothstep(0.45, 0.9) * beneath)
+        .max(swamp * 0.9)
+        .max(severity.min(1.0) * 0.8 * beneath);
+    let drift = world.rotate_to_local(Vec3::from_array(gale.to_array()));
+    Vec4::new(falling, drift.x, drift.y, drift.z)
 }
 
 fn camera_uniform(

@@ -5,7 +5,7 @@ use crate::scene::{
     math::{finish_opaque, henyey_greenstein, intersect_sphere, ray_shell_intersect, square},
     planet::{REACTION_RADIUS, light_position, light_towards, surface_coordinates},
     render::{
-        clouds, ocean, poles,
+        clouds, media, ocean, poles,
         textures::{AtmosphereData, Textures},
     },
 };
@@ -620,9 +620,21 @@ pub fn integrate(
     let polar = poles::poles_raymarch_entry(ro, rd, limit);
     let (beam_light, beam_depth, beam_at) = poles::beam(ro, rd, limit, view);
     let mut beamed = beam_depth <= 0.0;
+    // The rain falls about the camera, in front of everything else.
+    let mut result = RaymarchResult::empty(limit);
+    let up = ro / ro.length();
+    for layer in 0..4 {
+        let drops = media::rain(rd, up, layer, limit, view);
+        if drops.depth > 0.0 {
+            result.absorb(drops.light, drops.depth, drops.at);
+        }
+    }
+    let dust = media::dust(ro, rd, limit, view);
+    let mut dusted = dust.depth <= 0.0;
+    let aurora = media::aurora(ro, rd, limit, view);
+    let mut glowed = aurora.depth <= 0.0;
     // No arc can be met before this distance along the ray.
     let mut arc_free = 0.0;
-    let mut result = RaymarchResult::empty(limit);
     let mut t = 0.0;
     let mut steps = 0u32;
     // How many quarters of the cloud slab have joined the march.
@@ -647,12 +659,26 @@ pub fn integrate(
             result.absorb(beam_light, beam_depth, beam_at);
             beamed = true;
         }
+        if !dusted && t + 0.03 >= dust.at {
+            result.absorb(dust.light, dust.depth, dust.at);
+            dusted = true;
+        }
+        if !glowed && t + 0.03 >= aurora.at {
+            result.absorb(aurora.light, aurora.depth, aurora.at);
+            glowed = true;
+        }
         let mut end = boundary(ocean, t, boundary(body, t, boundary(polar, t, limit)));
         if joined < 4 {
             end = end.min(slab.depth(joined).max(t + 0.0625));
         }
         if !beamed {
             end = end.min(beam_at.max(t + 0.0625));
+        }
+        if !dusted {
+            end = end.min(dust.at.max(t + 0.0625));
+        }
+        if !glowed {
+            end = end.min(aurora.at.max(t + 0.0625));
         }
         let mut step = end - t;
         let mut ocean_height = 1.0e10;
@@ -809,6 +835,12 @@ pub fn integrate(
     }
     if !beamed {
         result.absorb(beam_light, beam_depth, beam_at);
+    }
+    if !dusted {
+        result.absorb(dust.light, dust.depth, dust.at);
+    }
+    if !glowed {
+        result.absorb(aurora.light, aurora.depth, aurora.at);
     }
     if profile & 512 != 0 {
         // Bands: <16 blue, <32 cyan, <64 green, <128 yellow, <256 red, else white.

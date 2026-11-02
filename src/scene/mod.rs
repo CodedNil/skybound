@@ -48,6 +48,9 @@ pub struct ViewUniform {
     pub planet_rotation: Quat,
     pub times: Vec4,
     pub weather: Vec4,
+    /// How hard it is raining about the camera, from dry to a downpour, and the way the wind
+    /// drives the rain, in the world's axes.
+    pub rain: Vec4,
     pub pole_position: Vec4,
     pub pole_color: Vec4,
     pub ambient_color: Vec4,

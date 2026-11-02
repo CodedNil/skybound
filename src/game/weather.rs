@@ -9,8 +9,9 @@ use skybound::scene::{
     aur::{aur_climate, energy_color},
     climate::{
         CLOUD_CELLS, CLOUD_GRID, CLOUD_SLOTS, CloudCover, CloudParcel, cloud_cell, cloud_parcel,
-        cube_direction, cyclone_wind,
+        cube_direction, cyclone_wind, swamp_parcels,
     },
+    features::SWAMPS,
     math::fourth,
     planet::surface_frame,
 };
@@ -163,10 +164,12 @@ impl Lightning {
 }
 
 fn parcels(time: f32) -> Vec<CloudParcel> {
-    (0..CLOUD_SLOTS)
+    let mut parcels: Vec<CloudParcel> = (0..CLOUD_SLOTS)
         .into_par_iter()
         .map(|slot| cloud_parcel(slot, time))
-        .collect()
+        .collect();
+    parcels.extend((0..SWAMPS).flat_map(|index| swamp_parcels(index, time)));
+    parcels
 }
 
 /// Each cell's centre direction and angular radius.

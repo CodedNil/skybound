@@ -1,6 +1,6 @@
 use crate::scene::{
     PLANET_RADIUS,
-    features::{Influence, influence},
+    features::{Influence, influence, swamp},
     math::{Power, cube, lattice, square},
     planet::surface_frame,
 };
@@ -643,6 +643,31 @@ pub fn cloud_parcel(slot: u32, time: f32) -> CloudParcel {
         shape: vec4(kind as f32, strength, base, top),
         detail: vec4(core, time * (0.0005 + form.w * 0.0004), thickness, seed.x),
     }
+}
+
+/// The weather a swamp keeps over itself whatever passes: a heap of rain-heavy cumulus fed by its
+/// geysers' spray, and a low, dark deck above it, its seed turning slowly so it is never the same
+/// sky twice.
+pub fn swamp_parcels(index: u32, time: f32) -> [CloudParcel; 2] {
+    let field = swamp(index);
+    let seed = (index as f32 * 0.618_034).fract();
+    let base = layer_altitude(0);
+    let heap = CloudParcel {
+        centre: field.up.extend(field.radius * 1.5),
+        shape: vec4(CUMULUS as f32, 1.0, base, base + 2600.0),
+        detail: vec4(0.0, time * 0.0007 + seed * 40.0, 0.0, seed),
+    };
+    let deck = CloudParcel {
+        centre: field.up.extend(field.radius * 1.8),
+        shape: vec4(DECK as f32, 0.9, layer_altitude(1), 1.0),
+        detail: vec4(
+            0.0,
+            time * 0.0005 + seed * 17.0,
+            layer_depth(1),
+            (seed + 0.37).fract(),
+        ),
+    };
+    [heap, deck]
 }
 
 /// Where a hurricane's eyewall stands, as a share of its reach.
