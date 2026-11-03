@@ -70,7 +70,7 @@ type BenchmarkPlayer = (With<Player>, Without<Mount>, Without<Camera3d>);
 #[derive(SystemParam)]
 struct BenchmarkSetup<'w, 's> {
     commands: Commands<'w, 's>,
-    window: Single<'w, 's, &'static mut Window>,
+    window: Option<Single<'w, 's, &'static mut Window>>,
     camera: Single<'w, 's, (Entity, &'static mut Camera, &'static mut Transform), BenchmarkCamera>,
     mount: Single<'w, 's, &'static mut Transform, BenchmarkMount>,
     player: Single<'w, 's, &'static mut Transform, BenchmarkPlayer>,
@@ -206,10 +206,13 @@ fn setup(params: BenchmarkSetup) {
         "BENCHMARK scene={scene} resolution={}x{} simulation_time={phase}",
         resolution.x, resolution.y
     );
-    window.present_mode = PresentMode::AutoNoVsync;
-    window
-        .resolution
-        .set(resolution.x as f32, resolution.y as f32);
+    // Drawn offscreen there is no window to set up.
+    if let Some(window) = &mut window {
+        window.present_mode = PresentMode::AutoNoVsync;
+        window
+            .resolution
+            .set(resolution.x as f32, resolution.y as f32);
+    }
     if !env::args().any(|arg| arg == "--live" || arg == "--animate" || arg == "--route") {
         time.pause();
     }
