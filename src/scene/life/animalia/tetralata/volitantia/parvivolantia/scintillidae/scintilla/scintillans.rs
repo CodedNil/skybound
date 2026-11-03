@@ -62,6 +62,18 @@ fn plume(side: f32, t: f32, c: &Tetralate) -> Vec3 {
     root * (1.0 - t) * (1.0 - t) + control * 2.0 * (1.0 - t) * t + tip * t * t
 }
 
+/// The lineage's circlet of eyes round its cowl and the pair beneath, each seated on its own
+/// skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 5;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    let (at, radius) = cowl_eye(index, 0.9, 0.16);
+    at.extend(radius * SUNK)
+}
+
 /// A tiny swarm-feeder that fishes with light.
 ///
 /// Its one pair of mouth tentacles has become two feathery filter plumes, held spread before it and
@@ -104,7 +116,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     lights = lights.min((p - plume(side, 1.0, c)).length() - bead * 1.6);
     hit.join(barbs, 4);
     hit.join(lights, 9);
-    hit.socket(eyes(p, 0.9, 0.16), 0.16 * 0.16);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_eyes(p, c, 0, 0.9, 0.16), 0.16 * 0.16);
+    }
     hit
 }
 

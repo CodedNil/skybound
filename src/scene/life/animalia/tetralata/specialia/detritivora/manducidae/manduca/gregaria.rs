@@ -45,6 +45,15 @@ pub fn animate(c: &mut Tetralate) {
 /// Where the feeding cage hangs, under the front of the head.
 const MOUTH: Vec3 = vec3(0.0, -0.35, -1.05);
 
+/// Its eyes, seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 1;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+pub fn anchor(_: u32, _: &CreatureInstance) -> Vec4 {
+    vec3(0.3, -0.3, -1.05).extend(0.15 * SUNK)
+}
+
 /// A swarming scavenger, small and quick.
 ///
 /// A teardrop body, blunt in front and tapering behind, carries two pairs of short, round wings set
@@ -86,7 +95,13 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         );
     }
     let side = vec3(p.x.abs(), p.y, p.z);
-    hit.socket((side - vec3(0.3, -0.3, -1.05)).length() - 0.15, 0.15);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            (side - c.seated(0, anchor(0, c).truncate())).length() - 0.15,
+            0.15,
+        );
+    }
     hit
 }
 

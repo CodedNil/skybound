@@ -40,12 +40,29 @@ pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(1.3, 1.1, 4.2).extend(0.0);
 }
 
+/// How far its writhing carries it aside at `z` along it, growing toward its tail.
+fn sway(z: f32, c: &CreatureInstance) -> f32 {
+    (c.animation.z * 1.5 + z * 0.9).sin() * (0.03 + c.gene(WRITHE) * 0.04) * (z + 3.2).max(0.0)
+}
+
+/// Its row of cup eyes, each seated on its own skin: where the first lies, how far apart they
+/// are, and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(0.12, 0.13, -2.8), 0.2, 3);
+
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 3;
+
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, c: &CreatureInstance) -> Vec4 {
+    let at = spot(EYES.0, EYES.1, index);
+    // Where its writhing has carried that part of it, the cup's centre on the skin.
+    (at + vec3(sway(at.z, c), 0.0, 0.0)).extend(0.0)
+}
+
 /// A flattened, ringed leech, narrow at the head and broad behind, gripping with a small sucker
 /// around its mouth and a broad disc at its tail.
 pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
-    let sway = (c.animation.z * 1.5 + p.z * 0.9).sin()
-        * (0.03 + c.gene(WRITHE) * 0.04)
-        * (p.z + 3.2).max(0.0);
+    let sway = sway(p.z, c);
     let grip = 0.85 + c.gene(SUCKERS) * 0.3;
     let q = p - vec3(sway, 0.0, 0.0);
     let mut hit = Surface::new(
@@ -80,7 +97,10 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
         4,
         0.08,
     );
-    hit.pit(eyespots(q, vec3(0.12, 0.13, -2.8), 0.2, 3, 0.04), 0.04);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.pit(seated_spots(q, c, 0, EYES, 0.04), 0.04);
+    }
     hit
 }
 

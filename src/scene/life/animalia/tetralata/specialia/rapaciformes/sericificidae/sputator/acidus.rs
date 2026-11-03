@@ -46,6 +46,19 @@ pub fn animate(c: &mut Tetralate) {
 /// Where the gripping tentacles hang, behind the spout.
 const MOUTH: Vec3 = vec3(0.0, -0.55, -1.5);
 
+/// Its forward eyes and the pair beneath, seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 2;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    if index == 0 {
+        vec3(0.3, 0.12, -2.12).extend(0.15 * SUNK)
+    } else {
+        vec3(0.42, -0.32, -1.85).extend(0.11 * SUNK)
+    }
+}
+
 /// A sniper in armour.
 ///
 /// A short, wedge-shaped body lies under overlapping plates, each riding over the next, broad at
@@ -94,8 +107,17 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         0.05,
     );
     hit.join(spout.max(-bore), 7);
-    hit.socket((side - vec3(0.3, 0.12, -2.12)).length() - 0.15, 0.15);
-    hit.socket((side - vec3(0.42, -0.32, -1.85)).length() - 0.11, 0.11);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            (side - c.seated(0, anchor(0, c).truncate())).length() - 0.15,
+            0.15,
+        );
+        hit.socket(
+            (side - c.seated(1, anchor(1, c).truncate())).length() - 0.11,
+            0.11,
+        );
+    }
     // A pair of short, toothed mandibles either side of the spout, which part sideways as it
     // feeds to shear the softened meat its acid has opened, and close over the spout's root in
     // flight.

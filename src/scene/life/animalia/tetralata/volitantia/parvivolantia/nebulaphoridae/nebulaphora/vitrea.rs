@@ -42,6 +42,18 @@ pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(2.0, 2.1, 5.4).extend(0.0);
 }
 
+/// The lineage's circlet of eyes round its cowl and the pair beneath, each seated on its own
+/// skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 5;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    let (at, radius) = cowl_eye(index, 1.6, 0.28);
+    at.extend(radius * SUNK)
+}
+
 /// A hovering flower.
 ///
 /// Its four wings are huge, round and translucent, the front pair swept forward and the rear pair
@@ -78,7 +90,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let gap = ((phase + 0.5).fract_gl() - 0.5).abs() * spacing;
     let coil = (vec2(gap, q.x).length() - 0.028).max(radial - 0.22 - c.gene(COIL) * 0.14);
     hit.join(coil, 8);
-    hit.socket(eyes(p, 1.6, 0.28), 0.28 * 0.16);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_eyes(p, c, 0, 1.6, 0.28), 0.28 * 0.16);
+    }
     hit
 }
 

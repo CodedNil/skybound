@@ -149,7 +149,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     body = louvres(body, p - vec3(0.0, -0.4, -2.0), vec3(5.0, 3.0, 11.0));
     let mut hit = Surface::new(body, 0);
     moss(&mut hit, p, girth, c.hide.x, c.gene(MATS));
-    hit.socket(eyes(flank), 0.3);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(eyes(flank, c), 0.3);
+    }
     if p.y > 0.0 {
         // The horns grow out of the back through their collars, skin fading into horn.
         hit.blend(horns(flank, c), 7, 0.9);
@@ -295,17 +298,40 @@ fn moss(hit: &mut Surface, p: Vec3, girth: Vec3, cover: f32, mats: f32) {
 /// Rows of small eyes along each side of the head, `p` folded onto the right, set into its
 /// curve under the brow and looking down and ahead, as a tetralate's eyes do: the front ones
 /// largest, watching where it flies, the rest watching the forest drift by below.
-fn eyes(p: Vec3) -> f32 {
+fn eyes(p: Vec3, c: &Tetralate) -> f32 {
     let mut nearest = 1e6f32;
-    for i in 0..6 {
-        let f = i as f32;
-        let z = -15.0 + f * 0.85;
-        let y = 0.55 - f * 0.12 - (i % 2) as f32 * 0.55;
-        let across = 1.0 - ((z + 12.2) / 4.4).power(2) - ((y - 0.9) / 3.7).power(2);
-        let at = vec3(4.6 * across.max(0.0).sqrt(), y, z);
-        nearest = nearest.min((p - at).length() - 0.3 * (1.0 - f * 0.07));
+    for index in 0..SIDE_EYES {
+        let (at, radius) = eye(index);
+        nearest = nearest.min((p - c.seated(index, at)).length() - radius);
     }
     nearest
+}
+
+/// How many eyes run along each side of its head.
+const SIDE_EYES: u32 = 6;
+
+/// Eye `index` of the row along each side of the head, on its design: where it lies, on the
+/// curve of the head, and how large it is.
+fn eye(index: u32) -> (Vec3, f32) {
+    let f = index as f32;
+    let z = -15.0 + f * 0.85;
+    let y = 0.55 - f * 0.12 - (index % 2) as f32 * 0.55;
+    let across = 1.0 - ((z + 12.2) / 4.4).power(2) - ((y - 0.9) / 3.7).power(2);
+    (
+        vec3(4.6 * across.max(0.0).sqrt(), y, z),
+        0.3 * (1.0 - f * 0.07),
+    )
+}
+
+/// Its eyes, each seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = SIDE_EYES;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    let (at, radius) = eye(index);
+    at.extend(radius * SUNK)
 }
 
 /// The organs that are its own, beside the body plan its lineage gives it; see [`Part`]: two

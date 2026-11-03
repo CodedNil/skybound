@@ -87,6 +87,19 @@ fn girth(z: f32) -> f32 {
     radius
 }
 
+/// Its forward eyes and the pair beneath, seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 2;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    if index == 0 {
+        vec3(0.22, 0.1, -4.55).extend(0.13 * SUNK)
+    } else {
+        vec3(0.3, -0.32, -3.4).extend(0.1 * SUNK)
+    }
+}
+
 /// A stooping hunter built around its stylet.
 ///
 /// The stylet is needle-fine, iron-hardened as its lineage's blades are, thin enough to slip in and
@@ -178,8 +191,17 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     ) / 2.5;
     hit.distance = smooth_min(hit.distance, fork, 0.2);
     // Eyes: a forward pair either side of the stylet's root to judge the dive, and a pair beneath.
-    hit.socket((side_of(p) - vec3(0.22, 0.1, -4.55)).length() - 0.13, 0.13);
-    hit.socket((side_of(p) - vec3(0.3, -0.32, -3.4)).length() - 0.1, 0.1);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            (side_of(p) - c.seated(0, anchor(0, c).truncate())).length() - 0.13,
+            0.13,
+        );
+        hit.socket(
+            (side_of(p) - c.seated(1, anchor(1, c).truncate())).length() - 0.1,
+            0.1,
+        );
+    }
     rasp(&mut hit, p, c);
     hit.blend(oral_grasping(p, c, MOUTH, REACH, ORAL_PAIRS, GRIP), 8, 0.18);
     hit

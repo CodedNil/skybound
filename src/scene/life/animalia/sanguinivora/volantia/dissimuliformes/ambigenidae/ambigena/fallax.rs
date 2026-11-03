@@ -46,6 +46,19 @@ pub fn animate(c: &mut BloodFeeder) {
 /// face, until the mouth opens. The sucker, leading.
 const CUP: Vec3 = vec3(0.0, -0.1, -2.0);
 
+/// Its row of cup eyes, each seated on its own skin: where the first lies, how far apart they
+/// are, and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(0.3, 0.72, -1.75), 0.22, 3);
+
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 3;
+
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    // A cup eye's centre lies on the skin, so the cup opens half its depth into the body.
+    spot(EYES.0, EYES.1, index).extend(0.0)
+}
+
 /// A cleaner's impostor, and a blood-eater underneath.
 ///
 /// It shares nothing with the Sweepers it copies but their outline: a soft, swollen sac of a body,
@@ -83,7 +96,10 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
     let base = vec3(cosine, sine, 0.0) * cup * 0.94 + vec3(0.0, 0.0, 0.1);
     let tip = vec3(cosine, sine, 0.0) * (cup * 1.47 + sway) + vec3(0.0, 0.0, -0.55);
     hit.join(capsule(q, base, tip, 0.045), 8);
-    hit.pit(eyespots(p, vec3(0.3, 0.72, -1.75), 0.22, 3, 0.05), 0.05);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.pit(seated_spots(p, c, 0, EYES, 0.05), 0.05);
+    }
     hit
 }
 

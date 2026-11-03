@@ -45,6 +45,33 @@ pub fn animate(c: &mut Tetralate) {
     rig_tentacles(c, vec3(0.0, -0.8, -1.5), 1.3, ORAL_PAIRS);
 }
 
+/// Its rows of eyes, each as [`eyespots`] lays them out: one along the upper edge of a body
+/// `width` across, and one beneath.
+const fn upper(width: f32) -> (Vec3, f32, u32) {
+    (vec3(width * 0.93, 1.25, -0.3), 0.3, 3)
+}
+const LOWER: (Vec3, f32, u32) = (vec3(0.9, -0.95, -0.8), 0.4, 3);
+
+/// How broad its body is, as its genes have it.
+fn width(c: &CreatureInstance) -> f32 {
+    9.0 * (0.85 + c.gene(WIDTH) * 0.3)
+}
+
+/// Its eyes, the upper row and then the lower, each seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 6;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, c: &CreatureInstance) -> Vec4 {
+    if index < 3 {
+        let (first, spacing, _) = upper(width(c));
+        spot(first, spacing, index).extend(spot_radius(0.12, index) * SUNK)
+    } else {
+        spot(LOWER.0, LOWER.1, index - 3).extend(spot_radius(0.16, index - 3) * SUNK)
+    }
+}
+
 /// A living kite, with no head and no body apart from the wing.
 ///
 /// The whole animal is one broad diamond, thick and dark at the centre where its organs lie and
@@ -55,7 +82,7 @@ pub fn animate(c: &mut Tetralate) {
 /// while twin streamers behind hold it steady. No two kites share a shape, and a kite's young take
 /// after it.
 pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
-    let width = 9.0 * (0.85 + c.gene(WIDTH) * 0.3);
+    let width = width(c);
     let front = 6.0 * (0.85 + c.gene(FRONT) * 0.3);
     let back = 9.0;
     let along = if p.z < 0.0 { -p.z / front } else { p.z / back };
@@ -78,11 +105,11 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         0.03,
     );
     hit.blend(whisker, 1, 0.03);
-    hit.socket(
-        eyespots(p, vec3(width * 0.93, 1.25, -0.3), 0.3, 3, 0.12),
-        0.12,
-    );
-    hit.socket(eyespots(p, vec3(0.9, -0.95, -0.8), 0.4, 3, 0.16), 0.16);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_spots(p, c, 0, upper(width), 0.12), 0.12);
+        hit.socket(seated_spots(p, c, 3, LOWER, 0.16), 0.16);
+    }
     let streamer = tapered_tail(
         vec3(side, p.y, p.z),
         vec3(0.7, 0.0, back * 0.9),

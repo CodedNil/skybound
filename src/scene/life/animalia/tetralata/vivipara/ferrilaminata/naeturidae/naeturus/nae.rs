@@ -120,6 +120,39 @@ fn circlet(index: u32) -> (Vec3, f32, Vec3) {
 /// How many eyes ring each side of the head.
 const CIRCLET: u32 = 3;
 
+/// Its eyes and its crest, each seated on its own skin: the circlet's three, the downward eye, and
+/// the crest's root.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = CIRCLET + 2;
+
+/// Where anchor `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    if index > CIRCLET {
+        // Rooted just within the crown, so the crest grows out of it.
+        TUFT_ROOT.extend(0.01)
+    } else {
+        let (at, radius, _) = designed(index);
+        at.extend(radius * SUNK)
+    }
+}
+
+/// Eye `index`, the circlet's from ahead round to behind and then the downward one, as the design
+/// lays it out.
+fn designed(index: u32) -> (Vec3, f32, Vec3) {
+    if index < CIRCLET {
+        circlet(index)
+    } else {
+        downward()
+    }
+}
+
+/// Eye `index` as [`designed`] gives it, seated on this body's own skin.
+fn eye(index: u32, creature: &Tetralate) -> (Vec3, f32, Vec3) {
+    let (at, radius, looking) = designed(index);
+    (creature.seated(index, at), radius, looking)
+}
+
 /// The downward pair beneath the head, watching the aur.
 fn downward() -> (Vec3, f32, Vec3) {
     let looking = vec3(0.35, -0.85, -0.42);
@@ -233,7 +266,7 @@ pub fn surface(point: Vec3, creature: &Tetralate) -> Surface {
     .length()
         - 0.009;
     hit.blend(lip, 17, 0.01);
-    hit = eyes(point, hit);
+    hit = eyes(point, creature, hit);
     // An aur sac on each flank, glowing through the iron collar its body laid down round it.
     // The sex that carries the young carries larger aur sacs, to heal and shield its brood.
     let bearer = if creature.sex.x > 0.5 && creature.sex.x < 1.5 {
@@ -283,14 +316,14 @@ fn hood(point: Vec3) -> f32 {
 }
 
 /// The circlet of eyes round the head, and the downward pair beneath it, each in almond lids.
-fn eyes(point: Vec3, mut hit: Surface) -> Surface {
+fn eyes(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
+    // Measured bare, the body has no eyes set in it yet.
+    if creature.wings.measuring() {
+        return hit;
+    }
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     for index in 0..=CIRCLET {
-        let (at, radius, looking) = if index < CIRCLET {
-            circlet(index)
-        } else {
-            downward()
-        };
+        let (at, radius, looking) = eye(index, creature);
         hit.lidded(
             (mirrored - at).length() - radius,
             almond(mirrored, at, looking, radius),
@@ -349,9 +382,11 @@ fn hands(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
 /// over the crown, the middle one longest, as long as its genes have them and longer in the sex
 /// that courts.
 fn tuft(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
-    if (point - vec3(0.0, 0.28, -0.1)).length() > 0.32 {
+    // Measured bare, the body has no crest on it yet.
+    if (point - vec3(0.0, 0.28, -0.1)).length() > 0.32 || creature.wings.measuring() {
         return hit;
     }
+    let crown = creature.seated(CIRCLET + 1, TUFT_ROOT);
     let long = (0.85 + creature.gene(CREST) * 0.3) * if creature.sex.x > 1.5 { 1.2 } else { 1.0 };
     let stir = (creature.animation.z * 2.5).sin() * 0.1;
     let mut feathers = 1e6f32;
@@ -360,7 +395,7 @@ fn tuft(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface {
         let length = (0.24 - lane.abs() * 0.05) * long;
         // Rooted side by side on the crown of the hood, rising steeply and curving back over the
         // head in one smooth arc, the outer two leaning a little apart.
-        let root = TUFT_ROOT + vec3(lane * 0.022, 0.0, lane.abs() * 0.012);
+        let root = crown + vec3(lane * 0.022, 0.0, lane.abs() * 0.012);
         let rise = vec3(lane * 0.3, 1.0, -0.2);
         let back = vec3(lane * 0.45, -0.15 + stir, 1.0);
         let control = root + rise / rise.length() * length * 0.6;
@@ -674,10 +709,10 @@ fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
             // A glossy lens over an amber iris round a wide dark pupil, measured across whichever
             // eye this is from the line it looks along.
             let mirrored = vec3(point.x.abs(), point.y, point.z);
-            let (mut centre, mut radius, mut looking) = downward();
+            let (mut centre, mut radius, mut looking) = eye(CIRCLET, creature);
             let mut nearest = (mirrored - centre).length() - radius;
             for index in 0..CIRCLET {
-                let (at, size, towards) = circlet(index);
+                let (at, size, towards) = eye(index, creature);
                 let distance = (mirrored - at).length() - size;
                 if distance < nearest {
                     nearest = distance;

@@ -32,6 +32,16 @@ pub struct Animal {
     /// one for the sex that bears the young and two for the other; and spare. Most animal
     /// lineages part them, and their sexes look and are built differently.
     pub sex: Vec4,
+    /// How far each anchor of its species' design (see [`crate::scene::life::ANCHORS`]) is moved
+    /// to sit on this body's own skin as the design sets it on its species' reference body.
+    pub anchors: [Vec4; 6],
+}
+
+impl Animal {
+    /// Where anchor `index` of its species' design, laid out at `point`, sits on this body.
+    pub fn seated(&self, index: u32, point: Vec3) -> Vec3 {
+        point + self.anchors[index as usize].truncate()
+    }
 }
 
 impl Deref for Animal {
@@ -66,9 +76,10 @@ impl Body for Animal {
 pub struct Wings {
     pub torn: Vec4,
     pub scarred: Vec4,
-    /// Where each pair of wings is rooted, as measured on this body's own surface: how far out from
-    /// the midline the fore and hind roots sit, whether they have been measured, and, while the
-    /// body is being measured, below zero, so neither wings nor tentacles are drawn on it.
+    /// Where each pair of wings is rooted, as measured on this body's own surface: how far out
+    /// from the midline the fore and hind roots sit, whether they have been measured, and,
+    /// while the body is being measured, below zero, so neither wings nor tentacles are drawn
+    /// on it.
     pub seats: Vec4,
 }
 

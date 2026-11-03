@@ -46,6 +46,20 @@ pub fn animate(c: &mut Tetralate) {
 /// The low point of the funnel's rim, where the tentacles hang.
 const RIM: Vec3 = vec3(0.0, -3.4, -14.0);
 
+/// Its row of eyes along each side of the head: where the first lies, how far apart they are,
+/// and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(2.9, -1.5, -6.5), 1.4, 4);
+
+/// Each of its eyes is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 4;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    spot(EYES.0, EYES.1, index).extend(spot_radius(0.24, index) * SUNK)
+}
+
 /// A living trawl with no head at all.
 ///
 /// Its front has become one great flared funnel, lined inside with comb plates, held open as it
@@ -87,7 +101,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         * 0.7;
     hit.join(comb, 7);
     hit.join(feathers(p, c, 4.0), 1);
-    hit.socket(eyespots(p, vec3(2.9, -1.5, -6.5), 1.4, 4, 0.24), 0.24);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_spots(p, c, 0, EYES, 0.24), 0.24);
+    }
     hit.blend(oral_tentacles(p, c, RIM, 2.3, ORAL_PAIRS), 8, 0.23);
     hit
 }

@@ -40,6 +40,19 @@ pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(3.6, 1.6, 3.6).extend(0.0);
 }
 
+/// Its row of cup eyes, each seated on its own skin: where the first lies, how far apart they
+/// are, and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(0.28, 0.38, -0.78), 0.14, 3);
+
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 3;
+
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    // A cup eye's centre lies on the skin, so the cup opens half its depth into the body.
+    spot(EYES.0, EYES.1, index).extend(0.0)
+}
+
 /// A glider of the cloud margins whose one wing pair has grown right round it.
 ///
 /// A single finely fringed disc encircles a compact body, rippling as it steers, so it slips along
@@ -66,7 +79,10 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
         hit.material = 1;
     }
     // A row of cup eyes round the front of the body above the disc, as its kin carry them.
-    hit.pit(eyespots(p, vec3(0.28, 0.38, -0.78), 0.14, 3, 0.05), 0.05);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.pit(seated_spots(p, c, 0, EYES, 0.05), 0.05);
+    }
     hit.blend(
         sucker(
             p,

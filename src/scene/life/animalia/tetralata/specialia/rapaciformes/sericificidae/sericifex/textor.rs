@@ -41,6 +41,18 @@ pub fn animate(c: &mut Tetralate) {
     c.opaque_bounds = vec3(5.5, 3.5, 9.0).extend(0.0);
 }
 
+/// The lineage's circlet of eyes round its cowl and the pair beneath, each seated on its own
+/// skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 5;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    let (at, radius) = cowl_eye(index, 2.6, 0.32);
+    at.extend(radius * SUNK)
+}
+
 /// A trap-builder that hunts by waiting.
 ///
 /// It looks nothing like the scavengers it shares a class with: a body thin as a stick, built to
@@ -116,7 +128,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         ),
         7,
     );
-    hit.socket(eyes(p, 2.6, 0.32), 0.32 * 0.16);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_eyes(p, c, 0, 2.6, 0.32), 0.32 * 0.16);
+    }
     hit
 }
 

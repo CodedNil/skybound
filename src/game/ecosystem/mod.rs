@@ -902,8 +902,8 @@ mod tests {
         *,
     };
     use bevy::ecs::system::SystemState;
-    use std::iter::once;
     use skybound::scene::life::KINDS;
+    use std::iter::once;
 
     #[test]
     fn birth_requires_mating_and_conserves_mass() {
@@ -1038,8 +1038,7 @@ mod tests {
         };
         let far = Vec3::new(500.0, 0.0, 0.0);
         let kind = Kind::Herbivolus;
-        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO)))
-            .collect();
+        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO))).collect();
         let mut relations = Relations {
             parent: Some(mother),
             ..Relations::default()
@@ -1077,8 +1076,7 @@ mod tests {
         );
         // A string of eggs is cut loose to drift before it hatches.
         let kind = Kind::Manduca;
-        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO)))
-            .collect();
+        let index: Index = once((mother, agent(mother, kind, 2.0, Vec3::ZERO))).collect();
         let mut relations = Relations {
             parent: Some(mother),
             host: Some(mother),

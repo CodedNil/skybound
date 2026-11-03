@@ -48,15 +48,43 @@ pub fn animate(c: &mut Tetralate) {
     rig_ribbons(c, 3, vec3(0.0, -0.4, 2.6), 1.1, reach);
 }
 
+/// How far the disc's ripple lifts it at `x` across it, growing toward the rim.
+fn ripple(x: f32, c: &CreatureInstance) -> f32 {
+    let depth = 0.08 + c.gene(RIPPLE) * 0.08;
+    (x.abs() * 0.8 - c.animation.z * 1.5).sin() * depth * x.abs()
+}
+
+/// Its eyes, each seated on its own skin.
+///
+/// The downward pair lies beneath the scoop, and the lineage's circlet is a ring of small eyes
+/// round the rim of the disc, clear of the scoop, seeing all round as it drifts.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 6;
+
+/// Where eye `index` lies on its design, before it is seated, as the disc's ripple carries it.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, c: &CreatureInstance) -> Vec4 {
+    let at = eye(index);
+    let radius = if index == 0 { 0.18 } else { 0.1 };
+    (at + vec3(0.0, ripple(at.x, c), 0.0)).extend(radius * SUNK)
+}
+
+/// Where eye `index` lies on the unrippled disc.
+fn eye(index: u32) -> Vec3 {
+    if index == 0 {
+        return vec3(1.1, -0.45, -2.9);
+    }
+    let angle = 0.85 + (index - 1) as f32 * 0.4;
+    vec3(3.0 * angle.sin(), 0.12, -3.48 * angle.cos())
+}
+
 /// A living trawl: a broad, flat body like a disc, rippling as it goes.
 ///
 /// It opens in front into a wide slot of a mouth combed inside with plates that catch what the
 /// current carries in. Round the scoop's lips a ring of small glowing lures draws Sparkies into it,
 /// and from beneath the body three luminous ribbons stream far behind.
 pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
-    let depth = 0.08 + c.gene(RIPPLE) * 0.08;
-    let ripple = (p.x.abs() * 0.8 - c.animation.z * 1.5).sin() * depth * p.x.abs();
-    let rippled = p - vec3(0.0, ripple, 0.0);
+    let rippled = p - vec3(0.0, ripple(p.x, c), 0.0);
     let disc = rounded(rippled, vec3(3.1, 0.6, 3.6));
     let gape = 1.3 + c.gene(SCOOP) * 0.6;
     let scoop = rounded(rippled - vec3(0.0, -0.05, -3.5), vec3(gape, 0.2, 0.9));
@@ -79,17 +107,17 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         let lure = vec3(lure_x, height, -3.45 + (lure_x * 0.6).power(2) * 0.3);
         hit.blend((rippled - lure).length() - bulb, 9, 0.04);
     }
-    let side = vec3(p.x.abs(), p.y, p.z);
-    // The downward pair beneath the scoop, and the lineage's circlet as a ring of small eyes round
-    // the rim of the disc, clear of the scoop, seeing all round as it drifts.
-    hit.socket(
-        ellipsoid(side - vec3(1.1, -0.45, -2.9), vec3(0.2, 0.16, 0.2)),
-        0.18,
-    );
-    for index in 0..5 {
-        let angle = 0.85 + index as f32 * 0.4;
-        let rim = vec3(3.0 * angle.sin(), 0.12, -3.48 * angle.cos());
-        hit.socket((side - rim).length() - 0.1, 0.1);
+    // The eyes ride the disc as it ripples, as the rest of it does.
+    let side = vec3(rippled.x.abs(), rippled.y, rippled.z);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            ellipsoid(side - c.seated(0, eye(0)), vec3(0.2, 0.16, 0.2)),
+            0.18,
+        );
+        for index in 1..6 {
+            hit.socket((side - c.seated(index, eye(index))).length() - 0.1, 0.1);
+        }
     }
     hit.join(ribbons(p, c, 3), 9);
     hit

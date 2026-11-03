@@ -75,8 +75,8 @@ fn shielded(creature: &Tetralate) -> f32 {
 
 /// Eye `index`, the circlet's four from ahead round to behind and then the low one under the face:
 /// where it sits on the face (a test checks each lies on it), how large it is, and which way it
-/// looks.
-fn eye(index: u32) -> (Vec3, f32, Vec3) {
+/// looks, on its design, before it is seated on its own skin.
+fn designed(index: u32) -> (Vec3, f32, Vec3) {
     let (at, radius) = if index == 0 {
         (vec3(2.395, 1.47, -18.864), 0.95)
     } else if index == 1 {
@@ -94,6 +94,23 @@ fn eye(index: u32) -> (Vec3, f32, Vec3) {
 
 /// How many eyes it has on each side.
 const EYES: u32 = 5;
+
+/// Its eyes, each seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = EYES;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    // Each traced to lie with its centre on the face, under lids that close over it.
+    designed(index).0.extend(0.0)
+}
+
+/// Eye `index` as [`designed`] gives it, seated on this body's own skin.
+fn eye(index: u32, creature: &Tetralate) -> (Vec3, f32, Vec3) {
+    let (at, radius, looking) = designed(index);
+    (creature.seated(index, at), radius, looking)
+}
 
 pub fn animate(creature: &mut Tetralate) {
     prepare_pose(creature, 20.0, 25.0, 0);
@@ -476,8 +493,9 @@ fn head_surface(point: Vec3, creature: &Tetralate, mut hit: Surface) -> Surface 
     let mirrored = vec3(point.x.abs(), point.y, point.z);
     // A circlet of eyes ringing the head from ahead round to behind, the forward pair largest,
     // and a low one beneath watching the aur, each in almond lids.
-    for index in 0..EYES {
-        let (at, radius, looking) = eye(index);
+    // Measured bare, the body has no eyes set in it yet.
+    for index in 0..if creature.wings.measuring() { 0 } else { EYES } {
+        let (at, radius, looking) = eye(index, creature);
         hit.lidded(
             (mirrored - at).length() - radius,
             almond(mirrored, at, looking, radius),
@@ -567,7 +585,7 @@ fn material(point: Vec3, id: u32, creature: &Tetralate) -> Material {
             let mirrored = vec3(point.x.abs(), point.y, point.z);
             let mut nearest = (1e6f32, Vec3::ZERO, 1.0, Vec3::Z);
             for index in 0..EYES {
-                let (at, radius, looking) = eye(index);
+                let (at, radius, looking) = eye(index, creature);
                 let distance = (mirrored - at).length() - radius;
                 if distance < nearest.0 {
                     nearest = (distance, at, radius, looking);
@@ -898,7 +916,7 @@ mod tests {
     #[test]
     fn eyes_lie_on_the_face() {
         for index in 0..EYES {
-            let (at, ..) = eye(index);
+            let (at, ..) = designed(index);
             assert!(face(at).abs() < 0.05, "eye {index} is off the face");
         }
     }

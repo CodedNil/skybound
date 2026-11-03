@@ -52,6 +52,17 @@ const BUILD: Build = Build {
     web: 0.75,
 };
 
+/// The lineage's circlet of eyes round its narrow head and the pair beneath, each seated on its
+/// own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 5;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    eye(index, BUILD).extend(cowl_eye(index, BUILD.length, BUILD.head).1 * SUNK)
+}
+
 pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     let build = Build {
         blades: 5 + (c.gene(BLADES) * 2.99) as u32,

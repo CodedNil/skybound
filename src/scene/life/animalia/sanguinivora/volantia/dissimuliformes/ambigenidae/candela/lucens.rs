@@ -39,6 +39,19 @@ pub fn animate(c: &mut BloodFeeder) {
     c.opaque_bounds = vec3(2.5, 2.0, 2.6).extend(0.0);
 }
 
+/// Its row of cup eyes, each seated on its own skin: where the first lies, how far apart they
+/// are, and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(0.12, 0.3, -1.55), 0.12, 2);
+
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 2;
+
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    // A cup eye's centre lies on the skin, so the cup opens half its depth into the body.
+    spot(EYES.0, EYES.1, index).extend(0.0)
+}
+
 /// A burrow-dweller that is mostly lamp.
 ///
 /// Its front is a short, soft, ringed grub with a small sucker and a fringe for sipping sap, and
@@ -94,7 +107,10 @@ pub fn surface(p: Vec3, c: &BloodFeeder) -> Surface {
         ),
         8,
     );
-    hit.pit(eyespots(p, vec3(0.12, 0.3, -1.55), 0.12, 2, 0.025), 0.025);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.pit(seated_spots(p, c, 0, EYES, 0.025), 0.025);
+    }
     hit
 }
 

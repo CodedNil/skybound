@@ -102,6 +102,12 @@ impl Build {
     }
 }
 
+/// Where eye `index` of the lineage's circlet lies on its narrow head, before it is seated.
+pub fn eye(index: u32, build: Build) -> Vec3 {
+    let at = cowl_eye(index, build.length, build.head).0;
+    vec3(at.x / 1.3, at.y, at.z)
+}
+
 /// The Iron Spine body plan, which every member of the genus shares.
 ///
 /// The body is deep and narrow, flattened from side to side like a blade itself so it slips
@@ -132,11 +138,19 @@ pub fn shredder(p: Vec3, c: &Tetralate, build: Build) -> Surface {
     armour(p, build, &mut hit);
     crest(p, c, build, &mut hit);
     hit.join(jaws(p, c, build), 6);
-    let narrow = vec3(p.x * 1.3, p.y, p.z);
-    hit.socket(
-        eyes(narrow, build.length, build.head) / 1.3,
-        build.head * 0.16,
-    );
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        let side = vec3(p.x.abs(), p.y, p.z);
+        let mut eyes = 1e6f32;
+        for index in 0..5 {
+            // Measured where the narrow head is as wide as the cowl it comes from.
+            let to = side - c.seated(index, eye(index, build));
+            eyes = eyes.min(
+                vec3(to.x * 1.3, to.y, to.z).length() - cowl_eye(index, build.length, build.head).1,
+            );
+        }
+        hit.socket(eyes / 1.3, build.head * 0.16);
+    }
     hit
 }
 

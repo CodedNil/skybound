@@ -46,6 +46,20 @@ pub fn animate(c: &mut Tetralate) {
 /// Where the mouth tentacles hang, under the front of the sole.
 const MOUTH: Vec3 = vec3(0.0, -0.45, -1.7);
 
+/// Its row of eyes along each side of the head: where the first lies, how far apart they are,
+/// and how many there are to a side.
+const EYES: (Vec3, f32, u32) = (vec3(1.25, -0.3, -1.1), 0.6, 4);
+
+/// Each of its eyes is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 4;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub fn anchor(index: u32, _: &CreatureInstance) -> Vec4 {
+    spot(EYES.0, EYES.1, index).extend(spot_radius(0.1, index) * SUNK)
+}
+
 /// A cleaner shaped by the surfaces it works on.
 ///
 /// A low dome of a back sits over a flat sole, so it can press close along a host's skin, the
@@ -98,7 +112,10 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         8,
         0.05,
     );
-    hit.socket(eyespots(p, vec3(1.25, -0.3, -1.1), 0.6, 4, 0.1), 0.1);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(seated_spots(p, c, 0, EYES, 0.1), 0.1);
+    }
     hit.blend(oral_tentacles(p, c, MOUTH, 0.7, ORAL_PAIRS), 8, 0.07);
     hit
 }

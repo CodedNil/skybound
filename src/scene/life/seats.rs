@@ -5,13 +5,16 @@
 //! as swollen as its belly. So, once a body is posed, each is seated on it, as a shrinkwrap would:
 //! the body is measured bare, with nothing grown on it drawn, and a wing's root is brought to where
 //! the line through its hinge meets the skin, and a tentacle's root to the nearest point of the
-//! skin, the whole tentacle moved with it. A body's shape changes over its life and not from one
-//! frame to the next, so what is measured is kept for that individual at that stage of its life.
+//! skin, the whole tentacle moved with it. Eyes and the rest a species anchors (see
+//! [`crate::scene::life::ANCHORS`]) are each moved to lie against this body's nearest skin just as
+//! the design sets them against its species' reference body. A body's shape changes over its
+//! life and not from one frame to the next, so what is measured is kept for that individual at
+//! that stage of its life.
 
 use crate::scene::life::{
-    Drawn, Look, blood_feeder_surface, look_of, tetralate_surface,
-    CreatureInstance,
+    CreatureInstance, Drawn, KINDS, Look,
     animalia::tetralata::{KNOTS, Tetralate},
+    blood_feeder_surface, look_of, tetralate_surface,
 };
 use spirv_std::glam::{Vec3, Vec4, vec3, vec4};
 use std::{
@@ -19,22 +22,25 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-/// Where an individual's wings and mouth tentacles are seated: its wings' measured roots, and how
-/// far each tentacle's root is moved to meet its skin.
+/// Where an individual's wings and mouth tentacles are seated: its wings' measured roots, how far
+/// each tentacle's root is moved to meet its skin, and how far each anchor is moved.
 #[derive(Clone, Copy)]
 struct Seats {
     wings: Vec4,
     tentacles: [Vec3; 9],
+    anchors: [Vec4; ANCHOR_SEATS],
 }
+
+/// The most anchors a body has room for.
+pub const ANCHOR_SEATS: usize = 6;
 
 /// Seat the wings and mouth tentacles of a newly posed body on the body itself.
 pub fn seat(drawn: &mut Drawn, kind: u32) {
     match drawn {
         Drawn::Tetralate(c) if c.life.w <= 0.0 => {
-            let seats = remembered(key(c), || {
-                measure(c, kind)
-            });
+            let seats = remembered(key(c), || measure(c, kind));
             c.wings.seats = seats.wings;
+            c.animal.anchors = seats.anchors;
             for index in 0..9 {
                 let (sheet, column) = (index / 3, index % 3);
                 if c.tentacles[sheet][0][column].w <= 0.0 {
@@ -56,9 +62,11 @@ pub fn seat(drawn: &mut Drawn, kind: u32) {
                 Seats {
                     wings: wings(look, c.opaque_bounds.x, body),
                     tentacles: [Vec3::ZERO; 9],
+                    anchors: anchors(kind, c, body),
                 }
             });
             c.wings.seats = seats.wings;
+            c.animal.anchors = seats.anchors;
         }
         _ => {}
     }
@@ -69,7 +77,7 @@ fn measure(c: &Tetralate, kind: u32) -> Seats {
     let mut bare = *c;
     bare.wings.seats = vec4(0.0, 0.0, 0.0, -1.0);
     let body = |p: Vec3| tetralate_surface(kind, p, &bare).distance;
-    let size = c.opaque_bounds.truncate().length().max(0.01);
+    let size = size(c);
     let mut tentacles = [Vec3::ZERO; 9];
     for (index, shift) in tentacles.iter_mut().enumerate() {
         let root = c.tentacles[index / 3][0][index % 3];
@@ -91,7 +99,51 @@ fn measure(c: &Tetralate, kind: u32) -> Seats {
     Seats {
         wings: wings(look_of(kind), c.opaque_bounds.x, body),
         tentacles,
+        anchors: anchors(kind, c, body),
     }
+}
+
+/// How large a body is in its design's frame.
+fn size(c: &CreatureInstance) -> f32 {
+    c.opaque_bounds.truncate().length().max(0.01)
+}
+
+/// How far each of a species' anchors is moved on this bare body, to lie as far below its nearest
+/// skin as the species sets it.
+fn anchors(kind: u32, c: &CreatureInstance, body: impl Fn(Vec3) -> f32) -> [Vec4; ANCHOR_SEATS] {
+    let species = KINDS[kind as usize];
+    let size = size(c);
+    let mut shifts = [Vec4::ZERO; ANCHOR_SEATS];
+    for (index, seat) in shifts
+        .iter_mut()
+        .enumerate()
+        .take(species.anchors() as usize)
+    {
+        let anchor = species.anchor(index as u32, c);
+        let point = anchor.truncate();
+        if let Some(skin) = nearest(&body, point, size) {
+            let inward = -gradient(&body, skin, size * 0.002);
+            let shift = skin + inward * anchor.w - point;
+            // A design point a long way from any skin is the design's own doing; leave it be.
+            if shift.length() < size * 0.15 {
+                *seat = shift.extend(0.0);
+            }
+        }
+    }
+    shifts
+}
+
+/// The nearest point of the bare body's skin to a point near it, or none if it is far from any.
+fn nearest(body: impl Fn(Vec3) -> f32, point: Vec3, size: f32) -> Option<Vec3> {
+    let mut at = point;
+    for _ in 0..12 {
+        let distance = body(at);
+        if distance.abs() < size * 0.0002 {
+            break;
+        }
+        at -= gradient(&body, at, size * 0.002) * distance;
+    }
+    ((at - point).length() < size * 0.2 && body(at).abs() < size * 0.005).then_some(at)
 }
 
 /// Where each pair of wings meets the bare body: in from outside along the line through its hinge,
@@ -143,9 +195,9 @@ type Key = (u32, u32, u64, u32);
 
 fn key(c: &CreatureInstance) -> Key {
     let genes = c.genes.iter().fold(0xcbf2_9ce4_8422_2325u64, |hash, four| {
-        four.to_array()
-            .iter()
-            .fold(hash, |hash, gene| (hash ^ u64::from(gene.to_bits())).wrapping_mul(0x0100_0000_01b3))
+        four.to_array().iter().fold(hash, |hash, gene| {
+            (hash ^ u64::from(gene.to_bits())).wrapping_mul(0x0100_0000_01b3)
+        })
     });
     (c.kind.x, c.kind.y, genes, (c.life.y * 48.0) as u32)
 }
@@ -174,11 +226,12 @@ mod tests {
     use crate::scene::life::KINDS;
 
     /// After seating, every grown tetralate's wing roots and mouth tentacle roots lie on its own
-    /// bare body, whatever its genes.
+    /// bare body, and its eyes as deep in its skin as its species sets them, whatever its genes.
     #[test]
-    fn wings_and_tentacles_grow_from_the_skin() {
+    fn wings_tentacles_and_eyes_grow_from_the_skin() {
+        let mut failures = Vec::new();
         for &kind in KINDS {
-            for seed in [0, 3, 11] {
+            for seed in [0, 3, 11, 17, 23] {
                 let drawn = Drawn::specimen(
                     Vec4::new(0.0, 0.0, 0.0, kind.render_radius()),
                     Vec4::W,
@@ -199,12 +252,33 @@ mod tests {
                     if wing.x <= 0.0 {
                         continue;
                     }
-                    let root = vec3(c.wings.seat(index, look.hinges[index].x), look.hinges[index].y, wing.z);
+                    let root = vec3(
+                        c.wings.seat(index, look.hinges[index].x),
+                        look.hinges[index].y,
+                        wing.z,
+                    );
                     assert!(
                         body(root).abs() < wing.y * 0.15,
                         "{kind:?} ({seed}) wing {index} is rooted {} off its body",
                         body(root)
                     );
+                }
+                // Each anchor lies as far below its nearest skin as its species sets it.
+                for index in 0..kind.anchors() {
+                    let anchor = kind.anchor(index, &c);
+                    let seated = c.seated(index, anchor.truncate());
+                    let Some(skin) = nearest(body, seated, size(&c)) else {
+                        failures.push(format!("{kind:?} ({seed}) anchor {index} is far from skin"));
+                        continue;
+                    };
+                    let depth =
+                        (seated - skin).length() * if body(seated) < 0.0 { 1.0 } else { -1.0 };
+                    if (depth - anchor.w).abs() > size(&c) * 0.002 {
+                        failures.push(format!(
+                            "{kind:?} ({seed}) anchor {index} lies {depth} below its skin, not {}",
+                            anchor.w
+                        ));
+                    }
                 }
                 for index in 0..9 {
                     let root = c.tentacles[index / 3][0][index % 3];
@@ -219,5 +293,6 @@ mod tests {
                 }
             }
         }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 }

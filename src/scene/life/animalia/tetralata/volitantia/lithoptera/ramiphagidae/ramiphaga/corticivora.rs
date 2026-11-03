@@ -59,6 +59,15 @@ fn head(inward: f32) -> Vec3 {
     on_curl(REACH, inward)
 }
 
+/// Its eyes, seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 1;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+pub fn anchor(_: u32, _: &CreatureInstance) -> Vec4 {
+    (head(-0.45) + vec3(0.4, -0.1, -0.15)).extend(0.13 * SUNK)
+}
+
 /// A living clamp.
 ///
 /// Its armoured body curls into a C round the branch it is eating, banded like a ring of plates, so
@@ -111,8 +120,13 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
         0.1,
     );
     // Small, deep eyes set into the head's outer plates.
-    let eye = head(-0.45) + vec3(0.4, -0.1, -0.15);
-    hit.socket((side - eye).length() - 0.13, 0.13);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            (side - c.seated(0, anchor(0, c).truncate())).length() - 0.13,
+            0.13,
+        );
+    }
     hit.blend(
         oral_tentacles(p, c, head(0.0) + vec3(0.0, 0.35, 0.55), 0.9, ORAL_PAIRS),
         8,

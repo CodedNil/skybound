@@ -268,7 +268,6 @@ impl Drawn {
             }),
         };
         animate(&mut drawn);
-        seats::seat(&mut drawn, kind);
         let look = species.look();
         let c = drawn.organism_mut();
         if c.life.w > 0.0 {
@@ -322,6 +321,7 @@ impl Drawn {
             Self::BloodFeeder(c) => c.rig.previous_tail = c.rig.tail,
             _ => {}
         }
+        seats::seat(&mut drawn, kind);
         drawn
     }
 
@@ -617,9 +617,9 @@ pub mod genome;
 pub mod organs;
 #[cfg(not(target_arch = "spirv"))]
 pub mod physics;
+pub mod plantae;
 #[cfg(not(target_arch = "spirv"))]
 pub mod seats;
-pub mod plantae;
 pub mod surface;
 #[cfg(not(target_arch = "spirv"))]
 pub mod vitals;
@@ -669,6 +669,26 @@ macro_rules! species {
                     $(Self::$b => Some($($bp)::+::ETHOLOGY),)*
                     $(Self::$g => Some($($gp)::+::ETHOLOGY),)*
                     $(Self::$plant => None,)*
+                }
+            }
+            /// How many anchors its design seats on its body.
+            #[cfg(not(target_arch = "spirv"))]
+            pub const fn anchors(self) -> u32 {
+                match self {
+                    $(Self::$t => $($tp)::+::ANCHORS,)*
+                    $(Self::$b => $($bp)::+::ANCHORS,)*
+                    $(Self::$g => $($gp)::+::ANCHORS,)*
+                    $(Self::$plant => 0,)*
+                }
+            }
+            /// Where anchor `index` of its design lies on an individual, before it is seated.
+            #[cfg(not(target_arch = "spirv"))]
+            pub fn anchor(self, index: u32, c: &CreatureInstance) -> Vec4 {
+                match self {
+                    $(Self::$t => $($tp)::+::anchor(index, c),)*
+                    $(Self::$b => $($bp)::+::anchor(index, c),)*
+                    $(Self::$g => $($gp)::+::anchor(index, c),)*
+                    $(Self::$plant => anchor(index, c),)*
                 }
             }
             /// How an animal's body works, as it inherits it down the tree of life.
@@ -1299,11 +1319,7 @@ pub fn eyespots(p: Vec3, first: Vec3, spacing: f32, rows: u32, radius: f32) -> f
     let q = vec3(p.x.abs(), p.y, p.z);
     let mut d = 1e6f32;
     for i in 0..rows {
-        let f = i as f32;
-        d = d.min(
-            (q - first - vec3(-f * spacing * 0.15, -f * spacing * 0.1, f * spacing)).length()
-                - radius * (1.0 - f * 0.12),
-        );
+        d = d.min((q - spot(first, spacing, i)).length() - spot_radius(radius, i));
     }
     d
 }
@@ -1454,6 +1470,87 @@ pub fn feathers<C: Rigged>(p: Vec3, creature: &C, width: f32) -> f32 {
     distance
 }
 
+/// How many anchors a species seats on its body; none, unless a species says.
+///
+/// Anchors are the places its design sets eyes and the like, which are moved onto each
+/// individual's own skin as it is posed (see [`seats`]), each to lie as far below its nearest skin
+/// as the species says.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 0;
+
+/// Where anchor `index` of a species' design lies on an individual before it is seated, on the
+/// right of a body drawn mirrored, and how far below the skin it is seated; a species with anchors
+/// gives its own.
+#[cfg(not(target_arch = "spirv"))]
+pub const fn anchor(_: u32, _: &CreatureInstance) -> Vec4 {
+    Vec4::ZERO
+}
+
+/// How far a lensed eye's centre sits below the skin, as a share of its radius: enough that its
+/// socket's lid rings it, not so far that the lid hides it.
+pub const SUNK: f32 = 0.2;
+
+/// How large eye `index` of a row laid out as [`eyespots`] lays them is, each a little smaller.
+pub fn spot_radius(radius: f32, index: u32) -> f32 {
+    radius * (1.0 - index as f32 * 0.12)
+}
+
+/// Eye `index` of a row laid out as [`eyespots`] lays them, each a little further back and lower.
+pub fn spot(first: Vec3, spacing: f32, index: u32) -> Vec3 {
+    let f = index as f32;
+    first + vec3(-f * spacing * 0.15, -f * spacing * 0.1, f * spacing)
+}
+
+/// A row of eyes as [`eyespots`] lays them out, each seated on the body, the first anchor `base`.
+pub fn seated_spots(
+    p: Vec3,
+    c: &animalia::Animal,
+    base: u32,
+    (first, spacing, rows): (Vec3, f32, u32),
+    radius: f32,
+) -> f32 {
+    let q = vec3(p.x.abs(), p.y, p.z);
+    let mut d = 1e6f32;
+    for i in 0..rows {
+        let at = c.seated(base + i, spot(first, spacing, i));
+        d = d.min((q - at).length() - spot_radius(radius, i));
+    }
+    d
+}
+
+/// Eye `index` of the cowl's circlet (see [`eyes`]): four round the rim from ahead to behind,
+/// then the larger one beneath. Where it lies, and how large it is.
+pub fn cowl_eye(index: u32, length: f32, head: f32) -> (Vec3, f32) {
+    let centre = cowl_centre(length, head);
+    if index >= 4 {
+        return (
+            centre + vec3(0.68 * head, -0.62 * head, 0.35 * head),
+            0.21 * head,
+        );
+    }
+    let angle = 0.5 + index as f32 * 0.42;
+    let x = angle.sin() * 2.05 * head;
+    // On the rim's edge, bulging out past it, so each sees level and down as well as up.
+    let rim = centre
+        + vec3(
+            x,
+            x * x / (2.2 * head).power(2) * 0.35 * head,
+            -angle.cos() * 2.0 * head,
+        );
+    (rim, 0.11 * head)
+}
+
+/// The cowl's circlet of eyes, each seated on the body, the first anchor `base`.
+pub fn seated_eyes(p: Vec3, c: &animalia::Animal, base: u32, length: f32, head: f32) -> f32 {
+    let q = vec3(p.x.abs(), p.y, p.z);
+    let mut d = 1e6f32;
+    for index in 0..5 {
+        let (at, size) = cowl_eye(index, length, head);
+        d = d.min((q - c.seated(base + index, at)).length() - size);
+    }
+    d
+}
+
 /// Eyes for open air lit from below.
 ///
 /// A row of small eyes around the cowl's rim, from ahead round to behind, watches every bearing at
@@ -1462,22 +1559,12 @@ pub fn feathers<C: Rigged>(p: Vec3, creature: &C, width: f32) -> f32 {
 /// deadliest danger lie.
 pub fn eyes(p: Vec3, length: f32, head: f32) -> f32 {
     let q = vec3(p.x.abs(), p.y, p.z);
-    let centre = cowl_centre(length, head);
     let mut d = 1e6f32;
-    for i in 0..4 {
-        let angle = 0.5 + i as f32 * 0.42;
-        let x = angle.sin() * 2.05 * head;
-        // On the rim's edge, bulging out past it, so each sees level and down as well as up.
-        let rim = centre
-            + vec3(
-                x * 1.0,
-                x * x / (2.2 * head).power(2) * 0.35 * head,
-                -angle.cos() * 2.0 * head,
-            );
-        d = d.min((q - rim).length() - 0.11 * head);
+    for index in 0..5 {
+        let (at, size) = cowl_eye(index, length, head);
+        d = d.min((q - at).length() - size);
     }
-    let below = centre + vec3(0.68 * head, -0.62 * head, 0.35 * head);
-    d.min((q - below).length() - 0.21 * head)
+    d
 }
 
 /// Gravity and the air streaming past, both in a creature's own frame, the air at no less than

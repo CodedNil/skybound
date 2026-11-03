@@ -55,6 +55,20 @@ pub fn animate(c: &mut Tetralate) {
     rig_tentacles(c, MOUTH, 0.8, ORAL_PAIRS);
 }
 
+/// How large its eyes are, as its genes have them.
+fn eye_size(c: &CreatureInstance) -> f32 {
+    0.55 * (0.85 + c.gene(EYES) * 0.3)
+}
+
+/// Its two great eyes, seated on its own skin.
+#[cfg(not(target_arch = "spirv"))]
+pub const ANCHORS: u32 = 1;
+
+/// Where eye `index` lies on its design, before it is seated on its own skin.
+pub fn anchor(_: u32, c: &CreatureInstance) -> Vec4 {
+    vec3(0.6, -0.55, -3.75).extend(eye_size(c) * SUNK)
+}
+
 /// A haze-hanging ambusher, built to be unseen until its prey is in reach.
 ///
 /// A long, flat wedge of a body lies under overlapping slate-grey plates, widest at the shoulders,
@@ -139,11 +153,17 @@ pub fn surface(p: Vec3, c: &Tetralate) -> Surface {
     hit.blend(lure, 9, 0.15);
     // Two great eyes beneath the head, set to look down and a little ahead.
     let side = vec3(p.x.abs(), p.y, p.z);
-    let eye = 0.55 * (0.85 + c.gene(EYES) * 0.3);
-    hit.socket(
-        ellipsoid(side - vec3(0.6, -0.55, -3.75), vec3(1.0, 0.9, 1.1) * eye),
-        eye,
-    );
+    let eye = eye_size(c);
+    // Measured bare, the body has no eyes set in it yet.
+    if !c.wings.measuring() {
+        hit.socket(
+            ellipsoid(
+                side - c.seated(0, anchor(0, c).truncate()),
+                vec3(1.0, 0.9, 1.1) * eye,
+            ),
+            eye,
+        );
+    }
     maw(&mut hit, p, c);
     hit.blend(oral_tentacles(p, c, MOUTH, 0.8, ORAL_PAIRS), 8, 0.08);
     hit
