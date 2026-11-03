@@ -630,8 +630,8 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     } else {
         0.0
     };
-    let mut field = (cells * 0.6 + patches * 0.4).lerp(0.55 + patches * 0.45, veil)
-        + slack(drift.detail);
+    let mut field =
+        (cells * 0.6 + patches * 0.4).lerp(0.55 + patches * 0.45, veil) + slack(drift.detail);
     if genus.ripples > 0.0 {
         // Billows laid in rows, bending where the noise does, across one of the fixed axes for the
         // same reason streaks are drawn along them.
@@ -849,9 +849,14 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     let crown = (1.15 - h).smoothstep(0.0, 0.3);
     let thinning = (1.0 - tail).power(2);
     if !full {
-        return vec3((presence * crown * thinning * 0.7).clamp(0.0, 0.8), h.clamp(0.0, 1.0), 0.0);
+        return vec3(
+            (presence * crown * thinning * 0.7).clamp(0.0, 0.8),
+            h.clamp(0.0, 1.0),
+            0.0,
+        );
     }
-    // Fibres are far finer than the heads; where a pixel cannot resolve them they fade to their mean.
+    // Fibres are far finer than the heads; where a pixel cannot resolve them they fade to their
+    // mean.
     let resolve = drift.resolve(140.0);
     let drag = TAIL_DRAG * (fall + 0.6 * fall * fall);
     let mut density = 0.0;
@@ -878,7 +883,11 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
         let fibre = remap(drift.detail(combed, 140.0).x, 0.25, 0.85).lerp(0.6, 1.0 - resolve);
         density += head * (0.4 + 0.6 * fibre.lerp(1.0, 1.0 - tail)) * weight;
     }
-    vec3(density * presence * crown * thinning * 1.6, h.clamp(0.0, 1.0), 0.0)
+    vec3(
+        density * presence * crown * thinning * 1.6,
+        h.clamp(0.0, 1.0),
+        0.0,
+    )
 }
 
 /// The dimensional profile of a storm tower about a point relative to its foot, and how far up it
