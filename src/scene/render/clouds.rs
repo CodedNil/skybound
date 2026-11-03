@@ -7,7 +7,7 @@ use crate::scene::{
         RAIN_DEPTH, TOWER, atlas_direction, atlas_texel, cloud_cell, cloud_wind, layer_altitude,
         layer_depth, light_altitude,
     },
-    math::{Power, half, henyey_greenstein, intersect_sphere, rotated, simpson, square},
+    math::{Power, half, henyey_greenstein, intersect_sphere, rotated, simpson},
     planet::{light_position, light_towards},
     render::{
         march::RaymarchResult,
@@ -51,7 +51,7 @@ const SWELL: f32 = LAYER_DRIFT * 0.7;
 const STRAY: f32 = LAYER_DRIFT * 0.3;
 
 /// The size of one cloud map texel at a face's centre.
-const CLOUD_TEXEL: f32 = PLANET_RADIUS * FRAC_PI_2 / CLOUD_FACE as f32;
+pub const CLOUD_TEXEL: f32 = PLANET_RADIUS * FRAC_PI_2 / CLOUD_FACE as f32;
 
 const RAIN_EXTINCTION: f32 = 0.0024;
 
@@ -117,8 +117,8 @@ fn genus(layer: u32) -> Genus {
         3 => genus(4000.0, 3.0, 0.5, 0.08, 0.12, 0.0),
         // Castellanus: turrets rising from a common base.
         4 => genus(750.0, 0.0, 0.0, 0.55, 0.45, 0.0),
-        // Cirrocumulus: thin, fine grains in ripples.
-        5 => genus(200.0, 0.0, 0.5, 0.15, 0.45, 0.7),
+        // Cirrocumulus: thin, fine grains in ripples, each a flat lens of ice.
+        5 => genus(420.0, 0.0, 1.0, 0.3, 0.4, 0.0),
         // Cirrus: fibres combed far out along the wind.
         _ => genus(325.0, 12.0, 0.35, 0.0, 0.5, 0.0),
     }
@@ -623,7 +623,15 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     };
     // Cells gather into patches with open sky between them.
     let patches = remap(drift.smooth(level * 0.61, genus.cell * 4.0).w, 0.32, 0.68);
-    let mut field = cells * 0.6 + patches * 0.4 + slack(drift.detail);
+    // In broad regions the highest of these layers is no grains but a thin, even veil of ice:
+    // cirrostratus, which hazes the sky and rings the lights with halos.
+    let veil = if layer == 5 {
+        remap(drift.smooth(level * 0.19, 22_000.0).w, 0.42, 0.58)
+    } else {
+        0.0
+    };
+    let mut field = (cells * 0.6 + patches * 0.4).lerp(0.55 + patches * 0.45, veil)
+        + slack(drift.detail);
     if genus.ripples > 0.0 {
         // Billows laid in rows, bending where the noise does, across one of the fixed axes for the
         // same reason streaks are drawn along them.
@@ -636,7 +644,7 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         };
         let phase = level.dot(along) / (genus.cell * 1.3) + bend * 5.0;
         let rows = ((phase * TAU).sin() * 0.5 - 0.1) * (weights.x - weights.y).abs();
-        field += rows * genus.ripples * drift.resolve(genus.cell);
+        field += rows * genus.ripples * (1.0 - veil) * drift.resolve(genus.cell);
     }
     // Ramping up all the way to each cloud's heart, so it is rounded and thickest in its middle
     // rather than a flat-topped slab.
@@ -652,7 +660,12 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
     };
     // Denser cover thickens the layer, and each cloud has its own depth.
     let own = remap(drift.smooth(level * 1.07, genus.cell * 1.3).w, 0.32, 0.68);
-    let depth = layer_depth(layer) * (0.3 + 0.7 * cover) * (0.45 + 1.1 * own);
+    let depth = if layer == 5 {
+        // A grain is a lens, far wider than it is deep, not a column the height of its layer.
+        genus.cell * 0.6 * (0.55 + 0.9 * own) * (1.0 - 0.5 * veil)
+    } else {
+        layer_depth(layer) * (0.3 + 0.7 * cover) * (0.45 + 1.1 * own)
+    };
     if matches!(drift.detail, Detail::Probe) {
         // Allowing for any stray of the base from the swell. The swell, the stray and the depth all
         // vary slowly enough that well under half the gap to the layer is clear all round.
@@ -695,6 +708,7 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
                 .y;
             shape += (remap(lobes, 0.3, 0.67) - 0.5)
                 * genus.puffs
+                * (1.0 - veil)
                 * footprint.smoothstep(0.0, 0.3)
                 * resolve;
         }
@@ -707,7 +721,7 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
             .lerp(remap(detail.z, 0.55, 0.9), fraction.smoothstep(0.1, 0.6));
         // Eat into the thin edge, leaving the core whole.
         let edge = (1.0 - shape / 0.6).clamp(0.0, 1.0);
-        shape -= (1.0 - erosion) * genus.erosion * edge * resolve;
+        shape -= (1.0 - erosion) * genus.erosion * (1.0 - 0.7 * veil) * edge * resolve;
     }
     // Finer still, fraying the rims into wisps.
     let resolve = drift.resolve(50.0);
@@ -719,8 +733,9 @@ fn stratiform(drift: &Drift, layer: u32, up: Vec3, altitude: f32, cover: f32) ->
         let keep = remap(fine.w, 0.25, 0.75).lerp(remap(puffs, 0.35, 0.8), fraction);
         shape -= (1.0 - keep) * 0.25 * (1.0 - shape / 0.3) * resolve;
     }
+    // A veil is far thinner than the grains it replaces.
     vec3(
-        soften(shape, 0.3 + drift.footprint / genus.cell),
+        soften(shape, 0.3 + drift.footprint / genus.cell) * (1.0 - 0.7 * veil),
         fraction,
         0.0,
     )
@@ -766,20 +781,27 @@ fn streaks(drift: &Drift, level: Vec3, up: Vec3, genus: Genus, layer: u32) -> f3
     sum
 }
 
-/// Cirrus: a thin veil of ice. Bands of it lie across the sky with open sky between, each combed
-/// into fine fibres along the fixed axes and bent into hooks, sagging into fall streaks where it
-/// is thickest.
+/// How far cirrus's tails hang below its heads, at most, and how far downwind a tail is drawn out
+/// for each depth of cloud it falls.
+const FALL: f32 = 340.0;
+
+const TAIL_DRAG: f32 = 2300.0;
+
+/// Cirrus: ice that grows in heads high in the thin air and falls from them as long tails, drawn
+/// out downwind as the wind strengthens beneath and curled by its turning. Cells of ice form the
+/// heads, as tufts and commas; below each the tail thins to a thread, combed into fibres. Bands of
+/// it lie across the sky with open sky between.
 fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     let nominal = layer_altitude(6);
     let level = drift.point - up * (altitude - nominal);
-    let weights = streak_axes(up);
+    // Fibres combed along one axis and along the other, laid over one another, would weave a mesh;
+    // so one axis holds nearly everywhere, and they cross only in a narrow band between.
+    let blend = streak_axes(up);
+    let lead = ((blend.x - blend.y) * 1.5 + 0.5).clamp(0.0, 1.0);
+    let weights = vec2(lead, 1.0 - lead);
     let warp = drift.smooth(level * 0.53, 2500.0);
     let bent = level + (warp.yzw() - 0.5) * 3000.0;
-    // Fibres are far finer than the bands that hold them; where a pixel cannot resolve them they
-    // fade to their mean.
-    let resolve = drift.resolve(40.0);
     let mut bands = 0.0;
-    let mut fibres = 0.0;
     for axis in 0..2 {
         let weight = if axis == 0 { weights.x } else { weights.y };
         if weight < 0.01 {
@@ -791,13 +813,6 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
             0.38,
             0.66,
         ) * weight;
-        let fine = if matches!(drift.detail, Detail::Full) && resolve > 0.01 {
-            let combed = squeezed(bent, direction, 40.0);
-            remap(drift.detail(combed, 40.0).x, 0.25, 0.85).lerp(0.55, 1.0 - resolve)
-        } else {
-            0.55
-        };
-        fibres += fine * weight;
     }
     let patches = remap(drift.smooth(level * 0.61, 1500.0).w, 0.3, 0.7);
     // Even full cover leaves sky between the bands.
@@ -807,23 +822,63 @@ fn cirrus(drift: &Drift, up: Vec3, altitude: f32, cover: f32) -> Vec3 {
     if presence <= 0.0 {
         return vec3(0.0, 0.5, (threshold - field) * 150.0);
     }
-    let depth = layer_depth(6) * (0.4 + 0.6 * presence);
-    let sag = presence * presence * 312.5;
+    let depth = layer_depth(6) * (0.55 + 0.45 * presence);
     if matches!(drift.detail, Detail::Probe) {
         let rise = altitude - nominal - swell(drift.textures.shapes, drift.textures.sampler, level);
-        let gap = (-STRAY - sag - rise).max(rise - STRAY - depth);
+        let gap = (-STRAY - FALL - rise).max(rise - STRAY - depth * 1.15);
         return if gap > 0.0 {
             vec3(0.0, 0.5, gap * 0.45)
         } else {
             vec3(1.0, 0.5, 0.0)
         };
     }
-    let base = nominal + wander(drift, level, 1500.0, 6.0);
-    // Thicker fibres hang lower, trailing fall streaks beneath them.
-    let h = (altitude - base + sag) / depth;
-    let envelope = (1.0 - square(h * 2.0 - 1.0)).max(0.0);
-    let density = presence * envelope * fibres;
-    vec3(density * density, h.clamp(0.0, 1.0), 0.0)
+    let full = matches!(drift.detail, Detail::Full);
+    let base = if full {
+        nominal + wander(drift, level, 1500.0, 6.0)
+    } else {
+        nominal + swell(drift.textures.shapes, drift.textures.sampler, level)
+    };
+    // One at the heads' tops, falling through the tails beneath them.
+    let h = (altitude - base) / depth;
+    let fall = (1.0 - h).max(0.0);
+    if h > 1.15 || fall * depth > FALL + depth {
+        return vec3(0.0, 0.5, 0.0);
+    }
+    // Heads fill the top of the cloud; below them a tail thins and fades.
+    let tail = ((fall - 0.35).max(0.0) / 0.9).min(1.0);
+    let crown = (1.15 - h).smoothstep(0.0, 0.3);
+    let thinning = (1.0 - tail).power(2);
+    if !full {
+        return vec3((presence * crown * thinning * 0.7).clamp(0.0, 0.8), h.clamp(0.0, 1.0), 0.0);
+    }
+    // Fibres are far finer than the heads; where a pixel cannot resolve them they fade to their mean.
+    let resolve = drift.resolve(140.0);
+    let drag = TAIL_DRAG * (fall + 0.6 * fall * fall);
+    let mut density = 0.0;
+    for axis in 0..2 {
+        let weight = if axis == 0 { weights.x } else { weights.y };
+        if weight < 0.01 {
+            continue;
+        }
+        let (direction, across) = if axis == 0 {
+            (Vec3::X, Vec3::Z)
+        } else {
+            (Vec3::Z, Vec3::X)
+        };
+        // The tail trails downwind of its head and curls aside as it falls.
+        // Heads and the strength of their tails differ from one to the next.
+        let length = 0.6 + 0.8 * drift.smooth(level * 0.9, 1200.0).z;
+        let trailed = bent - direction * (drag * length);
+        let curled = trailed + across * (fall * fall * 450.0);
+        let cell = drift.shapes(squeezed(curled, direction, 3.0), 2400.0).x;
+        let head = remap(cell * (2.0 - cell), 0.12 + 0.5 * tail, 0.85 + 0.1 * tail);
+        // Fibres shear only along themselves: sliding them across one another would make the thin
+        // strands wave as a ray passes through the layer.
+        let combed = squeezed(trailed, direction, 24.0);
+        let fibre = remap(drift.detail(combed, 140.0).x, 0.25, 0.85).lerp(0.6, 1.0 - resolve);
+        density += head * (0.4 + 0.6 * fibre.lerp(1.0, 1.0 - tail)) * weight;
+    }
+    vec3(density * presence * crown * thinning * 1.6, h.clamp(0.0, 1.0), 0.0)
 }
 
 /// The dimensional profile of a storm tower about a point relative to its foot, and how far up it
@@ -1323,7 +1378,10 @@ pub fn cloud_map(
                 let centre = parcel.centre.xyz();
                 let distance = (up - centre).length() * PLANET_RADIUS;
                 let column = parcel.detail.x * 0.35;
-                let reach = column * 4.2 + CLOUD_TEXEL * 1.5;
+                // The anvil spreads out to about five radii downwind of the column; past the texels
+                // this reach covers, a tower is not drawn at all, so a shorter reach would cut the
+                // anvil off along a texel's straight edge.
+                let reach = column * 5.2 + CLOUD_TEXEL * 1.5;
                 let inside = 1.0 - distance / reach;
                 if inside > nearest {
                     nearest = inside;

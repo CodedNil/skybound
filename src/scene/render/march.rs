@@ -25,12 +25,14 @@ const MIST_STRIDE: f32 = 500.0;
 const MIST_SAMPLES: f32 = 6.0;
 
 /// The narrowest a parcel index cell can be, so its layer bounds hold for at least this far
-/// across it.
-const CLOUD_CELL_REACH: f32 = 30_000.0;
+/// across it. Cells are a fixed share of the planet, so this follows its size: a fixed distance
+/// would run past the cell's edge on a small planet, and a ray would skip the cloud of the cells it
+/// crosses.
+const CLOUD_CELL_REACH: f32 = PLANET_RADIUS * 0.06;
 
-/// The longest horizontal stride between cloud layers: well under a cloud map texel, so the layers
+/// The longest horizontal stride between cloud layers: under a cloud map texel, so the layers
 /// cannot change much across it.
-const LAYER_STRIDE: f32 = 3000.0;
+const LAYER_STRIDE: f32 = clouds::CLOUD_TEXEL * 0.75;
 
 #[derive(Default)]
 pub(super) struct VolumeSample {
