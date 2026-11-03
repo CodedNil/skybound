@@ -370,13 +370,15 @@ pub fn plumage(point: Vec3, creature: &Tetralate, shape: Train, long: f32) -> Ve
             let offset = (train_knot(creature, across, knot) - start) * reach;
             base + offset + breadth[knot] * splay * offset.length()
         };
-        // Beyond a sphere holding the whole feather, that sphere is as near as the feather can be,
-        // which the march may safely step by; and it is no use looking closer at a feather that
-        // cannot be nearer than one already found.
+        // Well beyond a sphere holding the whole feather, that sphere is as near as the feather
+        // can be, which the march may safely step by; and it is no use looking closer at a feather
+        // that cannot be nearer than one already found. Closer in, the bound shrinks to nothing at
+        // the sphere's own edge, which the march would take for a surface: so a feather that near
+        // is measured whole.
         let tip = at(last);
         let bound = (point - base.lerp(tip, 0.5)).length()
             - ((tip - base).length() * 0.6 + 0.06 * reach * shape.scale);
-        if bound > 0.0 {
+        if bound > 0.05 * shape.scale {
             vanes = vanes.min(bound);
             continue;
         }
