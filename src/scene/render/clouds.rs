@@ -925,11 +925,11 @@ fn tower_profile(q: Vec3, radius: f32, height: f32) -> (f32, f32) {
 /// steep rays would slice them into terraces or step clean over them.
 fn climb(layer: u32) -> f32 {
     match layer {
-        0 => 250.0,
-        1 | 3 | 4 => 162.5,
-        2 => 112.5,
-        5 => 75.0,
-        _ => 150.0,
+        0 => 350.0,
+        1 | 3 | 4 => 325.0,
+        2 => 225.0,
+        5 => 150.0,
+        _ => 300.0,
     }
 }
 
