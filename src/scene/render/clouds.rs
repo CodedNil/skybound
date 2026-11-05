@@ -60,6 +60,11 @@ const RAIN_EXTINCTION: f32 = 0.0024;
 /// mean density would.
 const MEAN_FILL: f32 = 0.15;
 
+/// The altitude above which only the thin ice layers hold cloud.
+pub fn high_cloud() -> f32 {
+    layer_altitude(5) - LAYER_DRIFT
+}
+
 /// Each march sample traces its own shadow this far towards the light; the light volume supplies
 /// the rest of the path.
 pub const NEAR_SHADOW: f32 = 300.0;

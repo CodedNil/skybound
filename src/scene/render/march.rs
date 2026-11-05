@@ -247,7 +247,10 @@ impl CloudMarch {
         // own cloud out to the light volume: closely spaced near the sample, where its own lobes
         // shade it, and further apart beyond.
         let mut shadow = 0.0;
-        for tap in 0..3 {
+        // The thin cloud of the highest layers has no cloud above it but its own, far too thin to
+        // shade itself, so its taps would trace nothing.
+        let high = point.length() - PLANET_RADIUS > clouds::high_cloud();
+        for tap in 0..if high { 0 } else { 3 } {
             let (middle, length) = match tap {
                 0 => (0.075, 0.15),
                 1 => (0.3, 0.3),
@@ -269,7 +272,7 @@ impl CloudMarch {
         // from it.
         let up = point.normalize();
         let mut hidden = 0.0;
-        for tap in 0..2 {
+        for tap in 0..if high { 0 } else { 2 } {
             let (middle, reach) = if tap == 0 {
                 (35.0, 70.0)
             } else {
